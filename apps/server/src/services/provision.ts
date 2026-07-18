@@ -6,6 +6,7 @@ import { env } from "../config/env.js";
 import { prisma } from "../db.js";
 import { createXuiFromEnv } from "../panel/xui-client.js";
 import { gbToBytes, randomSubId, shortCode } from "../utils/format.js";
+import { getConfiguredInboundIds } from "./inbounds.js";
 
 export type ProvisionResult = {
   subscriptionId: string;
@@ -64,13 +65,39 @@ async function qrForSub(subUrl: string) {
   return QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
 }
 
-export async function provisionOrder(orderId: string): Promise<ProvisionResult> {
+export async function provisionOrder(orderId: string): Promise<ProvisionResult | { kind: "wallet_credit"; balance: number }> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { user: true, subscription: true, targetSub: true },
   });
 
   if (!order) throw new Error("سفارش پیدا نشد");
+
+  if (order.kind === OrderKind.wallet_charge) {
+    if (order.status === OrderStatus.completed) {
+      throw new Error("این شارژ قبلاً اعمال شده");
+    }
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.provisioning },
+    });
+    try {
+      const { creditWallet } = await import("./wallet.js");
+      const balance = await creditWallet(order.userId, order.price, `charge:${order.id}`);
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.completed },
+      });
+      return { kind: "wallet_credit", balance };
+    } catch (err) {
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.paid, adminNote: String(err) },
+      });
+      throw err;
+    }
+  }
+
   if (order.subscription) {
     throw new Error("برای این سفارش قبلاً اشتراک ساخته شده");
   }
@@ -114,9 +141,9 @@ async function createPanelClient(user: User, order: Order): Promise<ProvisionRes
   const months = order.months || 1;
   const expiresAt = new Date(Date.now() + months * 30 * 24 * 60 * 60 * 1000);
   const totalGB = gbToBytes(order.trafficGb);
-  const inboundIds = await xui.listEnabledInboundIds();
+  const inboundIds = await getConfiguredInboundIds();
   if (!inboundIds.length) {
-    inboundIds.push(env.XUI_INBOUND_ID);
+    throw new Error("هیچ inbound id تنظیم نشده است");
   }
 
   await xui.addClient({

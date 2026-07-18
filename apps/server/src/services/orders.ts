@@ -1,6 +1,8 @@
 import { OrderKind, OrderStatus, PaymentMethod } from "@prisma/client";
 import { prisma } from "../db.js";
 import { resolvePrice } from "./pricing.js";
+import { debitWallet } from "./wallet.js";
+import { provisionOrder } from "./provision.js";
 
 export async function createMatrixOrder(input: {
   userId: string;
@@ -9,6 +11,7 @@ export async function createMatrixOrder(input: {
   accountName: string;
   kind?: OrderKind;
   targetSubId?: string;
+  paymentMethod?: PaymentMethod;
 }) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
   const priced = await resolvePrice(user, input.trafficGb, input.months);
@@ -25,10 +28,48 @@ export async function createMatrixOrder(input: {
       customName: input.accountName,
       targetSubId: input.targetSubId,
       status: OrderStatus.pending_payment,
-      paymentMethod: PaymentMethod.card_to_card,
+      paymentMethod: input.paymentMethod ?? PaymentMethod.card_to_card,
     },
     include: { user: true, targetSub: true },
   });
+}
+
+export async function createWalletChargeOrder(userId: string, amount: number) {
+  if (amount < 10_000) throw new Error("حداقل شارژ ۱۰٬۰۰۰ تومان است");
+  return prisma.order.create({
+    data: {
+      userId,
+      kind: OrderKind.wallet_charge,
+      trafficGb: null,
+      months: 0,
+      price: amount,
+      accountName: "wallet",
+      status: OrderStatus.pending_payment,
+      paymentMethod: PaymentMethod.card_to_card,
+    },
+    include: { user: true },
+  });
+}
+
+/** Pay with wallet: debit then provision immediately */
+export async function payOrderWithWallet(orderId: string, userId: string) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId, status: OrderStatus.pending_payment },
+  });
+  if (!order) throw new Error("سفارش پیدا نشد");
+  if (order.kind === OrderKind.wallet_charge) {
+    throw new Error("شارژ کیف پول باید کارت‌به‌کارت باشد");
+  }
+
+  await debitWallet(userId, order.price, `order:${order.id}`);
+  await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      paymentMethod: PaymentMethod.wallet,
+      status: OrderStatus.paid,
+    },
+  });
+  return provisionOrder(order.id);
 }
 
 export async function attachReceipt(orderId: string, userId: string, fileId: string, caption?: string) {
@@ -95,6 +136,9 @@ export function orderSummaryText(order: {
   accountName?: string | null;
   kind?: OrderKind;
 }) {
+  if (order.kind === OrderKind.wallet_charge) {
+    return [`نوع: شارژ کیف پول`, `مبلغ: ${order.price.toLocaleString("fa-IR")} تومان`].join("\n");
+  }
   const vol = order.trafficGb === null ? "نامحدود" : `${order.trafficGb} گیگ`;
   const kindLabel =
     order.kind === OrderKind.renew
@@ -107,7 +151,7 @@ export function orderSummaryText(order: {
   return [
     `نوع: ${kindLabel}`,
     `حجم: ${vol}`,
-    `مدت: ${order.months} ماه`,
+    order.months > 0 ? `مدت: ${order.months} ماه` : "",
     order.accountName ? `نام اکانت: ${order.accountName}` : "",
     `مبلغ: ${order.price.toLocaleString("fa-IR")} تومان`,
   ]

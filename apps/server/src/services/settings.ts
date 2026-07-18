@@ -10,6 +10,7 @@ const defaults: Record<string, string> = {
   support_username: "",
   support_telegram_id: "",
   miniapp_url: "",
+  xui_inbound_ids: "1,2,3,4,5,6,7,8,9,10",
 };
 
 export async function getSetting(key: string): Promise<string> {

@@ -206,7 +206,7 @@ do_install() {
   prompt XUI_API_TOKEN "3x-ui API token"
   prompt XUI_INBOUND_ID "Inbound ID" "1"
   prompt XUI_SUB_BASE "Subscription base URL (optional)" ""
-  prompt PUBLIC_DOMAIN "Public domain for Mini App" "app.piing.ir"
+  prompt PUBLIC_DOMAIN "Public domain for Mini App" "app.anthropics.ir"
   prompt PORT "Service port" "4000"
 
   clone_or_update

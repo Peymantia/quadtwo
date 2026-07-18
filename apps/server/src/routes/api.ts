@@ -233,7 +233,11 @@ export function createApiApp() {
     const id = c.req.param("id");
     await prisma.order.update({ where: { id }, data: { status: "paid" } });
     const result = await provisionOrder(id);
+    if ("kind" in result && result.kind === "wallet_credit") {
+      return c.json({ type: "wallet_credit", balance: result.balance });
+    }
     return c.json({
+      type: "subscription",
       code: result.code,
       subUrl: result.subUrl,
       email: result.email,

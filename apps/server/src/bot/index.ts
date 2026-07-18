@@ -7,15 +7,19 @@ import { prisma } from "../db.js";
 import {
   attachReceipt,
   createMatrixOrder,
+  createWalletChargeOrder,
   findPendingPaymentOrder,
   getOrderForAdmin,
   markPaid,
   orderSummaryText,
+  payOrderWithWallet,
   rejectOrder,
 } from "../services/orders.js";
 import { listPriceMatrix, upsertPriceCell } from "../services/pricing.js";
-import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.js";
+import { provisionOrder, rotateSubId, rotateUuid, type ProvisionResult } from "../services/provision.js";
 import { getPaymentCard, getSetting, setSetting } from "../services/settings.js";
+import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
+import { getWallet } from "../services/wallet.js";
 import {
   approvePartner,
   rejectPartner,
@@ -38,13 +42,17 @@ import {
   orderPayText,
   partnerRequestKeyboard,
   payConfirmKeyboard,
+  payMethodKeyboard,
   subscriptionKeyboard,
+  walletChargeAmountsKeyboard,
+  walletMenuKeyboard,
 } from "./keyboards.js";
 import { createTelegramBot } from "./telegram.js";
 
 const waitingName = new Set<number>();
 const waitingPartner = new Map<number, { step: "name" | "phone" | "note"; fullName?: string; phone?: string }>();
 const waitingMatrix = new Map<number, string>();
+const waitingWalletAmount = new Set<number>();
 
 async function requireChannel(ctx: Context) {
   const required = (await getSetting("channel_required")) === "true";
@@ -95,7 +103,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
 async function deliverResult(
   api: Context["api"],
   telegramId: bigint | number,
-  result: { code: string; subUrl: string; expiresAt: Date; qrPng: Buffer; email: string },
+  result: ProvisionResult,
   trafficGb: number | null,
 ) {
   const text = [
@@ -113,6 +121,16 @@ async function deliverResult(
   await api.sendPhoto(Number(telegramId), new InputFile(result.qrPng, "qr.png"), {
     caption: "QR Code اشتراک — اسکن کنید",
   });
+}
+
+async function startCardPayment(ctx: Context, orderId: string, summary: string) {
+  const card = await getPaymentCard();
+  const text = orderPayText(summary, card, orderId);
+  if (ctx.callbackQuery?.message) {
+    await ctx.editMessageText(text, { parse_mode: "Markdown", reply_markup: payConfirmKeyboard(orderId) });
+  } else {
+    await ctx.reply(text, { parse_mode: "Markdown", reply_markup: payConfirmKeyboard(orderId) });
+  }
 }
 
 export function createBot() {
@@ -214,9 +232,38 @@ export function createBot() {
       months: draft.months,
       accountName,
     });
-    const card = await getPaymentCard();
-    const text = orderPayText(orderSummaryText(order), card, order.id);
-    await ctx.editMessageText(text, { parse_mode: "Markdown", reply_markup: payConfirmKeyboard(order.id) });
+    const wallet = await getWallet(user.id);
+    await ctx.editMessageText(
+      `${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`,
+      { reply_markup: payMethodKeyboard(order.id, wallet.balance) },
+    );
+  });
+
+  bot.callbackQuery(/^pay:card:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const order = await getOrderForAdmin(ctx.match![1]);
+    if (!order || order.userId !== (await upsertUserFromTelegram(ctx.from!)).id) {
+      await ctx.reply("سفارش پیدا نشد.");
+      return;
+    }
+    await startCardPayment(ctx, order.id, orderSummaryText(order));
+  });
+
+  bot.callbackQuery(/^pay:wallet:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery({ text: "پرداخت از کیف پول..." });
+    const user = await upsertUserFromTelegram(ctx.from!);
+    try {
+      const result = await payOrderWithWallet(ctx.match![1], user.id);
+      if ("kind" in result && result.kind === "wallet_credit") {
+        await ctx.reply(`شارژ شد. موجودی: ${formatToman(result.balance)}`);
+        return;
+      }
+      const order = await getOrderForAdmin(ctx.match![1]);
+      await ctx.editMessageText("پرداخت از کیف پول انجام شد ✅");
+      await deliverResult(ctx.api, user.telegramId, result as ProvisionResult, order?.trafficGb ?? null);
+    } catch (err) {
+      await ctx.reply(`خطا: ${String(err)}`);
+    }
   });
 
   bot.callbackQuery(/^paid:(.+)$/, async (ctx) => {
@@ -286,6 +333,7 @@ export function createBot() {
       waitingName.delete(tid);
       waitingPartner.delete(tid);
       waitingMatrix.delete(tid);
+      waitingWalletAmount.delete(tid);
       return next();
     }
 
@@ -293,7 +341,21 @@ export function createBot() {
       waitingName.delete(tid);
       waitingPartner.delete(tid);
       waitingMatrix.delete(tid);
+      waitingWalletAmount.delete(tid);
       await ctx.reply("لغو شد.");
+      return;
+    }
+
+    if (waitingWalletAmount.has(tid)) {
+      const amount = Number(text.replace(/[^\d]/g, ""));
+      if (!amount || amount < 10_000) {
+        await ctx.reply("مبلغ نامعتبر. حداقل ۱۰٬۰۰۰ تومان.");
+        return;
+      }
+      waitingWalletAmount.delete(tid);
+      const user = await upsertUserFromTelegram(ctx.from!);
+      const order = await createWalletChargeOrder(user.id, amount);
+      await startCardPayment(ctx, order.id, orderSummaryText(order));
       return;
     }
 
@@ -394,8 +456,17 @@ export function createBot() {
     try {
       await markPaid(orderId);
       const result = await provisionOrder(orderId);
-      await deliverResult(ctx.api, order.user.telegramId, result, order.trafficGb);
-      await ctx.editMessageCaption({ caption: `✅ انجام شد — ${result.code}` }).catch(() => undefined);
+      if ("kind" in result && result.kind === "wallet_credit") {
+        await ctx.api.sendMessage(
+          Number(order.user.telegramId),
+          `✅ کیف پول شارژ شد\nموجودی: ${formatToman(result.balance)}`,
+        );
+        await ctx.editMessageCaption({ caption: `✅ شارژ کیف پول — ${formatToman(order.price)}` }).catch(() => undefined);
+        return;
+      }
+      const provisioned = result as ProvisionResult;
+      await deliverResult(ctx.api, order.user.telegramId, provisioned, order.trafficGb);
+      await ctx.editMessageCaption({ caption: `✅ انجام شد — ${provisioned.code}` }).catch(() => undefined);
     } catch (err) {
       console.error(err);
       await ctx.reply(`خطا: ${String(err)}`);
@@ -521,11 +592,40 @@ export function createBot() {
       kind: OrderKind.renew,
       targetSubId: sub.id,
     });
-    const card = await getPaymentCard();
-    await ctx.reply(orderPayText(orderSummaryText(order), card, order.id), {
-      parse_mode: "Markdown",
-      reply_markup: payConfirmKeyboard(order.id),
+    const wallet = await getWallet(user.id);
+    await ctx.reply(`${orderSummaryText(order)}\n\nروش پرداخت:`, {
+      reply_markup: payMethodKeyboard(order.id, wallet.balance),
     });
+  });
+
+  bot.hears("💳 کیف پول", async (ctx) => {
+    if (!(await requireChannel(ctx))) return;
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const wallet = await getWallet(user.id);
+    await ctx.reply(`موجودی کیف پول:\n${formatToman(wallet.balance)}`, {
+      reply_markup: walletMenuKeyboard(),
+    });
+  });
+
+  bot.callbackQuery("wallet:charge", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText("مبلغ شارژ را انتخاب کنید:", {
+      reply_markup: walletChargeAmountsKeyboard(),
+    });
+  });
+
+  bot.callbackQuery(/^wallet:amt:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const raw = ctx.match![1];
+    if (raw === "custom") {
+      waitingWalletAmount.add(ctx.from!.id);
+      await ctx.reply("مبلغ شارژ را به تومان بفرستید (حداقل ۱۰۰۰۰):");
+      return;
+    }
+    const amount = Number(raw);
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const order = await createWalletChargeOrder(user.id, amount);
+    await startCardPayment(ctx, order.id, orderSummaryText(order));
   });
 
   bot.hears("☎️ پشتیبانی", async (ctx) => {
@@ -577,6 +677,8 @@ export function createBot() {
         "/setchannel @user",
         "/requirechannel on|off",
         "/setsupport @user یا numeric_id",
+        "/setinbounds 1-10 یا 1,2,3",
+        "/inbounds — نمایش inboundهای فعلی",
       ].join("\n"),
     );
   });
@@ -639,11 +741,34 @@ export function createBot() {
     );
   });
 
+  bot.command("setinbounds", async (ctx) => {
+    if (!isAdminTelegramId(ctx.from?.id)) return;
+    const raw = (ctx.match ?? "").trim();
+    if (!raw) {
+      await ctx.reply("Usage: /setinbounds 1-10\nor /setinbounds 1,2,3,5");
+      return;
+    }
+    const ids = parseInboundIds(raw);
+    if (!ids.length) {
+      await ctx.reply("No valid ids.");
+      return;
+    }
+    await setSetting("xui_inbound_ids", ids.join(","));
+    await ctx.reply(`Inbound IDs saved: ${ids.join(", ")}`);
+  });
+
+  bot.command("inbounds", async (ctx) => {
+    if (!isAdminTelegramId(ctx.from?.id)) return;
+    const ids = await getConfiguredInboundIds();
+    await ctx.reply(`Active inbound IDs:\n${ids.join(", ") || "(empty)"}`);
+  });
+
   bot.command("cancel", async (ctx) => {
     const tid = ctx.from!.id;
     waitingName.delete(tid);
     waitingPartner.delete(tid);
     waitingMatrix.delete(tid);
+    waitingWalletAmount.delete(tid);
     await ctx.reply("Cancelled.");
   });
 
@@ -689,7 +814,7 @@ export function createBot() {
   bot.command("miniapp", async (ctx) => {
     const url = await getSetting("miniapp_url");
     if (!url) {
-      await ctx.reply("Mini App URL not set. Admin: /setminiapp https://app.piing.ir");
+      await ctx.reply("Mini App URL not set. Admin: /setminiapp https://app.anthropics.ir");
       return;
     }
     await ctx.reply("Open Mini App:", {
@@ -700,7 +825,7 @@ export function createBot() {
   bot.command("setminiapp", async (ctx) => {
     if (!isAdminTelegramId(ctx.from?.id)) return;
     const url = (ctx.match ?? "").trim();
-    if (!url.startsWith("http")) return ctx.reply("Usage: /setminiapp https://app.piing.ir");
+    if (!url.startsWith("http")) return ctx.reply("Usage: /setminiapp https://app.anthropics.ir");
     await setSetting("miniapp_url", url);
     await ctx.reply("Mini App URL saved.");
   });

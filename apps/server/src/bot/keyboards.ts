@@ -5,7 +5,8 @@ import { formatToman, formatTraffic } from "../utils/format.js";
 export function mainMenuKeyboard(isAdmin: boolean, isPartner: boolean) {
   const rows = [
     ["🛒 خرید اشتراک", "📦 سرویس‌های من"],
-    ["🤝 همکاری", "☎️ پشتیبانی"],
+    ["💳 کیف پول", "🤝 همکاری"],
+    ["☎️ پشتیبانی"],
   ];
   if (isPartner) rows.push(["💼 پنل همکار"]);
   if (isAdmin) rows.push(["👑 پنل ادمین"]);
@@ -39,11 +40,37 @@ export function buyWizardKeyboard(opts: {
     .text("« بازگشت", "menu:home");
 }
 
+export function payMethodKeyboard(orderId: string, walletBalance: number) {
+  return new InlineKeyboard()
+    .text("💳 کارت‌به‌کارت", `pay:card:${orderId}`)
+    .row()
+    .text(`👛 کیف پول (${walletBalance.toLocaleString("fa-IR")})`, `pay:wallet:${orderId}`)
+    .row()
+    .text("❌ انصراف", `cancel:${orderId}`);
+}
+
 export function payConfirmKeyboard(orderId: string) {
   return new InlineKeyboard()
     .text("✅ پرداخت کردم — ارسال رسید", `paid:${orderId}`)
     .row()
     .text("❌ انصراف", `cancel:${orderId}`);
+}
+
+export function walletMenuKeyboard() {
+  return new InlineKeyboard()
+    .text("➕ شارژ کیف پول", "wallet:charge")
+    .row()
+    .text("« بازگشت", "menu:home");
+}
+
+export function walletChargeAmountsKeyboard() {
+  const kb = new InlineKeyboard();
+  for (const amount of [100_000, 200_000, 500_000, 1_000_000]) {
+    kb.text(`${amount.toLocaleString("fa-IR")}`, `wallet:amt:${amount}`).row();
+  }
+  kb.text("✍️ مبلغ دلخواه", "wallet:amt:custom").row();
+  kb.text("« بازگشت", "menu:home");
+  return kb;
 }
 
 export function adminOrderKeyboard(orderId: string) {

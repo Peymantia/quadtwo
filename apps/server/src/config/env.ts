@@ -11,6 +11,7 @@ const schema = z.object({
   XUI_BASE_URL: z.string().optional(),
   XUI_API_TOKEN: z.string().optional(),
   XUI_INBOUND_ID: z.coerce.number().default(1),
+  XUI_INBOUND_IDS: z.string().default("1,2,3,4,5,6,7,8,9,10"),
   XUI_SUB_BASE: z.string().optional(),
   PUBLIC_DOMAIN: z.string().optional(),
 });
