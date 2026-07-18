@@ -1,6 +1,7 @@
+import { randomBytes } from "node:crypto";
 import QRCode from "qrcode";
-import type { Order, Plan, User } from "@prisma/client";
-import { OrderStatus, SubscriptionStatus } from "@prisma/client";
+import type { Order, User } from "@prisma/client";
+import { OrderKind, OrderStatus, SubscriptionStatus } from "@prisma/client";
 import { env } from "../config/env.js";
 import { prisma } from "../db.js";
 import { createXuiFromEnv } from "../panel/xui-client.js";
@@ -11,12 +12,11 @@ export type ProvisionResult = {
   code: string;
   email: string;
   subUrl: string;
-  shareLinks: string[];
   expiresAt: Date;
   qrPng: Buffer;
 };
 
-function buildSubUrl(subId: string, settings?: Record<string, unknown>): string {
+export function buildSubUrl(subId: string, settings?: Record<string, unknown>): string {
   if (env.XUI_SUB_BASE?.trim()) {
     const base = env.XUI_SUB_BASE.endsWith("/") ? env.XUI_SUB_BASE : `${env.XUI_SUB_BASE}/`;
     return `${base}${subId}`;
@@ -37,7 +37,6 @@ function buildSubUrl(subId: string, settings?: Record<string, unknown>): string 
     return `${scheme}://${subDomain}:${subPort}${path}${subId}`;
   }
 
-  // fallback: panel host + /sub/
   try {
     const u = new URL(env.XUI_BASE_URL!);
     return `${u.protocol}//${u.hostname}:2096/sub/${subId}`;
@@ -46,10 +45,29 @@ function buildSubUrl(subId: string, settings?: Record<string, unknown>): string 
   }
 }
 
+function sanitizeEmail(name: string) {
+  const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 32);
+  return cleaned || `qt${randomBytes(3).toString("hex")}`;
+}
+
+async function panelSettings() {
+  try {
+    const xui = createXuiFromEnv(env);
+    const s = await xui.getSettings();
+    return s.obj;
+  } catch {
+    return undefined;
+  }
+}
+
+async function qrForSub(subUrl: string) {
+  return QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
+}
+
 export async function provisionOrder(orderId: string): Promise<ProvisionResult> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { plan: true, user: true, subscription: true },
+    include: { user: true, subscription: true, targetSub: true },
   });
 
   if (!order) throw new Error("سفارش پیدا نشد");
@@ -63,7 +81,17 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult> 
   });
 
   try {
-    const result = await createPanelClient(order.user, order.plan, order);
+    let result: ProvisionResult;
+    if (order.kind === OrderKind.renew && order.targetSub) {
+      result = await renewSubscription(order, order.targetSub.id);
+    } else if (order.kind === OrderKind.rotate_sub && order.targetSub) {
+      result = await rotateSubId(order.targetSub.id);
+    } else if (order.kind === OrderKind.rotate_uuid && order.targetSub) {
+      result = await rotateUuid(order.targetSub.id);
+    } else {
+      result = await createPanelClient(order.user, order);
+    }
+
     await prisma.order.update({
       where: { id: orderId },
       data: { status: OrderStatus.completed },
@@ -78,17 +106,18 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult> 
   }
 }
 
-async function createPanelClient(
-  user: User,
-  plan: Plan,
-  order: Order,
-): Promise<ProvisionResult> {
+async function createPanelClient(user: User, order: Order): Promise<ProvisionResult> {
   const xui = createXuiFromEnv(env);
   const code = shortCode("QT");
-  const email = `qt${code.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}`;
+  const email = sanitizeEmail(order.accountName || order.customName || code);
   const subId = randomSubId();
-  const expiresAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
-  const totalGB = gbToBytes(plan.trafficGb);
+  const months = order.months || 1;
+  const expiresAt = new Date(Date.now() + months * 30 * 24 * 60 * 60 * 1000);
+  const totalGB = gbToBytes(order.trafficGb);
+  const inboundIds = await xui.listEnabledInboundIds();
+  if (!inboundIds.length) {
+    inboundIds.push(env.XUI_INBOUND_ID);
+  }
 
   await xui.addClient({
     client: {
@@ -99,51 +128,48 @@ async function createPanelClient(
       limitIp: 0,
       tgId: Number(user.telegramId),
       subId,
-      comment: order.customName ?? code,
+      comment: email,
     },
-    inboundIds: [env.XUI_INBOUND_ID],
+    inboundIds,
   });
 
-  let settings: Record<string, unknown> | undefined;
-  try {
-    const s = await xui.getSettings();
-    settings = s.obj;
-  } catch {
-    settings = undefined;
+  if (user.panelGroup) {
+    try {
+      await xui.createGroup(user.panelGroup);
+    } catch {
+      /* may already exist */
+    }
+    try {
+      await xui.bulkAddToGroup([email], user.panelGroup);
+    } catch (err) {
+      console.warn("bulkAddToGroup failed", err);
+    }
   }
 
-  let shareLinks: string[] = [];
-  try {
-    const links = await xui.clientLinks(email);
-    shareLinks = Array.isArray(links.obj) ? links.obj : [];
-  } catch {
-    shareLinks = [];
-  }
-
+  const settings = await panelSettings();
   let clientUuid: string | null = null;
+  let panelSubId = subId;
   try {
     const got = await xui.getClient(email);
     clientUuid = got.obj?.client?.uuid ?? got.obj?.client?.id ?? null;
-    if (got.obj?.client?.subId) {
-      // prefer panel subId if returned
-    }
+    if (got.obj?.client?.subId) panelSubId = got.obj.client.subId;
   } catch {
     /* ignore */
   }
 
-  const subUrl = buildSubUrl(subId, settings);
-  const qrTarget = subUrl.startsWith("http") ? subUrl : shareLinks[0] ?? subUrl;
-  const qrPng = await QRCode.toBuffer(qrTarget, { type: "png", width: 512, margin: 2 });
+  const subUrl = buildSubUrl(panelSubId, settings);
+  const qrPng = await qrForSub(subUrl);
 
   const subscription = await prisma.subscription.create({
     data: {
       code,
       userId: user.id,
       orderId: order.id,
-      title: order.customName ?? plan.title,
+      title: email,
       email,
       clientUuid,
-      trafficGb: plan.trafficGb,
+      panelSubId,
+      trafficGb: order.trafficGb,
       expiresAt,
       subUrl,
       status: SubscriptionStatus.active,
@@ -155,8 +181,130 @@ async function createPanelClient(
     code,
     email,
     subUrl,
-    shareLinks,
     expiresAt,
+    qrPng,
+  };
+}
+
+export async function renewSubscription(order: Order, subscriptionId: string): Promise<ProvisionResult> {
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: subscriptionId } });
+  const xui = createXuiFromEnv(env);
+  const got = await xui.getClient(sub.email);
+  const client = got.obj?.client;
+  if (!client) throw new Error("کلاینت در پنل پیدا نشد");
+
+  const base = Math.max(Date.now(), sub.expiresAt.getTime(), client.expiryTime ?? 0);
+  const months = order.months || 1;
+  const expiresAt = new Date(base + months * 30 * 24 * 60 * 60 * 1000);
+  const totalGB =
+    order.trafficGb !== undefined && order.trafficGb !== null
+      ? gbToBytes(order.trafficGb)
+      : (client.totalGB ?? gbToBytes(sub.trafficGb));
+
+  await xui.updateClient(sub.email, {
+    ...client,
+    email: sub.email,
+    expiryTime: expiresAt.getTime(),
+    totalGB,
+    enable: true,
+  });
+
+  const settings = await panelSettings();
+  const panelSubId = client.subId ?? sub.panelSubId ?? randomSubId();
+  const subUrl = buildSubUrl(panelSubId, settings);
+  const qrPng = await qrForSub(subUrl);
+
+  const updated = await prisma.subscription.update({
+    where: { id: sub.id },
+    data: {
+      expiresAt,
+      trafficGb: order.trafficGb ?? sub.trafficGb,
+      subUrl,
+      panelSubId,
+      status: SubscriptionStatus.active,
+    },
+  });
+
+  return {
+    subscriptionId: updated.id,
+    code: updated.code,
+    email: updated.email,
+    subUrl,
+    expiresAt,
+    qrPng,
+  };
+}
+
+export async function rotateSubId(subscriptionId: string): Promise<ProvisionResult> {
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: subscriptionId } });
+  const xui = createXuiFromEnv(env);
+  const got = await xui.getClient(sub.email);
+  const client = got.obj?.client;
+  if (!client) throw new Error("کلاینت در پنل پیدا نشد");
+
+  const newSubId = randomSubId();
+  await xui.updateClient(sub.email, {
+    ...client,
+    email: sub.email,
+    subId: newSubId,
+  });
+
+  const settings = await panelSettings();
+  const subUrl = buildSubUrl(newSubId, settings);
+  const qrPng = await qrForSub(subUrl);
+
+  const updated = await prisma.subscription.update({
+    where: { id: sub.id },
+    data: { panelSubId: newSubId, subUrl },
+  });
+
+  return {
+    subscriptionId: updated.id,
+    code: updated.code,
+    email: updated.email,
+    subUrl,
+    expiresAt: updated.expiresAt,
+    qrPng,
+  };
+}
+
+export async function rotateUuid(subscriptionId: string): Promise<ProvisionResult> {
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: subscriptionId } });
+  const xui = createXuiFromEnv(env);
+  const got = await xui.getClient(sub.email);
+  const client = got.obj?.client;
+  if (!client) throw new Error("کلاینت در پنل پیدا نشد");
+
+  let newUuid = randomBytes(16).toString("hex").replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+  try {
+    const nu = await xui.getNewUUID();
+    if (typeof nu.obj === "string" && nu.obj) newUuid = nu.obj;
+  } catch {
+    /* use local uuid */
+  }
+
+  await xui.updateClient(sub.email, {
+    ...client,
+    email: sub.email,
+    id: newUuid,
+  });
+
+  const settings = await panelSettings();
+  const panelSubId = client.subId ?? sub.panelSubId ?? randomSubId();
+  const subUrl = buildSubUrl(panelSubId, settings);
+  const qrPng = await qrForSub(subUrl);
+
+  const updated = await prisma.subscription.update({
+    where: { id: sub.id },
+    data: { clientUuid: newUuid, subUrl, panelSubId },
+  });
+
+  return {
+    subscriptionId: updated.id,
+    code: updated.code,
+    email: updated.email,
+    subUrl,
+    expiresAt: updated.expiresAt,
     qrPng,
   };
 }

@@ -16,10 +16,12 @@
     "@hono/node-server": "^1.19.0",
     "@prisma/client": "^6.14.0",
     "@quadtwo/shared": "*",
+    "@telegram-apps/init-data-node": "^2.0.10",
     "dotenv": "^16.6.1",
     "grammy": "^1.38.1",
     "hono": "^4.9.6",
     "https-proxy-agent": "^9.1.0",
+    "jose": "^6.2.3",
     "qrcode": "^1.5.4",
     "zod": "^3.25.76"
   },

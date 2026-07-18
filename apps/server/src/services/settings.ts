@@ -5,8 +5,11 @@ const defaults: Record<string, string> = {
   channel_username: "",
   channel_required: "false",
   card_number: "6037-0000-0000-0000",
-  card_holder: "نام صاحب حساب",
+  card_holder: "Card Holder",
   welcome_text: "به فروشگاه اشتراک خوش آمدید.",
+  support_username: "",
+  support_telegram_id: "",
+  miniapp_url: "",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -21,6 +24,13 @@ export async function setSetting(key: string, value: string): Promise<void> {
     create: { key, value },
     update: { value },
   });
+}
+
+export async function getAllSettings() {
+  const rows = await prisma.setting.findMany();
+  const map: Record<string, string> = { ...defaults };
+  for (const r of rows) map[r.key] = r.value;
+  return map;
 }
 
 export async function getPaymentCard() {

@@ -1,26 +1,24 @@
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Piing",
+  description: "VPN subscription shop",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fa" dir="rtl">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Quadtwo</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Syne:wght@600;700;800&display=swap"
+          rel="stylesheet"
+        />
+        <script src="https://telegram.org/js/telegram-web-app.js" async />
       </head>
-      <body
-        style={{
-          margin: 0,
-          minHeight: "100vh",
-          fontFamily: '"Vazirmatn", "Segoe UI", Tahoma, sans-serif',
-          background:
-            "radial-gradient(1200px 600px at 10% -10%, #1a3a4a 0%, transparent 55%), radial-gradient(900px 500px at 100% 0%, #0f2a22 0%, transparent 50%), #0b1214",
-          color: "#e8f0f2",
-        }}
-      >
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

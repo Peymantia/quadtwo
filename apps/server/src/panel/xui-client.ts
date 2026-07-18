@@ -13,6 +13,12 @@ type ApiResult<T = unknown> = {
   obj?: T;
 };
 
+export type XuiInbound = {
+  id: number;
+  enable?: boolean;
+  remark?: string;
+};
+
 export class XuiClient {
   private readonly baseUrl: string;
 
@@ -52,7 +58,14 @@ export class XuiClient {
   }
 
   listInbounds() {
-    return this.request("panel/api/inbounds/list");
+    return this.request<XuiInbound[]>("panel/api/inbounds/list");
+  }
+
+  async listEnabledInboundIds(): Promise<number[]> {
+    const res = await this.listInbounds();
+    const list = Array.isArray(res.obj) ? res.obj : [];
+    const ids = list.filter((i) => i.enable !== false).map((i) => i.id);
+    return ids.length ? ids : list.map((i) => i.id);
   }
 
   addClient(body: {
@@ -60,6 +73,13 @@ export class XuiClient {
     inboundIds: number[];
   }) {
     return this.request("panel/api/clients/add", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  updateClient(email: string, body: Record<string, unknown>) {
+    return this.request(`panel/api/clients/update/${encodeURIComponent(email)}`, {
       method: "POST",
       body: JSON.stringify(body),
     });
@@ -74,6 +94,12 @@ export class XuiClient {
         id?: string;
         totalGB?: number;
         expiryTime?: number;
+        enable?: boolean;
+        limitIp?: number;
+        tgId?: number;
+        comment?: string;
+        flow?: string;
+        password?: string;
       };
       inboundIds?: number[];
     }>(`panel/api/clients/get/${encodeURIComponent(email)}`);
@@ -86,6 +112,24 @@ export class XuiClient {
   getSettings() {
     return this.request<Record<string, unknown>>("panel/api/setting/all");
   }
+
+  createGroup(name: string) {
+    return this.request("panel/api/clients/groups/create", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  bulkAddToGroup(emails: string[], group: string) {
+    return this.request("panel/api/clients/groups/bulkAdd", {
+      method: "POST",
+      body: JSON.stringify({ emails, group }),
+    });
+  }
+
+  getNewUUID() {
+    return this.request<string>("panel/api/server/getNewUUID");
+  }
 }
 
 export function createXuiFromEnv(env: {
@@ -93,7 +137,7 @@ export function createXuiFromEnv(env: {
   XUI_API_TOKEN?: string;
 }) {
   if (!env.XUI_BASE_URL || !env.XUI_API_TOKEN) {
-    throw new Error("XUI_BASE_URL و XUI_API_TOKEN تنظیم نشده‌اند");
+    throw new Error("XUI_BASE_URL and XUI_API_TOKEN are not set");
   }
   return new XuiClient({
     baseUrl: env.XUI_BASE_URL,

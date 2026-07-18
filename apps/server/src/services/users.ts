@@ -2,6 +2,8 @@ import type { User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { prisma } from "../db.js";
 import { adminIds } from "../config/env.js";
+import { createXuiFromEnv } from "../panel/xui-client.js";
+import { env } from "../config/env.js";
 
 export type TgUserLike = {
   id: number;
@@ -41,9 +43,44 @@ export async function upsertUserFromTelegram(tg: TgUserLike): Promise<User> {
   return user;
 }
 
-export function priceForUser(user: User, plan: { priceUser: number; pricePartner: number }) {
-  if (user.role === UserRole.partner || user.role === UserRole.admin) {
-    return plan.pricePartner;
+export async function submitPartnerRequest(userId: string, fullName: string, phone?: string, note?: string) {
+  return prisma.partnerRequest.upsert({
+    where: { userId },
+    create: { userId, fullName, phone, note, status: "pending" },
+    update: { fullName, phone, note, status: "pending" },
+  });
+}
+
+export async function approvePartner(requestId: string) {
+  const req = await prisma.partnerRequest.findUniqueOrThrow({
+    where: { id: requestId },
+    include: { user: true },
+  });
+  const group = `reseller_${req.user.telegramId}`;
+
+  try {
+    const xui = createXuiFromEnv(env);
+    await xui.createGroup(group);
+  } catch {
+    /* exists */
   }
-  return plan.priceUser;
+
+  await prisma.user.update({
+    where: { id: req.userId },
+    data: { role: UserRole.partner, panelGroup: group },
+  });
+
+  return prisma.partnerRequest.update({
+    where: { id: requestId },
+    data: { status: "approved" },
+    include: { user: true },
+  });
+}
+
+export async function rejectPartner(requestId: string) {
+  return prisma.partnerRequest.update({
+    where: { id: requestId },
+    data: { status: "rejected" },
+    include: { user: true },
+  });
 }

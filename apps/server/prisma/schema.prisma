@@ -30,6 +30,13 @@ enum PaymentMethod {
   crypto_soon
 }
 
+enum OrderKind {
+  new
+  renew
+  rotate_sub
+  rotate_uuid
+}
+
 enum WalletTxType {
   charge
   purchase
@@ -50,6 +57,7 @@ model User {
   firstName    String?
   lastName     String?
   role         UserRole @default(user)
+  panelGroup   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -94,6 +102,21 @@ model Plan {
   orders        Order[]
 }
 
+/// Manual price matrix: trafficGb null = unlimited
+model PriceCell {
+  id           String  @id @default(cuid())
+  trafficGb    Int?
+  months       Int
+  priceUser    Int
+  pricePartner Int
+  active       Boolean @default(true)
+  sortOrder    Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([months])
+}
+
 model PanelServer {
   id           String   @id @default(cuid())
   name         String
@@ -111,19 +134,25 @@ model PanelServer {
 model Order {
   id              String        @id @default(cuid())
   userId          String
-  planId          String
+  planId          String?
+  kind            OrderKind     @default(new)
+  trafficGb       Int?
+  months          Int           @default(1)
   price           Int
   status          OrderStatus   @default(pending_payment)
   paymentMethod   PaymentMethod @default(card_to_card)
   receiptFileId   String?
   receiptText     String?
   adminNote       String?
+  accountName     String?
   customName      String?
+  targetSubId     String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   user            User          @relation(fields: [userId], references: [id])
-  plan            Plan          @relation(fields: [planId], references: [id])
+  plan            Plan?         @relation(fields: [planId], references: [id])
   subscription    Subscription?
+  targetSub       Subscription? @relation("OrderTargetSub", fields: [targetSubId], references: [id])
 }
 
 model Subscription {
@@ -135,6 +164,7 @@ model Subscription {
   title           String?
   email           String
   clientUuid      String?
+  panelSubId      String?
   trafficGb       Int?
   expiresAt       DateTime
   subUrl          String?
@@ -144,6 +174,7 @@ model Subscription {
   user            User               @relation(fields: [userId], references: [id])
   order           Order?             @relation(fields: [orderId], references: [id])
   panelServer     PanelServer?       @relation(fields: [panelServerId], references: [id])
+  renewOrders     Order[]            @relation("OrderTargetSub")
 }
 
 model PartnerRequest {
@@ -162,4 +193,16 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+/// Temporary buy wizard state per telegram user
+model BuyDraft {
+  id          String   @id @default(cuid())
+  telegramId  BigInt   @unique
+  trafficGb   Int?     @default(10)
+  months      Int      @default(1)
+  unlimited   Boolean  @default(false)
+  accountMode String   @default("random")
+  accountName String?
+  updatedAt   DateTime @updatedAt
 }
