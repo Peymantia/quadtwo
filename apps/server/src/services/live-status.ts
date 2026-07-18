@@ -16,6 +16,7 @@ export type LiveSubStatus = {
   remainingLabel: string;
   expiryLabel: string;
   onlineHint: string;
+  limitIpLabel: string;
   subUrl: string | null;
 };
 
@@ -39,6 +40,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
   let used = 0;
   let total = fresh.trafficGb === null ? 0 : fresh.trafficGb * 1024 * 1024 * 1024;
   let onlineHint = "";
+  let limitIpLabel = "";
 
   try {
     if (env.XUI_BASE_URL && env.XUI_API_TOKEN) {
@@ -50,7 +52,12 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
         onlineHint = traf.enable === false ? "🔴 غیرفعال در پنل" : "🟢 فعال در پنل";
       }
       const got = await xui.getClient(fresh.email).catch(() => null);
-      const panelExp = Number(got?.obj?.client?.expiryTime ?? 0);
+      const client = got?.obj?.client;
+      if (client) {
+        const lip = Number(client.limitIp ?? 0);
+        limitIpLabel = lip <= 0 ? "نامحدود" : `${lip} دستگاه`;
+      }
+      const panelExp = Number(client?.expiryTime ?? 0);
       if (panelExp > 0 && (!fresh.activatedAt || fresh.expiresAt.getTime() !== panelExp)) {
         await prisma.subscription.update({
           where: { id: fresh.id },
@@ -88,6 +95,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
       createdAt: fresh.createdAt,
     }),
     onlineHint,
+    limitIpLabel,
     subUrl: fresh.subUrl,
   };
 }
@@ -101,6 +109,7 @@ export function liveStatusText(live: LiveSubStatus): string {
     `حجم کل: ${live.trafficLabel}`,
     `مصرف‌شده: ${live.usedLabel}`,
     `باقی‌مانده: ${live.remainingLabel}`,
+    live.limitIpLabel ? `📱 IP Limit: ${live.limitIpLabel}` : "",
     `انقضا: ${live.expiryLabel}`,
     `وضعیت: ${live.status}`,
     live.onlineHint,

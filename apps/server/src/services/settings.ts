@@ -52,6 +52,8 @@ const defaults: Record<string, string> = {
   test_service_enabled: "true",
   national_service_note: "سرویس ویژه اینترنت ملی را از منوی خرید انتخاب کنید.",
   extra_admin_ids: "",
+  /** Default IP/device limit for new configs (0 = unlimited) */
+  default_limit_ip: "2",
   notif_config: JSON.stringify(defaultNotifConfig()),
 };
 
@@ -148,4 +150,10 @@ export async function addExtraAdminId(id: bigint) {
 export async function removeExtraAdminId(id: bigint) {
   const ids = (await getExtraAdminIds()).filter((x) => x !== id);
   await saveExtraAdminIds(ids);
+}
+
+export async function getDefaultLimitIp(): Promise<number> {
+  const raw = Number(await getSetting("default_limit_ip"));
+  if (Number.isNaN(raw) || raw < 0) return 2;
+  return Math.min(10, Math.floor(raw));
 }

@@ -1,6 +1,7 @@
 import { InlineKeyboard, Keyboard } from "grammy";
 import { matrixLine } from "../services/pricing.js";
 import type { NotifConfig } from "../services/settings.js";
+import { formatLimitIp } from "../services/panel-groups.js";
 import { formatToman, formatTraffic } from "../utils/format.js";
 
 /** Reply keyboard labels (legacy / fallback) */
@@ -83,6 +84,7 @@ export function buyWizardKeyboard(opts: {
   months: number;
   unlimited: boolean;
   quantity: number;
+  limitIp: number;
   price: number | null;
   category?: string;
 }) {
@@ -107,6 +109,10 @@ export function buyWizardKeyboard(opts: {
     .text("➖", "wiz:qty:-")
     .text(`🔢 تعداد: ${opts.quantity}${opts.quantity > 1 ? " (عمده)" : ""}`, "wiz:noop")
     .text("➕", "wiz:qty:+")
+    .row()
+    .text("➖", "wiz:ip:-")
+    .text(`📱 IP Limit: ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
+    .text("➕", "wiz:ip:+")
     .row()
     .text(`🏷 ${cat}`, "wiz:noop")
     .row()
@@ -244,6 +250,7 @@ export function buyDraftText(opts: {
   months: number;
   price: number | null;
   quantity: number;
+  limitIp: number;
   accountMode: string;
   accountName?: string | null;
   category?: string;
@@ -254,11 +261,12 @@ export function buyDraftText(opts: {
     opts.category === "national" ? "🇮🇷 دسته: اینترنت ملی" : "",
     "",
     matrixLine(opts.trafficGb, opts.months, opts.price, qty),
+    `📱 محدودیت دستگاه: ${formatLimitIp(opts.limitIp)}`,
     "",
     `نام پایه اکانت: ${opts.accountMode === "custom" && opts.accountName ? opts.accountName : "رندوم (بعد از تأیید)"}`,
     qty > 1 ? `⚠️ تعداد ${qty} اکانت در پنل سنایی ساخته می‌شود.` : "",
     "",
-    "حجم، مدت و تعداد را تنظیم کنید، سپس ادامه خرید را بزنید.",
+    "حجم، مدت، تعداد و IP Limit را تنظیم کنید، سپس ادامه خرید را بزنید.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -333,10 +341,11 @@ export function controlCenterKeyboard() {
     .text("📖 آموزش و دانلود اپ", "cc:guide")
     .row()
     .text("🧪 سرویس تست", "cc:test")
+    .text("📱 IP Limit", "cc:iplimit")
+    .row()
     .text("👑 ادمین‌ها", "cc:admins")
     .row()
     .text("🆘 پشتیبانی", "cc:support")
-    .row()
     .text("🔔 اعلان‌ها", "cc:notifs")
     .row()
     .text("📊 گزارش همکاران", "cc:rep:partner")

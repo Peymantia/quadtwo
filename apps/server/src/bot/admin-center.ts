@@ -56,6 +56,7 @@ export const ccWait = new Map<
   | { kind: "notif_thr"; key: "expiryDays" | "traffic" }
   | { kind: "guide_text" }
   | { kind: "guide_url"; platform: "ios" | "android" | "windows" | "macos" | "extra" }
+  | { kind: "iplimit" }
 >();
 
 export async function isControlAdmin(telegramId: number | undefined): Promise<boolean> {
@@ -793,6 +794,38 @@ export function registerControlCenter(bot: Bot) {
     );
   });
 
+  bot.callbackQuery("cc:iplimit", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const cur = await getSetting("default_limit_ip");
+    await ctx.editMessageText(
+      [
+        "📱 محدودیت IP / تعداد دستگاه",
+        "",
+        "این مقدار پیش‌فرض برای کانفیگ‌های جدید است.",
+        "۰ = نامحدود | مثلاً ۲ یعنی حداکثر ۲ دستگاه همزمان",
+        "",
+        `پیش‌فرض فعلی: ${cur === "0" ? "نامحدود" : `${cur} دستگاه`}`,
+        "",
+        "کاربر هنگام خرید می‌تواند با دکمه +/- تغییر دهد.",
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text("✏️ تغییر پیش‌فرض", "cc:iplimit:edit")
+          .primary()
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
+  bot.callbackQuery("cc:iplimit:edit", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "iplimit" });
+    await ctx.reply("عدد محدودیت را بفرستید (۰ تا ۱۰):\n۰ = نامحدود\nلغو: /cancel");
+  });
+
   bot.callbackQuery("cc:card", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
@@ -916,6 +949,20 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     ccWait.delete(tid);
     await ctx.reply("لینک ذخیره شد ✅", {
       reply_markup: new InlineKeyboard().text("📖 آموزش", "cc:guide").row().text("🎛 کنترل سنتر", "cc:home"),
+    });
+    return true;
+  }
+
+  if (wait.kind === "iplimit") {
+    const n = Number(text.replace(/[^\d]/g, ""));
+    if (Number.isNaN(n) || n < 0 || n > 10) {
+      await ctx.reply("عدد بین ۰ تا ۱۰ بفرستید.");
+      return true;
+    }
+    await setSetting("default_limit_ip", String(n));
+    ccWait.delete(tid);
+    await ctx.reply(`پیش‌فرض IP Limit: ${n === 0 ? "نامحدود" : `${n} دستگاه`} ✅`, {
+      reply_markup: new InlineKeyboard().text("📱 IP Limit", "cc:iplimit").row().text("🎛 کنترل سنتر", "cc:home"),
     });
     return true;
   }

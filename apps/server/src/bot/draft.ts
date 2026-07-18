@@ -1,8 +1,11 @@
 import { prisma } from "../db.js";
 import { clampMonths, clampQty, nextVolume, resolvePrice, type PlanCategory } from "../services/pricing.js";
+import { clampLimitIp } from "../services/panel-groups.js";
+import { getDefaultLimitIp } from "../services/settings.js";
 import type { User } from "@prisma/client";
 
 export async function getOrCreateDraft(telegramId: bigint) {
+  const defaultIp = await getDefaultLimitIp();
   return prisma.buyDraft.upsert({
     where: { telegramId },
     create: {
@@ -11,6 +14,7 @@ export async function getOrCreateDraft(telegramId: bigint) {
       months: 1,
       unlimited: false,
       quantity: 1,
+      limitIp: defaultIp,
       category: "data",
       accountMode: "random",
     },
@@ -44,6 +48,14 @@ export async function adjustDraftQty(telegramId: bigint, dir: 1 | -1) {
   return prisma.buyDraft.update({
     where: { telegramId },
     data: { quantity: clampQty(draft.quantity + dir) },
+  });
+}
+
+export async function adjustDraftLimitIp(telegramId: bigint, dir: 1 | -1) {
+  const draft = await getOrCreateDraft(telegramId);
+  return prisma.buyDraft.update({
+    where: { telegramId },
+    data: { limitIp: clampLimitIp(draft.limitIp + dir) },
   });
 }
 

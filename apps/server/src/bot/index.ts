@@ -47,6 +47,7 @@ import {
 import {
   adjustDraftMonths,
   adjustDraftQty,
+  adjustDraftLimitIp,
   adjustDraftVolume,
   draftPrice,
   getOrCreateDraft,
@@ -167,6 +168,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     months: draft.months,
     price: priced?.price ?? null,
     quantity: draft.quantity,
+    limitIp: draft.limitIp,
     accountMode: draft.accountMode,
     accountName: draft.accountName,
     category: draft.category,
@@ -176,6 +178,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     months: draft.months,
     unlimited: draft.unlimited,
     quantity: draft.quantity,
+    limitIp: draft.limitIp,
     price: priced?.price ?? null,
     category: draft.category,
   });
@@ -542,6 +545,16 @@ export function createBot() {
     await adjustDraftQty(BigInt(ctx.from!.id), -1);
     await showBuyWizard(ctx, true);
   });
+  bot.callbackQuery("wiz:ip:+", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await adjustDraftLimitIp(BigInt(ctx.from!.id), 1);
+    await showBuyWizard(ctx, true);
+  });
+  bot.callbackQuery("wiz:ip:-", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await adjustDraftLimitIp(BigInt(ctx.from!.id), -1);
+    await showBuyWizard(ctx, true);
+  });
 
   bot.callbackQuery("wiz:name:random", async (ctx) => {
     await ctx.answerCallbackQuery({ text: "نام رندوم" });
@@ -579,6 +592,7 @@ export function createBot() {
       accountName,
       quantity: draft.quantity,
       category: draft.category,
+      limitIp: draft.limitIp,
     });
     const wallet = await getWallet(user.id);
     await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
@@ -838,7 +852,7 @@ export function createBot() {
     await ctx.answerCallbackQuery();
     const req = await approvePartner(ctx.match![1], "partner");
     await ctx.api.sendMessage(Number(req.user.telegramId), "✅ درخواست همکاری شما تأیید شد (همکار).");
-    await ctx.editMessageText(`همکار تأیید شد — گروه: reseller_${req.user.telegramId}`);
+    await ctx.editMessageText(`همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`);
   });
 
   bot.callbackQuery(/^prt:wh:(.+)$/, async (ctx) => {
@@ -846,7 +860,7 @@ export function createBot() {
     await ctx.answerCallbackQuery();
     const req = await approvePartner(ctx.match![1], "wholesale");
     await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
-    await ctx.editMessageText(`عمده‌فروش تأیید شد — گروه: wholesale_${req.user.telegramId}`);
+    await ctx.editMessageText(`عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`);
   });
 
   bot.callbackQuery(/^prt:no:(.+)$/, async (ctx) => {

@@ -6,7 +6,8 @@ import { createXuiFromEnv } from "../panel/xui-client.js";
 import { randomSubId, shortCode } from "../utils/format.js";
 import { getConfiguredInboundIds } from "./inbounds.js";
 import { buildSubUrl } from "./provision.js";
-import { getSetting } from "./settings.js";
+import { ensureClientsInGroup, TELEGRAM_GROUP } from "./panel-groups.js";
+import { getDefaultLimitIp, getSetting } from "./settings.js";
 
 const TEST_MB = 250;
 const TEST_MS = 24 * 60 * 60 * 1000;
@@ -51,6 +52,7 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
 
   const totalGB = TEST_MB * 1024 * 1024;
   const panelExpiry = -TEST_MS;
+  const limitIp = await getDefaultLimitIp();
 
   await xui.addClient({
     client: {
@@ -58,13 +60,15 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
       enable: true,
       expiryTime: panelExpiry,
       totalGB,
-      limitIp: 0,
+      limitIp,
       tgId: Number(user.telegramId),
       subId,
       comment: `test:${user.telegramId}`,
     },
     inboundIds,
   });
+
+  await ensureClientsInGroup(xui, [email], TELEGRAM_GROUP);
 
   let settings: Record<string, unknown> | undefined;
   try {

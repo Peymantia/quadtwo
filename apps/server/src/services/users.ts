@@ -5,6 +5,7 @@ import { adminIds } from "../config/env.js";
 import { createXuiFromEnv } from "../panel/xui-client.js";
 import { env } from "../config/env.js";
 import { getExtraAdminIds } from "./settings.js";
+import { partnerPanelGroupName } from "./panel-groups.js";
 
 export type TgUserLike = {
   id: number;
@@ -72,12 +73,12 @@ export async function approvePartner(requestId: string, asRole: "partner" | "who
     where: { id: requestId },
     include: { user: true },
   });
-  const prefix = asRole === "wholesale" ? "wholesale" : "reseller";
-  const group = `${prefix}_${req.user.telegramId}`;
+  const group = partnerPanelGroupName(req.user, asRole);
 
   try {
     const xui = createXuiFromEnv(env);
     await xui.createGroup(group);
+    await xui.createGroup("Telegram").catch(() => undefined);
   } catch {
     /* exists */
   }

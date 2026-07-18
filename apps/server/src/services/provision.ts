@@ -7,6 +7,8 @@ import { prisma } from "../db.js";
 import { createXuiFromEnv } from "../panel/xui-client.js";
 import { gbToBytes, monthsToMs, firstConnectExpiryMs, randomSubId, shortCode } from "../utils/format.js";
 import { getConfiguredInboundIds } from "./inbounds.js";
+import { ensureClientsInGroup, resolveClientGroup } from "./panel-groups.js";
+import { getDefaultLimitIp } from "./settings.js";
 
 export type ProvisionResult = {
   subscriptionId: string;
@@ -155,13 +157,18 @@ async function createOnePanelClient(
     throw new Error("هیچ inbound id تنظیم نشده است");
   }
 
+  const limitIp =
+    typeof order.limitIp === "number" && order.limitIp >= 0
+      ? order.limitIp
+      : await getDefaultLimitIp();
+
   await xui.addClient({
     client: {
       email,
       enable: true,
       expiryTime: panelExpiry,
       totalGB,
-      limitIp: 0,
+      limitIp,
       tgId: Number(user.telegramId),
       subId,
       comment: email,
@@ -169,18 +176,8 @@ async function createOnePanelClient(
     inboundIds,
   });
 
-  if (user.panelGroup) {
-    try {
-      await xui.createGroup(user.panelGroup);
-    } catch {
-      /* may already exist */
-    }
-    try {
-      await xui.bulkAddToGroup([email], user.panelGroup);
-    } catch (err) {
-      console.warn("bulkAddToGroup failed", err);
-    }
-  }
+  const group = resolveClientGroup(user);
+  await ensureClientsInGroup(xui, [email], group);
 
   const settings = await panelSettings();
   let clientUuid: string | null = null;
@@ -282,6 +279,7 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
     expiryTime,
     totalGB,
     enable: true,
+    ...(typeof order.limitIp === "number" && order.limitIp >= 0 ? { limitIp: order.limitIp } : {}),
   });
 
   const settings = await panelSettings();

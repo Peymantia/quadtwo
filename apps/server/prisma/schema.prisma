@@ -156,6 +156,8 @@ model Order {
   accountName     String?
   customName      String?
   quantity        Int           @default(1)
+  /// Max simultaneous IPs/devices (0 = unlimited)
+  limitIp         Int           @default(0)
   targetSubId     String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -230,6 +232,8 @@ model BuyDraft {
   months      Int      @default(1)
   unlimited   Boolean  @default(false)
   quantity    Int      @default(1)
+  /// Max IPs for new purchase (0 = unlimited)
+  limitIp     Int      @default(0)
   category    String   @default("data")
   accountMode String   @default("random")
   accountName String?
