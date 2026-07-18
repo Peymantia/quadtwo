@@ -32,7 +32,7 @@ import {
   submitPartnerRequest,
   upsertUserFromTelegram,
 } from "../services/users.js";
-import { formatToman, formatTraffic } from "../utils/format.js";
+import { formatToman, formatTraffic, formatExpiryLabel } from "../utils/format.js";
 import {
   ccWait,
   handleControlCenterText,
@@ -164,7 +164,7 @@ async function deliverResult(
       `کد: \`${one.code}\``,
       `اکانت: \`${one.email}\``,
       `حجم: ${formatTraffic(trafficGb)}`,
-      `انقضا: ${one.expiresAt.toLocaleDateString("fa-IR")}`,
+      "⏱ اعتبار: از اولین اتصال شروع می‌شود",
       "",
       "🔗 لینک اشتراک:",
       `\`${one.subUrl}\``,
@@ -213,7 +213,12 @@ async function handleMyServices(ctx: Context) {
         `🆔 ${sub.code}`,
         `اکانت: ${sub.email}`,
         `حجم: ${formatTraffic(sub.trafficGb)}`,
-        `انقضا: ${sub.expiresAt.toLocaleDateString("fa-IR")}`,
+        `انقضا: ${formatExpiryLabel({
+          expiresAt: sub.expiresAt,
+          startsOnConnect: sub.startsOnConnect,
+          activatedAt: sub.activatedAt,
+          createdAt: sub.createdAt,
+        })}`,
         `وضعیت: ${sub.status}`,
       ].join("\n"),
       { reply_markup: subscriptionKeyboard(sub.id) },

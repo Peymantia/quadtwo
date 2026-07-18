@@ -5,7 +5,7 @@ import { OrderKind, OrderStatus, SubscriptionStatus } from "@prisma/client";
 import { env } from "../config/env.js";
 import { prisma } from "../db.js";
 import { createXuiFromEnv } from "../panel/xui-client.js";
-import { gbToBytes, randomSubId, shortCode } from "../utils/format.js";
+import { gbToBytes, monthsToMs, firstConnectExpiryMs, randomSubId, shortCode } from "../utils/format.js";
 import { getConfiguredInboundIds } from "./inbounds.js";
 
 export type ProvisionResult = {
@@ -145,7 +145,10 @@ async function createOnePanelClient(
   const email = sanitizeEmail(opts.email);
   const subId = randomSubId();
   const months = order.months || 1;
-  const expiresAt = new Date(Date.now() + months * 30 * 24 * 60 * 60 * 1000);
+  // Negative expiryTime = start countdown on first connection (3x-ui)
+  const panelExpiry = firstConnectExpiryMs(months);
+  // Local placeholder until first connect activates absolute expiry on panel
+  const expiresAt = new Date(Date.now() + monthsToMs(months));
   const totalGB = gbToBytes(order.trafficGb);
   const inboundIds = await getConfiguredInboundIds();
   if (!inboundIds.length) {
@@ -156,7 +159,7 @@ async function createOnePanelClient(
     client: {
       email,
       enable: true,
-      expiryTime: expiresAt.getTime(),
+      expiryTime: panelExpiry,
       totalGB,
       limitIp: 0,
       tgId: Number(user.telegramId),
@@ -203,6 +206,8 @@ async function createOnePanelClient(
       clientUuid,
       panelSubId,
       trafficGb: order.trafficGb,
+      startsOnConnect: true,
+      activatedAt: null,
       expiresAt,
       subUrl,
       status: SubscriptionStatus.active,
@@ -245,9 +250,27 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
   const client = got.obj?.client;
   if (!client) throw new Error("کلاینت در پنل پیدا نشد");
 
-  const base = Math.max(Date.now(), sub.expiresAt.getTime(), client.expiryTime ?? 0);
   const months = order.months || 1;
-  const expiresAt = new Date(base + months * 30 * 24 * 60 * 60 * 1000);
+  const addMs = monthsToMs(months);
+  const panelExpiry = Number(client.expiryTime ?? 0);
+  let expiryTime: number;
+  let expiresAt: Date;
+  let startsOnConnect = sub.startsOnConnect;
+  let activatedAt = sub.activatedAt;
+
+  if (panelExpiry < 0) {
+    // Still waiting for first connect — extend delayed duration
+    expiryTime = panelExpiry - addMs;
+    expiresAt = new Date(Date.now() + Math.abs(expiryTime));
+    startsOnConnect = true;
+    activatedAt = null;
+  } else {
+    const base = Math.max(Date.now(), sub.expiresAt.getTime(), panelExpiry);
+    expiresAt = new Date(base + addMs);
+    expiryTime = expiresAt.getTime();
+    if (!activatedAt && panelExpiry > 0) activatedAt = new Date();
+  }
+
   const totalGB =
     order.trafficGb !== undefined && order.trafficGb !== null
       ? gbToBytes(order.trafficGb)
@@ -256,7 +279,7 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
   await xui.updateClient(sub.email, {
     ...client,
     email: sub.email,
-    expiryTime: expiresAt.getTime(),
+    expiryTime,
     totalGB,
     enable: true,
   });
@@ -273,6 +296,8 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
       trafficGb: order.trafficGb ?? sub.trafficGb,
       subUrl,
       panelSubId,
+      startsOnConnect,
+      activatedAt,
       status: SubscriptionStatus.active,
     },
   });
@@ -285,6 +310,28 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
     expiresAt,
     qrPng,
   };
+}
+
+/** Sync local expiresAt when panel converts negative (first-connect) to absolute time. */
+export async function syncSubscriptionExpiryFromPanel(subscriptionId: string): Promise<void> {
+  const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+  if (!sub || !sub.startsOnConnect || sub.activatedAt) return;
+  try {
+    const xui = createXuiFromEnv(env);
+    const got = await xui.getClient(sub.email);
+    const panelExpiry = Number(got.obj?.client?.expiryTime ?? 0);
+    if (panelExpiry > 0) {
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: {
+          expiresAt: new Date(panelExpiry),
+          activatedAt: new Date(),
+        },
+      });
+    }
+  } catch {
+    /* panel unreachable */
+  }
 }
 
 export async function rotateSubId(subscriptionId: string): Promise<ProvisionResult> {

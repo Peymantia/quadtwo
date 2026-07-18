@@ -22,6 +22,35 @@ export function formatTraffic(gb: number | null): string {
   return `${gb} گیگ`;
 }
 
+/** Duration in ms for N months (30-day months, same as panel convention). */
+export function monthsToMs(months: number): number {
+  return Math.max(1, months) * 30 * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * 3x-ui "start after first connect": negative expiryTime = duration until first use.
+ * @see https://github.com/MHSanaei/3x-ui/issues/2145
+ */
+export function firstConnectExpiryMs(months: number): number {
+  return -monthsToMs(months);
+}
+
+export function formatExpiryLabel(opts: {
+  expiresAt: Date;
+  startsOnConnect?: boolean;
+  activatedAt?: Date | null;
+  createdAt?: Date;
+}): string {
+  if (opts.startsOnConnect && !opts.activatedAt) {
+    if (opts.createdAt) {
+      const months = Math.max(1, Math.round((opts.expiresAt.getTime() - opts.createdAt.getTime()) / monthsToMs(1)));
+      return `از اولین اتصال · ${months} ماه (هنوز شروع نشده)`;
+    }
+    return "از اولین اتصال (هنوز شروع نشده)";
+  }
+  return opts.expiresAt.toLocaleDateString("fa-IR");
+}
+
 export function formatDuration(days: number): string {
   if (days % 30 === 0) {
     const months = days / 30;

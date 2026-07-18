@@ -5,6 +5,7 @@ import { prisma } from "../db.js";
 import { createXuiFromEnv } from "../panel/xui-client.js";
 import { formatTraffic } from "../utils/format.js";
 import { getNotifConfig, type NotifConfig } from "./settings.js";
+import { syncSubscriptionExpiryFromPanel } from "./provision.js";
 
 const MS_HOUR = 60 * 60 * 1000;
 const MS_DAY = 24 * MS_HOUR;
@@ -76,8 +77,21 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
   const now = Date.now();
 
   for (const sub of subs) {
+    // Sync first-connect → absolute expiry from panel when activated
+    if (sub.startsOnConnect && !sub.activatedAt) {
+      await syncSubscriptionExpiryFromPanel(sub.id);
+      const fresh = await prisma.subscription.findUnique({ where: { id: sub.id } });
+      if (fresh) {
+        sub.expiresAt = fresh.expiresAt;
+        sub.activatedAt = fresh.activatedAt;
+      }
+    }
+
+    // Don't send expiry/pre-delete alerts until first connection started the clock
+    const clockStarted = !sub.startsOnConnect || Boolean(sub.activatedAt);
+
     // ── expiry days ──
-    if (cfg.expiryDays.enabled) {
+    if (cfg.expiryDays.enabled && clockStarted) {
       const msLeft = sub.expiresAt.getTime() - now;
       const hoursLeft = msLeft / MS_HOUR;
       if (msLeft > 0 && hoursLeft <= cfg.expiryDays.hours) {
@@ -106,7 +120,7 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
     }
 
     // ── pre-delete (near/past expiry, before we mark deleted) ──
-    if (cfg.preDelete.enabled) {
+    if (cfg.preDelete.enabled && clockStarted) {
       const msAfter = now - sub.expiresAt.getTime();
       const hoursPast = msAfter / MS_HOUR;
       // warn from (preDelete.hours) before expiry through a short window after
@@ -172,7 +186,7 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
     }
 
     // ── deleted / missing on panel ──
-    if (cfg.deleted.enabled && xui) {
+    if (cfg.deleted.enabled && xui && clockStarted) {
       const pastGrace = now > sub.expiresAt.getTime() + cfg.preDelete.hours * MS_HOUR;
       if (pastGrace || now > sub.expiresAt.getTime() + 2 * MS_DAY) {
         let missing = false;

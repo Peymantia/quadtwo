@@ -174,6 +174,9 @@ model Subscription {
   clientUuid      String?
   panelSubId      String?
   trafficGb       Int?
+  /// When true, panel expiry is "start after first connect" (negative ms)
+  startsOnConnect Boolean            @default(true)
+  activatedAt     DateTime?
   expiresAt       DateTime
   subUrl          String?
   status          SubscriptionStatus @default(active)
