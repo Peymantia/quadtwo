@@ -433,8 +433,11 @@ export function createBot() {
     const user = await upsertUserFromTelegram(ctx.from!);
     const miniapp = await getSetting("miniapp_url");
     const isAdmin = await isControlAdmin(ctx.from!.id);
-    const name = ctx.from?.first_name?.trim() || "";
-    const text = welcome.replace(/\{name\}/gi, name || "دوست");
+    const displayName =
+      ctx.from?.username?.trim() ||
+      ctx.from?.first_name?.trim() ||
+      "دوست";
+    const text = [`سلام ${displayName} 🧡`, "", welcome].join("\n");
     await removeLegacyReplyKeyboard(ctx);
     await ctx.reply(text, {
       reply_markup: mainMenuInline({
