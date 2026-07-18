@@ -201,6 +201,44 @@ export function renewPickKeyboard(subs: Array<{ id: string; code: string }>) {
   return kb;
 }
 
+export function renewWizardKeyboard(opts: {
+  subId: string;
+  months: number;
+  price: number | null;
+}) {
+  const priceLabel = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
+  return new InlineKeyboard()
+    .text("➖", `renew:mon:${opts.subId}:-`)
+    .text(`⏳ ${opts.months} ماه`, "wiz:noop")
+    .text("➕", `renew:mon:${opts.subId}:+`)
+    .row()
+    .text(`💰 ${priceLabel}`, "wiz:noop")
+    .row()
+    .text("✅ تأیید و پرداخت تمدید", `renew:checkout:${opts.subId}`)
+    .success()
+    .row()
+    .text("« بازگشت", "menu:home");
+}
+
+export function guideKeyboard(urls: {
+  ios?: string;
+  android?: string;
+  windows?: string;
+  macos?: string;
+  extra?: string;
+}) {
+  const kb = new InlineKeyboard();
+  if (urls.ios) kb.url("🍎 آیفون (iOS)", urls.ios);
+  if (urls.android) kb.url("🤖 اندروید", urls.android);
+  if (urls.ios || urls.android) kb.row();
+  if (urls.windows) kb.url("🪟 ویندوز", urls.windows);
+  if (urls.macos) kb.url("💻 مک", urls.macos);
+  if (urls.windows || urls.macos) kb.row();
+  if (urls.extra) kb.url("📎 لینک آموزش بیشتر", urls.extra).row();
+  kb.text("« بازگشت", "menu:home");
+  return kb;
+}
+
 export function buyDraftText(opts: {
   trafficGb: number | null;
   months: number;
@@ -292,7 +330,11 @@ export function controlCenterKeyboard() {
     .text("💰 قیمت‌گذاری اشتراک‌ها", "cc:pricing")
     .success()
     .row()
+    .text("📖 آموزش و دانلود اپ", "cc:guide")
+    .row()
+    .text("🧪 سرویس تست", "cc:test")
     .text("👑 ادمین‌ها", "cc:admins")
+    .row()
     .text("🆘 پشتیبانی", "cc:support")
     .row()
     .text("🔔 اعلان‌ها", "cc:notifs")

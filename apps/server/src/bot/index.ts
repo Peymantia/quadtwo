@@ -1,6 +1,7 @@
 import { GrammyError, HttpError, InlineKeyboard, InputFile } from "grammy";
 import type { Context } from "grammy";
 import { OrderStatus } from "@prisma/client";
+import { OrderKind } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { prisma } from "../db.js";
 import {
@@ -22,6 +23,8 @@ import {
   type ProvisionResult,
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
+import { getLiveSubscriptionStatus, liveStatusText } from "../services/live-status.js";
+import { claimTestService } from "../services/test-service.js";
 import { getChannels, getPaymentCard, getSetting, setSetting } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
@@ -32,6 +35,7 @@ import {
   submitPartnerRequest,
   upsertUserFromTelegram,
 } from "../services/users.js";
+import { clampMonths } from "../services/pricing.js";
 import { formatToman, formatTraffic, formatExpiryLabel } from "../utils/format.js";
 import {
   ccWait,
@@ -54,13 +58,14 @@ import {
   BTN,
   buyDraftText,
   buyWizardKeyboard,
+  guideKeyboard,
   mainMenuInline,
-  mainMenuKeyboard,
   orderPayText,
   partnerRequestKeyboard,
   payConfirmKeyboard,
   payMethodKeyboard,
   renewPickKeyboard,
+  renewWizardKeyboard,
   subscriptionKeyboard,
   walletChargeAmountsKeyboard,
   walletMenuKeyboard,
@@ -71,6 +76,8 @@ const waitingName = new Set<number>();
 const waitingPartner = new Map<number, { step: "name" | "phone" | "note"; fullName?: string; phone?: string }>();
 const waitingMatrix = new Map<number, string>();
 const waitingWalletAmount = new Set<number>();
+/** Renew wizard: telegramId → { subId, months } */
+const renewState = new Map<number, { subId: string; months: number }>();
 
 async function requireChannel(ctx: Context) {
   const channels = await getChannels();
@@ -105,8 +112,9 @@ async function requireChannel(ctx: Context) {
 async function replyMainMenu(ctx: Context, preface?: string) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const miniapp = await getSetting("miniapp_url");
+  const brand = await getSetting("brand_name");
   const isAdmin = await isControlAdmin(ctx.from!.id);
-  await ctx.reply(preface ?? "منوی اصلی:", {
+  await ctx.reply(preface?.trim() || brand || "Piing", {
     reply_markup: mainMenuInline({
       isAdmin,
       isPartner: user.role === "partner",
@@ -114,6 +122,40 @@ async function replyMainMenu(ctx: Context, preface?: string) {
       miniappUrl: miniapp || undefined,
     }),
   });
+}
+
+async function showRenewWizard(ctx: Context, subId: string, months: number, edit = false) {
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
+  if (!sub) {
+    await ctx.reply("سرویس پیدا نشد.");
+    return;
+  }
+  const m = clampMonths(months);
+  renewState.set(ctx.from!.id, { subId, months: m });
+  const category = sub.trafficGb === null ? "unlimited" : "data";
+  const priced = await draftPrice(user, {
+    trafficGb: sub.trafficGb,
+    months: m,
+    unlimited: sub.trafficGb === null,
+    category,
+  });
+  const text = [
+    "♻️ تمدید سرویس",
+    "",
+    `سرویس: ${sub.code}`,
+    `اکانت: ${sub.email}`,
+    `حجم فعلی: ${sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb)}`,
+    "",
+    "مدت تمدید را انتخاب کنید (همان سرویس در پنل تمدید می‌شود).",
+    priced ? `قیمت: ${formatToman(priced.price)}` : "این مدت قیمت‌گذاری نشده.",
+  ].join("\n");
+  const kb = renewWizardKeyboard({ subId, months: m, price: priced?.price ?? null });
+  if (edit && ctx.callbackQuery?.message) {
+    await ctx.editMessageText(text, { reply_markup: kb });
+  } else {
+    await ctx.reply(text, { reply_markup: kb });
+  }
 }
 
 async function showBuyWizard(ctx: Context, edit = false) {
@@ -149,6 +191,7 @@ async function deliverResult(
   telegramId: bigint | number,
   result: ProvisionResultWithBulk | ProvisionResult,
   trafficGb: number | null,
+  mode: "new" | "renew" = "new",
 ) {
   const all = "bulk" in result && result.bulk?.length ? [result, ...result.bulk] : [result];
   if (all.length > 1) {
@@ -159,12 +202,14 @@ async function deliverResult(
   }
   for (const one of all) {
     const text = [
-      all.length > 1 ? "📦 یکی از اکانت‌های عمده" : "🎉 اشتراک شما آماده شد",
+      mode === "renew" ? "✅ سرویس تمدید شد" : all.length > 1 ? "📦 یکی از اکانت‌های عمده" : "🎉 اشتراک شما آماده شد",
       "",
       `کد: \`${one.code}\``,
       `اکانت: \`${one.email}\``,
       `حجم: ${formatTraffic(trafficGb)}`,
-      "⏱ اعتبار: از اولین اتصال شروع می‌شود",
+      mode === "renew"
+        ? `انقضا: ${one.expiresAt.toLocaleDateString("fa-IR")}`
+        : "⏱ اعتبار: از اولین اتصال شروع می‌شود",
       "",
       "🔗 لینک اشتراک:",
       `\`${one.subUrl}\``,
@@ -207,29 +252,30 @@ async function handleMyServices(ctx: Context) {
     await ctx.reply("سرویسی ندارید.\nاکانت‌ها با شناسه تلگرام شما ذخیره می‌شوند.");
     return;
   }
+  await ctx.reply("در حال دریافت وضعیت زنده از پنل…");
   for (const sub of subs) {
-    await ctx.reply(
-      [
-        `🆔 ${sub.code}`,
-        `اکانت: ${sub.email}`,
-        `حجم: ${formatTraffic(sub.trafficGb)}`,
-        `انقضا: ${formatExpiryLabel({
-          expiresAt: sub.expiresAt,
-          startsOnConnect: sub.startsOnConnect,
-          activatedAt: sub.activatedAt,
-          createdAt: sub.createdAt,
-        })}`,
-        `وضعیت: ${sub.status}`,
-      ].join("\n"),
-      { reply_markup: subscriptionKeyboard(sub.id) },
-    );
+    const live = await getLiveSubscriptionStatus(sub.id);
+    const text = live
+      ? liveStatusText(live)
+      : [
+          `🆔 ${sub.code}`,
+          `اکانت: ${sub.email}`,
+          `حجم: ${sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb)}`,
+          `انقضا: ${formatExpiryLabel({
+            expiresAt: sub.expiresAt,
+            startsOnConnect: sub.startsOnConnect,
+            activatedAt: sub.activatedAt,
+            createdAt: sub.createdAt,
+          })}`,
+        ].join("\n");
+    await ctx.reply(text, { reply_markup: subscriptionKeyboard(sub.id) });
   }
 }
 
 async function handleRenew(ctx: Context) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const subs = await prisma.subscription.findMany({
-    where: { userId: user.id, status: "active" },
+    where: { userId: user.id, status: "active", isTest: false },
     orderBy: { createdAt: "desc" },
     take: 12,
   });
@@ -243,12 +289,41 @@ async function handleRenew(ctx: Context) {
 }
 
 async function handleTest(ctx: Context) {
-  const enabled = (await getSetting("test_service_enabled")) === "true";
-  if (!enabled) {
-    await ctx.reply("🧪 سرویس تست فعلاً غیرفعال است.\nبه‌زودی فعال می‌شود.");
-    return;
+  const user = await upsertUserFromTelegram(ctx.from!);
+  try {
+    const result = await claimTestService(user.id);
+    await ctx.reply(
+      [
+        "🧪 سرویس تست آماده شد",
+        "",
+        `کد: ${result.code}`,
+        `اکانت: ${result.email}`,
+        `مشخصات: ${result.expiresHint}`,
+        "",
+        "🔗 لینک اشتراک:",
+        result.subUrl,
+      ].join("\n"),
+    );
+    await ctx.replyWithPhoto(new InputFile(result.qrPng, "qr.png"), {
+      caption: "QR سرویس تست — اسکن کنید",
+    });
+  } catch (err) {
+    await ctx.reply(String(err).replace(/^Error:\s*/, ""));
   }
-  await ctx.reply("سرویس تست به‌زودی.");
+}
+
+async function handleGuide(ctx: Context) {
+  const guide = await getSetting("guide_text");
+  const urls = {
+    ios: (await getSetting("guide_ios_url")) || undefined,
+    android: (await getSetting("guide_android_url")) || undefined,
+    windows: (await getSetting("guide_windows_url")) || undefined,
+    macos: (await getSetting("guide_macos_url")) || undefined,
+    extra: (await getSetting("guide_url")) || undefined,
+  };
+  await ctx.reply(guide || "آموزش اتصال", {
+    reply_markup: guideKeyboard(urls),
+  });
 }
 
 async function handleAccount(ctx: Context) {
@@ -268,24 +343,13 @@ async function handleAccount(ctx: Context) {
       `نقش: ${roleLabel}`,
       `آی‌دی: \`${user.telegramId}\``,
       user.panelGroup ? `گروه پنل: ${user.panelGroup}` : "",
+      user.testClaimedAt ? "🧪 تست: دریافت‌شده" : "🧪 تست: هنوز نگرفته",
       `موجودی: ${formatToman(wallet.balance)}`,
     ]
       .filter(Boolean)
       .join("\n"),
     { parse_mode: "Markdown" },
   );
-}
-
-async function handleGuide(ctx: Context) {
-  const guide = await getSetting("guide_text");
-  const url = await getSetting("guide_url");
-  if (url) {
-    await ctx.reply(guide || "آموزش اتصال", {
-      reply_markup: new InlineKeyboard().url("📖 مشاهده آموزش", url),
-    });
-    return;
-  }
-  await ctx.reply(guide || "آموزش اتصال به‌زودی.");
 }
 
 async function handleDashboard(ctx: Context) {
@@ -336,6 +400,7 @@ function clearWaits(tid: number) {
   waitingPartner.delete(tid);
   waitingMatrix.delete(tid);
   waitingWalletAmount.delete(tid);
+  renewState.delete(tid);
   ccWait.delete(tid);
 }
 
@@ -351,21 +416,19 @@ export function createBot() {
 
   bot.command("start", async (ctx) => {
     if (!(await requireChannel(ctx))) return;
-    const brand = await getSetting("brand_name");
     const welcome = await getSetting("welcome_text");
     const user = await upsertUserFromTelegram(ctx.from!);
     const miniapp = await getSetting("miniapp_url");
     const isAdmin = await isControlAdmin(ctx.from!.id);
-    await ctx.reply(`سلام ${ctx.from?.first_name ?? ""} 👋\nبه ${brand} خوش آمدید.\n\n${welcome}`, {
+    const name = ctx.from?.first_name?.trim() || "";
+    const text = welcome.replace(/\{name\}/gi, name || "دوست");
+    await ctx.reply(text, {
       reply_markup: mainMenuInline({
         isAdmin,
         isPartner: user.role === "partner",
         isWholesale: user.role === "wholesale",
         miniappUrl: miniapp || undefined,
       }),
-    });
-    await ctx.reply("منوی سریع:", {
-      reply_markup: mainMenuKeyboard(isAdmin, user.role === "partner" || user.role === "wholesale"),
     });
   });
 
@@ -544,7 +607,8 @@ export function createBot() {
       }
       const order = await getOrderForAdmin(ctx.match![1]);
       await ctx.editMessageText("پرداخت از کیف پول انجام شد ✅");
-      await deliverResult(ctx.api, user.telegramId, result as ProvisionResultWithBulk, order?.trafficGb ?? null);
+      const mode = order?.kind === OrderKind.renew ? "renew" : "new";
+      await deliverResult(ctx.api, user.telegramId, result as ProvisionResultWithBulk, order?.trafficGb ?? null, mode);
     } catch (err) {
       await ctx.reply(`خطا: ${String(err)}`);
     }
@@ -739,11 +803,17 @@ export function createBot() {
         return;
       }
       const provisioned = result as ProvisionResultWithBulk;
-      await deliverResult(ctx.api, order.user.telegramId, provisioned, order.trafficGb);
+      const mode = order.kind === OrderKind.renew ? "renew" : "new";
+      await deliverResult(ctx.api, order.user.telegramId, provisioned, order.trafficGb, mode);
       const qty = order.quantity ?? 1;
       await ctx
         .editMessageCaption({
-          caption: qty > 1 ? `✅ Bulk ${qty} اکانت — ${provisioned.code}` : `✅ انجام شد — ${provisioned.code}`,
+          caption:
+            order.kind === OrderKind.renew
+              ? `✅ تمدید شد — ${provisioned.code}`
+              : qty > 1
+                ? `✅ Bulk ${qty} اکانت — ${provisioned.code}`
+                : `✅ انجام شد — ${provisioned.code}`,
         })
         .catch(() => undefined);
     } catch (err) {
@@ -850,21 +920,49 @@ export function createBot() {
       where: { id: ctx.match![1], userId: user.id },
     });
     if (!sub) return ctx.reply("سرویس پیدا نشد.");
-    await setDraftCategory(BigInt(ctx.from!.id), sub.trafficGb === null ? "unlimited" : "data");
-    const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
-    await prisma.buyDraft.update({
-      where: { telegramId: BigInt(ctx.from!.id) },
-      data: {
-        trafficGb: sub.trafficGb ?? 10,
-        unlimited: sub.trafficGb === null,
-        months: draft.months || 1,
+    if (sub.isTest) return ctx.reply("سرویس تست قابل تمدید نیست. لطفاً سرویس اصلی بخرید.");
+    await showRenewWizard(ctx, sub.id, 1);
+  });
+
+  bot.callbackQuery(/^renew:mon:([^:]+):([+-])$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const subId = ctx.match![1];
+    const dir = ctx.match![2] === "+" ? 1 : -1;
+    const cur = renewState.get(ctx.from!.id);
+    const months = clampMonths((cur?.subId === subId ? cur.months : 1) + dir);
+    await showRenewWizard(ctx, subId, months, true);
+  });
+
+  bot.callbackQuery(/^renew:checkout:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireChannel(ctx))) return;
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const subId = ctx.match![1];
+    const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
+    if (!sub || sub.isTest) {
+      await ctx.reply("سرویس برای تمدید معتبر نیست.");
+      return;
+    }
+    const months = renewState.get(ctx.from!.id)?.subId === subId ? renewState.get(ctx.from!.id)!.months : 1;
+    const category = sub.trafficGb === null ? "unlimited" : "data";
+    try {
+      const order = await createMatrixOrder({
+        userId: user.id,
+        trafficGb: sub.trafficGb,
+        months,
+        accountName: sub.email,
+        kind: OrderKind.renew,
+        targetSubId: sub.id,
         quantity: 1,
-      },
-    });
-    await showBuyWizard(ctx);
-    await ctx.reply(`تمدید برای \`${sub.code}\` — حجم/مدت را تنظیم و ادامه خرید بزنید.\n(فعلاً به‌عنوان سفارش جدید ثبت می‌شود)`, {
-      parse_mode: "Markdown",
-    });
+        category,
+      });
+      const wallet = await getWallet(user.id);
+      await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
+        reply_markup: payMethodKeyboard(order.id, wallet.balance),
+      });
+    } catch (err) {
+      await ctx.reply(`خطا: ${String(err).replace(/^Error:\s*/, "")}`);
+    }
   });
 
   bot.hears(BTN.wallet, async (ctx) => {

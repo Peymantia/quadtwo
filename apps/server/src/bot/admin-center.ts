@@ -54,6 +54,8 @@ export const ccWait = new Map<
       cellId?: string;
     }
   | { kind: "notif_thr"; key: "expiryDays" | "traffic" }
+  | { kind: "guide_text" }
+  | { kind: "guide_url"; platform: "ios" | "android" | "windows" | "macos" | "extra" }
 >();
 
 export async function isControlAdmin(telegramId: number | undefined): Promise<boolean> {
@@ -696,6 +698,101 @@ export function registerControlCenter(bot: Bot) {
     await showDemote(ctx);
   });
 
+  bot.callbackQuery("cc:guide", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const text = await getSetting("guide_text");
+    const ios = await getSetting("guide_ios_url");
+    const android = await getSetting("guide_android_url");
+    const windows = await getSetting("guide_windows_url");
+    const macos = await getSetting("guide_macos_url");
+    const extra = await getSetting("guide_url");
+    await ctx.editMessageText(
+      [
+        "📖 آموزش و لینک دانلود اپ‌ها",
+        "",
+        text.slice(0, 800),
+        "",
+        `🍎 iOS: ${ios || "—"}`,
+        `🤖 Android: ${android || "—"}`,
+        `🪟 Windows: ${windows || "—"}`,
+        `💻 Mac: ${macos || "—"}`,
+        extra ? `📎 بیشتر: ${extra}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text("✏️ ویرایش متن آموزش", "cc:guide:text")
+          .primary()
+          .row()
+          .text("🍎 لینک آیفون", "cc:guide:url:ios")
+          .text("🤖 اندروید", "cc:guide:url:android")
+          .row()
+          .text("🪟 ویندوز", "cc:guide:url:windows")
+          .text("💻 مک", "cc:guide:url:macos")
+          .row()
+          .text("📎 لینک اضافه", "cc:guide:url:extra")
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
+  bot.callbackQuery("cc:guide:text", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "guide_text" });
+    await ctx.reply("متن کامل آموزش را بفرستید:\nلغو: /cancel");
+  });
+
+  bot.callbackQuery(/^cc:guide:url:(ios|android|windows|macos|extra)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const platform = ctx.match![1] as "ios" | "android" | "windows" | "macos" | "extra";
+    ccWait.set(ctx.from!.id, { kind: "guide_url", platform });
+    await ctx.reply(`لینک ${platform} را بفرستید (با https://):\nلغو: /cancel`);
+  });
+
+  bot.callbackQuery("cc:test", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const on = (await getSetting("test_service_enabled")) === "true";
+    await ctx.editMessageText(
+      [
+        "🧪 سرویس تست",
+        "",
+        "هر کاربر تلگرام فقط یک‌بار می‌تواند اکانت تست بگیرد:",
+        "• مدت: ۱ روز (از اولین اتصال)",
+        "• حجم: ۲۵۰ مگابایت",
+        "",
+        `وضعیت فعلی: ${on ? "🟢 روشن" : "🔴 خاموش"}`,
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text(on ? "خاموش کردن" : "روشن کردن", "cc:test:tog")
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
+  bot.callbackQuery("cc:test:tog", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const on = (await getSetting("test_service_enabled")) === "true";
+    await setSetting("test_service_enabled", on ? "false" : "true");
+    await ctx.answerCallbackQuery({ text: on ? "خاموش شد" : "روشن شد" });
+    await ctx.editMessageText(
+      `🧪 سرویس تست الان ${on ? "🔴 خاموش" : "🟢 روشن"} است.`,
+      {
+        reply_markup: new InlineKeyboard()
+          .text(on ? "روشن کردن" : "خاموش کردن", "cc:test:tog")
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
   bot.callbackQuery("cc:card", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
@@ -787,6 +884,38 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     ccWait.delete(tid);
     await ctx.reply("متن خوش‌آمد ذخیره شد ✅", {
       reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
+    });
+    return true;
+  }
+
+  if (wait.kind === "guide_text") {
+    await setSetting("guide_text", text);
+    ccWait.delete(tid);
+    await ctx.reply("متن آموزش ذخیره شد ✅", {
+      reply_markup: new InlineKeyboard().text("📖 آموزش", "cc:guide").row().text("🎛 کنترل سنتر", "cc:home"),
+    });
+    return true;
+  }
+
+  if (wait.kind === "guide_url") {
+    if (!text.startsWith("http")) {
+      await ctx.reply("لینک باید با http شروع شود.");
+      return true;
+    }
+    const key =
+      wait.platform === "extra"
+        ? "guide_url"
+        : wait.platform === "ios"
+          ? "guide_ios_url"
+          : wait.platform === "android"
+            ? "guide_android_url"
+            : wait.platform === "windows"
+              ? "guide_windows_url"
+              : "guide_macos_url";
+    await setSetting(key, text.trim());
+    ccWait.delete(tid);
+    await ctx.reply("لینک ذخیره شد ✅", {
+      reply_markup: new InlineKeyboard().text("📖 آموزش", "cc:guide").row().text("🎛 کنترل سنتر", "cc:home"),
     });
     return true;
   }

@@ -53,15 +53,17 @@ enum SubscriptionStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  telegramId   BigInt   @unique
-  username     String?
-  firstName    String?
-  lastName     String?
-  role         UserRole @default(user)
-  panelGroup   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String    @id @default(cuid())
+  telegramId    BigInt    @unique
+  username      String?
+  firstName     String?
+  lastName      String?
+  role          UserRole  @default(user)
+  panelGroup    String?
+  /// When user claimed the free 1-day / 250MB test account
+  testClaimedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   wallet         Wallet?
   orders         Order[]
@@ -177,6 +179,8 @@ model Subscription {
   /// When true, panel expiry is "start after first connect" (negative ms)
   startsOnConnect Boolean            @default(true)
   activatedAt     DateTime?
+  /// Free test account (1 day / 250MB)
+  isTest          Boolean            @default(false)
   expiresAt       DateTime
   subUrl          String?
   status          SubscriptionStatus @default(active)

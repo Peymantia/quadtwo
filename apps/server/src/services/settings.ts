@@ -36,9 +36,20 @@ const defaults: Record<string, string> = {
   support_telegram_id: "",
   miniapp_url: "",
   xui_inbound_ids: "1,2,3,4,5,6,7,8,9,10",
-  guide_text: "آموزش اتصال به‌زودی اینجا قرار می‌گیرد.",
+  guide_text: `📖 آموزش اتصال
+
+۱) نرم‌افزار مناسب گوشی/کامپیوترتان را از دکمه‌های زیر دانلود کنید
+۲) لینک اشتراک (Subscription) را از بخش «سرویس‌های من» کپی کنید
+۳) در اپ، گزینه Import / افزودن از لینک ساب را بزنید و لینک را بچسبانید
+۴) به یک سرور وصل شوید و از اینترنت لذت ببرید
+
+اگر مشکل داشتید با پشتیبانی تماس بگیرید.`,
   guide_url: "",
-  test_service_enabled: "false",
+  guide_ios_url: "https://apps.apple.com/app/streisand/id6450534064",
+  guide_android_url: "https://github.com/2dust/v2rayNG/releases/latest",
+  guide_windows_url: "https://github.com/2dust/v2rayN/releases/latest",
+  guide_macos_url: "https://apps.apple.com/app/v2box/id6446814690",
+  test_service_enabled: "true",
   national_service_note: "سرویس ویژه اینترنت ملی را از منوی خرید انتخاب کنید.",
   extra_admin_ids: "",
   notif_config: JSON.stringify(defaultNotifConfig()),
