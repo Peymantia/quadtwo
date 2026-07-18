@@ -236,11 +236,16 @@ export function createApiApp() {
     if ("kind" in result && result.kind === "wallet_credit") {
       return c.json({ type: "wallet_credit", balance: result.balance });
     }
+    const sub = result as {
+      code: string;
+      subUrl: string;
+      email: string;
+    };
     return c.json({
       type: "subscription",
-      code: result.code,
-      subUrl: result.subUrl,
-      email: result.email,
+      code: sub.code,
+      subUrl: sub.subUrl,
+      email: sub.email,
     });
   });
 
