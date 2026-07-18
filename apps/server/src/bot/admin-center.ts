@@ -43,7 +43,16 @@ export const ccWait = new Map<
   | { kind: "card" }
   | { kind: "inbounds" }
   | { kind: "admin_add" }
-  | { kind: "price"; category: PlanCategory }
+  | {
+      kind: "price_ask";
+      field: "user" | "partner" | "wholesale";
+      category: PlanCategory;
+      trafficGb: number | null;
+      months: number;
+      priceUser?: number;
+      pricePartner?: number;
+      cellId?: string;
+    }
   | { kind: "notif_thr"; key: "expiryDays" | "traffic" }
 >();
 
@@ -78,62 +87,247 @@ export async function showControlCenter(ctx: Context, edit = true) {
 }
 
 function catLabel(c: string) {
-  if (c === "national") return "نت ملی";
+  if (c === "national") return "اینترنت ملی";
   if (c === "unlimited") return "نامحدود";
-  if (c === "golden") return "طلایی";
-  return "دیتا";
+  if (c === "golden") return "پیشنهاد ویژه";
+  return "حجمی (دیتا)";
 }
 
-async function showPricingMenu(ctx: Context, category?: PlanCategory | "golden") {
+function catEmoji(c: string) {
+  if (c === "national") return "🇮🇷";
+  if (c === "unlimited") return "💎";
+  if (c === "golden") return "⭐";
+  return "📦";
+}
+
+function planTitle(trafficGb: number | null, months: number) {
+  const vol = trafficGb === null ? "نامحدود" : `${trafficGb} گیگ`;
+  const dur = months === 1 ? "۱ ماه" : `${months} ماه`;
+  return `${vol} · ${dur}`;
+}
+
+function parsePriceNumber(text: string): number | null {
+  const n = Number(text.replace(/[^\d]/g, ""));
+  if (!n || n < 1000) return null;
+  return n;
+}
+
+async function countByCategory() {
+  const [data, national, unlimited, golden] = await Promise.all([
+    prisma.priceCell.count({ where: { active: true, category: "data" } }),
+    prisma.priceCell.count({ where: { active: true, category: "national" } }),
+    prisma.priceCell.count({ where: { active: true, category: "unlimited" } }),
+    prisma.priceCell.count({ where: { active: true, isGolden: true } }),
+  ]);
+  return { data, national, unlimited, golden };
+}
+
+async function showPricingHome(ctx: Context) {
+  const counts = await countByCategory();
+  const text = [
+    "💰 قیمت‌گذاری اشتراک‌ها",
+    "",
+    "یکی از دسته‌ها را انتخاب کنید تا پلن‌ها را ببینید یا پلن جدید بسازید.",
+    "",
+    "هر پلن سه قیمت دارد:",
+    "👤 مشتری عادی",
+    "🤝 همکار (نماینده)",
+    "📦 عمده‌فروش",
+  ].join("\n");
+
   const kb = new InlineKeyboard()
-    .text("📦 دیتا", "cc:pricing:data")
-    .text("🇮🇷 نت ملی", "cc:pricing:national")
+    .text(`${catEmoji("data")} حجمی — ${counts.data} پلن`, "cc:pricing:data")
     .row()
-    .text("💎 نامحدود", "cc:pricing:unlimited")
-    .text("⭐ طلایی", "cc:pricing:golden")
+    .text(`${catEmoji("national")} اینترنت ملی — ${counts.national} پلن`, "cc:pricing:national")
     .row()
-    .text("➕ افزودن سلول", "cc:price:add:data")
+    .text(`${catEmoji("unlimited")} نامحدود — ${counts.unlimited} پلن`, "cc:pricing:unlimited")
+    .row()
+    .text(`${catEmoji("golden")} پیشنهاد ویژه — ${counts.golden} پلن`, "cc:pricing:golden")
     .success()
     .row()
     .text("« کنترل سنتر", "cc:home");
 
-  if (!category) {
-    await ctx.editMessageText(
-      "💰 قیمت‌گذاری اشتراک‌ها\n\nدسته را انتخاب کنید یا سلول جدید اضافه کنید.\nفرمت افزودن:\n`gb|months|user|partner|wholesale`\nمثال: `25|1|330000|260000|210000`\nنامحدود: `u|1|1500000|1200000|1000000`",
-      { parse_mode: "Markdown", reply_markup: kb },
-    );
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function showPricingCategory(ctx: Context, category: PlanCategory | "golden", page = 0) {
+  const cells =
+    category === "golden"
+      ? await prisma.priceCell.findMany({ where: { active: true, isGolden: true }, orderBy: [{ months: "asc" }, { sortOrder: "asc" }] })
+      : await listPriceMatrix(category);
+
+  const pageSize = 6;
+  const totalPages = Math.max(1, Math.ceil(cells.length / pageSize));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const slice = cells.slice(safePage * pageSize, safePage * pageSize + pageSize);
+
+  const text = [
+    `${catEmoji(category)} ${catLabel(category)}`,
+    "",
+    cells.length
+      ? "روی هر پلن بزنید تا قیمت‌ها را ببینید یا ویرایش کنید."
+      : "هنوز پلنی در این دسته نیست. با دکمه زیر یک پلن بسازید.",
+    cells.length ? `\n📄 صفحه ${safePage + 1} از ${totalPages}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const kb = new InlineKeyboard();
+  for (const c of slice) {
+    const star = c.isGolden ? "⭐ " : "";
+    kb.text(`${star}${planTitle(c.trafficGb, c.months)}`, `cc:price:view:${c.id}`).row();
+  }
+
+  if (totalPages > 1) {
+    if (safePage > 0) kb.text("‹ قبلی", `cc:pricing:${category}:${safePage - 1}`);
+    if (safePage < totalPages - 1) kb.text("بعدی ›", `cc:pricing:${category}:${safePage + 1}`);
+    kb.row();
+  }
+
+  const addCat = category === "golden" ? "data" : category;
+  kb.text("➕ ساخت پلن جدید", `cc:price:new:${addCat}`).success().row();
+  kb.text("« دسته‌ها", "cc:pricing").text("« کنترل سنتر", "cc:home");
+
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function showPriceDetail(ctx: Context, cellId: string) {
+  const cell = await prisma.priceCell.findUnique({ where: { id: cellId } });
+  if (!cell || !cell.active) {
+    await ctx.answerCallbackQuery({ text: "پلن پیدا نشد", show_alert: true }).catch(() => undefined);
+    await showPricingHome(ctx);
     return;
   }
 
-  const cells =
-    category === "golden"
-      ? await prisma.priceCell.findMany({ where: { active: true, isGolden: true }, orderBy: { sortOrder: "asc" } })
-      : await listPriceMatrix(category);
+  const text = [
+    `${catEmoji(cell.category)} جزئیات پلن`,
+    "",
+    `📌 ${planTitle(cell.trafficGb, cell.months)}`,
+    cell.isGolden ? "⭐ این پلن پیشنهاد ویژه است" : "○ پیشنهاد ویژه نیست",
+    ...(cell.title ? [`عنوان: ${cell.title}`] : []),
+    "",
+    "━━━━━━━━━━━━",
+    "👤 مشتری عادی",
+    `   ${formatToman(cell.priceUser)}`,
+    "",
+    "🤝 همکار",
+    `   ${formatToman(cell.pricePartner)}`,
+    "",
+    "📦 عمده‌فروش",
+    `   ${formatToman(cell.priceWholesale)}`,
+    "━━━━━━━━━━━━",
+    "",
+    "برای تغییر، روی دکمه قیمت موردنظر بزنید.",
+  ].join("\n");
 
-  const lines = cells.slice(0, 25).map((c) => {
-    const vol = c.trafficGb === null ? "∞" : `${c.trafficGb}G`;
-    const gold = c.isGolden ? "⭐" : "";
-    return `${gold}${vol}/${c.months}م · U:${formatToman(c.priceUser)} P:${formatToman(c.pricePartner)} W:${formatToman(c.priceWholesale)}`;
+  const kb = new InlineKeyboard()
+    .text("✏️ قیمت مشتری", `cc:price:edit:${cell.id}:user`)
+    .row()
+    .text("✏️ قیمت همکار", `cc:price:edit:${cell.id}:partner`)
+    .row()
+    .text("✏️ قیمت عمده", `cc:price:edit:${cell.id}:wholesale`)
+    .row()
+    .text(cell.isGolden ? "⭐ برداشتن از ویژه" : "⭐ کردن پیشنهاد ویژه", `cc:price:gold:${cell.id}`)
+    .primary()
+    .row()
+    .text("🗑 حذف پلن", `cc:price:delask:${cell.id}`)
+    .danger()
+    .row()
+    .text("« بازگشت", `cc:pricing:${cell.isGolden ? "golden" : cell.category}`);
+
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function showNewPlanVolume(ctx: Context, category: PlanCategory) {
+  const text = [
+    `➕ ساخت پلن جدید — ${catLabel(category)}`,
+    "",
+    "مرحله ۱ از ۳: حجم را انتخاب کنید",
+  ].join("\n");
+
+  const kb = new InlineKeyboard();
+  if (category === "unlimited") {
+    kb.text("💎 نامحدود", "cc:price:nv:unlimited:u").success().row();
+  } else {
+    const vols = category === "national" ? [20, 30, 40, 50] : [10, 15, 20, 25, 30, 35, 40, 45, 50];
+    for (let i = 0; i < vols.length; i++) {
+      kb.text(`${vols[i]} گیگ`, `cc:price:nv:${category}:${vols[i]}`);
+      if ((i + 1) % 3 === 0) kb.row();
+    }
+    if (vols.length % 3 !== 0) kb.row();
+  }
+  kb.text("« انصراف", `cc:pricing:${category}`).danger();
+
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function showNewPlanMonths(ctx: Context, category: PlanCategory, trafficGb: number | null) {
+  const volLabel = trafficGb === null ? "نامحدود" : `${trafficGb} گیگ`;
+  const text = [
+    `➕ ساخت پلن جدید — ${catLabel(category)}`,
+    `حجم: ${volLabel}`,
+    "",
+    "مرحله ۲ از ۳: مدت را انتخاب کنید",
+  ].join("\n");
+
+  const gbKey = trafficGb === null ? "u" : String(trafficGb);
+  const kb = new InlineKeyboard()
+    .text("۱ ماه", `cc:price:nm:${category}:${gbKey}:1`)
+    .text("۲ ماه", `cc:price:nm:${category}:${gbKey}:2`)
+    .text("۳ ماه", `cc:price:nm:${category}:${gbKey}:3`)
+    .row()
+    .text("« بازگشت", `cc:price:new:${category}`);
+
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function askPriceStep(
+  ctx: Context,
+  opts: {
+    field: "user" | "partner" | "wholesale";
+    category: PlanCategory;
+    trafficGb: number | null;
+    months: number;
+    priceUser?: number;
+    pricePartner?: number;
+    cellId?: string;
+  },
+) {
+  const labels = {
+    user: { title: "👤 قیمت مشتری عادی", hint: "مثلاً 330000" },
+    partner: { title: "🤝 قیمت همکار", hint: "مثلاً 260000" },
+    wholesale: { title: "📦 قیمت عمده‌فروش", hint: "مثلاً 210000" },
+  } as const;
+  const L = labels[opts.field];
+  ccWait.set(ctx.from!.id, {
+    kind: "price_ask",
+    field: opts.field,
+    category: opts.category,
+    trafficGb: opts.trafficGb,
+    months: opts.months,
+    priceUser: opts.priceUser,
+    pricePartner: opts.pricePartner,
+    cellId: opts.cellId,
   });
 
-  const listKb = new InlineKeyboard();
-  for (const c of cells.slice(0, 8)) {
-    const vol = c.trafficGb === null ? "∞" : `${c.trafficGb}`;
-    listKb
-      .text(`${c.isGolden ? "⭐" : "○"}${vol}/${c.months}`, `cc:price:gold:${c.id}`)
-      .text("🗑", `cc:price:del:${c.id}`)
-      .row();
-  }
-  listKb
-    .text(`➕ افزودن ${catLabel(category)}`, `cc:price:add:${category === "golden" ? "data" : category}`)
-    .success()
-    .row()
-    .text("« دسته‌ها", "cc:pricing")
-    .text("« کنترل سنتر", "cc:home");
+  const header = opts.cellId
+    ? `ویرایش ${L.title}\nپلن: ${planTitle(opts.trafficGb, opts.months)}`
+    : [
+        `➕ ساخت پلن — ${catLabel(opts.category)}`,
+        `📌 ${planTitle(opts.trafficGb, opts.months)}`,
+        "",
+        `مرحله ۳: ${L.title}`,
+      ].join("\n");
 
-  await ctx.editMessageText(
-    `💰 ${catLabel(category)}\n\n${lines.join("\n") || "خالی"}\n\n⭐ = پیشنهاد ویژه (طلایی)\nدکمه ستاره را برای طلایی/عادی بزنید.`,
-    { reply_markup: listKb },
+  await ctx.reply(
+    [
+      header,
+      "",
+      "فقط عدد قیمت به تومان را بفرستید.",
+      L.hint,
+      "",
+      "لغو: /cancel",
+    ].join("\n"),
   );
 }
 
@@ -311,39 +505,95 @@ export function registerControlCenter(bot: Bot) {
   bot.callbackQuery("cc:pricing", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    await showPricingMenu(ctx);
+    await showPricingHome(ctx);
   });
 
-  bot.callbackQuery(/^cc:pricing:(data|national|unlimited|golden)$/, async (ctx) => {
+  bot.callbackQuery(/^cc:pricing:(data|national|unlimited|golden)(?::(\d+))?$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    await showPricingMenu(ctx, ctx.match![1] as PlanCategory | "golden");
+    const category = ctx.match![1] as PlanCategory | "golden";
+    const page = ctx.match![2] ? Number(ctx.match![2]) : 0;
+    await showPricingCategory(ctx, category, page);
   });
 
-  bot.callbackQuery(/^cc:price:add:(data|national|unlimited)$/, async (ctx) => {
+  bot.callbackQuery(/^cc:price:view:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showPriceDetail(ctx, ctx.match![1]);
+  });
+
+  bot.callbackQuery(/^cc:price:new:(data|national|unlimited)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showNewPlanVolume(ctx, ctx.match![1] as PlanCategory);
+  });
+
+  bot.callbackQuery(/^cc:price:nv:(data|national|unlimited):(u|\d+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
     const category = ctx.match![1] as PlanCategory;
-    ccWait.set(ctx.from!.id, { kind: "price", category });
-    await ctx.reply(
-      `سلول قیمت (${catLabel(category)}) را بفرستید:\n\`gb|months|user|partner|wholesale\`\nمثال: \`30|1|390000|310000|250000\`\nنامحدود: \`u|1|1500000|1200000|1000000\`\nلغو: /cancel`,
-      { parse_mode: "Markdown" },
-    );
+    const trafficGb = ctx.match![2] === "u" ? null : Number(ctx.match![2]);
+    await showNewPlanMonths(ctx, category, trafficGb);
+  });
+
+  bot.callbackQuery(/^cc:price:nm:(data|national|unlimited):(u|\d+):(\d+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const category = ctx.match![1] as PlanCategory;
+    const trafficGb = ctx.match![2] === "u" ? null : Number(ctx.match![2]);
+    const months = Number(ctx.match![3]);
+    await askPriceStep(ctx, { field: "user", category, trafficGb, months });
+  });
+
+  bot.callbackQuery(/^cc:price:edit:([^:]+):(user|partner|wholesale)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const cell = await prisma.priceCell.findUnique({ where: { id: ctx.match![1] } });
+    if (!cell) return;
+    const field = ctx.match![2] as "user" | "partner" | "wholesale";
+    await askPriceStep(ctx, {
+      field,
+      category: (cell.category as PlanCategory) || "data",
+      trafficGb: cell.trafficGb,
+      months: cell.months,
+      cellId: cell.id,
+      priceUser: cell.priceUser,
+      pricePartner: cell.pricePartner,
+    });
   });
 
   bot.callbackQuery(/^cc:price:gold:(.+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
-    await ctx.answerCallbackQuery();
     const cell = await prisma.priceCell.findUnique({ where: { id: ctx.match![1] } });
-    if (cell) await setCellGolden(cell.id, !cell.isGolden);
-    await showPricingMenu(ctx, cell?.isGolden ? "data" : "golden");
+    if (!cell) {
+      await ctx.answerCallbackQuery({ text: "پیدا نشد", show_alert: true });
+      return;
+    }
+    await setCellGolden(cell.id, !cell.isGolden);
+    await ctx.answerCallbackQuery({ text: !cell.isGolden ? "⭐ پیشنهاد ویژه شد" : "از ویژه برداشته شد" });
+    await showPriceDetail(ctx, cell.id);
+  });
+
+  bot.callbackQuery(/^cc:price:delask:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const id = ctx.match![1];
+    await ctx.editMessageText("این پلن حذف شود؟", {
+      reply_markup: new InlineKeyboard()
+        .text("بله، حذف شود", `cc:price:del:${id}`)
+        .danger()
+        .row()
+        .text("خیر، بازگشت", `cc:price:view:${id}`),
+    });
   });
 
   bot.callbackQuery(/^cc:price:del:(.+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery({ text: "حذف شد" });
+    const cell = await prisma.priceCell.findUnique({ where: { id: ctx.match![1] } });
     await deactivateCell(ctx.match![1]);
-    await showPricingMenu(ctx);
+    const cat = (cell?.isGolden ? "golden" : cell?.category || "data") as PlanCategory | "golden";
+    await showPricingCategory(ctx, cat);
   });
 
   bot.callbackQuery("cc:admins", async (ctx) => {
@@ -621,36 +871,96 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     return true;
   }
 
-  if (wait.kind === "price") {
-    const parts = text.split("|").map((s) => s.trim());
-    if (parts.length < 4) {
-      await ctx.reply("فرمت: gb|months|user|partner|wholesale");
+  if (wait.kind === "price_ask") {
+    const amount = parsePriceNumber(text);
+    if (!amount) {
+      await ctx.reply("قیمت نامعتبر است. فقط عدد تومان بفرستید (حداقل ۱۰۰۰).\nمثال: 330000");
       return true;
     }
-    const trafficGb = parts[0] === "u" ? null : Number(parts[0]);
-    const months = Number(parts[1]);
-    const priceUser = Number(parts[2]);
-    const pricePartner = Number(parts[3]);
-    const priceWholesale = parts[4] !== undefined ? Number(parts[4]) : pricePartner;
-    if ([months, priceUser, pricePartner, priceWholesale].some((n) => Number.isNaN(n))) {
-      await ctx.reply("اعداد نامعتبر.");
+
+    // Editing a single field on existing plan
+    if (wait.cellId) {
+      const cell = await prisma.priceCell.findUnique({ where: { id: wait.cellId } });
+      if (!cell) {
+        ccWait.delete(tid);
+        await ctx.reply("پلن پیدا نشد.");
+        return true;
+      }
+      const data =
+        wait.field === "user"
+          ? { priceUser: amount }
+          : wait.field === "partner"
+            ? { pricePartner: amount }
+            : { priceWholesale: amount };
+      await prisma.priceCell.update({ where: { id: cell.id }, data });
+      ccWait.delete(tid);
+      await ctx.reply(`✅ ذخیره شد: ${formatToman(amount)}`, {
+        reply_markup: new InlineKeyboard()
+          .text("👁 مشاهده پلن", `cc:price:view:${cell.id}`)
+          .row()
+          .text("💰 قیمت‌گذاری", "cc:pricing"),
+      });
       return true;
     }
-    await upsertPriceCell({
-      trafficGb,
-      months,
+
+    // Creating new plan — collect 3 prices in sequence
+    if (wait.field === "user") {
+      ccWait.set(tid, { ...wait, field: "partner", priceUser: amount });
+      await ctx.reply(
+        [
+          `✅ قیمت مشتری: ${formatToman(amount)}`,
+          "",
+          "حالا قیمت همکار را بفرستید (فقط عدد).",
+          "مثال: 260000",
+        ].join("\n"),
+      );
+      return true;
+    }
+
+    if (wait.field === "partner") {
+      ccWait.set(tid, { ...wait, field: "wholesale", pricePartner: amount });
+      await ctx.reply(
+        [
+          `✅ قیمت همکار: ${formatToman(amount)}`,
+          "",
+          "حالا قیمت عمده‌فروش را بفرستید (فقط عدد).",
+          "مثال: 210000",
+        ].join("\n"),
+      );
+      return true;
+    }
+
+    // wholesale — finalize
+    const priceUser = wait.priceUser!;
+    const pricePartner = wait.pricePartner!;
+    const cell = await upsertPriceCell({
+      trafficGb: wait.trafficGb,
+      months: wait.months,
       priceUser,
       pricePartner,
-      priceWholesale,
-      category: trafficGb === null ? "unlimited" : wait.category,
+      priceWholesale: amount,
+      category: wait.trafficGb === null ? "unlimited" : wait.category,
     });
     ccWait.delete(tid);
-    await ctx.reply("سلول قیمت ذخیره شد ✅", {
-      reply_markup: new InlineKeyboard()
-        .text("💰 قیمت‌گذاری", "cc:pricing")
-        .row()
-        .text("🎛 کنترل سنتر", "cc:home"),
-    });
+    await ctx.reply(
+      [
+        "✅ پلن ذخیره شد",
+        "",
+        `📌 ${planTitle(cell.trafficGb, cell.months)}`,
+        `👤 مشتری: ${formatToman(cell.priceUser)}`,
+        `🤝 همکار: ${formatToman(cell.pricePartner)}`,
+        `📦 عمده: ${formatToman(cell.priceWholesale)}`,
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text("👁 مشاهده پلن", `cc:price:view:${cell.id}`)
+          .row()
+          .text("➕ پلن دیگر", `cc:price:new:${wait.category}`)
+          .success()
+          .row()
+          .text("💰 قیمت‌گذاری", "cc:pricing"),
+      },
+    );
     return true;
   }
 
