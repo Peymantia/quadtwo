@@ -279,10 +279,28 @@ export function createBot() {
     const tid = ctx.from?.id;
     if (!tid) return next();
 
+    const text = ctx.message.text.trim();
+
+    // Slash commands must never be trapped by wizard wait-states
+    if (text.startsWith("/")) {
+      waitingName.delete(tid);
+      waitingPartner.delete(tid);
+      waitingMatrix.delete(tid);
+      return next();
+    }
+
+    if (text === "انصراف" || text.toLowerCase() === "cancel") {
+      waitingName.delete(tid);
+      waitingPartner.delete(tid);
+      waitingMatrix.delete(tid);
+      await ctx.reply("لغو شد.");
+      return;
+    }
+
     if (waitingName.has(tid)) {
-      const name = ctx.message.text.trim();
+      const name = text;
       if (!/^[a-zA-Z0-9._-]{3,32}$/.test(name)) {
-        await ctx.reply("نام نامعتبر است. فقط a-z 0-9 ._- و ۳ تا ۳۲ کاراکتر.");
+        await ctx.reply("نام نامعتبر است. فقط a-z 0-9 ._- و ۳ تا ۳۲ کاراکتر.\nبرای لغو: انصراف");
         return;
       }
       waitingName.delete(tid);
@@ -295,7 +313,7 @@ export function createBot() {
     const partnerFlow = waitingPartner.get(tid);
     if (partnerFlow) {
       if (partnerFlow.step === "name") {
-        waitingPartner.set(tid, { step: "phone", fullName: ctx.message.text.trim() });
+        waitingPartner.set(tid, { step: "phone", fullName: text });
         await ctx.reply("شماره تماس را بفرستید (یا — بزنید):");
         return;
       }
@@ -303,7 +321,7 @@ export function createBot() {
         waitingPartner.set(tid, {
           step: "note",
           fullName: partnerFlow.fullName,
-          phone: ctx.message.text.trim() === "—" ? undefined : ctx.message.text.trim(),
+          phone: text === "—" ? undefined : text,
         });
         await ctx.reply("توضیح کوتاه (یا — ):");
         return;
@@ -315,7 +333,7 @@ export function createBot() {
           user.id,
           partnerFlow.fullName!,
           partnerFlow.phone,
-          ctx.message.text.trim() === "—" ? undefined : ctx.message.text.trim(),
+          text === "—" ? undefined : text,
         );
         await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.");
         const admins = await prisma.user.findMany({ where: { role: UserRole.admin } });
@@ -332,16 +350,22 @@ export function createBot() {
 
     const matrixWait = waitingMatrix.get(tid);
     if (matrixWait && isAdminTelegramId(tid)) {
-      // format: gb|months|userPrice|partnerPrice   gb=u for unlimited
-      const parts = ctx.message.text.trim().split("|").map((s) => s.trim());
+      const parts = text.split("|").map((s) => s.trim());
       if (parts.length !== 4) {
-        await ctx.reply("فرمت: gb|months|userPrice|partnerPrice\nمثال: 25|1|330000|260000\nنامحدود: u|1|1500000|1200000");
+        await ctx.reply(
+          "فرمت اشتباه.\n`gb|months|userPrice|partnerPrice`\nمثال: `25|1|330000|260000`\nنامحدود: `u|1|1500000|1200000`\nلغو: انصراف یا هر دستور /",
+          { parse_mode: "Markdown" },
+        );
         return;
       }
       const trafficGb = parts[0] === "u" ? null : Number(parts[0]);
       const months = Number(parts[1]);
       const priceUser = Number(parts[2]);
       const pricePartner = Number(parts[3]);
+      if ([months, priceUser, pricePartner].some((n) => Number.isNaN(n)) || (parts[0] !== "u" && Number.isNaN(Number(parts[0])))) {
+        await ctx.reply("اعداد نامعتبر هستند. دوباره بفرستید یا انصراف.");
+        return;
+      }
       await upsertPriceCell({ trafficGb, months, priceUser, pricePartner });
       waitingMatrix.delete(tid);
       await ctx.reply("سلول ماتریکس ذخیره شد ✅");
@@ -592,8 +616,35 @@ export function createBot() {
 
   bot.command("setmatrix", async (ctx) => {
     if (!isAdminTelegramId(ctx.from?.id)) return;
+    const raw = (ctx.match ?? "").trim();
+    if (raw) {
+      const parts = raw.split("|").map((s) => s.trim());
+      if (parts.length !== 4) {
+        await ctx.reply("Usage: /setmatrix 25|1|330000|260000");
+        return;
+      }
+      const trafficGb = parts[0] === "u" ? null : Number(parts[0]);
+      const months = Number(parts[1]);
+      const priceUser = Number(parts[2]);
+      const pricePartner = Number(parts[3]);
+      await upsertPriceCell({ trafficGb, months, priceUser, pricePartner });
+      waitingMatrix.delete(ctx.from!.id);
+      await ctx.reply("Matrix cell saved.");
+      return;
+    }
     waitingMatrix.set(ctx.from!.id, "edit");
-    await ctx.reply("فرمت: gb|months|userPrice|partnerPrice\nنامحدود: u|1|1500000|1200000");
+    await ctx.reply(
+      "Send one line:\n`25|1|330000|260000`\nor unlimited: `u|1|1500000|1200000`\nCancel: /cancel or any other /command",
+      { parse_mode: "Markdown" },
+    );
+  });
+
+  bot.command("cancel", async (ctx) => {
+    const tid = ctx.from!.id;
+    waitingName.delete(tid);
+    waitingPartner.delete(tid);
+    waitingMatrix.delete(tid);
+    await ctx.reply("Cancelled.");
   });
 
   bot.command("setcard", async (ctx) => {
