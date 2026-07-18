@@ -2,14 +2,35 @@ import { InlineKeyboard, Keyboard } from "grammy";
 import { matrixLine } from "../services/pricing.js";
 import { formatToman, formatTraffic } from "../utils/format.js";
 
+/** Reply keyboard labels (Telegram has no button colors — emojis provide visual identity) */
+export const BTN = {
+  test: "🧪 سرویس تست",
+  buy: "🛒 خرید سرویس جدید",
+  renew: "♻️ تمدید سرویس",
+  myServices: "📦 سرویس‌های من",
+  wallet: "💳 کیف پول",
+  account: "👤 حساب کاربری",
+  national: "🇮🇷 سرویس ویژه اینترنت ملی",
+  support: "🆘 ارتباط با پشتیبانی",
+  guide: "📖 آموزش اتصال",
+  dashboard: "🚀 ورود به داشبورد",
+  partner: "🤝 درخواست نمایندگی فروش",
+  admin: "👑 پنل ادمین",
+  partnerPanel: "💼 پنل نماینده",
+} as const;
+
 export function mainMenuKeyboard(isAdmin: boolean, isPartner: boolean) {
-  const rows = [
-    ["🛒 خرید اشتراک", "📦 سرویس‌های من"],
-    ["💳 کیف پول", "🤝 همکاری"],
-    ["☎️ پشتیبانی"],
+  const rows: string[][] = [
+    [BTN.test, BTN.buy],
+    [BTN.renew, BTN.myServices],
+    [BTN.wallet, BTN.account],
+    [BTN.national],
+    [BTN.support, BTN.guide],
+    [BTN.dashboard],
+    [BTN.partner],
   ];
-  if (isPartner) rows.push(["💼 پنل همکار"]);
-  if (isAdmin) rows.push(["👑 پنل ادمین"]);
+  if (isPartner) rows.push([BTN.partnerPanel]);
+  if (isAdmin) rows.push([BTN.admin]);
   return Keyboard.from(rows).resized().persistent();
 }
 
@@ -82,7 +103,7 @@ export function adminOrderKeyboard(orderId: string) {
 
 export function partnerRequestKeyboard(requestId: string) {
   return new InlineKeyboard()
-    .text("✅ تأیید همکار", `prt:ok:${requestId}`)
+    .text("✅ تأیید نماینده", `prt:ok:${requestId}`)
     .text("❌ رد", `prt:no:${requestId}`);
 }
 
@@ -97,6 +118,15 @@ export function subscriptionKeyboard(subId: string) {
     .text("🔑 تغییر کانفیگ", `sub:rotuuid:${subId}`);
 }
 
+export function renewPickKeyboard(subs: Array<{ id: string; code: string }>) {
+  const kb = new InlineKeyboard();
+  for (const s of subs.slice(0, 12)) {
+    kb.text(`♻️ ${s.code}`, `sub:renew:${s.id}`).row();
+  }
+  kb.text("« بازگشت", "menu:home");
+  return kb;
+}
+
 export function buyDraftText(opts: {
   trafficGb: number | null;
   months: number;
@@ -105,7 +135,7 @@ export function buyDraftText(opts: {
   accountName?: string | null;
 }) {
   return [
-    "🛒 خرید اشتراک",
+    "🛒 خرید سرویس جدید",
     "",
     matrixLine(opts.trafficGb, opts.months, opts.price),
     "",

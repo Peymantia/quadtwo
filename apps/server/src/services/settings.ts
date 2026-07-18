@@ -11,6 +11,10 @@ const defaults: Record<string, string> = {
   support_telegram_id: "",
   miniapp_url: "",
   xui_inbound_ids: "1,2,3,4,5,6,7,8,9,10",
+  guide_text: "آموزش اتصال به‌زودی اینجا قرار می‌گیرد.\nمی‌توانید از پشتیبانی لینک آموزش را بگیرید.",
+  guide_url: "",
+  test_service_enabled: "false",
+  national_service_note: "سرویس ویژه اینترنت ملی به‌زودی فعال می‌شود.",
 };
 
 export async function getSetting(key: string): Promise<string> {

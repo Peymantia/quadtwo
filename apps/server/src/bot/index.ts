@@ -36,6 +36,7 @@ import {
 } from "./draft.js";
 import {
   adminOrderKeyboard,
+  BTN,
   buyDraftText,
   buyWizardKeyboard,
   mainMenuKeyboard,
@@ -43,6 +44,7 @@ import {
   partnerRequestKeyboard,
   payConfirmKeyboard,
   payMethodKeyboard,
+  renewPickKeyboard,
   subscriptionKeyboard,
   walletChargeAmountsKeyboard,
   walletMenuKeyboard,
@@ -171,7 +173,7 @@ export function createBot() {
 
   bot.callbackQuery("wiz:noop", async (ctx) => ctx.answerCallbackQuery());
 
-  bot.hears("🛒 خرید اشتراک", async (ctx) => {
+  bot.hears(BTN.buy, async (ctx) => {
     if (!(await requireChannel(ctx))) return;
     await showBuyWizard(ctx);
   });
@@ -500,7 +502,7 @@ export function createBot() {
     await ctx.editMessageText("درخواست رد شد.");
   });
 
-  bot.hears("📦 سرویس‌های من", async (ctx) => {
+  bot.hears(BTN.myServices, async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
     const subs = await prisma.subscription.findMany({
       where: { userId: user.id },
@@ -508,7 +510,7 @@ export function createBot() {
       take: 10,
     });
     if (!subs.length) {
-      await ctx.reply("سرویسی ندارید.");
+      await ctx.reply("سرویسی ندارید.\nاکانت‌ها با شناسه تلگرام شما ذخیره می‌شوند.");
       return;
     }
     for (const sub of subs) {
@@ -523,6 +525,80 @@ export function createBot() {
         { reply_markup: subscriptionKeyboard(sub.id) },
       );
     }
+  });
+
+  bot.hears(BTN.renew, async (ctx) => {
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const subs = await prisma.subscription.findMany({
+      where: { userId: user.id, status: "active" },
+      orderBy: { createdAt: "desc" },
+      take: 12,
+    });
+    if (!subs.length) {
+      await ctx.reply("سرویس فعالی برای تمدید نیست.");
+      return;
+    }
+    await ctx.reply("کدام سرویس را تمدید می‌کنید؟", {
+      reply_markup: renewPickKeyboard(subs.map((s) => ({ id: s.id, code: s.code }))),
+    });
+  });
+
+  bot.hears(BTN.test, async (ctx) => {
+    const enabled = (await getSetting("test_service_enabled")) === "true";
+    if (!enabled) {
+      await ctx.reply("🧪 سرویس تست فعلاً غیرفعال است.\nبه‌زودی فعال می‌شود.");
+      return;
+    }
+    await ctx.reply("🧪 سرویس تست به‌زودی از همینجا ساخته می‌شود.");
+  });
+
+  bot.hears(BTN.national, async (ctx) => {
+    await ctx.reply(`🇮🇷 ${(await getSetting("national_service_note")) || "به‌زودی"}`);
+  });
+
+  bot.hears(BTN.account, async (ctx) => {
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const wallet = await getWallet(user.id);
+    const roleLabel =
+      user.role === "admin" ? "ادمین" : user.role === "partner" ? "نماینده فروش" : "کاربر عادی";
+    await ctx.reply(
+      [
+        "👤 حساب کاربری",
+        "",
+        `نام: ${user.firstName ?? "—"}`,
+        `یوزرنیم: @${user.username ?? "—"}`,
+        `آی‌دی تلگرام: \`${user.telegramId}\``,
+        `نقش: ${roleLabel}`,
+        user.panelGroup ? `گروه پنل: ${user.panelGroup}` : "",
+        `موجودی: ${formatToman(wallet.balance)}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      { parse_mode: "Markdown" },
+    );
+  });
+
+  bot.hears(BTN.guide, async (ctx) => {
+    const url = await getSetting("guide_url");
+    const text = await getSetting("guide_text");
+    if (url) {
+      await ctx.reply(text || "آموزش اتصال:", {
+        reply_markup: new InlineKeyboard().url("📖 مشاهده آموزش", url),
+      });
+      return;
+    }
+    await ctx.reply(text || "آموزش هنوز تنظیم نشده.");
+  });
+
+  bot.hears(BTN.dashboard, async (ctx) => {
+    const url = await getSetting("miniapp_url");
+    if (!url) {
+      await ctx.reply("داشبورد هنوز تنظیم نشده.\nادمین: /setminiapp https://app.anthropics.ir");
+      return;
+    }
+    await ctx.reply("ورود به داشبورد:", {
+      reply_markup: new InlineKeyboard().webApp("🚀 باز کردن داشبورد", url),
+    });
   });
 
   bot.callbackQuery(/^sub:link:(.+)$/, async (ctx) => {
@@ -598,7 +674,7 @@ export function createBot() {
     });
   });
 
-  bot.hears("💳 کیف پول", async (ctx) => {
+  bot.hears(BTN.wallet, async (ctx) => {
     if (!(await requireChannel(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
     const wallet = await getWallet(user.id);
@@ -628,39 +704,39 @@ export function createBot() {
     await startCardPayment(ctx, order.id, orderSummaryText(order));
   });
 
-  bot.hears("☎️ پشتیبانی", async (ctx) => {
+  bot.hears(BTN.support, async (ctx) => {
     const supportUser = await getSetting("support_username");
     const supportId = await getSetting("support_telegram_id");
     if (supportUser) {
-      await ctx.reply(`پشتیبانی: @${supportUser.replace(/^@/, "")}`);
+      await ctx.reply(`🆘 پشتیبانی: @${supportUser.replace(/^@/, "")}`);
       return;
     }
     if (supportId) {
-      await ctx.reply(`آی‌دی پشتیبانی: \`${supportId}\``, { parse_mode: "Markdown" });
+      await ctx.reply(`🆘 آی‌دی پشتیبانی: \`${supportId}\``, { parse_mode: "Markdown" });
       return;
     }
     await ctx.reply("پشتیبانی هنوز تنظیم نشده است.");
   });
 
-  bot.hears("🤝 همکاری", async (ctx) => {
+  bot.hears(BTN.partner, async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
     if (user.role === "partner") {
-      await ctx.reply(`شما همکار هستید.\nگروه پنل: ${user.panelGroup ?? "—"}`);
+      await ctx.reply(`شما نماینده هستید.\nگروه پنل: ${user.panelGroup ?? "—"}`);
       return;
     }
     waitingPartner.set(ctx.from!.id, { step: "name" });
-    await ctx.reply("درخواست همکاری\nنام و نام خانوادگی را بفرستید:");
+    await ctx.reply("🤝 درخواست نمایندگی فروش\nنام و نام خانوادگی را بفرستید:");
   });
 
-  bot.hears("💼 پنل همکار", async (ctx) => {
+  bot.hears(BTN.partnerPanel, async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
     if (user.role !== "partner" && user.role !== "admin") return;
     await ctx.reply(
-      `پنل همکار\nگروه: ${user.panelGroup ?? "—"}\nخریدها با قیمت همکاری محاسبه می‌شوند.`,
+      `💼 پنل نماینده\nگروه: ${user.panelGroup ?? "—"}\nخریدها با قیمت نمایندگی محاسبه می‌شوند.\nسرویس‌های من = فقط اکانت‌هایی که با همین تلگرام خریده‌اید.`,
     );
   });
 
-  bot.hears("👑 پنل ادمین", async (ctx) => {
+  bot.hears(BTN.admin, async (ctx) => {
     if (!isAdminTelegramId(ctx.from?.id)) return;
     const pending = await prisma.order.count({ where: { status: OrderStatus.awaiting_review } });
     const partners = await prisma.partnerRequest.count({ where: { status: "pending" } });
