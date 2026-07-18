@@ -1,4 +1,4 @@
-import { InlineKeyboard } from "grammy";
+import { InlineKeyboard, Keyboard } from "grammy";
 import { matrixLine } from "../services/pricing.js";
 import type { NotifConfig } from "../services/settings.js";
 import { formatLimitIp } from "../services/panel-groups.js";
@@ -15,7 +15,7 @@ export const BTN = {
   national: "🇮🇷 سرویس ویژه اینترنت ملی",
   support: "🆘 ارتباط با پشتیبانی",
   guide: "📖 آموزش اتصال",
-  dashboard: "🚀 ورود به داشبورد",
+  dashboard: "🚀 MiniApp Dashboard",
   partner: "🤝 درخواست نمایندگی فروش",
   admin: "👑 پنل ادمین",
   partnerPanel: "💼 پنل نماینده",
@@ -48,12 +48,16 @@ export function mainMenuInline(opts: {
     .row();
 
   if (opts.miniappUrl) {
-    kb.webApp("🚀 داشبورد", opts.miniappUrl).primary().row();
+    kb.webApp("🚀 MiniApp Dashboard", opts.miniappUrl).primary().row();
   } else {
-    kb.text("🚀 داشبورد", "m:dashboard").primary().row();
+    kb.text("🚀 MiniApp Dashboard", "m:dashboard").primary().row();
   }
 
-  kb.text("🤝 درخواست نمایندگی", "m:partner").danger().row();
+  // Only regular users can request agency (not partner / wholesale / admin)
+  const canRequestAgency = !opts.isAdmin && !opts.isPartner && !opts.isWholesale;
+  if (canRequestAgency) {
+    kb.text("🤝 درخواست نمایندگی", "m:partner").danger().row();
+  }
 
   if (opts.isPartner || opts.isWholesale) {
     kb.text("💼 پنل نماینده / عمده", "m:partnerpanel").primary().row();
@@ -62,6 +66,10 @@ export function mainMenuInline(opts: {
     kb.text("🎛 کنترل سنتر ادمین", "cc:home").danger().row();
   }
   return kb;
+}
+
+export function partnerContactKeyboard() {
+  return new Keyboard().requestContact("📱 ارسال شماره موبایل").resized().oneTime();
 }
 
 export function buyWizardKeyboard(opts: {

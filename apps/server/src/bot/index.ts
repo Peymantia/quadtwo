@@ -62,6 +62,7 @@ import {
   guideKeyboard,
   mainMenuInline,
   orderPayText,
+  partnerContactKeyboard,
   partnerRequestKeyboard,
   payConfirmKeyboard,
   payMethodKeyboard,
@@ -392,6 +393,10 @@ async function handleSupport(ctx: Context) {
 
 async function handlePartnerRequest(ctx: Context) {
   const user = await upsertUserFromTelegram(ctx.from!);
+  if (user.role === "admin" || (await isControlAdmin(ctx.from?.id))) {
+    await ctx.reply("ادمین نیازی به درخواست نمایندگی ندارد.");
+    return;
+  }
   if (user.role === "partner" || user.role === "wholesale") {
     await ctx.reply(`شما قبلاً ${user.role === "wholesale" ? "عمده‌فروش" : "نماینده"} هستید.\nگروه پنل: ${user.panelGroup ?? "—"}`);
     return;
@@ -693,6 +698,30 @@ export function createBot() {
     });
   });
 
+  bot.on("message:contact", async (ctx) => {
+    const tid = ctx.from?.id;
+    if (!tid) return;
+    const partnerFlow = waitingPartner.get(tid);
+    if (!partnerFlow || partnerFlow.step !== "phone") return;
+
+    const contact = ctx.message.contact;
+    // Only accept the user's own shared contact
+    if (contact.user_id && contact.user_id !== tid) {
+      await ctx.reply("لطفاً شماره خودتان را با دکمه تلگرام ارسال کنید.");
+      return;
+    }
+
+    const phone = contact.phone_number;
+    waitingPartner.set(tid, {
+      step: "note",
+      fullName: partnerFlow.fullName,
+      phone,
+    });
+    await ctx.reply("شماره دریافت شد ✅\nتوضیح کوتاه بفرستید (یا — بزنید):", {
+      reply_markup: { remove_keyboard: true },
+    });
+  });
+
   bot.on("message:text", async (ctx, next) => {
     const tid = ctx.from?.id;
     if (!tid) return next();
@@ -742,16 +771,13 @@ export function createBot() {
     if (partnerFlow) {
       if (partnerFlow.step === "name") {
         waitingPartner.set(tid, { step: "phone", fullName: text });
-        await ctx.reply("شماره تماس را بفرستید (یا — بزنید):");
+        await ctx.reply("شماره موبایل را با دکمه زیر ارسال کنید (همان شماره تلگرام شما):", {
+          reply_markup: partnerContactKeyboard(),
+        });
         return;
       }
       if (partnerFlow.step === "phone") {
-        waitingPartner.set(tid, {
-          step: "note",
-          fullName: partnerFlow.fullName,
-          phone: text === "—" ? undefined : text,
-        });
-        await ctx.reply("توضیح کوتاه (یا — ):");
+        await ctx.reply("لطفاً با دکمه «ارسال شماره موبایل» شماره را بفرستید، نه به‌صورت متن.");
         return;
       }
       if (partnerFlow.step === "note") {
@@ -763,11 +789,13 @@ export function createBot() {
           partnerFlow.phone,
           text === "—" ? undefined : text,
         );
-        await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.");
+        await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.", {
+          reply_markup: { remove_keyboard: true },
+        });
         await notifyAllAdmins(ctx.api, async (adminId) => {
           await ctx.api.sendMessage(
             adminId,
-            `🤝 درخواست همکاری\n${partnerFlow.fullName}\n@${user.username ?? "—"}\nTG: ${user.telegramId}`,
+            `🤝 درخواست همکاری\n${partnerFlow.fullName}\n📱 ${partnerFlow.phone ?? "—"}\n@${user.username ?? "—"}\nTG: ${user.telegramId}`,
             { reply_markup: partnerRequestKeyboard(req.id) },
           );
         });
