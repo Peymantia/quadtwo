@@ -1,5 +1,12 @@
 import { prisma } from "../db.js";
-import { clampMonths, clampQty, nextVolume, resolvePrice, type PlanCategory } from "../services/pricing.js";
+import {
+  clampMonths,
+  clampQty,
+  nextNationalVolume,
+  nextVolume,
+  resolvePrice,
+  type PlanCategory,
+} from "../services/pricing.js";
 import { clampLimitIp } from "../services/panel-groups.js";
 import { getDefaultLimitIp } from "../services/settings.js";
 import type { User } from "@prisma/client";
@@ -24,6 +31,13 @@ export async function getOrCreateDraft(telegramId: bigint) {
 
 export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
   const draft = await getOrCreateDraft(telegramId);
+  if (draft.category === "national") {
+    const gb = nextNationalVolume(draft.trafficGb, dir);
+    return prisma.buyDraft.update({
+      where: { telegramId },
+      data: { trafficGb: gb, unlimited: false, months: 1 },
+    });
+  }
   const next = nextVolume(draft.trafficGb, draft.unlimited, dir);
   return prisma.buyDraft.update({
     where: { telegramId },
@@ -37,6 +51,12 @@ export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
 
 export async function adjustDraftMonths(telegramId: bigint, dir: 1 | -1) {
   const draft = await getOrCreateDraft(telegramId);
+  if (draft.category === "national") {
+    return prisma.buyDraft.update({
+      where: { telegramId },
+      data: { months: 1 },
+    });
+  }
   return prisma.buyDraft.update({
     where: { telegramId },
     data: { months: clampMonths(draft.months + dir) },
@@ -66,7 +86,8 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
     data: {
       category,
       unlimited: category === "unlimited",
-      trafficGb: category === "unlimited" ? null : category === "national" ? 30 : 10,
+      trafficGb: category === "unlimited" ? null : category === "national" ? 1 : 10,
+      months: 1,
       quantity: 1,
     },
   });

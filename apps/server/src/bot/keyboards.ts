@@ -90,15 +90,22 @@ export function buyWizardKeyboard(opts: {
   const cat =
     opts.category === "national" ? "🇮🇷 ملی" : opts.category === "unlimited" ? "💎 نامحدود" : "📦 دیتا";
 
-  return new InlineKeyboard()
+  const kb = new InlineKeyboard()
     .text("−", "wiz:vol:-")
     .text(`📦 ${vol}`, "wiz:noop")
     .text("+", "wiz:vol:+")
-    .row()
-    .text("−", "wiz:mon:-")
-    .text(`⏳ ${opts.months} ماه`, "wiz:noop")
-    .text("+", "wiz:mon:+")
-    .row()
+    .row();
+
+  if (opts.category === "national") {
+    kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
+  } else {
+    kb.text("−", "wiz:mon:-")
+      .text(`⏳ ${opts.months} ماه`, "wiz:noop")
+      .text("+", "wiz:mon:+")
+      .row();
+  }
+
+  return kb
     .text("−", "wiz:qty:-")
     .text(`🔢 ${opts.quantity}${opts.quantity > 1 ? " عمده" : ""}`, "wiz:noop")
     .text("+", "wiz:qty:+")
@@ -251,7 +258,7 @@ export function buyDraftText(opts: {
   const qty = opts.quantity ?? 1;
   return [
     qty > 1 ? "🛒 خرید عمده (Bulk)" : "🛒 خرید سرویس جدید",
-    opts.category === "national" ? "🇮🇷 دسته: اینترنت ملی" : "",
+    opts.category === "national" ? "🇮🇷 کانفیگ نت ملی — فقط ۱ ماهه · حجم از ۱ گیگ" : "",
     "",
     matrixLine(opts.trafficGb, opts.months, opts.price, qty),
     `📱 محدودیت دستگاه: ${formatLimitIp(opts.limitIp)}`,
@@ -259,7 +266,9 @@ export function buyDraftText(opts: {
     `نام پایه اکانت: ${opts.accountMode === "custom" && opts.accountName ? opts.accountName : "رندوم (بعد از تأیید)"}`,
     qty > 1 ? `⚠️ تعداد ${qty} اکانت در پنل سنایی ساخته می‌شود.` : "",
     "",
-    "حجم، مدت، تعداد و IP Limit را تنظیم کنید، سپس ادامه خرید را بزنید.",
+    opts.category === "national"
+      ? "حجم را با +/− تنظیم کنید، سپس ادامه خرید را بزنید."
+      : "حجم، مدت، تعداد و IP Limit را تنظیم کنید، سپس ادامه خرید را بزنید.",
   ]
     .filter(Boolean)
     .join("\n");

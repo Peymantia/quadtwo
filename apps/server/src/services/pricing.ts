@@ -1,8 +1,11 @@
 import type { User, UserRole } from "@prisma/client";
 import { prisma } from "../db.js";
 import { formatToman, formatTraffic } from "../utils/format.js";
+import { getPriceRates, getPricingMode, type RoleRates } from "./settings.js";
 
 const VOLUME_STEPS = [10, 15, 20, 25, 30, 35, 40, 45, 50] as const;
+export const NATIONAL_MAX_GB = 100;
+export const DATA_VOLUME_PRESETS = [10, 15, 20, 25, 30, 35, 40, 45, 50] as const;
 
 export type PlanCategory = "data" | "national" | "unlimited";
 
@@ -20,6 +23,12 @@ export function nextVolume(current: number | null, unlimited: boolean, dir: 1 | 
   if (next < 0) return { trafficGb: 10, unlimited: false };
   if (next >= VOLUME_STEPS.length) return { trafficGb: null, unlimited: true };
   return { trafficGb: VOLUME_STEPS[next], unlimited: false };
+}
+
+/** National: 1 GB steps, never unlimited */
+export function nextNationalVolume(current: number | null, dir: 1 | -1): number {
+  const cur = Math.max(1, Math.min(NATIONAL_MAX_GB, current ?? 1));
+  return Math.max(1, Math.min(NATIONAL_MAX_GB, cur + dir));
 }
 
 export function clampMonths(m: number) {
@@ -50,15 +59,46 @@ export function priceFromCell(
   return cell.priceUser;
 }
 
+function ratesForRole(role: UserRole, rates: Awaited<ReturnType<typeof getPriceRates>>): RoleRates {
+  if (role === "wholesale") return rates.wholesale;
+  if (role === "partner" || role === "admin") return rates.partner;
+  return rates.user;
+}
+
+/** Formula: GB×perGb + months×perMonth (unlimited: months×unlimitedPerMonth) */
+export function calcRatePrice(
+  role: UserRole,
+  trafficGb: number | null,
+  months: number,
+  rates: Awaited<ReturnType<typeof getPriceRates>>,
+): number {
+  const r = ratesForRole(role, rates);
+  const m = clampMonths(months);
+  if (trafficGb === null) return r.unlimitedPerMonth * m;
+  return trafficGb * r.perGb + m * r.perMonth;
+}
+
 export async function resolvePrice(
   user: User,
   trafficGb: number | null,
   months: number,
   category: PlanCategory = "data",
 ) {
+  const mode = await getPricingMode();
+  if (mode === "rate") {
+    // Golden/special matrix cells still override when an exact match exists
+    const cell = await findPriceCell(trafficGb, months, category);
+    if (cell?.isGolden) {
+      return { cell, price: priceFromCell(user.role, cell), mode: "rate" as const };
+    }
+    const rates = await getPriceRates();
+    const price = calcRatePrice(user.role, trafficGb, months, rates);
+    return { cell: null, price, mode: "rate" as const };
+  }
+
   const cell = await findPriceCell(trafficGb, months, category);
   if (!cell) return null;
-  return { cell, price: priceFromCell(user.role, cell) };
+  return { cell, price: priceFromCell(user.role, cell), mode: "matrix" as const };
 }
 
 export function matrixLine(trafficGb: number | null, months: number, price: number | null, qty = 1) {
@@ -80,6 +120,28 @@ export async function listGoldenOffers() {
   return prisma.priceCell.findMany({
     where: { active: true, isGolden: true },
     orderBy: { sortOrder: "asc" },
+  });
+}
+
+/** Distinct months that have active data plans, plus empty months 1–3 for easy navigation */
+export async function listDataMonths(): Promise<Array<{ months: number; count: number }>> {
+  const cells = await listPriceMatrix("data");
+  const map = new Map<number, number>();
+  for (const c of cells) {
+    map.set(c.months, (map.get(c.months) ?? 0) + 1);
+  }
+  for (const m of [1, 2, 3]) {
+    if (!map.has(m)) map.set(m, 0);
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([months, count]) => ({ months, count }));
+}
+
+export async function listDataPlansForMonth(months: number) {
+  return prisma.priceCell.findMany({
+    where: { active: true, category: "data", months },
+    orderBy: [{ sortOrder: "asc" }, { trafficGb: "asc" }],
   });
 }
 

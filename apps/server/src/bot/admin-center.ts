@@ -7,9 +7,14 @@ import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.j
 import { orderSummaryText } from "../services/orders.js";
 import {
   deactivateCell,
+  listDataMonths,
+  listDataPlansForMonth,
   listPriceMatrix,
+  nextNationalVolume,
   setCellGolden,
   upsertPriceCell,
+  DATA_VOLUME_PRESETS,
+  NATIONAL_MAX_GB,
   type PlanCategory,
 } from "../services/pricing.js";
 import {
@@ -17,13 +22,18 @@ import {
   getChannels,
   getExtraAdminIds,
   getNotifConfig,
+  getPriceRates,
+  getPricingMode,
   getSetting,
   removeExtraAdminId,
   saveChannels,
   saveNotifConfig,
+  savePriceRates,
+  setPricingMode,
   setSetting,
   type ChannelConfig,
   type NotifConfig,
+  type PriceRates,
 } from "../services/settings.js";
 import { demoteToUser, listNotifyAdminTelegramIds, partnerSalesReport } from "../services/users.js";
 import { formatToman } from "../utils/format.js";
@@ -67,6 +77,12 @@ export const ccWait = new Map<
   | { kind: "iplimit" }
   | { kind: "backup_time" }
   | { kind: "search" }
+  | {
+      kind: "rate_ask";
+      role: "user" | "partner" | "wholesale";
+      field: "perGb" | "perMonth" | "unlimitedPerMonth";
+      partial: PriceRates;
+    }
 >();
 
 export async function isControlAdmin(telegramId: number | undefined): Promise<boolean> {
@@ -137,8 +153,24 @@ async function countByCategory() {
 
 async function showPricingHome(ctx: Context) {
   const counts = await countByCategory();
+  const mode = await getPricingMode();
+  const rates = await getPriceRates();
+  const modeLabel =
+    mode === "rate"
+      ? "نرخ هر گیگ + هر ماه"
+      : "قیمت‌گذاری اشتراک‌ها (پلن‌های ثابت)";
   const text = [
     "💰 قیمت‌گذاری اشتراک‌ها",
+    "",
+    `📐 نوع محاسبه: ${modeLabel}`,
+    mode === "rate"
+      ? [
+          "",
+          "فرمول: (گیگ × نرخ گیگ) + (ماه × نرخ ماه)",
+          `👤 نمونه مشتری: هر گیگ ${formatToman(rates.user.perGb)} · هر ماه ${formatToman(rates.user.perMonth)}`,
+          `مثال ۵۰ گیگ ۲ ماهه: ${formatToman(50 * rates.user.perGb + 2 * rates.user.perMonth)}`,
+        ].join("\n")
+      : "",
     "",
     "یکی از دسته‌ها را انتخاب کنید تا پلن‌ها را ببینید یا پلن جدید بسازید.",
     "",
@@ -146,9 +178,24 @@ async function showPricingHome(ctx: Context) {
     "👤 مشتری عادی",
     "🤝 همکار (نماینده)",
     "📦 عمده‌فروش",
-  ].join("\n");
+  ]
+    .filter((l) => l !== "")
+    .join("\n");
 
   const kb = new InlineKeyboard()
+    .text(
+      mode === "matrix" ? "✓ بر اساس پلن‌های ثابت" : "بر اساس پلن‌های ثابت",
+      "cc:pricing:mode:matrix",
+    )
+    .row()
+    .text(
+      mode === "rate" ? "✓ بر اساس نرخ گیگ/ماه" : "بر اساس نرخ گیگ/ماه",
+      "cc:pricing:mode:rate",
+    )
+    .row()
+    .text("✏️ تنظیم نرخ‌ها", "cc:pricing:rates")
+    .primary()
+    .row()
     .text(`${catEmoji("data")} حجمی — ${counts.data} پلن`, "cc:pricing:data")
     .row()
     .text(`${catEmoji("national")} اینترنت ملی — ${counts.national} پلن`, "cc:pricing:national")
@@ -160,6 +207,123 @@ async function showPricingHome(ctx: Context) {
     .row()
     .text("« کنترل سنتر", "cc:home");
 
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function showPriceRates(ctx: Context) {
+  const rates = await getPriceRates();
+  const mode = await getPricingMode();
+  const line = (label: string, r: PriceRates["user"]) =>
+    [
+      label,
+      `  هر گیگ: ${formatToman(r.perGb)}`,
+      `  هر ماه: ${formatToman(r.perMonth)}`,
+      `  نامحدود/ماه: ${formatToman(r.unlimitedPerMonth)}`,
+    ].join("\n");
+
+  const text = [
+    "✏️ نرخ محاسبه قیمت",
+    "",
+    `حالت فعال: ${mode === "rate" ? "نرخ گیگ/ماه" : "پلن‌های ثابت (این نرخ‌ها فقط در حالت نرخ استفاده می‌شوند)"}`,
+    "",
+    line("👤 مشتری عادی", rates.user),
+    "",
+    line("🤝 همکار", rates.partner),
+    "",
+    line("📦 عمده‌فروش", rates.wholesale),
+    "",
+    "مثال مشتری ۵۰ گیگ ۲ ماهه:",
+    formatToman(50 * rates.user.perGb + 2 * rates.user.perMonth),
+  ].join("\n");
+
+  await ctx.editMessageText(text, {
+    reply_markup: new InlineKeyboard()
+      .text("✏️ مشتری", "cc:pricing:rates:edit:user")
+      .text("✏️ همکار", "cc:pricing:rates:edit:partner")
+      .row()
+      .text("✏️ عمده", "cc:pricing:rates:edit:wholesale")
+      .row()
+      .text("« قیمت‌گذاری", "cc:pricing"),
+  });
+}
+
+async function askRateStep(
+  ctx: Context,
+  opts: {
+    role: "user" | "partner" | "wholesale";
+    field: "perGb" | "perMonth" | "unlimitedPerMonth";
+    partial: PriceRates;
+  },
+) {
+  const roleLabel =
+    opts.role === "user" ? "مشتری عادی" : opts.role === "partner" ? "همکار" : "عمده‌فروش";
+  const fieldLabel =
+    opts.field === "perGb" ? "هر گیگ" : opts.field === "perMonth" ? "هر ماه" : "نامحدود (هر ماه)";
+  ccWait.set(ctx.from!.id, {
+    kind: "rate_ask",
+    role: opts.role,
+    field: opts.field,
+    partial: opts.partial,
+  });
+  await ctx.reply(
+    [
+      `نرخ ${fieldLabel} — ${roleLabel}`,
+      "",
+      "فقط عدد تومان بفرستید.",
+      "مثال: 15000",
+      "لغو: /cancel",
+    ].join("\n"),
+  );
+}
+
+async function showPricingDataMonths(ctx: Context) {
+  const months = await listDataMonths();
+  const text = [
+    "📦 حجمی (دیتا)",
+    "",
+    "اول دستهٔ ماهانه را انتخاب کنید؛",
+    "سپس پلن‌های حجمی همان مدت را ببینید یا بسازید.",
+  ].join("\n");
+
+  const kb = new InlineKeyboard();
+  for (const m of months) {
+    const label = m.months === 1 ? "۱ ماهه" : `${m.months} ماهه`;
+    kb.text(`${label} — ${m.count} حجم`, `cc:pricing:data:m:${m.months}`).row();
+  }
+  kb.text("➕ ماه جدید (۴–۱۲)", "cc:price:new:data").success().row();
+  kb.text("« دسته‌ها", "cc:pricing").text("« کنترل سنتر", "cc:home");
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function showPricingDataMonth(ctx: Context, months: number, page = 0) {
+  const cells = await listDataPlansForMonth(months);
+  const pageSize = 8;
+  const totalPages = Math.max(1, Math.ceil(cells.length / pageSize));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const slice = cells.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const dur = months === 1 ? "۱ ماهه" : `${months} ماهه`;
+
+  const text = [
+    `📦 حجمی · ${dur}`,
+    "",
+    cells.length
+      ? "روی هر حجم بزنید تا قیمت را ببینید یا ویرایش کنید."
+      : "هنوز حجمی برای این مدت نیست. با دکمه زیر بسازید.",
+  ].join("\n");
+
+  const kb = new InlineKeyboard();
+  for (const c of slice) {
+    const star = c.isGolden ? "⭐ " : "";
+    const vol = c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`;
+    kb.text(`${star}${vol}`, `cc:price:view:${c.id}`).row();
+  }
+  if (totalPages > 1) {
+    if (safePage > 0) kb.text("‹ قبلی", `cc:pricing:data:m:${months}:${safePage - 1}`);
+    if (safePage < totalPages - 1) kb.text("بعدی ›", `cc:pricing:data:m:${months}:${safePage + 1}`);
+    kb.row();
+  }
+  kb.text("➕ ساخت حجم جدید", `cc:price:newm:data:${months}`).success().row();
+  kb.text("« ماه‌ها", "cc:pricing:data").text("« کنترل سنتر", "cc:home");
   await ctx.editMessageText(text, { reply_markup: kb });
 }
 
@@ -246,41 +410,111 @@ async function showPriceDetail(ctx: Context, cellId: string) {
     .text("🗑 حذف پلن", `cc:price:delask:${cell.id}`)
     .danger()
     .row()
-    .text("« بازگشت", `cc:pricing:${cell.isGolden ? "golden" : cell.category}`);
+    .text("« بازگشت", cell.category === "data" ? `cc:pricing:data:m:${cell.months}` : `cc:pricing:${cell.isGolden ? "golden" : cell.category}`);
 
   await ctx.editMessageText(text, { reply_markup: kb });
 }
 
-async function showNewPlanVolume(ctx: Context, category: PlanCategory) {
+async function showNewPlanVolume(ctx: Context, category: PlanCategory, months?: number) {
+  if (category === "national") {
+    await showNewNationalVolume(ctx, 1);
+    return;
+  }
+
+  if (category === "data" && months === undefined) {
+    await showNewDataMonthPick(ctx);
+    return;
+  }
+
+  const dur =
+    months === undefined ? "" : months === 1 ? " · ۱ ماهه" : ` · ${months} ماهه`;
   const text = [
-    `➕ ساخت پلن جدید — ${catLabel(category)}`,
+    `➕ ساخت پلن جدید — ${catLabel(category)}${dur}`,
     "",
-    "مرحله ۱ از ۳: حجم را انتخاب کنید",
+    months !== undefined ? "حجم را انتخاب کنید:" : "مرحله ۱: حجم را انتخاب کنید",
   ].join("\n");
 
   const kb = new InlineKeyboard();
   if (category === "unlimited") {
     kb.text("💎 نامحدود", "cc:price:nv:unlimited:u").success().row();
   } else {
-    const vols = category === "national" ? [20, 30, 40, 50] : [10, 15, 20, 25, 30, 35, 40, 45, 50];
+    const vols = [...DATA_VOLUME_PRESETS];
     for (let i = 0; i < vols.length; i++) {
-      kb.text(`${vols[i]} گیگ`, `cc:price:nv:${category}:${vols[i]}`);
+      const cb =
+        months !== undefined
+          ? `cc:price:newv:data:${months}:${vols[i]}`
+          : `cc:price:nv:${category}:${vols[i]}`;
+      kb.text(`${vols[i]} گیگ`, cb);
       if ((i + 1) % 3 === 0) kb.row();
     }
     if (vols.length % 3 !== 0) kb.row();
   }
-  kb.text("« انصراف", `cc:pricing:${category}`).danger();
+  const back =
+    category === "data" && months !== undefined
+      ? `cc:pricing:data:m:${months}`
+      : `cc:pricing:${category}`;
+  kb.text("« انصراف", back).danger();
+
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function showNewDataMonthPick(ctx: Context) {
+  const text = [
+    "➕ ساخت پلن حجمی",
+    "",
+    "اول مدت (دسته ماهانه) را انتخاب کنید:",
+  ].join("\n");
+  const kb = new InlineKeyboard();
+  for (const m of [1, 2, 3, 4, 5, 6]) {
+    kb.text(m === 1 ? "۱ ماهه" : `${m} ماهه`, `cc:price:newm:data:${m}`);
+    if (m % 3 === 0) kb.row();
+  }
+  kb.row();
+  for (const m of [7, 8, 9, 10, 11, 12]) {
+    kb.text(`${m} ماهه`, `cc:price:newm:data:${m}`);
+    if (m % 3 === 0) kb.row();
+  }
+  kb.row().text("« انصراف", "cc:pricing:data").danger();
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
+async function showNewNationalVolume(ctx: Context, gb: number) {
+  const safe = Math.max(1, Math.min(NATIONAL_MAX_GB, gb));
+  const text = [
+    "➕ ساخت پلن جدید — اینترنت ملی",
+    "",
+    "حجم را با + و − تنظیم کنید (از ۱ گیگ).",
+    "مدت: فقط ۱ ماهه",
+  ].join("\n");
+
+  const kb = new InlineKeyboard()
+    .text("−", `cc:price:nat:${safe}:-`)
+    .text(`📦 ${safe} گیگ`, "wiz:noop")
+    .text("+", `cc:price:nat:${safe}:+`)
+    .row()
+    .text("⏳ فقط ۱ ماهه", "wiz:noop")
+    .row()
+    .text("✅ ادامه و تعیین قیمت", `cc:price:natok:${safe}`)
+    .success()
+    .row()
+    .text("« انصراف", "cc:pricing:national")
+    .danger();
 
   await ctx.editMessageText(text, { reply_markup: kb });
 }
 
 async function showNewPlanMonths(ctx: Context, category: PlanCategory, trafficGb: number | null) {
+  if (category === "national") {
+    await askPriceStep(ctx, { field: "user", category, trafficGb, months: 1 });
+    return;
+  }
+
   const volLabel = trafficGb === null ? "نامحدود" : `${trafficGb} گیگ`;
   const text = [
     `➕ ساخت پلن جدید — ${catLabel(category)}`,
     `حجم: ${volLabel}`,
     "",
-    "مرحله ۲ از ۳: مدت را انتخاب کنید",
+    "مدت را انتخاب کنید",
   ].join("\n");
 
   const gbKey = trafficGb === null ? "u" : String(trafficGb);
@@ -568,7 +802,45 @@ export function registerControlCenter(bot: Bot) {
     await showPricingHome(ctx);
   });
 
-  bot.callbackQuery(/^cc:pricing:(data|national|unlimited|golden)(?::(\d+))?$/, async (ctx) => {
+  bot.callbackQuery(/^cc:pricing:mode:(matrix|rate)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const mode = ctx.match![1] as "matrix" | "rate";
+    await setPricingMode(mode);
+    await ctx.answerCallbackQuery({
+      text: mode === "rate" ? "محاسبه بر اساس نرخ گیگ/ماه" : "محاسبه بر اساس پلن‌های ثابت",
+    });
+    await showPricingHome(ctx);
+  });
+
+  bot.callbackQuery("cc:pricing:rates", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showPriceRates(ctx);
+  });
+
+  bot.callbackQuery(/^cc:pricing:rates:edit:(user|partner|wholesale)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const role = ctx.match![1] as "user" | "partner" | "wholesale";
+    const partial = await getPriceRates();
+    await askRateStep(ctx, { role, field: "perGb", partial });
+  });
+
+  bot.callbackQuery(/^cc:pricing:data:m:(\d+)(?::(\d+))?$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const months = Number(ctx.match![1]);
+    const page = ctx.match![2] ? Number(ctx.match![2]) : 0;
+    await showPricingDataMonth(ctx, months, page);
+  });
+
+  bot.callbackQuery("cc:pricing:data", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showPricingDataMonths(ctx);
+  });
+
+  bot.callbackQuery(/^cc:pricing:(national|unlimited|golden)(?::(\d+))?$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
     const category = ctx.match![1] as PlanCategory | "golden";
@@ -588,11 +860,44 @@ export function registerControlCenter(bot: Bot) {
     await showNewPlanVolume(ctx, ctx.match![1] as PlanCategory);
   });
 
+  bot.callbackQuery(/^cc:price:newm:data:(\d+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showNewPlanVolume(ctx, "data", Number(ctx.match![1]));
+  });
+
+  bot.callbackQuery(/^cc:price:newv:data:(\d+):(\d+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const months = Number(ctx.match![1]);
+    const trafficGb = Number(ctx.match![2]);
+    await askPriceStep(ctx, { field: "user", category: "data", trafficGb, months });
+  });
+
+  bot.callbackQuery(/^cc:price:nat:(\d+):([+-])$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const cur = Number(ctx.match![1]);
+    const dir = ctx.match![2] === "+" ? 1 : -1;
+    await showNewNationalVolume(ctx, nextNationalVolume(cur, dir));
+  });
+
+  bot.callbackQuery(/^cc:price:natok:(\d+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const trafficGb = Number(ctx.match![1]);
+    await askPriceStep(ctx, { field: "user", category: "national", trafficGb, months: 1 });
+  });
+
   bot.callbackQuery(/^cc:price:nv:(data|national|unlimited):(u|\d+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
     const category = ctx.match![1] as PlanCategory;
     const trafficGb = ctx.match![2] === "u" ? null : Number(ctx.match![2]);
+    if (category === "national") {
+      await askPriceStep(ctx, { field: "user", category, trafficGb, months: 1 });
+      return;
+    }
     await showNewPlanMonths(ctx, category, trafficGb);
   });
 
@@ -601,7 +906,7 @@ export function registerControlCenter(bot: Bot) {
     await ctx.answerCallbackQuery();
     const category = ctx.match![1] as PlanCategory;
     const trafficGb = ctx.match![2] === "u" ? null : Number(ctx.match![2]);
-    const months = Number(ctx.match![3]);
+    const months = category === "national" ? 1 : Number(ctx.match![3]);
     await askPriceStep(ctx, { field: "user", category, trafficGb, months });
   });
 
@@ -1272,6 +1577,41 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     return true;
   }
 
+  if (wait.kind === "rate_ask") {
+    const amount = Number(text.replace(/[^\d]/g, ""));
+    if (!amount || amount < 100) {
+      await ctx.reply("مبلغ نامعتبر. حداقل ۱۰۰ تومان.\nمثال: 15000");
+      return true;
+    }
+    const partial = structuredClone(wait.partial);
+    partial[wait.role][wait.field] = amount;
+
+    if (wait.field === "perGb") {
+      ccWait.set(tid, { kind: "rate_ask", role: wait.role, field: "perMonth", partial });
+      await ctx.reply(`✅ هر گیگ: ${formatToman(amount)}\n\nحالا نرخ هر ماه را بفرستید.\nمثال: 30000`);
+      return true;
+    }
+    if (wait.field === "perMonth") {
+      ccWait.set(tid, { kind: "rate_ask", role: wait.role, field: "unlimitedPerMonth", partial });
+      await ctx.reply(
+        `✅ هر ماه: ${formatToman(amount)}\n\nحالا قیمت نامحدود به‌ازای هر ماه را بفرستید.\nمثال: 1500000`,
+      );
+      return true;
+    }
+
+    await savePriceRates(partial);
+    ccWait.delete(tid);
+    const roleLabel =
+      wait.role === "user" ? "مشتری" : wait.role === "partner" ? "همکار" : "عمده";
+    await ctx.reply(`✅ نرخ‌های ${roleLabel} ذخیره شد.`, {
+      reply_markup: new InlineKeyboard()
+        .text("✏️ نرخ‌ها", "cc:pricing:rates")
+        .row()
+        .text("💰 قیمت‌گذاری", "cc:pricing"),
+    });
+    return true;
+  }
+
   if (wait.kind === "price_ask") {
     const amount = parsePriceNumber(text);
     if (!amount) {
@@ -1343,6 +1683,14 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
       category: wait.trafficGb === null ? "unlimited" : wait.category,
     });
     ccWait.delete(tid);
+    const againCb =
+      wait.category === "data"
+        ? `cc:price:newm:data:${wait.months}`
+        : wait.category === "national"
+          ? "cc:price:new:national"
+          : `cc:price:new:${wait.category}`;
+    const backCb =
+      wait.category === "data" ? `cc:pricing:data:m:${wait.months}` : `cc:pricing:${wait.category}`;
     await ctx.reply(
       [
         "✅ پلن ذخیره شد",
@@ -1356,8 +1704,10 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
         reply_markup: new InlineKeyboard()
           .text("👁 مشاهده پلن", `cc:price:view:${cell.id}`)
           .row()
-          .text("➕ پلن دیگر", `cc:price:new:${wait.category}`)
+          .text("➕ پلن دیگر", againCb)
           .success()
+          .row()
+          .text("« بازگشت", backCb)
           .row()
           .text("💰 قیمت‌گذاری", "cc:pricing"),
       },

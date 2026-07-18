@@ -54,6 +54,13 @@ const defaults: Record<string, string> = {
   extra_admin_ids: "",
   /** Default IP/device limit for new configs (0 = unlimited) */
   default_limit_ip: "2",
+  /** matrix = discrete PriceCell plans | rate = per-GB + per-month formula */
+  pricing_mode: "matrix",
+  price_rates_json: JSON.stringify({
+    user: { perGb: 15_000, perMonth: 30_000, unlimitedPerMonth: 1_500_000 },
+    partner: { perGb: 12_000, perMonth: 25_000, unlimitedPerMonth: 1_200_000 },
+    wholesale: { perGb: 10_000, perMonth: 20_000, unlimitedPerMonth: 1_000_000 },
+  }),
   backup_config: JSON.stringify({
     enabled: true,
     hour: 3,
@@ -163,4 +170,53 @@ export async function getDefaultLimitIp(): Promise<number> {
   const raw = Number(await getSetting("default_limit_ip"));
   if (Number.isNaN(raw) || raw < 0) return 2;
   return Math.min(10, Math.floor(raw));
+}
+
+export type PricingMode = "matrix" | "rate";
+
+export type RoleRates = {
+  perGb: number;
+  perMonth: number;
+  unlimitedPerMonth: number;
+};
+
+export type PriceRates = {
+  user: RoleRates;
+  partner: RoleRates;
+  wholesale: RoleRates;
+};
+
+export function defaultPriceRates(): PriceRates {
+  return {
+    user: { perGb: 15_000, perMonth: 30_000, unlimitedPerMonth: 1_500_000 },
+    partner: { perGb: 12_000, perMonth: 25_000, unlimitedPerMonth: 1_200_000 },
+    wholesale: { perGb: 10_000, perMonth: 20_000, unlimitedPerMonth: 1_000_000 },
+  };
+}
+
+export async function getPricingMode(): Promise<PricingMode> {
+  const m = await getSetting("pricing_mode");
+  return m === "rate" ? "rate" : "matrix";
+}
+
+export async function setPricingMode(mode: PricingMode) {
+  await setSetting("pricing_mode", mode);
+}
+
+export async function getPriceRates(): Promise<PriceRates> {
+  const base = defaultPriceRates();
+  try {
+    const raw = JSON.parse(await getSetting("price_rates_json")) as Partial<PriceRates>;
+    return {
+      user: { ...base.user, ...(raw.user ?? {}) },
+      partner: { ...base.partner, ...(raw.partner ?? {}) },
+      wholesale: { ...base.wholesale, ...(raw.wholesale ?? {}) },
+    };
+  } catch {
+    return base;
+  }
+}
+
+export async function savePriceRates(rates: PriceRates) {
+  await setSetting("price_rates_json", JSON.stringify(rates));
 }
