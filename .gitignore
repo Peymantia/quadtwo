@@ -1,0 +1,15 @@
+node_modules
+dist
+.next
+.env
+.env.local
+*.log
+.DS_Store
+coverage
+.turbo
+*.db
+*.db-journal
+ChatGPT-BotCoding.md
+data/
+
+tsbuildinfo

@@ -1,0 +1,40 @@
+import { prisma } from "../db.js";
+
+const defaults: Record<string, string> = {
+  brand_name: "Piing",
+  channel_username: "",
+  channel_required: "false",
+  card_number: "6037-0000-0000-0000",
+  card_holder: "نام صاحب حساب",
+  welcome_text: "به فروشگاه اشتراک خوش آمدید.",
+};
+
+export async function getSetting(key: string): Promise<string> {
+  const row = await prisma.setting.findUnique({ where: { key } });
+  if (row) return row.value;
+  return defaults[key] ?? "";
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  await prisma.setting.upsert({
+    where: { key },
+    create: { key, value },
+    update: { value },
+  });
+}
+
+export async function getPaymentCard() {
+  return {
+    number: await getSetting("card_number"),
+    holder: await getSetting("card_holder"),
+  };
+}
+
+export async function ensureDefaultSettings() {
+  for (const [key, value] of Object.entries(defaults)) {
+    const existing = await prisma.setting.findUnique({ where: { key } });
+    if (!existing) {
+      await prisma.setting.create({ data: { key, value } });
+    }
+  }
+}

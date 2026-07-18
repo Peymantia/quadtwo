@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  user
+  partner
+  admin
+}
+
+enum OrderStatus {
+  pending_payment
+  awaiting_review
+  paid
+  provisioning
+  completed
+  rejected
+  cancelled
+}
+
+enum PaymentMethod {
+  card_to_card
+  wallet
+  online_soon
+  crypto_soon
+}
+
+enum WalletTxType {
+  charge
+  purchase
+  refund
+  adjust
+}
+
+enum SubscriptionStatus {
+  active
+  expired
+  disabled
+}
+
+model User {
+  id           String   @id @default(cuid())
+  telegramId   BigInt   @unique
+  username     String?
+  firstName    String?
+  lastName     String?
+  role         UserRole @default(user)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  wallet         Wallet?
+  orders         Order[]
+  subscriptions  Subscription[]
+  partnerRequest PartnerRequest?
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+  txs       WalletTransaction[]
+}
+
+model WalletTransaction {
+  id            String       @id @default(cuid())
+  walletId      String
+  type          WalletTxType
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  note          String?
+  createdAt     DateTime     @default(now())
+  wallet        Wallet       @relation(fields: [walletId], references: [id])
+}
+
+model Plan {
+  id            String   @id @default(cuid())
+  title         String
+  trafficGb     Int?
+  durationDays  Int
+  priceUser     Int
+  pricePartner  Int
+  sortOrder     Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  orders        Order[]
+}
+
+model PanelServer {
+  id           String   @id @default(cuid())
+  name         String
+  baseUrl      String
+  apiTokenEnc  String
+  inboundId    Int
+  active       Boolean  @default(true)
+  sellEnabled  Boolean  @default(true)
+  weight       Int      @default(100)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  subscriptions Subscription[]
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  userId          String
+  planId          String
+  price           Int
+  status          OrderStatus   @default(pending_payment)
+  paymentMethod   PaymentMethod @default(card_to_card)
+  receiptFileId   String?
+  receiptText     String?
+  adminNote       String?
+  customName      String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User          @relation(fields: [userId], references: [id])
+  plan            Plan          @relation(fields: [planId], references: [id])
+  subscription    Subscription?
+}
+
+model Subscription {
+  id              String             @id @default(cuid())
+  code            String             @unique
+  userId          String
+  orderId         String?            @unique
+  panelServerId   String?
+  title           String?
+  email           String
+  clientUuid      String?
+  trafficGb       Int?
+  expiresAt       DateTime
+  subUrl          String?
+  status          SubscriptionStatus @default(active)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  user            User               @relation(fields: [userId], references: [id])
+  order           Order?             @relation(fields: [orderId], references: [id])
+  panelServer     PanelServer?       @relation(fields: [panelServerId], references: [id])
+}
+
+model PartnerRequest {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  fullName  String
+  phone     String?
+  note      String?
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
