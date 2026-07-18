@@ -21,7 +21,7 @@ err() { echo -e "${RED}[quadtwo]${NC} $*" >&2; }
 
 need_root() {
   if [[ "${EUID}" -ne 0 ]]; then
-    err "این اسکریپت را با root اجرا کنید (sudo)."
+    err "Please run this script as root (sudo)."
     exit 1
   fi
 }
@@ -41,13 +41,13 @@ install_node() {
     local major
     major="$(node -v | sed 's/v//' | cut -d. -f1)"
     if [[ "${major}" -ge "${NODE_MAJOR}" ]]; then
-      log "Node.js $(node -v) موجود است."
+      log "Node.js $(node -v) found."
       return
     fi
-    warn "Node.js قدیمی است ($(node -v)) — نسخه ${NODE_MAJOR}+ نصب می‌شود."
+    warn "Node.js $(node -v) is too old — installing ${NODE_MAJOR}+."
   fi
 
-  log "نصب Node.js ${NODE_MAJOR}..."
+  log "Installing Node.js ${NODE_MAJOR}..."
   case "${OS_ID}" in
     ubuntu|debian|raspbian)
       apt-get update -y
@@ -69,7 +69,7 @@ install_node() {
       fi
       ;;
     *)
-      err "توزیع پشتیبانی‌نشده: ${OS_ID}. Node ${NODE_MAJOR}+ و git را دستی نصب کنید."
+      err "Unsupported distro: ${OS_ID}. Install Node ${NODE_MAJOR}+ and git manually."
       exit 1
       ;;
   esac
@@ -85,7 +85,7 @@ prompt() {
     while true; do
       read -r -p "${label}: " value || true
       [[ -n "${value}" ]] && break
-      warn "این مقدار الزامی است."
+      warn "This field is required."
     done
   fi
   printf -v "${var}" '%s' "${value}"
@@ -113,16 +113,16 @@ NEXT_PUBLIC_API_URL=https://${PUBLIC_DOMAIN}
 NEXT_PUBLIC_APP_URL=https://${PUBLIC_DOMAIN}
 EOF
   chmod 600 "${env_file}"
-  log "فایل تنظیمات: ${env_file}"
+  log "Config written: ${env_file}"
 }
 
 clone_or_update() {
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
-    log "به‌روزرسانی مخزن در ${INSTALL_DIR}..."
+    log "Updating repo in ${INSTALL_DIR}..."
     git -C "${INSTALL_DIR}" fetch --depth 1 origin "${REPO_BRANCH}"
     git -C "${INSTALL_DIR}" reset --hard "origin/${REPO_BRANCH}"
   else
-    log "کلون مخزن در ${INSTALL_DIR}..."
+    log "Cloning repo into ${INSTALL_DIR}..."
     rm -rf "${INSTALL_DIR}"
     git clone --depth 1 --branch "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
   fi
@@ -131,10 +131,10 @@ clone_or_update() {
 
 build_app() {
   cd "${INSTALL_DIR}"
-  log "نصب وابستگی‌ها..."
+  log "Installing npm dependencies..."
   npm install
 
-  log "ساخت پکیج‌ها..."
+  log "Building packages..."
   npm run build -w @quadtwo/shared
   npm run db:generate -w @quadtwo/server
   DATABASE_URL="file:${INSTALL_DIR}/data/quadtwo.db" npm run db:push -w @quadtwo/server
@@ -164,7 +164,7 @@ EOF
   systemctl daemon-reload
   systemctl enable "${SERVICE_NAME}"
   systemctl restart "${SERVICE_NAME}"
-  log "سرویس ${SERVICE_NAME} راه‌اندازی شد."
+  log "Service ${SERVICE_NAME} started."
 }
 
 write_helper() {
@@ -189,7 +189,6 @@ case "${1:-}" in
     ;;
 esac
 EOF
-  # keep DIR in sync if custom install path was used
   sed -i "s|^DIR=.*|DIR=${INSTALL_DIR}|" /usr/local/bin/quadtwo
   chmod +x /usr/local/bin/quadtwo
 }
@@ -200,15 +199,15 @@ do_install() {
   install_node
 
   echo
-  log "تنظیمات را وارد کنید (Enter = مقدار پیش‌فرض)"
-  prompt BOT_TOKEN "BOT_TOKEN (از BotFather)"
-  prompt ADMIN_TELEGRAM_IDS "Telegram ID ادمین"
-  prompt XUI_BASE_URL "آدرس پنل 3x-ui (با / انتهایی)" "http://127.0.0.1:2053/"
-  prompt XUI_API_TOKEN "API Token پنل 3x-ui"
+  log "Enter configuration (press Enter to keep the default)"
+  prompt BOT_TOKEN "BOT_TOKEN (from BotFather)"
+  prompt ADMIN_TELEGRAM_IDS "Admin Telegram numeric ID"
+  prompt XUI_BASE_URL "3x-ui base URL (trailing slash required)" "http://127.0.0.1:2053/"
+  prompt XUI_API_TOKEN "3x-ui API token"
   prompt XUI_INBOUND_ID "Inbound ID" "1"
-  prompt XUI_SUB_BASE "آدرس پایه ساب (اختیاری)" ""
-  prompt PUBLIC_DOMAIN "دامنه Mini App" "app.piing.ir"
-  prompt PORT "پورت سرویس" "4000"
+  prompt XUI_SUB_BASE "Subscription base URL (optional)" ""
+  prompt PUBLIC_DOMAIN "Public domain for Mini App" "app.piing.ir"
+  prompt PORT "Service port" "4000"
 
   clone_or_update
   write_env
@@ -217,25 +216,24 @@ do_install() {
   write_helper
 
   echo
-  log "نصب تمام شد."
-  echo "  مدیریت:  quadtwo status | quadtwo logs | quadtwo restart"
-  echo "  تنظیمات: quadtwo env"
-  echo "  کارت بانکی در بات: /setcard شماره|نام"
-  echo "  ربات را در تلگرام /start بزنید."
+  log "Install complete."
+  echo "  Manage:  quadtwo status | quadtwo logs | quadtwo restart"
+  echo "  Config:  quadtwo env"
+  echo "  In bot:  /setcard CARD_NUMBER|CARD_HOLDER_NAME"
+  echo "  Then open Telegram and send /start to the bot."
   systemctl --no-pager --full status "${SERVICE_NAME}" || true
 }
 
 do_update() {
   need_root
   detect_os
-  [[ -d "${INSTALL_DIR}/.git" ]] || { err "نصب قبلی در ${INSTALL_DIR} پیدا نشد."; exit 1; }
+  [[ -d "${INSTALL_DIR}/.git" ]] || { err "No existing install found at ${INSTALL_DIR}."; exit 1; }
   install_node
   clone_or_update
-  # keep existing .env
   build_app
   write_systemd
   write_helper
-  log "به‌روزرسانی انجام شد."
+  log "Update complete."
 }
 
 do_uninstall() {
@@ -245,11 +243,11 @@ do_uninstall() {
   rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
   systemctl daemon-reload
   rm -f /usr/local/bin/quadtwo
-  read -r -p "پوشه ${INSTALL_DIR} هم حذف شود؟ [y/N]: " ans || true
+  read -r -p "Also delete ${INSTALL_DIR}? [y/N]: " ans || true
   if [[ "${ans:-}" =~ ^[Yy]$ ]]; then
     rm -rf "${INSTALL_DIR}"
   fi
-  log "حذف انجام شد."
+  log "Uninstall complete."
 }
 
 case "${1:-}" in
