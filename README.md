@@ -41,7 +41,23 @@ bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install
 
 ```text
 /setcard 6037-xxxx-xxxx-xxxx|نام صاحب حساب
+/setsupport @username
+/setminiapp https://app.piing.ir
 ```
+
+به‌روزرسانی سرور موجود:
+
+```bash
+quadtwo update
+```
+
+## امکانات فعلی
+- ماتریکس قیمت حجم×مدت (user / partner)
+- خرید با دکمه‌های +/- حجم و مدت
+- همکار + گروه در 3x-ui
+- تمدید / تغییر لینک ساب / باطل‌کردن کانفیگ قدیم
+- تحویل فقط لینک ساب + QR
+- Mini App (Buy / Services / Admin) + REST `/api`
 
 ## توسعه لوکال
 
