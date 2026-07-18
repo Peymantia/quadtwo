@@ -12,10 +12,14 @@ export async function createMatrixOrder(input: {
   kind?: OrderKind;
   targetSubId?: string;
   paymentMethod?: PaymentMethod;
+  quantity?: number;
+  category?: string;
 }) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
-  const priced = await resolvePrice(user, input.trafficGb, input.months);
+  const category = (input.category as "data" | "national" | "unlimited") || "data";
+  const priced = await resolvePrice(user, input.trafficGb, input.months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
+  const quantity = Math.max(1, Math.min(50, input.quantity ?? 1));
 
   return prisma.order.create({
     data: {
@@ -23,7 +27,8 @@ export async function createMatrixOrder(input: {
       kind: input.kind ?? OrderKind.new,
       trafficGb: input.trafficGb,
       months: input.months,
-      price: priced.price,
+      quantity,
+      price: priced.price * quantity,
       accountName: input.accountName,
       customName: input.accountName,
       targetSubId: input.targetSubId,
@@ -135,10 +140,12 @@ export function orderSummaryText(order: {
   price: number;
   accountName?: string | null;
   kind?: OrderKind;
+  quantity?: number;
 }) {
   if (order.kind === OrderKind.wallet_charge) {
     return [`نوع: شارژ کیف پول`, `مبلغ: ${order.price.toLocaleString("fa-IR")} تومان`].join("\n");
   }
+  const qty = order.quantity ?? 1;
   const vol = order.trafficGb === null ? "نامحدود" : `${order.trafficGb} گیگ`;
   const kindLabel =
     order.kind === OrderKind.renew
@@ -147,13 +154,16 @@ export function orderSummaryText(order: {
         ? "تغییر لینک ساب"
         : order.kind === OrderKind.rotate_uuid
           ? "تغییر لینک کانفیگ"
-          : "خرید جدید";
+          : qty > 1
+            ? "خرید عمده (Bulk)"
+            : "خرید جدید";
   return [
     `نوع: ${kindLabel}`,
     `حجم: ${vol}`,
     order.months > 0 ? `مدت: ${order.months} ماه` : "",
-    order.accountName ? `نام اکانت: ${order.accountName}` : "",
-    `مبلغ: ${order.price.toLocaleString("fa-IR")} تومان`,
+    `تعداد: ${qty}`,
+    order.accountName ? `نام پایه: ${order.accountName}` : "",
+    `مبلغ کل: ${order.price.toLocaleString("fa-IR")} تومان`,
   ]
     .filter(Boolean)
     .join("\n");

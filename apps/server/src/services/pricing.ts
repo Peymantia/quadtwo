@@ -4,6 +4,8 @@ import { formatToman, formatTraffic } from "../utils/format.js";
 
 const VOLUME_STEPS = [10, 15, 20, 25, 30, 35, 40, 45, 50] as const;
 
+export type PlanCategory = "data" | "national" | "unlimited";
+
 export function nextVolume(current: number | null, unlimited: boolean, dir: 1 | -1): {
   trafficGb: number | null;
   unlimited: boolean;
@@ -24,37 +26,60 @@ export function clampMonths(m: number) {
   return Math.max(1, Math.min(12, m));
 }
 
-export async function findPriceCell(trafficGb: number | null, months: number) {
+export function clampQty(q: number) {
+  return Math.max(1, Math.min(50, q));
+}
+
+export async function findPriceCell(
+  trafficGb: number | null,
+  months: number,
+  category: PlanCategory = "data",
+) {
+  const cat = trafficGb === null ? "unlimited" : category;
   return prisma.priceCell.findFirst({
-    where: { trafficGb, months, active: true },
+    where: { trafficGb, months, category: cat, active: true },
   });
 }
 
 export function priceFromCell(
   role: UserRole,
-  cell: { priceUser: number; pricePartner: number },
+  cell: { priceUser: number; pricePartner: number; priceWholesale: number },
 ) {
+  if (role === "wholesale") return cell.priceWholesale || cell.pricePartner;
   if (role === "partner" || role === "admin") return cell.pricePartner;
   return cell.priceUser;
 }
 
-export async function resolvePrice(user: User, trafficGb: number | null, months: number) {
-  const cell = await findPriceCell(trafficGb, months);
+export async function resolvePrice(
+  user: User,
+  trafficGb: number | null,
+  months: number,
+  category: PlanCategory = "data",
+) {
+  const cell = await findPriceCell(trafficGb, months, category);
   if (!cell) return null;
   return { cell, price: priceFromCell(user.role, cell) };
 }
 
-export function matrixLine(trafficGb: number | null, months: number, price: number | null) {
+export function matrixLine(trafficGb: number | null, months: number, price: number | null, qty = 1) {
   const vol = formatTraffic(trafficGb);
   const dur = months === 1 ? "۱ ماه" : `${months} ماه`;
-  const p = price === null ? "قیمت‌گذاری نشده" : formatToman(price);
-  return `📦 ${vol} · ⏳ ${dur}\n💰 ${p}`;
+  const unit = price === null ? "قیمت‌گذاری نشده" : formatToman(price);
+  const total = price === null ? "" : `\n🧾 جمع ${qty} عدد: ${formatToman(price * qty)}`;
+  return `📦 ${vol} · ⏳ ${dur}\n💰 هر عدد: ${unit}${qty > 1 ? total : ""}`;
 }
 
-export async function listPriceMatrix() {
+export async function listPriceMatrix(category?: string) {
   return prisma.priceCell.findMany({
-    where: { active: true },
-    orderBy: [{ sortOrder: "asc" }, { months: "asc" }],
+    where: { active: true, ...(category ? { category } : {}) },
+    orderBy: [{ isGolden: "desc" }, { sortOrder: "asc" }, { months: "asc" }],
+  });
+}
+
+export async function listGoldenOffers() {
+  return prisma.priceCell.findMany({
+    where: { active: true, isGolden: true },
+    orderBy: { sortOrder: "asc" },
   });
 }
 
@@ -63,24 +88,41 @@ export async function upsertPriceCell(input: {
   months: number;
   priceUser: number;
   pricePartner: number;
+  priceWholesale?: number;
+  category?: PlanCategory;
+  isGolden?: boolean;
+  title?: string;
 }) {
+  const category = input.trafficGb === null ? "unlimited" : (input.category ?? "data");
   const existing = await prisma.priceCell.findFirst({
-    where: { trafficGb: input.trafficGb, months: input.months },
+    where: { trafficGb: input.trafficGb, months: input.months, category },
   });
+  const data = {
+    priceUser: input.priceUser,
+    pricePartner: input.pricePartner,
+    priceWholesale: input.priceWholesale ?? input.pricePartner,
+    category,
+    isGolden: input.isGolden ?? false,
+    title: input.title,
+    active: true,
+  };
   if (existing) {
-    return prisma.priceCell.update({
-      where: { id: existing.id },
-      data: {
-        priceUser: input.priceUser,
-        pricePartner: input.pricePartner,
-        active: true,
-      },
-    });
+    return prisma.priceCell.update({ where: { id: existing.id }, data });
   }
   return prisma.priceCell.create({
     data: {
-      ...input,
+      trafficGb: input.trafficGb,
+      months: input.months,
+      ...data,
       sortOrder: (input.trafficGb ?? 999) * 10 + input.months,
     },
   });
+}
+
+export async function setCellGolden(id: string, isGolden: boolean) {
+  return prisma.priceCell.update({ where: { id }, data: { isGolden } });
+}
+
+export async function deactivateCell(id: string) {
+  return prisma.priceCell.update({ where: { id }, data: { active: false } });
 }

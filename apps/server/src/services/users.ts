@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { adminIds } from "../config/env.js";
 import { createXuiFromEnv } from "../panel/xui-client.js";
 import { env } from "../config/env.js";
+import { getExtraAdminIds } from "./settings.js";
 
 export type TgUserLike = {
   id: number;
@@ -14,7 +15,9 @@ export type TgUserLike = {
 
 export async function upsertUserFromTelegram(tg: TgUserLike): Promise<User> {
   const telegramId = BigInt(tg.id);
-  const shouldAdmin = adminIds().includes(telegramId);
+  const envAdmins = adminIds();
+  const extra = await getExtraAdminIds();
+  const shouldAdmin = envAdmins.includes(telegramId) || extra.includes(telegramId);
 
   const user = await prisma.user.upsert({
     where: { telegramId },
@@ -43,6 +46,19 @@ export async function upsertUserFromTelegram(tg: TgUserLike): Promise<User> {
   return user;
 }
 
+/** All telegram IDs that should receive admin alerts */
+export async function listNotifyAdminTelegramIds(): Promise<number[]> {
+  const fromDb = await prisma.user.findMany({
+    where: { role: UserRole.admin },
+    select: { telegramId: true },
+  });
+  const set = new Set<string>();
+  for (const id of adminIds()) set.add(String(id));
+  for (const id of await getExtraAdminIds()) set.add(String(id));
+  for (const u of fromDb) set.add(String(u.telegramId));
+  return [...set].map((s) => Number(s));
+}
+
 export async function submitPartnerRequest(userId: string, fullName: string, phone?: string, note?: string) {
   return prisma.partnerRequest.upsert({
     where: { userId },
@@ -51,12 +67,13 @@ export async function submitPartnerRequest(userId: string, fullName: string, pho
   });
 }
 
-export async function approvePartner(requestId: string) {
+export async function approvePartner(requestId: string, asRole: "partner" | "wholesale" = "partner") {
   const req = await prisma.partnerRequest.findUniqueOrThrow({
     where: { id: requestId },
     include: { user: true },
   });
-  const group = `reseller_${req.user.telegramId}`;
+  const prefix = asRole === "wholesale" ? "wholesale" : "reseller";
+  const group = `${prefix}_${req.user.telegramId}`;
 
   try {
     const xui = createXuiFromEnv(env);
@@ -67,7 +84,10 @@ export async function approvePartner(requestId: string) {
 
   await prisma.user.update({
     where: { id: req.userId },
-    data: { role: UserRole.partner, panelGroup: group },
+    data: {
+      role: asRole === "wholesale" ? UserRole.wholesale : UserRole.partner,
+      panelGroup: group,
+    },
   });
 
   return prisma.partnerRequest.update({
@@ -82,5 +102,37 @@ export async function rejectPartner(requestId: string) {
     where: { id: requestId },
     data: { status: "rejected" },
     include: { user: true },
+  });
+}
+
+export async function demoteToUser(userId: string) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { role: UserRole.user, panelGroup: null },
+  });
+}
+
+export async function partnerSalesReport(role: "partner" | "wholesale") {
+  const users = await prisma.user.findMany({
+    where: { role: role === "wholesale" ? UserRole.wholesale : UserRole.partner },
+    include: {
+      orders: {
+        where: { status: "completed", kind: { in: ["new", "renew"] } },
+      },
+      subscriptions: true,
+    },
+  });
+  return users.map((u) => {
+    const sales = u.orders.reduce((s, o) => s + o.price, 0);
+    return {
+      id: u.id,
+      telegramId: String(u.telegramId),
+      username: u.username,
+      name: u.firstName,
+      group: u.panelGroup,
+      orders: u.orders.length,
+      sales,
+      subs: u.subscriptions.length,
+    };
   });
 }

@@ -108,7 +108,7 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
   });
 
   try {
-    let result: ProvisionResult;
+    let result: ProvisionResultWithBulk | ProvisionResult;
     if (order.kind === OrderKind.renew && order.targetSub) {
       result = await renewSubscription(order, order.targetSub.id);
     } else if (order.kind === OrderKind.rotate_sub && order.targetSub) {
@@ -116,7 +116,7 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
     } else if (order.kind === OrderKind.rotate_uuid && order.targetSub) {
       result = await rotateUuid(order.targetSub.id);
     } else {
-      result = await createPanelClient(order.user, order);
+      result = await createPanelClientsBulk(order.user, order);
     }
 
     await prisma.order.update({
@@ -133,10 +133,16 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
   }
 }
 
-async function createPanelClient(user: User, order: Order): Promise<ProvisionResult> {
+export type ProvisionResultWithBulk = ProvisionResult & { bulk?: ProvisionResult[] };
+
+async function createOnePanelClient(
+  user: User,
+  order: Order,
+  opts: { email: string; linkOrderId: boolean },
+): Promise<ProvisionResult> {
   const xui = createXuiFromEnv(env);
   const code = shortCode("QT");
-  const email = sanitizeEmail(order.accountName || order.customName || code);
+  const email = sanitizeEmail(opts.email);
   const subId = randomSubId();
   const months = order.months || 1;
   const expiresAt = new Date(Date.now() + months * 30 * 24 * 60 * 60 * 1000);
@@ -191,7 +197,7 @@ async function createPanelClient(user: User, order: Order): Promise<ProvisionRes
     data: {
       code,
       userId: user.id,
-      orderId: order.id,
+      orderId: opts.linkOrderId ? order.id : null,
       title: email,
       email,
       clientUuid,
@@ -211,6 +217,25 @@ async function createPanelClient(user: User, order: Order): Promise<ProvisionRes
     expiresAt,
     qrPng,
   };
+}
+
+/** Create 1..N panel clients (quantity > 1 = bulk). First sub is linked to the order. */
+async function createPanelClientsBulk(user: User, order: Order): Promise<ProvisionResultWithBulk> {
+  const qty = Math.max(1, Math.min(50, order.quantity ?? 1));
+  const base = sanitizeEmail(order.accountName || order.customName || shortCode("QT"));
+  const results: ProvisionResult[] = [];
+
+  for (let i = 0; i < qty; i++) {
+    const email = qty === 1 ? base : `${base}_${i + 1}`;
+    const one = await createOnePanelClient(user, order, {
+      email,
+      linkOrderId: i === 0,
+    });
+    results.push(one);
+  }
+
+  const [first, ...rest] = results;
+  return { ...first!, bulk: rest.length ? rest : undefined };
 }
 
 export async function renewSubscription(order: Order, subscriptionId: string): Promise<ProvisionResult> {

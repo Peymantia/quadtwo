@@ -102,7 +102,62 @@ export class XuiClient {
         password?: string;
       };
       inboundIds?: number[];
+      usedTraffic?: number;
     }>(`panel/api/clients/get/${encodeURIComponent(email)}`);
+  }
+
+  /** Bytes used (up+down). Tries traffic endpoints, falls back to getClient.usedTraffic. */
+  async getClientTraffic(email: string): Promise<{
+    up: number;
+    down: number;
+    total: number;
+    used: number;
+    enable?: boolean;
+    expiryTime?: number;
+  } | null> {
+    const paths = [
+      `panel/api/clients/traffic/${encodeURIComponent(email)}`,
+      `panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`,
+    ];
+    for (const path of paths) {
+      try {
+        const res = await this.request<{
+          up?: number;
+          down?: number;
+          total?: number;
+          enable?: boolean;
+          expiryTime?: number;
+        }>(path);
+        const up = Number(res.obj?.up ?? 0);
+        const down = Number(res.obj?.down ?? 0);
+        return {
+          up,
+          down,
+          total: Number(res.obj?.total ?? 0),
+          used: up + down,
+          enable: res.obj?.enable,
+          expiryTime: res.obj?.expiryTime,
+        };
+      } catch {
+        /* try next */
+      }
+    }
+    try {
+      const got = await this.getClient(email);
+      const client = got.obj?.client;
+      if (!client) return null;
+      const used = Number(got.obj?.usedTraffic ?? 0);
+      return {
+        up: 0,
+        down: used,
+        total: Number(client.totalGB ?? 0),
+        used,
+        enable: client.enable,
+        expiryTime: client.expiryTime,
+      };
+    } catch {
+      return null;
+    }
   }
 
   clientLinks(email: string) {

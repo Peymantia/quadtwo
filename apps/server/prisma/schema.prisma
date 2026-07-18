@@ -10,6 +10,7 @@ datasource db {
 enum UserRole {
   user
   partner
+  wholesale
   admin
 }
 
@@ -105,17 +106,22 @@ model Plan {
 
 /// Manual price matrix: trafficGb null = unlimited
 model PriceCell {
-  id           String  @id @default(cuid())
-  trafficGb    Int?
-  months       Int
-  priceUser    Int
-  pricePartner Int
-  active       Boolean @default(true)
-  sortOrder    Int     @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String  @id @default(cuid())
+  title          String?
+  /// data | national | unlimited
+  category       String  @default("data")
+  trafficGb      Int?
+  months         Int
+  priceUser      Int
+  pricePartner   Int
+  priceWholesale Int     @default(0)
+  isGolden       Boolean @default(false)
+  active         Boolean @default(true)
+  sortOrder      Int     @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  @@index([months])
+  @@index([category, months])
 }
 
 model PanelServer {
@@ -147,6 +153,7 @@ model Order {
   adminNote       String?
   accountName     String?
   customName      String?
+  quantity        Int           @default(1)
   targetSubId     String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -196,6 +203,18 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+/// Dedupe log so expiry/traffic alerts are not spammed every cron tick
+model NotificationLog {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  kind           String
+  bucket         String
+  createdAt      DateTime @default(now())
+
+  @@unique([subscriptionId, kind, bucket])
+  @@index([subscriptionId])
+}
+
 /// Temporary buy wizard state per telegram user
 model BuyDraft {
   id          String   @id @default(cuid())
@@ -203,6 +222,8 @@ model BuyDraft {
   trafficGb   Int?     @default(10)
   months      Int      @default(1)
   unlimited   Boolean  @default(false)
+  quantity    Int      @default(1)
+  category    String   @default("data")
   accountMode String   @default("random")
   accountName String?
   updatedAt   DateTime @updatedAt

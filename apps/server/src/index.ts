@@ -32,6 +32,10 @@ serve({ fetch: app.fetch, port: env.PORT }, () => {
   console.log(`quadtwo server listening on :${env.PORT}`);
 });
 
+const { startNotificationCron } = await import("./services/notifications.js");
+startNotificationCron(bot.api);
+console.log("notification cron started (every 20m)");
+
 if (env.BOT_MODE === "polling") {
   try {
     await bot.api.deleteWebhook({ drop_pending_updates: false });

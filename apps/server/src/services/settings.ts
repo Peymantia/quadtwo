@@ -1,20 +1,47 @@
 import { prisma } from "../db.js";
 
+const DEFAULT_WELCOME = `سلام به ربات پینگ خوش اومدی 🌸
+ما اینجاییم تا شما را بدون هیچ محدویتی به شبکه جهانی متصل کنیم ❤️
+
+✅ کیفیت بالا در انواع کانکشن ها
+📡 برقرای امنیت در ارتباط
+🇮🇷 سرویس ویژه اینترنت ملی
+☎️ پشتیبانی تا لحظه آخر`;
+
+export type NotifConfig = {
+  expiryDays: { enabled: boolean; hours: number };
+  traffic: { enabled: boolean; megabytes: number };
+  preDelete: { enabled: boolean; hours: number };
+  deleted: { enabled: boolean };
+};
+
+export const defaultNotifConfig = (): NotifConfig => ({
+  expiryDays: { enabled: true, hours: 24 },
+  traffic: { enabled: true, megabytes: 200 },
+  preDelete: { enabled: true, hours: 24 },
+  deleted: { enabled: true },
+});
+
+export type ChannelConfig = { username: string; required: boolean };
+
 const defaults: Record<string, string> = {
   brand_name: "Piing",
   channel_username: "",
   channel_required: "false",
+  channels_json: "[]",
   card_number: "6037-0000-0000-0000",
   card_holder: "Card Holder",
-  welcome_text: "به فروشگاه اشتراک خوش آمدید.",
+  welcome_text: DEFAULT_WELCOME,
   support_username: "",
   support_telegram_id: "",
   miniapp_url: "",
   xui_inbound_ids: "1,2,3,4,5,6,7,8,9,10",
-  guide_text: "آموزش اتصال به‌زودی اینجا قرار می‌گیرد.\nمی‌توانید از پشتیبانی لینک آموزش را بگیرید.",
+  guide_text: "آموزش اتصال به‌زودی اینجا قرار می‌گیرد.",
   guide_url: "",
   test_service_enabled: "false",
-  national_service_note: "سرویس ویژه اینترنت ملی به‌زودی فعال می‌شود.",
+  national_service_note: "سرویس ویژه اینترنت ملی را از منوی خرید انتخاب کنید.",
+  extra_admin_ids: "",
+  notif_config: JSON.stringify(defaultNotifConfig()),
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -52,4 +79,62 @@ export async function ensureDefaultSettings() {
       await prisma.setting.create({ data: { key, value } });
     }
   }
+}
+
+export async function getChannels(): Promise<ChannelConfig[]> {
+  try {
+    const raw = await getSetting("channels_json");
+    const parsed = JSON.parse(raw || "[]") as ChannelConfig[];
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+  } catch {
+    /* fallthrough */
+  }
+  const legacy = await getSetting("channel_username");
+  const required = (await getSetting("channel_required")) === "true";
+  if (legacy) return [{ username: legacy.replace(/^@/, ""), required }];
+  return [];
+}
+
+export async function saveChannels(channels: ChannelConfig[]) {
+  await setSetting("channels_json", JSON.stringify(channels));
+  const firstRequired = channels.find((c) => c.required) ?? channels[0];
+  await setSetting("channel_username", firstRequired?.username ?? "");
+  await setSetting("channel_required", channels.some((c) => c.required) ? "true" : "false");
+}
+
+export async function getNotifConfig(): Promise<NotifConfig> {
+  try {
+    return { ...defaultNotifConfig(), ...(JSON.parse(await getSetting("notif_config")) as NotifConfig) };
+  } catch {
+    return defaultNotifConfig();
+  }
+}
+
+export async function saveNotifConfig(cfg: NotifConfig) {
+  await setSetting("notif_config", JSON.stringify(cfg));
+}
+
+export async function getExtraAdminIds(): Promise<bigint[]> {
+  const raw = await getSetting("extra_admin_ids");
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => BigInt(s));
+}
+
+export async function saveExtraAdminIds(ids: bigint[]) {
+  const unique = [...new Set(ids.map((id) => String(id)))];
+  await setSetting("extra_admin_ids", unique.join(","));
+}
+
+export async function addExtraAdminId(id: bigint) {
+  const ids = await getExtraAdminIds();
+  if (!ids.includes(id)) ids.push(id);
+  await saveExtraAdminIds(ids);
+}
+
+export async function removeExtraAdminId(id: bigint) {
+  const ids = (await getExtraAdminIds()).filter((x) => x !== id);
+  await saveExtraAdminIds(ids);
 }

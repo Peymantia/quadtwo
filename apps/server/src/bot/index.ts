@@ -1,8 +1,7 @@
 import { GrammyError, HttpError, InlineKeyboard, InputFile } from "grammy";
 import type { Context } from "grammy";
-import { OrderKind, OrderStatus, UserRole } from "@prisma/client";
+import { OrderStatus } from "@prisma/client";
 import { randomBytes } from "node:crypto";
-import { isAdminTelegramId } from "../config/env.js";
 import { prisma } from "../db.js";
 import {
   attachReceipt,
@@ -16,22 +15,38 @@ import {
   rejectOrder,
 } from "../services/orders.js";
 import { listPriceMatrix, upsertPriceCell } from "../services/pricing.js";
-import { provisionOrder, rotateSubId, rotateUuid, type ProvisionResult } from "../services/provision.js";
-import { getPaymentCard, getSetting, setSetting } from "../services/settings.js";
+import {
+  provisionOrder,
+  rotateSubId,
+  rotateUuid,
+  type ProvisionResult,
+  type ProvisionResultWithBulk,
+} from "../services/provision.js";
+import { getChannels, getPaymentCard, getSetting, setSetting } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
   approvePartner,
+  listNotifyAdminTelegramIds,
   rejectPartner,
   submitPartnerRequest,
   upsertUserFromTelegram,
 } from "../services/users.js";
 import { formatToman, formatTraffic } from "../utils/format.js";
 import {
+  ccWait,
+  handleControlCenterText,
+  isControlAdmin,
+  registerControlCenter,
+  showControlCenter,
+} from "./admin-center.js";
+import {
   adjustDraftMonths,
+  adjustDraftQty,
   adjustDraftVolume,
   draftPrice,
   getOrCreateDraft,
+  setDraftCategory,
   setDraftNameMode,
 } from "./draft.js";
 import {
@@ -39,6 +54,7 @@ import {
   BTN,
   buyDraftText,
   buyWizardKeyboard,
+  mainMenuInline,
   mainMenuKeyboard,
   orderPayText,
   partnerRequestKeyboard,
@@ -57,25 +73,47 @@ const waitingMatrix = new Map<number, string>();
 const waitingWalletAmount = new Set<number>();
 
 async function requireChannel(ctx: Context) {
-  const required = (await getSetting("channel_required")) === "true";
-  const channel = await getSetting("channel_username");
-  if (!required || !channel) return true;
+  const channels = await getChannels();
+  const required = channels.filter((c) => c.required);
+  if (!required.length) return true;
 
-  const username = channel.replace(/^@/, "");
-  try {
-    const member = await ctx.api.getChatMember(`@${username}`, ctx.from!.id);
-    if (["creator", "administrator", "member", "restricted"].includes(member.status)) return true;
-  } catch {
-    /* ignore */
+  const missing: string[] = [];
+  for (const ch of required) {
+    const username = ch.username.replace(/^@/, "");
+    try {
+      const member = await ctx.api.getChatMember(`@${username}`, ctx.from!.id);
+      if (!["creator", "administrator", "member", "restricted"].includes(member.status)) {
+        missing.push(username);
+      }
+    } catch {
+      missing.push(username);
+    }
   }
+  if (!missing.length) return true;
 
-  await ctx.reply(`برای استفاده از ربات ابتدا در کانال عضو شوید:\n\n@${username}`, {
-    reply_markup: new InlineKeyboard()
-      .url("📢 عضویت در کانال", `https://t.me/${username}`)
-      .row()
-      .text("✅ بررسی عضویت", "check:channel"),
+  const kb = new InlineKeyboard();
+  for (const username of missing) {
+    kb.url(`📢 عضویت @${username}`, `https://t.me/${username}`).row();
+  }
+  kb.text("✅ بررسی عضویت", "check:channel");
+  await ctx.reply(`برای استفاده از ربات ابتدا در کانال(ها) عضو شوید:\n\n${missing.map((u) => `@${u}`).join("\n")}`, {
+    reply_markup: kb,
   });
   return false;
+}
+
+async function replyMainMenu(ctx: Context, preface?: string) {
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const miniapp = await getSetting("miniapp_url");
+  const isAdmin = await isControlAdmin(ctx.from!.id);
+  await ctx.reply(preface ?? "منوی اصلی:", {
+    reply_markup: mainMenuInline({
+      isAdmin,
+      isPartner: user.role === "partner",
+      isWholesale: user.role === "wholesale",
+      miniappUrl: miniapp || undefined,
+    }),
+  });
 }
 
 async function showBuyWizard(ctx: Context, edit = false) {
@@ -86,14 +124,18 @@ async function showBuyWizard(ctx: Context, edit = false) {
     trafficGb: draft.unlimited ? null : draft.trafficGb,
     months: draft.months,
     price: priced?.price ?? null,
+    quantity: draft.quantity,
     accountMode: draft.accountMode,
     accountName: draft.accountName,
+    category: draft.category,
   });
   const kb = buyWizardKeyboard({
     trafficGb: draft.trafficGb,
     months: draft.months,
     unlimited: draft.unlimited,
+    quantity: draft.quantity,
     price: priced?.price ?? null,
+    category: draft.category,
   });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
@@ -105,24 +147,43 @@ async function showBuyWizard(ctx: Context, edit = false) {
 async function deliverResult(
   api: Context["api"],
   telegramId: bigint | number,
-  result: ProvisionResult,
+  result: ProvisionResultWithBulk | ProvisionResult,
   trafficGb: number | null,
 ) {
-  const text = [
-    "🎉 اشتراک شما آماده شد",
-    "",
-    `کد: \`${result.code}\``,
-    `اکانت: \`${result.email}\``,
-    `حجم: ${formatTraffic(trafficGb)}`,
-    `انقضا: ${result.expiresAt.toLocaleDateString("fa-IR")}`,
-    "",
-    "🔗 لینک اشتراک:",
-    `\`${result.subUrl}\``,
-  ].join("\n");
-  await api.sendMessage(Number(telegramId), text, { parse_mode: "Markdown" });
-  await api.sendPhoto(Number(telegramId), new InputFile(result.qrPng, "qr.png"), {
-    caption: "QR Code اشتراک — اسکن کنید",
-  });
+  const all = "bulk" in result && result.bulk?.length ? [result, ...result.bulk] : [result];
+  if (all.length > 1) {
+    await api.sendMessage(
+      Number(telegramId),
+      `🎉 ${all.length} اشتراک آماده شد (خرید عمده)\nحجم هر کدام: ${formatTraffic(trafficGb)}`,
+    );
+  }
+  for (const one of all) {
+    const text = [
+      all.length > 1 ? "📦 یکی از اکانت‌های عمده" : "🎉 اشتراک شما آماده شد",
+      "",
+      `کد: \`${one.code}\``,
+      `اکانت: \`${one.email}\``,
+      `حجم: ${formatTraffic(trafficGb)}`,
+      `انقضا: ${one.expiresAt.toLocaleDateString("fa-IR")}`,
+      "",
+      "🔗 لینک اشتراک:",
+      `\`${one.subUrl}\``,
+    ].join("\n");
+    await api.sendMessage(Number(telegramId), text, { parse_mode: "Markdown" });
+    await api.sendPhoto(Number(telegramId), new InputFile(one.qrPng, "qr.png"), {
+      caption: `QR — ${one.email}`,
+    });
+  }
+}
+
+async function notifyAllAdmins(api: Context["api"], send: (adminId: number) => Promise<void>) {
+  for (const id of await listNotifyAdminTelegramIds()) {
+    try {
+      await send(id);
+    } catch (err) {
+      console.error("notify admin", id, err);
+    }
+  }
 }
 
 async function startCardPayment(ctx: Context, orderId: string, summary: string) {
@@ -135,6 +196,144 @@ async function startCardPayment(ctx: Context, orderId: string, summary: string) 
   }
 }
 
+async function handleMyServices(ctx: Context) {
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const subs = await prisma.subscription.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+  if (!subs.length) {
+    await ctx.reply("سرویسی ندارید.\nاکانت‌ها با شناسه تلگرام شما ذخیره می‌شوند.");
+    return;
+  }
+  for (const sub of subs) {
+    await ctx.reply(
+      [
+        `🆔 ${sub.code}`,
+        `اکانت: ${sub.email}`,
+        `حجم: ${formatTraffic(sub.trafficGb)}`,
+        `انقضا: ${sub.expiresAt.toLocaleDateString("fa-IR")}`,
+        `وضعیت: ${sub.status}`,
+      ].join("\n"),
+      { reply_markup: subscriptionKeyboard(sub.id) },
+    );
+  }
+}
+
+async function handleRenew(ctx: Context) {
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const subs = await prisma.subscription.findMany({
+    where: { userId: user.id, status: "active" },
+    orderBy: { createdAt: "desc" },
+    take: 12,
+  });
+  if (!subs.length) {
+    await ctx.reply("سرویس فعالی برای تمدید نیست.");
+    return;
+  }
+  await ctx.reply("کدام سرویس را تمدید می‌کنید؟", {
+    reply_markup: renewPickKeyboard(subs.map((s) => ({ id: s.id, code: s.code }))),
+  });
+}
+
+async function handleTest(ctx: Context) {
+  const enabled = (await getSetting("test_service_enabled")) === "true";
+  if (!enabled) {
+    await ctx.reply("🧪 سرویس تست فعلاً غیرفعال است.\nبه‌زودی فعال می‌شود.");
+    return;
+  }
+  await ctx.reply("سرویس تست به‌زودی.");
+}
+
+async function handleAccount(ctx: Context) {
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const roleLabel =
+    user.role === "admin"
+      ? "ادمین"
+      : user.role === "partner"
+        ? "نماینده فروش"
+        : user.role === "wholesale"
+          ? "عمده‌فروش"
+          : "کاربر عادی";
+  const wallet = await getWallet(user.id);
+  await ctx.reply(
+    [
+      "👤 حساب کاربری",
+      `نقش: ${roleLabel}`,
+      `آی‌دی: \`${user.telegramId}\``,
+      user.panelGroup ? `گروه پنل: ${user.panelGroup}` : "",
+      `موجودی: ${formatToman(wallet.balance)}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    { parse_mode: "Markdown" },
+  );
+}
+
+async function handleGuide(ctx: Context) {
+  const guide = await getSetting("guide_text");
+  const url = await getSetting("guide_url");
+  if (url) {
+    await ctx.reply(guide || "آموزش اتصال", {
+      reply_markup: new InlineKeyboard().url("📖 مشاهده آموزش", url),
+    });
+    return;
+  }
+  await ctx.reply(guide || "آموزش اتصال به‌زودی.");
+}
+
+async function handleDashboard(ctx: Context) {
+  const url = await getSetting("miniapp_url");
+  if (!url) {
+    await ctx.reply("داشبورد هنوز تنظیم نشده است.");
+    return;
+  }
+  await ctx.reply("ورود به داشبورد:", {
+    reply_markup: new InlineKeyboard().webApp("🚀 Open", url),
+  });
+}
+
+async function handleSupport(ctx: Context) {
+  const supportUser = await getSetting("support_username");
+  const supportId = await getSetting("support_telegram_id");
+  if (supportUser) {
+    await ctx.reply(`🆘 پشتیبانی: @${supportUser.replace(/^@/, "")}`);
+    return;
+  }
+  if (supportId) {
+    await ctx.reply(`🆘 آی‌دی پشتیبانی: \`${supportId}\``, { parse_mode: "Markdown" });
+    return;
+  }
+  await ctx.reply("پشتیبانی هنوز تنظیم نشده است.");
+}
+
+async function handlePartnerRequest(ctx: Context) {
+  const user = await upsertUserFromTelegram(ctx.from!);
+  if (user.role === "partner" || user.role === "wholesale") {
+    await ctx.reply(`شما قبلاً ${user.role === "wholesale" ? "عمده‌فروش" : "نماینده"} هستید.\nگروه پنل: ${user.panelGroup ?? "—"}`);
+    return;
+  }
+  waitingPartner.set(ctx.from!.id, { step: "name" });
+  await ctx.reply("🤝 درخواست نمایندگی فروش\nنام و نام خانوادگی را بفرستید:");
+}
+
+async function handlePartnerPanel(ctx: Context) {
+  const user = await upsertUserFromTelegram(ctx.from!);
+  if (user.role !== "partner" && user.role !== "wholesale" && user.role !== "admin") return;
+  await ctx.reply(
+    `💼 پنل نماینده / عمده\nنقش: ${user.role}\nگروه: ${user.panelGroup ?? "—"}\nخریدها با قیمت نقش شما محاسبه می‌شوند.\nسرویس‌های من = فقط اکانت‌هایی که با همین تلگرام خریده‌اید.`,
+  );
+}
+
+function clearWaits(tid: number) {
+  waitingName.delete(tid);
+  waitingPartner.delete(tid);
+  waitingMatrix.delete(tid);
+  waitingWalletAmount.delete(tid);
+  ccWait.delete(tid);
+}
+
 export function createBot() {
   const bot = createTelegramBot();
 
@@ -143,38 +342,105 @@ export function createBot() {
     await next();
   });
 
+  registerControlCenter(bot);
+
   bot.command("start", async (ctx) => {
     if (!(await requireChannel(ctx))) return;
     const brand = await getSetting("brand_name");
     const welcome = await getSetting("welcome_text");
     const user = await upsertUserFromTelegram(ctx.from!);
+    const miniapp = await getSetting("miniapp_url");
+    const isAdmin = await isControlAdmin(ctx.from!.id);
     await ctx.reply(`سلام ${ctx.from?.first_name ?? ""} 👋\nبه ${brand} خوش آمدید.\n\n${welcome}`, {
-      reply_markup: mainMenuKeyboard(user.role === "admin" || isAdminTelegramId(ctx.from?.id), user.role === "partner"),
+      reply_markup: mainMenuInline({
+        isAdmin,
+        isPartner: user.role === "partner",
+        isWholesale: user.role === "wholesale",
+        miniappUrl: miniapp || undefined,
+      }),
+    });
+    await ctx.reply("منوی سریع:", {
+      reply_markup: mainMenuKeyboard(isAdmin, user.role === "partner" || user.role === "wholesale"),
     });
   });
 
   bot.callbackQuery("check:channel", async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
-    const user = await upsertUserFromTelegram(ctx.from!);
-    await ctx.reply("عضویت تأیید شد ✅", {
-      reply_markup: mainMenuKeyboard(user.role === "admin", user.role === "partner"),
-    });
+    await replyMainMenu(ctx, "عضویت تأیید شد ✅");
   });
 
   bot.callbackQuery("menu:home", async (ctx) => {
     await ctx.answerCallbackQuery();
     await ctx.deleteMessage().catch(() => undefined);
+    await replyMainMenu(ctx);
+  });
+
+  bot.callbackQuery("m:buy", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireChannel(ctx))) return;
+    await setDraftCategory(BigInt(ctx.from!.id), "data");
+    await showBuyWizard(ctx);
+  });
+  bot.callbackQuery("m:national", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireChannel(ctx))) return;
+    await setDraftCategory(BigInt(ctx.from!.id), "national");
+    await showBuyWizard(ctx);
+  });
+  bot.callbackQuery("m:renew", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleRenew(ctx);
+  });
+  bot.callbackQuery("m:myservices", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleMyServices(ctx);
+  });
+  bot.callbackQuery("m:wallet", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireChannel(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
-    await ctx.reply("منوی اصلی:", {
-      reply_markup: mainMenuKeyboard(user.role === "admin", user.role === "partner"),
-    });
+    const wallet = await getWallet(user.id);
+    await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
+  });
+  bot.callbackQuery("m:account", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleAccount(ctx);
+  });
+  bot.callbackQuery("m:guide", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleGuide(ctx);
+  });
+  bot.callbackQuery("m:support", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleSupport(ctx);
+  });
+  bot.callbackQuery("m:test", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleTest(ctx);
+  });
+  bot.callbackQuery("m:referral", async (ctx) => {
+    await ctx.answerCallbackQuery({ text: "به‌زودی" });
+    await ctx.reply("👥 سیستم معرفی به دوستان به‌زودی فعال می‌شود.");
+  });
+  bot.callbackQuery("m:dashboard", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleDashboard(ctx);
+  });
+  bot.callbackQuery("m:partner", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handlePartnerRequest(ctx);
+  });
+  bot.callbackQuery("m:partnerpanel", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handlePartnerPanel(ctx);
   });
 
   bot.callbackQuery("wiz:noop", async (ctx) => ctx.answerCallbackQuery());
 
   bot.hears(BTN.buy, async (ctx) => {
     if (!(await requireChannel(ctx))) return;
+    await setDraftCategory(BigInt(ctx.from!.id), "data");
     await showBuyWizard(ctx);
   });
 
@@ -196,6 +462,16 @@ export function createBot() {
   bot.callbackQuery("wiz:mon:-", async (ctx) => {
     await ctx.answerCallbackQuery();
     await adjustDraftMonths(BigInt(ctx.from!.id), -1);
+    await showBuyWizard(ctx, true);
+  });
+  bot.callbackQuery("wiz:qty:+", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await adjustDraftQty(BigInt(ctx.from!.id), 1);
+    await showBuyWizard(ctx, true);
+  });
+  bot.callbackQuery("wiz:qty:-", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await adjustDraftQty(BigInt(ctx.from!.id), -1);
     await showBuyWizard(ctx, true);
   });
 
@@ -233,12 +509,13 @@ export function createBot() {
       trafficGb: draft.unlimited ? null : draft.trafficGb,
       months: draft.months,
       accountName,
+      quantity: draft.quantity,
+      category: draft.category,
     });
     const wallet = await getWallet(user.id);
-    await ctx.editMessageText(
-      `${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`,
-      { reply_markup: payMethodKeyboard(order.id, wallet.balance) },
-    );
+    await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
+      reply_markup: payMethodKeyboard(order.id, wallet.balance),
+    });
   });
 
   bot.callbackQuery(/^pay:card:(.+)$/, async (ctx) => {
@@ -262,7 +539,7 @@ export function createBot() {
       }
       const order = await getOrderForAdmin(ctx.match![1]);
       await ctx.editMessageText("پرداخت از کیف پول انجام شد ✅");
-      await deliverResult(ctx.api, user.telegramId, result as ProvisionResult, order?.trafficGb ?? null);
+      await deliverResult(ctx.api, user.telegramId, result as ProvisionResultWithBulk, order?.trafficGb ?? null);
     } catch (err) {
       await ctx.reply(`خطا: ${String(err)}`);
     }
@@ -310,18 +587,13 @@ export function createBot() {
       `سفارش: \`${order.id}\``,
     ].join("\n");
 
-    const admins = await prisma.user.findMany({ where: { role: UserRole.admin } });
-    for (const admin of admins) {
-      try {
-        await ctx.api.sendPhoto(Number(admin.telegramId), fileId, {
-          caption,
-          parse_mode: "Markdown",
-          reply_markup: adminOrderKeyboard(order.id),
-        });
-      } catch (err) {
-        console.error("notify admin", err);
-      }
-    }
+    await notifyAllAdmins(ctx.api, async (adminId) => {
+      await ctx.api.sendPhoto(adminId, fileId, {
+        caption,
+        parse_mode: "Markdown",
+        reply_markup: adminOrderKeyboard(order.id),
+      });
+    });
   });
 
   bot.on("message:text", async (ctx, next) => {
@@ -330,23 +602,18 @@ export function createBot() {
 
     const text = ctx.message.text.trim();
 
-    // Slash commands must never be trapped by wizard wait-states
     if (text.startsWith("/")) {
-      waitingName.delete(tid);
-      waitingPartner.delete(tid);
-      waitingMatrix.delete(tid);
-      waitingWalletAmount.delete(tid);
+      clearWaits(tid);
       return next();
     }
 
     if (text === "انصراف" || text.toLowerCase() === "cancel") {
-      waitingName.delete(tid);
-      waitingPartner.delete(tid);
-      waitingMatrix.delete(tid);
-      waitingWalletAmount.delete(tid);
+      clearWaits(tid);
       await ctx.reply("لغو شد.");
       return;
     }
+
+    if (await handleControlCenterText(ctx, text)) return;
 
     if (waitingWalletAmount.has(tid)) {
       const amount = Number(text.replace(/[^\d]/g, ""));
@@ -400,24 +667,23 @@ export function createBot() {
           text === "—" ? undefined : text,
         );
         await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.");
-        const admins = await prisma.user.findMany({ where: { role: UserRole.admin } });
-        for (const admin of admins) {
+        await notifyAllAdmins(ctx.api, async (adminId) => {
           await ctx.api.sendMessage(
-            Number(admin.telegramId),
+            adminId,
             `🤝 درخواست همکاری\n${partnerFlow.fullName}\n@${user.username ?? "—"}\nTG: ${user.telegramId}`,
             { reply_markup: partnerRequestKeyboard(req.id) },
           );
-        }
+        });
         return;
       }
     }
 
     const matrixWait = waitingMatrix.get(tid);
-    if (matrixWait && isAdminTelegramId(tid)) {
+    if (matrixWait && (await isControlAdmin(tid))) {
       const parts = text.split("|").map((s) => s.trim());
-      if (parts.length !== 4) {
+      if (parts.length < 4) {
         await ctx.reply(
-          "فرمت اشتباه.\n`gb|months|userPrice|partnerPrice`\nمثال: `25|1|330000|260000`\nنامحدود: `u|1|1500000|1200000`\nلغو: انصراف یا هر دستور /",
+          "فرمت اشتباه.\n`gb|months|userPrice|partnerPrice|wholesalePrice`\nمثال: `25|1|330000|260000|210000`\nنامحدود: `u|1|1500000|1200000|1000000`\nلغو: انصراف یا هر دستور /",
           { parse_mode: "Markdown" },
         );
         return;
@@ -426,11 +692,12 @@ export function createBot() {
       const months = Number(parts[1]);
       const priceUser = Number(parts[2]);
       const pricePartner = Number(parts[3]);
-      if ([months, priceUser, pricePartner].some((n) => Number.isNaN(n)) || (parts[0] !== "u" && Number.isNaN(Number(parts[0])))) {
+      const priceWholesale = parts[4] !== undefined ? Number(parts[4]) : pricePartner;
+      if ([months, priceUser, pricePartner, priceWholesale].some((n) => Number.isNaN(n)) || (parts[0] !== "u" && Number.isNaN(Number(parts[0])))) {
         await ctx.reply("اعداد نامعتبر هستند. دوباره بفرستید یا انصراف.");
         return;
       }
-      await upsertPriceCell({ trafficGb, months, priceUser, pricePartner });
+      await upsertPriceCell({ trafficGb, months, priceUser, pricePartner, priceWholesale });
       waitingMatrix.delete(tid);
       await ctx.reply("سلول ماتریکس ذخیره شد ✅");
       return;
@@ -440,7 +707,7 @@ export function createBot() {
   });
 
   bot.callbackQuery(/^adm:ok:(.+)$/, async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) {
+    if (!(await isControlAdmin(ctx.from?.id))) {
       await ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
       return;
     }
@@ -466,9 +733,14 @@ export function createBot() {
         await ctx.editMessageCaption({ caption: `✅ شارژ کیف پول — ${formatToman(order.price)}` }).catch(() => undefined);
         return;
       }
-      const provisioned = result as ProvisionResult;
+      const provisioned = result as ProvisionResultWithBulk;
       await deliverResult(ctx.api, order.user.telegramId, provisioned, order.trafficGb);
-      await ctx.editMessageCaption({ caption: `✅ انجام شد — ${provisioned.code}` }).catch(() => undefined);
+      const qty = order.quantity ?? 1;
+      await ctx
+        .editMessageCaption({
+          caption: qty > 1 ? `✅ Bulk ${qty} اکانت — ${provisioned.code}` : `✅ انجام شد — ${provisioned.code}`,
+        })
+        .catch(() => undefined);
     } catch (err) {
       console.error(err);
       await ctx.reply(`خطا: ${String(err)}`);
@@ -476,7 +748,7 @@ export function createBot() {
   });
 
   bot.callbackQuery(/^adm:no:(.+)$/, async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) {
+    if (!(await isControlAdmin(ctx.from?.id))) {
       await ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
       return;
     }
@@ -487,158 +759,80 @@ export function createBot() {
   });
 
   bot.callbackQuery(/^prt:ok:(.+)$/, async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
+    if (!(await isControlAdmin(ctx.from?.id))) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
     await ctx.answerCallbackQuery();
-    const req = await approvePartner(ctx.match![1]);
-    await ctx.api.sendMessage(Number(req.user.telegramId), "✅ درخواست همکاری شما تأیید شد.");
+    const req = await approvePartner(ctx.match![1], "partner");
+    await ctx.api.sendMessage(Number(req.user.telegramId), "✅ درخواست همکاری شما تأیید شد (همکار).");
     await ctx.editMessageText(`همکار تأیید شد — گروه: reseller_${req.user.telegramId}`);
   });
 
+  bot.callbackQuery(/^prt:wh:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
+    await ctx.answerCallbackQuery();
+    const req = await approvePartner(ctx.match![1], "wholesale");
+    await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
+    await ctx.editMessageText(`عمده‌فروش تأیید شد — گروه: wholesale_${req.user.telegramId}`);
+  });
+
   bot.callbackQuery(/^prt:no:(.+)$/, async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
+    if (!(await isControlAdmin(ctx.from?.id))) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
     await ctx.answerCallbackQuery();
     const req = await rejectPartner(ctx.match![1]);
     await ctx.api.sendMessage(Number(req.user.telegramId), "❌ درخواست همکاری رد شد.");
     await ctx.editMessageText("درخواست رد شد.");
   });
 
-  bot.hears(BTN.myServices, async (ctx) => {
-    const user = await upsertUserFromTelegram(ctx.from!);
-    const subs = await prisma.subscription.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
-    if (!subs.length) {
-      await ctx.reply("سرویسی ندارید.\nاکانت‌ها با شناسه تلگرام شما ذخیره می‌شوند.");
-      return;
-    }
-    for (const sub of subs) {
-      await ctx.reply(
-        [
-          `🆔 ${sub.code}`,
-          `اکانت: ${sub.email}`,
-          `حجم: ${formatTraffic(sub.trafficGb)}`,
-          `انقضا: ${sub.expiresAt.toLocaleDateString("fa-IR")}`,
-          `وضعیت: ${sub.status}`,
-        ].join("\n"),
-        { reply_markup: subscriptionKeyboard(sub.id) },
-      );
-    }
-  });
-
-  bot.hears(BTN.renew, async (ctx) => {
-    const user = await upsertUserFromTelegram(ctx.from!);
-    const subs = await prisma.subscription.findMany({
-      where: { userId: user.id, status: "active" },
-      orderBy: { createdAt: "desc" },
-      take: 12,
-    });
-    if (!subs.length) {
-      await ctx.reply("سرویس فعالی برای تمدید نیست.");
-      return;
-    }
-    await ctx.reply("کدام سرویس را تمدید می‌کنید؟", {
-      reply_markup: renewPickKeyboard(subs.map((s) => ({ id: s.id, code: s.code }))),
-    });
-  });
-
-  bot.hears(BTN.test, async (ctx) => {
-    const enabled = (await getSetting("test_service_enabled")) === "true";
-    if (!enabled) {
-      await ctx.reply("🧪 سرویس تست فعلاً غیرفعال است.\nبه‌زودی فعال می‌شود.");
-      return;
-    }
-    await ctx.reply("🧪 سرویس تست به‌زودی از همینجا ساخته می‌شود.");
-  });
-
+  bot.hears(BTN.myServices, async (ctx) => handleMyServices(ctx));
+  bot.hears(BTN.renew, async (ctx) => handleRenew(ctx));
+  bot.hears(BTN.test, async (ctx) => handleTest(ctx));
   bot.hears(BTN.national, async (ctx) => {
-    await ctx.reply(`🇮🇷 ${(await getSetting("national_service_note")) || "به‌زودی"}`);
+    if (!(await requireChannel(ctx))) return;
+    await setDraftCategory(BigInt(ctx.from!.id), "national");
+    await showBuyWizard(ctx);
   });
+  bot.hears(BTN.account, async (ctx) => handleAccount(ctx));
+  bot.hears(BTN.guide, async (ctx) => handleGuide(ctx));
+  bot.hears(BTN.dashboard, async (ctx) => handleDashboard(ctx));
+  bot.hears(BTN.support, async (ctx) => handleSupport(ctx));
+  bot.hears(BTN.partner, async (ctx) => handlePartnerRequest(ctx));
+  bot.hears(BTN.partnerPanel, async (ctx) => handlePartnerPanel(ctx));
 
-  bot.hears(BTN.account, async (ctx) => {
-    const user = await upsertUserFromTelegram(ctx.from!);
-    const wallet = await getWallet(user.id);
-    const roleLabel =
-      user.role === "admin" ? "ادمین" : user.role === "partner" ? "نماینده فروش" : "کاربر عادی";
-    await ctx.reply(
-      [
-        "👤 حساب کاربری",
-        "",
-        `نام: ${user.firstName ?? "—"}`,
-        `یوزرنیم: @${user.username ?? "—"}`,
-        `آی‌دی تلگرام: \`${user.telegramId}\``,
-        `نقش: ${roleLabel}`,
-        user.panelGroup ? `گروه پنل: ${user.panelGroup}` : "",
-        `موجودی: ${formatToman(wallet.balance)}`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      { parse_mode: "Markdown" },
-    );
-  });
-
-  bot.hears(BTN.guide, async (ctx) => {
-    const url = await getSetting("guide_url");
-    const text = await getSetting("guide_text");
-    if (url) {
-      await ctx.reply(text || "آموزش اتصال:", {
-        reply_markup: new InlineKeyboard().url("📖 مشاهده آموزش", url),
-      });
-      return;
-    }
-    await ctx.reply(text || "آموزش هنوز تنظیم نشده.");
-  });
-
-  bot.hears(BTN.dashboard, async (ctx) => {
-    const url = await getSetting("miniapp_url");
-    if (!url) {
-      await ctx.reply("داشبورد هنوز تنظیم نشده.\nادمین: /setminiapp https://app.anthropics.ir");
-      return;
-    }
-    await ctx.reply("ورود به داشبورد:", {
-      reply_markup: new InlineKeyboard().webApp("🚀 باز کردن داشبورد", url),
-    });
+  bot.hears(BTN.admin, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await showControlCenter(ctx, false);
   });
 
   bot.callbackQuery(/^sub:link:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const sub = await prisma.subscription.findUnique({ where: { id: ctx.match![1] } });
     if (!sub?.subUrl) return ctx.reply("لینک موجود نیست.");
-    await ctx.reply(`🔗 لینک اشتراک:\n\`${sub.subUrl}\``, { parse_mode: "Markdown" });
+    await ctx.reply(`🔗 \`${sub.subUrl}\``, { parse_mode: "Markdown" });
   });
 
   bot.callbackQuery(/^sub:qr:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const sub = await prisma.subscription.findUnique({ where: { id: ctx.match![1] } });
     if (!sub?.subUrl) return ctx.reply("لینک موجود نیست.");
-    const QRCode = (await import("qrcode")).default;
-    const buf = await QRCode.toBuffer(sub.subUrl, { type: "png", width: 512, margin: 2 });
-    await ctx.replyWithPhoto(new InputFile(buf, "qr.png"), { caption: "QR اشتراک" });
+    const { default: QRCode } = await import("qrcode");
+    const png = await QRCode.toBuffer(sub.subUrl, { type: "png", width: 512, margin: 2 });
+    await ctx.replyWithPhoto(new InputFile(png, "qr.png"));
   });
 
   bot.callbackQuery(/^sub:rotsub:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery({ text: "در حال تغییر ساب..." });
-    const user = await upsertUserFromTelegram(ctx.from!);
-    const sub = await prisma.subscription.findFirst({ where: { id: ctx.match![1], userId: user.id } });
-    if (!sub) return ctx.reply("پیدا نشد.");
+    await ctx.answerCallbackQuery({ text: "در حال تغییر..." });
     try {
-      const result = await rotateSubId(sub.id);
-      await deliverResult(ctx.api, user.telegramId, result, sub.trafficGb);
+      const result = await rotateSubId(ctx.match![1]);
+      await deliverResult(ctx.api, ctx.from!.id, result, null);
     } catch (err) {
       await ctx.reply(`خطا: ${String(err)}`);
     }
   });
 
   bot.callbackQuery(/^sub:rotuuid:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery({ text: "در حال تغییر کانفیگ..." });
-    const user = await upsertUserFromTelegram(ctx.from!);
-    const sub = await prisma.subscription.findFirst({ where: { id: ctx.match![1], userId: user.id } });
-    if (!sub) return ctx.reply("پیدا نشد.");
+    await ctx.answerCallbackQuery({ text: "در حال تغییر..." });
     try {
-      const result = await rotateUuid(sub.id);
-      await deliverResult(ctx.api, user.telegramId, result, sub.trafficGb);
-      await ctx.reply("لینک کانفیگ قبلی باطل شد. از لینک ساب جدید استفاده کنید.");
+      const result = await rotateUuid(ctx.match![1]);
+      await deliverResult(ctx.api, ctx.from!.id, result, null);
     } catch (err) {
       await ctx.reply(`خطا: ${String(err)}`);
     }
@@ -647,30 +841,24 @@ export function createBot() {
   bot.callbackQuery(/^sub:renew:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const user = await upsertUserFromTelegram(ctx.from!);
-    const sub = await prisma.subscription.findFirst({ where: { id: ctx.match![1], userId: user.id } });
-    if (!sub) return ctx.reply("پیدا نشد.");
+    const sub = await prisma.subscription.findFirst({
+      where: { id: ctx.match![1], userId: user.id },
+    });
+    if (!sub) return ctx.reply("سرویس پیدا نشد.");
+    await setDraftCategory(BigInt(ctx.from!.id), sub.trafficGb === null ? "unlimited" : "data");
     const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
     await prisma.buyDraft.update({
       where: { telegramId: BigInt(ctx.from!.id) },
       data: {
         trafficGb: sub.trafficGb ?? 10,
         unlimited: sub.trafficGb === null,
-        months: 1,
+        months: draft.months || 1,
+        quantity: 1,
       },
     });
-    const priced = await draftPrice(user, { ...draft, trafficGb: sub.trafficGb, unlimited: sub.trafficGb === null, months: 1 });
-    if (!priced) return ctx.reply("قیمت تمدید تعریف نشده.");
-    const order = await createMatrixOrder({
-      userId: user.id,
-      trafficGb: sub.trafficGb,
-      months: 1,
-      accountName: sub.email,
-      kind: OrderKind.renew,
-      targetSubId: sub.id,
-    });
-    const wallet = await getWallet(user.id);
-    await ctx.reply(`${orderSummaryText(order)}\n\nروش پرداخت:`, {
-      reply_markup: payMethodKeyboard(order.id, wallet.balance),
+    await showBuyWizard(ctx);
+    await ctx.reply(`تمدید برای \`${sub.code}\` — حجم/مدت را تنظیم و ادامه خرید بزنید.\n(فعلاً به‌عنوان سفارش جدید ثبت می‌شود)`, {
+      parse_mode: "Markdown",
     });
   });
 
@@ -678,9 +866,7 @@ export function createBot() {
     if (!(await requireChannel(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
     const wallet = await getWallet(user.id);
-    await ctx.reply(`موجودی کیف پول:\n${formatToman(wallet.balance)}`, {
-      reply_markup: walletMenuKeyboard(),
-    });
+    await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
   });
 
   bot.callbackQuery("wallet:charge", async (ctx) => {
@@ -695,7 +881,7 @@ export function createBot() {
     const raw = ctx.match![1];
     if (raw === "custom") {
       waitingWalletAmount.add(ctx.from!.id);
-      await ctx.reply("مبلغ شارژ را به تومان بفرستید (حداقل ۱۰۰۰۰):");
+      await ctx.reply("مبلغ دلخواه را به تومان بفرستید:");
       return;
     }
     const amount = Number(raw);
@@ -704,63 +890,8 @@ export function createBot() {
     await startCardPayment(ctx, order.id, orderSummaryText(order));
   });
 
-  bot.hears(BTN.support, async (ctx) => {
-    const supportUser = await getSetting("support_username");
-    const supportId = await getSetting("support_telegram_id");
-    if (supportUser) {
-      await ctx.reply(`🆘 پشتیبانی: @${supportUser.replace(/^@/, "")}`);
-      return;
-    }
-    if (supportId) {
-      await ctx.reply(`🆘 آی‌دی پشتیبانی: \`${supportId}\``, { parse_mode: "Markdown" });
-      return;
-    }
-    await ctx.reply("پشتیبانی هنوز تنظیم نشده است.");
-  });
-
-  bot.hears(BTN.partner, async (ctx) => {
-    const user = await upsertUserFromTelegram(ctx.from!);
-    if (user.role === "partner") {
-      await ctx.reply(`شما نماینده هستید.\nگروه پنل: ${user.panelGroup ?? "—"}`);
-      return;
-    }
-    waitingPartner.set(ctx.from!.id, { step: "name" });
-    await ctx.reply("🤝 درخواست نمایندگی فروش\nنام و نام خانوادگی را بفرستید:");
-  });
-
-  bot.hears(BTN.partnerPanel, async (ctx) => {
-    const user = await upsertUserFromTelegram(ctx.from!);
-    if (user.role !== "partner" && user.role !== "admin") return;
-    await ctx.reply(
-      `💼 پنل نماینده\nگروه: ${user.panelGroup ?? "—"}\nخریدها با قیمت نمایندگی محاسبه می‌شوند.\nسرویس‌های من = فقط اکانت‌هایی که با همین تلگرام خریده‌اید.`,
-    );
-  });
-
-  bot.hears(BTN.admin, async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
-    const pending = await prisma.order.count({ where: { status: OrderStatus.awaiting_review } });
-    const partners = await prisma.partnerRequest.count({ where: { status: "pending" } });
-    await ctx.reply(
-      [
-        "👑 پنل ادمین",
-        `سفارش‌های باز: ${pending}`,
-        `درخواست همکار: ${partners}`,
-        "",
-        "/pending — سفارش‌ها",
-        "/matrix — نمایش ماتریکس",
-        "/setmatrix — ویرایش سلول",
-        "/setcard NUMBER|NAME",
-        "/setchannel @user",
-        "/requirechannel on|off",
-        "/setsupport @user یا numeric_id",
-        "/setinbounds 1-10 یا 1,2,3",
-        "/inbounds — نمایش inboundهای فعلی",
-      ].join("\n"),
-    );
-  });
-
   bot.command("pending", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const orders = await prisma.order.findMany({
       where: { status: OrderStatus.awaiting_review },
       include: { user: true },
@@ -783,42 +914,43 @@ export function createBot() {
   });
 
   bot.command("matrix", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const cells = await listPriceMatrix();
     const lines = cells.slice(0, 40).map(
       (c) =>
-        `${c.trafficGb ?? "∞"}GB / ${c.months}m → user ${formatToman(c.priceUser)} | partner ${formatToman(c.pricePartner)}`,
+        `${c.category} ${c.trafficGb ?? "∞"}GB / ${c.months}m → U ${formatToman(c.priceUser)} | P ${formatToman(c.pricePartner)} | W ${formatToman(c.priceWholesale)}${c.isGolden ? " ⭐" : ""}`,
     );
     await ctx.reply(lines.join("\n") || "خالی");
   });
 
   bot.command("setmatrix", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const raw = (ctx.match ?? "").trim();
     if (raw) {
       const parts = raw.split("|").map((s) => s.trim());
-      if (parts.length !== 4) {
-        await ctx.reply("Usage: /setmatrix 25|1|330000|260000");
+      if (parts.length < 4) {
+        await ctx.reply("Usage: /setmatrix 25|1|330000|260000|210000");
         return;
       }
       const trafficGb = parts[0] === "u" ? null : Number(parts[0]);
       const months = Number(parts[1]);
       const priceUser = Number(parts[2]);
       const pricePartner = Number(parts[3]);
-      await upsertPriceCell({ trafficGb, months, priceUser, pricePartner });
+      const priceWholesale = parts[4] !== undefined ? Number(parts[4]) : pricePartner;
+      await upsertPriceCell({ trafficGb, months, priceUser, pricePartner, priceWholesale });
       waitingMatrix.delete(ctx.from!.id);
       await ctx.reply("Matrix cell saved.");
       return;
     }
     waitingMatrix.set(ctx.from!.id, "edit");
     await ctx.reply(
-      "Send one line:\n`25|1|330000|260000`\nor unlimited: `u|1|1500000|1200000`\nCancel: /cancel or any other /command",
+      "Send one line:\n`25|1|330000|260000|210000`\nor unlimited: `u|1|1500000|1200000|1000000`\nCancel: /cancel",
       { parse_mode: "Markdown" },
     );
   });
 
   bot.command("setinbounds", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const raw = (ctx.match ?? "").trim();
     if (!raw) {
       await ctx.reply("Usage: /setinbounds 1-10\nor /setinbounds 1,2,3,5");
@@ -834,39 +966,35 @@ export function createBot() {
   });
 
   bot.command("inbounds", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const ids = await getConfiguredInboundIds();
     await ctx.reply(`Active inbound IDs:\n${ids.join(", ") || "(empty)"}`);
   });
 
   bot.command("cancel", async (ctx) => {
-    const tid = ctx.from!.id;
-    waitingName.delete(tid);
-    waitingPartner.delete(tid);
-    waitingMatrix.delete(tid);
-    waitingWalletAmount.delete(tid);
+    clearWaits(ctx.from!.id);
     await ctx.reply("Cancelled.");
   });
 
   bot.command("setcard", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const raw = ctx.match?.trim();
     if (!raw?.includes("|")) return ctx.reply("Usage: /setcard NUMBER|NAME");
     const [number, holder] = raw.split("|").map((s) => s.trim());
-    await setSetting("card_number", number);
-    await setSetting("card_holder", holder);
+    await setSetting("card_number", number!);
+    await setSetting("card_holder", holder!);
     await ctx.reply("Card saved.");
   });
 
   bot.command("setchannel", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const value = (ctx.match ?? "").trim().replace(/^@/, "");
     await setSetting("channel_username", value);
     await ctx.reply(value ? `Channel: @${value}` : "Channel cleared");
   });
 
   bot.command("requirechannel", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const v = (ctx.match ?? "").trim().toLowerCase();
     if (v !== "on" && v !== "off") return ctx.reply("Usage: /requirechannel on|off");
     await setSetting("channel_required", v === "on" ? "true" : "false");
@@ -874,7 +1002,7 @@ export function createBot() {
   });
 
   bot.command("setsupport", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const raw = (ctx.match ?? "").trim();
     if (!raw) return ctx.reply("Usage: /setsupport @username OR numeric_id");
     if (raw.startsWith("@") || /[a-zA-Z]/.test(raw)) {
@@ -885,6 +1013,11 @@ export function createBot() {
       await setSetting("support_username", "");
     }
     await ctx.reply("Support saved.");
+  });
+
+  bot.command("control", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await showControlCenter(ctx, false);
   });
 
   bot.command("miniapp", async (ctx) => {
@@ -899,7 +1032,7 @@ export function createBot() {
   });
 
   bot.command("setminiapp", async (ctx) => {
-    if (!isAdminTelegramId(ctx.from?.id)) return;
+    if (!(await isControlAdmin(ctx.from?.id))) return;
     const url = (ctx.match ?? "").trim();
     if (!url.startsWith("http")) return ctx.reply("Usage: /setminiapp https://app.anthropics.ir");
     await setSetting("miniapp_url", url);

@@ -1,11 +1,19 @@
 import { prisma } from "../db.js";
-import { clampMonths, nextVolume, resolvePrice } from "../services/pricing.js";
+import { clampMonths, clampQty, nextVolume, resolvePrice, type PlanCategory } from "../services/pricing.js";
 import type { User } from "@prisma/client";
 
 export async function getOrCreateDraft(telegramId: bigint) {
   return prisma.buyDraft.upsert({
     where: { telegramId },
-    create: { telegramId, trafficGb: 10, months: 1, unlimited: false, accountMode: "random" },
+    create: {
+      telegramId,
+      trafficGb: 10,
+      months: 1,
+      unlimited: false,
+      quantity: 1,
+      category: "data",
+      accountMode: "random",
+    },
     update: {},
   });
 }
@@ -18,6 +26,7 @@ export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
     data: {
       trafficGb: next.trafficGb,
       unlimited: next.unlimited,
+      category: next.unlimited ? "unlimited" : draft.category === "unlimited" ? "data" : draft.category,
     },
   });
 }
@@ -27,6 +36,27 @@ export async function adjustDraftMonths(telegramId: bigint, dir: 1 | -1) {
   return prisma.buyDraft.update({
     where: { telegramId },
     data: { months: clampMonths(draft.months + dir) },
+  });
+}
+
+export async function adjustDraftQty(telegramId: bigint, dir: 1 | -1) {
+  const draft = await getOrCreateDraft(telegramId);
+  return prisma.buyDraft.update({
+    where: { telegramId },
+    data: { quantity: clampQty(draft.quantity + dir) },
+  });
+}
+
+export async function setDraftCategory(telegramId: bigint, category: PlanCategory) {
+  await getOrCreateDraft(telegramId);
+  return prisma.buyDraft.update({
+    where: { telegramId },
+    data: {
+      category,
+      unlimited: category === "unlimited",
+      trafficGb: category === "unlimited" ? null : category === "national" ? 30 : 10,
+      quantity: 1,
+    },
   });
 }
 
@@ -40,7 +70,11 @@ export async function setDraftNameMode(telegramId: bigint, mode: "random" | "cus
   });
 }
 
-export async function draftPrice(user: User, draft: { trafficGb: number | null; months: number; unlimited: boolean }) {
-  const gb = draft.unlimited ? null : draft.trafficGb;
-  return resolvePrice(user, gb, draft.months);
+export async function draftPrice(
+  user: User,
+  draft: { trafficGb: number | null; months: number; unlimited: boolean; category?: string },
+) {
+  const gb = draft.unlimited || draft.category === "unlimited" ? null : draft.trafficGb;
+  const category = (draft.category as PlanCategory) || (gb === null ? "unlimited" : "data");
+  return resolvePrice(user, gb, draft.months, category);
 }
