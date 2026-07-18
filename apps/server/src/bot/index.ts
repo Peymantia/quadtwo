@@ -1148,6 +1148,15 @@ export function createBot() {
     await showControlCenter(ctx, false);
   });
 
+  bot.command("backup", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.reply("⏳ در حال ساخت پشتیبان…");
+    const { sendBackupToAdmins } = await import("../services/backup.js");
+    const r = await sendBackupToAdmins(ctx.api, { reason: "دستور /backup" });
+    if (r.ok) await ctx.reply(`✅ ارسال شد برای ${r.sent} ادمین\n${r.name}`);
+    else await ctx.reply(`❌ ${r.error ?? "خطا"}`);
+  });
+
   bot.command("miniapp", async (ctx) => {
     const url = await getSetting("miniapp_url");
     if (!url) {

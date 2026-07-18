@@ -27,6 +27,7 @@ import {
 } from "../services/settings.js";
 import { demoteToUser, listNotifyAdminTelegramIds, partnerSalesReport } from "../services/users.js";
 import { formatToman } from "../utils/format.js";
+import { getBackupConfig, saveBackupConfig, sendBackupToAdmins } from "../services/backup.js";
 import {
   adminOrderKeyboard,
   controlCenterKeyboard,
@@ -57,6 +58,7 @@ export const ccWait = new Map<
   | { kind: "guide_text" }
   | { kind: "guide_url"; platform: "ios" | "android" | "windows" | "macos" | "extra" }
   | { kind: "iplimit" }
+  | { kind: "backup_time" }
 >();
 
 export async function isControlAdmin(telegramId: number | undefined): Promise<boolean> {
@@ -826,6 +828,98 @@ export function registerControlCenter(bot: Bot) {
     await ctx.reply("عدد محدودیت را بفرستید (۰ تا ۱۰):\n۰ = نامحدود\nلغو: /cancel");
   });
 
+  bot.callbackQuery("cc:backup", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const cfg = await getBackupConfig();
+    const hh = String(cfg.hour).padStart(2, "0");
+    const mm = String(cfg.minute).padStart(2, "0");
+    const last = cfg.lastAt
+      ? new Date(cfg.lastAt).toLocaleString("fa-IR")
+      : "هنوز انجام نشده";
+    await ctx.editMessageText(
+      [
+        "💾 پشتیبان دیتابیس",
+        "",
+        "فایل SQLite برای همه ادمین‌ها ارسال می‌شود.",
+        "",
+        `خودکار: ${cfg.enabled ? "🟢 روشن" : "🔴 خاموش"}`,
+        `ساعت پشتیبان: ${hh}:${mm} (زمان سرور)`,
+        `آخرین پشتیبان: ${last}`,
+        cfg.lastStatus ? `وضعیت: ${cfg.lastStatus}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text("📤 دریافت الان", "cc:backup:now")
+          .success()
+          .row()
+          .text(cfg.enabled ? "⏸ خاموش کردن خودکار" : "▶️ روشن کردن خودکار", "cc:backup:tog")
+          .row()
+          .text("⏰ تنظیم ساعت", "cc:backup:time")
+          .primary()
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
+  bot.callbackQuery("cc:backup:now", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery({ text: "در حال ساخت پشتیبان…" });
+    await ctx.reply("⏳ در حال ساخت و ارسال فایل پشتیبان…");
+    const r = await sendBackupToAdmins(ctx.api, {
+      reason: "درخواست دستی از کنترل سنتر",
+    });
+    if (r.ok) {
+      await ctx.reply(`✅ پشتیبان برای ${r.sent} ادمین ارسال شد\n${r.name}`);
+    } else {
+      await ctx.reply(`❌ خطا در پشتیبان:\n${r.error ?? "ارسال ناموفق"}`);
+    }
+  });
+
+  bot.callbackQuery("cc:backup:tog", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const cfg = await getBackupConfig();
+    cfg.enabled = !cfg.enabled;
+    await saveBackupConfig(cfg);
+    await ctx.answerCallbackQuery({ text: cfg.enabled ? "خودکار روشن شد" : "خودکار خاموش شد" });
+    // refresh panel
+    const hh = String(cfg.hour).padStart(2, "0");
+    const mm = String(cfg.minute).padStart(2, "0");
+    await ctx.editMessageText(
+      [
+        "💾 پشتیبان دیتابیس",
+        "",
+        `خودکار: ${cfg.enabled ? "🟢 روشن" : "🔴 خاموش"}`,
+        `ساعت پشتیبان: ${hh}:${mm} (زمان سرور)`,
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text("📤 دریافت الان", "cc:backup:now")
+          .success()
+          .row()
+          .text(cfg.enabled ? "⏸ خاموش کردن خودکار" : "▶️ روشن کردن خودکار", "cc:backup:tog")
+          .row()
+          .text("⏰ تنظیم ساعت", "cc:backup:time")
+          .primary()
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
+  bot.callbackQuery("cc:backup:time", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "backup_time" });
+    await ctx.reply(
+      "ساعت پشتیبان روزانه را بفرستید:\nفرمت: `HH:MM`\nمثال: `03:00` یا `23:30`\n(زمان محلی سرور)\nلغو: /cancel",
+      { parse_mode: "Markdown" },
+    );
+  });
+
   bot.callbackQuery("cc:card", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
@@ -964,6 +1058,32 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     await ctx.reply(`پیش‌فرض IP Limit: ${n === 0 ? "نامحدود" : `${n} دستگاه`} ✅`, {
       reply_markup: new InlineKeyboard().text("📱 IP Limit", "cc:iplimit").row().text("🎛 کنترل سنتر", "cc:home"),
     });
+    return true;
+  }
+
+  if (wait.kind === "backup_time") {
+    const m = text.trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) {
+      await ctx.reply("فرمت اشتباه. مثال: 03:00");
+      return true;
+    }
+    const hour = Number(m[1]);
+    const minute = Number(m[2]);
+    if (hour > 23 || minute > 59) {
+      await ctx.reply("ساعت نامعتبر (۰۰:۰۰ تا ۲۳:۵۹).");
+      return true;
+    }
+    const cfg = await getBackupConfig();
+    cfg.hour = hour;
+    cfg.minute = minute;
+    await saveBackupConfig(cfg);
+    ccWait.delete(tid);
+    await ctx.reply(
+      `✅ ساعت پشتیبان ذخیره شد: ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      {
+        reply_markup: new InlineKeyboard().text("💾 پشتیبان", "cc:backup").row().text("🎛 کنترل سنتر", "cc:home"),
+      },
+    );
     return true;
   }
 

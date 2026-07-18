@@ -345,5 +345,8 @@ export function controlCenterKeyboard() {
     .text("📋 سفارش‌های باز", "cc:pending")
     .primary()
     .row()
+    .text("💾 پشتیبان دیتابیس", "cc:backup")
+    .success()
+    .row()
     .text("« منوی اصلی", "menu:home");
 }

@@ -54,6 +54,13 @@ const defaults: Record<string, string> = {
   extra_admin_ids: "",
   /** Default IP/device limit for new configs (0 = unlimited) */
   default_limit_ip: "2",
+  backup_config: JSON.stringify({
+    enabled: true,
+    hour: 3,
+    minute: 0,
+    lastAt: "",
+    lastStatus: "",
+  }),
   notif_config: JSON.stringify(defaultNotifConfig()),
 };
 

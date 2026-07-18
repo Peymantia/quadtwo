@@ -36,6 +36,10 @@ const { startNotificationCron } = await import("./services/notifications.js");
 startNotificationCron(bot.api);
 console.log("notification cron started (every 20m)");
 
+const { startBackupCron } = await import("./services/backup.js");
+startBackupCron(bot.api);
+console.log("backup cron started (checks every 1m)");
+
 if (env.BOT_MODE === "polling") {
   try {
     await bot.api.deleteWebhook({ drop_pending_updates: false });
