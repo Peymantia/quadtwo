@@ -1,3 +1,5 @@
+import { formatXuiError } from "./xui-errors.js";
+
 /**
  * MHSanaei 3x-ui panel API client (Bearer token).
  * @see https://github.com/MHSanaei/3x-ui/wiki
@@ -32,26 +34,33 @@ export class XuiClient {
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
-    const res = await fetch(this.url(path), {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${this.opts.apiToken}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-    });
+    let res: Response;
+    try {
+      res = await fetch(this.url(path), {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${this.opts.apiToken}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...(init?.headers ?? {}),
+        },
+      });
+    } catch (err) {
+      throw new Error(formatXuiError(err));
+    }
 
     const text = await res.text();
     let json: ApiResult<T>;
     try {
       json = JSON.parse(text) as ApiResult<T>;
     } catch {
-      throw new Error(`3x-ui ${res.status}: ${text.slice(0, 400)}`);
+      throw new Error(formatXuiError(`3x-ui ${res.status}: ${text.slice(0, 400)}`));
     }
 
     if (!res.ok || json.success === false) {
-      throw new Error(`3x-ui error: ${json.msg ?? text.slice(0, 400)}`);
+      throw new Error(
+        formatXuiError(`3x-ui ${res.status}: ${json.msg ?? text.slice(0, 400)}`),
+      );
     }
 
     return json;
@@ -192,7 +201,9 @@ export function createXuiFromEnv(env: {
   XUI_API_TOKEN?: string;
 }) {
   if (!env.XUI_BASE_URL || !env.XUI_API_TOKEN) {
-    throw new Error("XUI_BASE_URL and XUI_API_TOKEN are not set");
+    throw new Error(
+      formatXuiError("XUI_BASE_URL and XUI_API_TOKEN are not set"),
+    );
   }
   return new XuiClient({
     baseUrl: env.XUI_BASE_URL,

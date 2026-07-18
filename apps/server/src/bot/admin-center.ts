@@ -29,6 +29,13 @@ import { demoteToUser, listNotifyAdminTelegramIds, partnerSalesReport } from "..
 import { formatToman } from "../utils/format.js";
 import { getBackupConfig, saveBackupConfig, sendBackupToAdmins } from "../services/backup.js";
 import {
+  adminSalesReport,
+  formatSearchResults,
+  searchUsersAndOrders,
+  type SalesPeriod,
+} from "../services/admin-reports.js";
+import { auditLog, listRecentAudit } from "../services/audit.js";
+import {
   adminOrderKeyboard,
   controlCenterKeyboard,
   notifSettingsKeyboard,
@@ -59,6 +66,7 @@ export const ccWait = new Map<
   | { kind: "guide_url"; platform: "ios" | "android" | "windows" | "macos" | "extra" }
   | { kind: "iplimit" }
   | { kind: "backup_time" }
+  | { kind: "search" }
 >();
 
 export async function isControlAdmin(telegramId: number | undefined): Promise<boolean> {
@@ -420,6 +428,53 @@ async function showReport(ctx: Context, role: "partner" | "wholesale") {
   });
 }
 
+async function showSales(ctx: Context, period: SalesPeriod = "today") {
+  const report = await adminSalesReport(period);
+  await ctx.editMessageText(report.text, {
+    reply_markup: new InlineKeyboard()
+      .text(period === "today" ? "• امروز" : "امروز", "cc:sales:today")
+      .text(period === "week" ? "• هفته" : "هفته", "cc:sales:week")
+      .text(period === "month" ? "• ماه" : "ماه", "cc:sales:month")
+      .row()
+      .text("« کنترل سنتر", "cc:home"),
+  });
+}
+
+async function showAudit(ctx: Context) {
+  const rows = await listRecentAudit(25);
+  const labels: Record<string, string> = {
+    order_created: "سفارش",
+    receipt_uploaded: "رسید",
+    order_approved: "تأیید",
+    order_rejected: "رد",
+    provision_ok: "ساخت OK",
+    provision_fail: "ساخت FAIL",
+    partner_request: "درخواست همکار",
+    partner_approved: "تأیید همکار",
+    partner_rejected: "رد همکار",
+    test_claimed: "تست",
+    backup_sent: "بکاپ",
+    admin_search: "جستجو",
+    setting_changed: "تنظیمات",
+  };
+  const lines = rows.length
+    ? rows.map((r) => {
+        const t = r.createdAt.toLocaleString("fa-IR", { hour12: false });
+        const act = labels[r.action] ?? r.action;
+        const who = r.actorTelegramId != null ? ` · ${r.actorTelegramId}` : "";
+        const tgt = r.target ? ` · ${r.target}` : "";
+        const det = r.detail ? `\n  ${r.detail}` : "";
+        return `• ${t} — ${act}${who}${tgt}${det}`;
+      })
+    : ["لاگی ثبت نشده."];
+  await ctx.editMessageText(`📜 لاگ عملیات (۲۵ مورد اخیر)\n\n${lines.join("\n")}`.slice(0, 3900), {
+    reply_markup: new InlineKeyboard()
+      .text("🔄 تازه‌سازی", "cc:audit")
+      .row()
+      .text("« کنترل سنتر", "cc:home"),
+  });
+}
+
 export function registerControlCenter(bot: Bot) {
   bot.callbackQuery("cc:home", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) {
@@ -676,6 +731,33 @@ export function registerControlCenter(bot: Bot) {
     );
   });
 
+  bot.callbackQuery("cc:sales", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showSales(ctx, "today");
+  });
+
+  bot.callbackQuery(/^cc:sales:(today|week|month)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showSales(ctx, ctx.match![1] as SalesPeriod);
+  });
+
+  bot.callbackQuery("cc:search", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "search" });
+    await ctx.reply(
+      "🔍 جستجو کاربر / سفارش\n\nآی‌دی تلگرام، یوزرنیم (@user)، نام، یا بخشی از شناسه سفارش را بفرستید.\nلغو: /cancel",
+    );
+  });
+
+  bot.callbackQuery("cc:audit", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showAudit(ctx);
+  });
+
   bot.callbackQuery("cc:rep:partner", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
@@ -873,6 +955,12 @@ export function registerControlCenter(bot: Bot) {
       reason: "درخواست دستی از کنترل سنتر",
     });
     if (r.ok) {
+      await auditLog({
+        action: "backup_sent",
+        actorTelegramId: ctx.from?.id,
+        target: r.name,
+        detail: `sent=${r.sent}`,
+      });
       await ctx.reply(`✅ پشتیبان برای ${r.sent} ادمین ارسال شد\n${r.name}`);
     } else {
       await ctx.reply(`❌ خطا در پشتیبان:\n${r.error ?? "ارسال ناموفق"}`);
@@ -1004,6 +1092,23 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
   if (!(await isControlAdmin(tid))) {
     ccWait.delete(tid);
     return false;
+  }
+
+  if (wait.kind === "search") {
+    const result = await searchUsersAndOrders(text);
+    await auditLog({
+      action: "admin_search",
+      actorTelegramId: tid,
+      detail: text.slice(0, 80),
+    });
+    ccWait.delete(tid);
+    await ctx.reply(formatSearchResults(result), {
+      reply_markup: new InlineKeyboard()
+        .text("🔍 جستجوی دیگر", "cc:search")
+        .row()
+        .text("🎛 کنترل سنتر", "cc:home"),
+    });
+    return true;
   }
 
   if (wait.kind === "welcome") {

@@ -37,6 +37,14 @@ import {
 } from "../services/users.js";
 import { clampMonths } from "../services/pricing.js";
 import { formatToman, formatTraffic, formatExpiryLabel } from "../utils/format.js";
+import { friendlyBotError } from "../panel/xui-errors.js";
+import { auditLog } from "../services/audit.js";
+import {
+  limitBuy,
+  limitPartnerRequest,
+  limitReceipt,
+  limitTestClaim,
+} from "../services/rate-limit.js";
 import {
   ccWait,
   handleControlCenterText,
@@ -123,10 +131,9 @@ async function removeLegacyReplyKeyboard(ctx: Context) {
 async function replyMainMenu(ctx: Context, preface?: string) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const miniapp = await getSetting("miniapp_url");
-  const brand = await getSetting("brand_name");
   const isAdmin = await isControlAdmin(ctx.from!.id);
   await removeLegacyReplyKeyboard(ctx);
-  await ctx.reply(preface?.trim() || brand || "Piing", {
+  await ctx.reply(preface?.trim() || "منوی اصلی", {
     reply_markup: mainMenuInline({
       isAdmin,
       isPartner: user.role === "partner",
@@ -303,9 +310,19 @@ async function handleRenew(ctx: Context) {
 }
 
 async function handleTest(ctx: Context) {
+  const rl = limitTestClaim(ctx.from!.id);
+  if (!rl.ok) {
+    await ctx.reply(`لطفاً ${rl.retryAfterSec} ثانیه صبر کنید و دوباره تلاش کنید.`);
+    return;
+  }
   const user = await upsertUserFromTelegram(ctx.from!);
   try {
     const result = await claimTestService(user.id);
+    await auditLog({
+      action: "test_claimed",
+      actorTelegramId: ctx.from!.id,
+      target: result.code,
+    });
     await ctx.reply(
       [
         "🧪 سرویس تست آماده شد",
@@ -322,7 +339,7 @@ async function handleTest(ctx: Context) {
       caption: "QR سرویس تست — اسکن کنید",
     });
   } catch (err) {
-    await ctx.reply(String(err).replace(/^Error:\s*/, ""));
+    await ctx.reply(friendlyBotError(err));
   }
 }
 
@@ -392,6 +409,11 @@ async function handleSupport(ctx: Context) {
 }
 
 async function handlePartnerRequest(ctx: Context) {
+  const rl = limitPartnerRequest(ctx.from!.id);
+  if (!rl.ok) {
+    await ctx.reply(`درخواست‌های زیاد. ${rl.retryAfterSec} ثانیه دیگر دوباره تلاش کنید.`);
+    return;
+  }
   const user = await upsertUserFromTelegram(ctx.from!);
   if (user.role === "admin" || (await isControlAdmin(ctx.from?.id))) {
     await ctx.reply("ادمین نیازی به درخواست نمایندگی ندارد.");
@@ -438,10 +460,7 @@ export function createBot() {
     const user = await upsertUserFromTelegram(ctx.from!);
     const miniapp = await getSetting("miniapp_url");
     const isAdmin = await isControlAdmin(ctx.from!.id);
-    const displayName =
-      ctx.from?.username?.trim() ||
-      ctx.from?.first_name?.trim() ||
-      "دوست";
+    const displayName = ctx.from?.first_name?.trim() || "دوست";
     const text = [`سلام ${displayName} 🧡`, "", welcome].join("\n");
     await removeLegacyReplyKeyboard(ctx);
     await ctx.reply(text, {
@@ -592,6 +611,11 @@ export function createBot() {
   bot.callbackQuery("wiz:checkout", async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
+    const rl = limitBuy(ctx.from!.id);
+    if (!rl.ok) {
+      await ctx.reply(`درخواست خرید زیاد است. ${rl.retryAfterSec} ثانیه صبر کنید.`);
+      return;
+    }
     const user = await upsertUserFromTelegram(ctx.from!);
     const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
     const priced = await draftPrice(user, draft);
@@ -612,6 +636,12 @@ export function createBot() {
       quantity: draft.quantity,
       category: draft.category,
       limitIp: draft.limitIp,
+    });
+    await auditLog({
+      action: "order_created",
+      actorTelegramId: ctx.from!.id,
+      target: order.id,
+      detail: `${order.kind} ${formatToman(order.price)}`,
     });
     const wallet = await getWallet(user.id);
     await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
@@ -643,7 +673,7 @@ export function createBot() {
       const mode = order?.kind === OrderKind.renew ? "renew" : "new";
       await deliverResult(ctx.api, user.telegramId, result as ProvisionResultWithBulk, order?.trafficGb ?? null, mode);
     } catch (err) {
-      await ctx.reply(`خطا: ${String(err)}`);
+      await ctx.reply(friendlyBotError(err));
     }
   });
 
@@ -670,6 +700,12 @@ export function createBot() {
     const pending = await findPendingPaymentOrder(user.id);
     if (!pending) return;
 
+    const rl = limitReceipt(ctx.from!.id);
+    if (!rl.ok) {
+      await ctx.reply(`ارسال رسید زیاد است. ${rl.retryAfterSec} ثانیه صبر کنید.`);
+      return;
+    }
+
     const fileId =
       ctx.message.photo?.at(-1)?.file_id ??
       (ctx.message.document?.mime_type?.startsWith("image/") ? ctx.message.document.file_id : undefined);
@@ -679,6 +715,11 @@ export function createBot() {
     }
 
     const order = await attachReceipt(pending.id, user.id, fileId, ctx.message.caption);
+    await auditLog({
+      action: "receipt_uploaded",
+      actorTelegramId: ctx.from!.id,
+      target: order.id,
+    });
     await ctx.reply("رسید دریافت شد ✅\nمنتظر تأیید ادمین بمانید.");
 
     const caption = [
@@ -789,6 +830,12 @@ export function createBot() {
           partnerFlow.phone,
           text === "—" ? undefined : text,
         );
+        await auditLog({
+          action: "partner_request",
+          actorTelegramId: tid,
+          target: req.id,
+          detail: partnerFlow.fullName,
+        });
         await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.", {
           reply_markup: { remove_keyboard: true },
         });
@@ -849,6 +896,11 @@ export function createBot() {
     }
     try {
       await markPaid(orderId);
+      await auditLog({
+        action: "order_approved",
+        actorTelegramId: ctx.from?.id,
+        target: orderId,
+      });
       const result = await provisionOrder(orderId);
       if ("kind" in result && result.kind === "wallet_credit") {
         await ctx.api.sendMessage(
@@ -861,6 +913,12 @@ export function createBot() {
       const provisioned = result as ProvisionResultWithBulk;
       const mode = order.kind === OrderKind.renew ? "renew" : "new";
       await deliverResult(ctx.api, order.user.telegramId, provisioned, order.trafficGb, mode);
+      await auditLog({
+        action: "provision_ok",
+        actorTelegramId: ctx.from?.id,
+        target: orderId,
+        detail: provisioned.code,
+      });
       const qty = order.quantity ?? 1;
       await ctx
         .editMessageCaption({
@@ -874,7 +932,13 @@ export function createBot() {
         .catch(() => undefined);
     } catch (err) {
       console.error(err);
-      await ctx.reply(`خطا: ${String(err)}`);
+      await auditLog({
+        action: "provision_fail",
+        actorTelegramId: ctx.from?.id,
+        target: orderId,
+        detail: friendlyBotError(err),
+      });
+      await ctx.reply(friendlyBotError(err));
     }
   });
 
@@ -885,6 +949,11 @@ export function createBot() {
     }
     await ctx.answerCallbackQuery();
     const order = await rejectOrder(ctx.match![1], "رد توسط ادمین");
+    await auditLog({
+      action: "order_rejected",
+      actorTelegramId: ctx.from?.id,
+      target: order.id,
+    });
     await ctx.api.sendMessage(Number(order.user.telegramId), "❌ سفارش شما رد شد.");
     await ctx.editMessageCaption({ caption: "❌ رد شد" }).catch(() => undefined);
   });
@@ -892,23 +961,48 @@ export function createBot() {
   bot.callbackQuery(/^prt:ok:(.+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
     await ctx.answerCallbackQuery();
-    const req = await approvePartner(ctx.match![1], "partner");
-    await ctx.api.sendMessage(Number(req.user.telegramId), "✅ درخواست همکاری شما تأیید شد (همکار).");
-    await ctx.editMessageText(`همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`);
+    try {
+      const req = await approvePartner(ctx.match![1], "partner");
+      await auditLog({
+        action: "partner_approved",
+        actorTelegramId: ctx.from?.id,
+        target: req.id,
+        detail: "partner",
+      });
+      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ درخواست همکاری شما تأیید شد (همکار).");
+      await ctx.editMessageText(`همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`);
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
   });
 
   bot.callbackQuery(/^prt:wh:(.+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
     await ctx.answerCallbackQuery();
-    const req = await approvePartner(ctx.match![1], "wholesale");
-    await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
-    await ctx.editMessageText(`عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`);
+    try {
+      const req = await approvePartner(ctx.match![1], "wholesale");
+      await auditLog({
+        action: "partner_approved",
+        actorTelegramId: ctx.from?.id,
+        target: req.id,
+        detail: "wholesale",
+      });
+      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
+      await ctx.editMessageText(`عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`);
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
   });
 
   bot.callbackQuery(/^prt:no:(.+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
     await ctx.answerCallbackQuery();
     const req = await rejectPartner(ctx.match![1]);
+    await auditLog({
+      action: "partner_rejected",
+      actorTelegramId: ctx.from?.id,
+      target: req.id,
+    });
     await ctx.api.sendMessage(Number(req.user.telegramId), "❌ درخواست همکاری رد شد.");
     await ctx.editMessageText("درخواست رد شد.");
   });
@@ -955,7 +1049,7 @@ export function createBot() {
       const result = await rotateSubId(ctx.match![1]);
       await deliverResult(ctx.api, ctx.from!.id, result, null);
     } catch (err) {
-      await ctx.reply(`خطا: ${String(err)}`);
+      await ctx.reply(friendlyBotError(err));
     }
   });
 
@@ -965,7 +1059,7 @@ export function createBot() {
       const result = await rotateUuid(ctx.match![1]);
       await deliverResult(ctx.api, ctx.from!.id, result, null);
     } catch (err) {
-      await ctx.reply(`خطا: ${String(err)}`);
+      await ctx.reply(friendlyBotError(err));
     }
   });
 
@@ -992,6 +1086,11 @@ export function createBot() {
   bot.callbackQuery(/^renew:checkout:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
+    const rl = limitBuy(ctx.from!.id);
+    if (!rl.ok) {
+      await ctx.reply(`درخواست خرید زیاد است. ${rl.retryAfterSec} ثانیه صبر کنید.`);
+      return;
+    }
     const user = await upsertUserFromTelegram(ctx.from!);
     const subId = ctx.match![1];
     const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
@@ -1012,12 +1111,18 @@ export function createBot() {
         quantity: 1,
         category,
       });
+      await auditLog({
+        action: "order_created",
+        actorTelegramId: ctx.from!.id,
+        target: order.id,
+        detail: `renew ${formatToman(order.price)}`,
+      });
       const wallet = await getWallet(user.id);
       await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
         reply_markup: payMethodKeyboard(order.id, wallet.balance),
       });
     } catch (err) {
-      await ctx.reply(`خطا: ${String(err).replace(/^Error:\s*/, "")}`);
+      await ctx.reply(friendlyBotError(err));
     }
   });
 

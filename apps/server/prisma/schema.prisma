@@ -224,6 +224,19 @@ model NotificationLog {
   @@index([subscriptionId])
 }
 
+/// Simple audit trail for admin debugging
+model AuditLog {
+  id               String   @id @default(cuid())
+  action           String
+  actorTelegramId  BigInt?
+  target           String?
+  detail           String?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+}
+
 /// Temporary buy wizard state per telegram user
 model BuyDraft {
   id          String   @id @default(cuid())

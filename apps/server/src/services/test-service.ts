@@ -48,7 +48,9 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
   const email = `test${String(user.telegramId).slice(-8)}${code.slice(-4)}`.toLowerCase();
   const subId = randomSubId();
   const inboundIds = await getConfiguredInboundIds();
-  if (!inboundIds.length) throw new Error("هیچ inbound تنظیم نشده");
+  if (!inboundIds.length) {
+    throw new Error("هیچ inbound تنظیم نشده — در کنترل سنتر Inbounds را پر کنید");
+  }
 
   const totalGB = TEST_MB * 1024 * 1024;
   const panelExpiry = -TEST_MS;

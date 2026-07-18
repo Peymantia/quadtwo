@@ -12,7 +12,7 @@ export const BTN = {
   myServices: "📦 سرویس‌های من",
   wallet: "💳 کیف پول",
   account: "👤 حساب کاربری",
-  national: "🇮🇷 سرویس ویژه اینترنت ملی",
+  national: "🇮🇷 کانفیگ نت ملی",
   support: "🆘 ارتباط با پشتیبانی",
   guide: "📖 آموزش اتصال",
   dashboard: "🚀 MiniApp Dashboard",
@@ -31,7 +31,7 @@ export function mainMenuInline(opts: {
   const kb = new InlineKeyboard()
     .text("🛒 خرید سرویس جدید", "m:buy")
     .success()
-    .text("🇮🇷 نت ملی", "m:national")
+    .text("🇮🇷 کانفیگ نت ملی", "m:national")
     .success()
     .row()
     .text("♻️ تمدید سرویس", "m:renew")
@@ -91,21 +91,21 @@ export function buyWizardKeyboard(opts: {
     opts.category === "national" ? "🇮🇷 ملی" : opts.category === "unlimited" ? "💎 نامحدود" : "📦 دیتا";
 
   return new InlineKeyboard()
-    .text("➖", "wiz:vol:-")
+    .text("−", "wiz:vol:-")
     .text(`📦 ${vol}`, "wiz:noop")
-    .text("➕", "wiz:vol:+")
+    .text("+", "wiz:vol:+")
     .row()
-    .text("➖", "wiz:mon:-")
+    .text("−", "wiz:mon:-")
     .text(`⏳ ${opts.months} ماه`, "wiz:noop")
-    .text("➕", "wiz:mon:+")
+    .text("+", "wiz:mon:+")
     .row()
-    .text("➖", "wiz:qty:-")
-    .text(`🔢 تعداد: ${opts.quantity}${opts.quantity > 1 ? " (عمده)" : ""}`, "wiz:noop")
-    .text("➕", "wiz:qty:+")
+    .text("−", "wiz:qty:-")
+    .text(`🔢 ${opts.quantity}${opts.quantity > 1 ? " عمده" : ""}`, "wiz:noop")
+    .text("+", "wiz:qty:+")
     .row()
-    .text("➖", "wiz:ip:-")
-    .text(`📱 IP Limit: ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
-    .text("➕", "wiz:ip:+")
+    .text("−", "wiz:ip:-")
+    .text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
+    .text("+", "wiz:ip:+")
     .row()
     .text(`🏷 ${cat}`, "wiz:noop")
     .row()
@@ -207,9 +207,9 @@ export function renewWizardKeyboard(opts: {
 }) {
   const priceLabel = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
   return new InlineKeyboard()
-    .text("➖", `renew:mon:${opts.subId}:-`)
+    .text("−", `renew:mon:${opts.subId}:-`)
     .text(`⏳ ${opts.months} ماه`, "wiz:noop")
-    .text("➕", `renew:mon:${opts.subId}:+`)
+    .text("+", `renew:mon:${opts.subId}:+`)
     .row()
     .text(`💰 ${priceLabel}`, "wiz:noop")
     .row()
@@ -341,8 +341,16 @@ export function controlCenterKeyboard() {
     .text("🆘 پشتیبانی", "cc:support")
     .text("🔔 اعلان‌ها", "cc:notifs")
     .row()
+    .text("📊 گزارش فروش", "cc:sales")
+    .success()
+    .row()
     .text("📊 گزارش همکاران", "cc:rep:partner")
     .text("📊 گزارش عمده", "cc:rep:wholesale")
+    .row()
+    .text("🔍 جستجو کاربر/سفارش", "cc:search")
+    .primary()
+    .row()
+    .text("📜 لاگ عملیات", "cc:audit")
     .row()
     .text("⬇️ تنزل به کاربر عادی", "cc:demote")
     .danger()

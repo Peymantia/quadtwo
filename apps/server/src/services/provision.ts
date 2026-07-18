@@ -154,7 +154,7 @@ async function createOnePanelClient(
   const totalGB = gbToBytes(order.trafficGb);
   const inboundIds = await getConfiguredInboundIds();
   if (!inboundIds.length) {
-    throw new Error("هیچ inbound id تنظیم نشده است");
+    throw new Error("هیچ inbound تنظیم نشده — در کنترل سنتر Inbounds را پر کنید");
   }
 
   const limitIp =
