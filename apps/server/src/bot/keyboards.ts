@@ -1,10 +1,10 @@
-import { InlineKeyboard, Keyboard } from "grammy";
+import { InlineKeyboard } from "grammy";
 import { matrixLine } from "../services/pricing.js";
 import type { NotifConfig } from "../services/settings.js";
 import { formatLimitIp } from "../services/panel-groups.js";
 import { formatToman, formatTraffic } from "../utils/format.js";
 
-/** Reply keyboard labels (legacy / fallback) */
+/** Labels kept so old sticky reply-keyboard taps still work until removed */
 export const BTN = {
   test: "🧪 سرویس تست",
   buy: "🛒 خرید سرویس جدید",
@@ -20,21 +20,6 @@ export const BTN = {
   admin: "👑 پنل ادمین",
   partnerPanel: "💼 پنل نماینده",
 } as const;
-
-export function mainMenuKeyboard(isAdmin: boolean, isPartner: boolean) {
-  const rows: string[][] = [
-    [BTN.test, BTN.buy],
-    [BTN.renew, BTN.myServices],
-    [BTN.wallet, BTN.account],
-    [BTN.national],
-    [BTN.support, BTN.guide],
-    [BTN.dashboard],
-    [BTN.partner],
-  ];
-  if (isPartner) rows.push([BTN.partnerPanel]);
-  if (isAdmin) rows.push([BTN.admin]);
-  return Keyboard.from(rows).resized().persistent();
-}
 
 /** Colored inline main menu (Bot API button styles) */
 export function mainMenuInline(opts: {

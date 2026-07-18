@@ -110,11 +110,21 @@ async function requireChannel(ctx: Context) {
   return false;
 }
 
+/** Sticky reply keyboards from older bot versions stay until explicitly removed. */
+async function removeLegacyReplyKeyboard(ctx: Context) {
+  try {
+    await ctx.reply("‎", { reply_markup: { remove_keyboard: true } });
+  } catch {
+    /* ignore */
+  }
+}
+
 async function replyMainMenu(ctx: Context, preface?: string) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const miniapp = await getSetting("miniapp_url");
   const brand = await getSetting("brand_name");
   const isAdmin = await isControlAdmin(ctx.from!.id);
+  await removeLegacyReplyKeyboard(ctx);
   await ctx.reply(preface?.trim() || brand || "Piing", {
     reply_markup: mainMenuInline({
       isAdmin,
@@ -425,6 +435,7 @@ export function createBot() {
     const isAdmin = await isControlAdmin(ctx.from!.id);
     const name = ctx.from?.first_name?.trim() || "";
     const text = welcome.replace(/\{name\}/gi, name || "دوست");
+    await removeLegacyReplyKeyboard(ctx);
     await ctx.reply(text, {
       reply_markup: mainMenuInline({
         isAdmin,
