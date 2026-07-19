@@ -117,7 +117,7 @@ export function liveStatusText(live: LiveSubStatus): string {
     `حجم کل: ${live.trafficLabel}`,
     `مصرف‌شده: ${live.usedLabel}`,
     `باقی‌مانده: ${live.remainingLabel}`,
-    live.limitIpLabel ? `📱 IP Limit: ${live.limitIpLabel}` : "",
+    live.limitIpLabel ? `📱 محدودیت کاربر: ${live.limitIpLabel}` : "",
     `انقضا: ${live.expiryLabel}`,
     `وضعیت: ${live.status}`,
     live.onlineHint,

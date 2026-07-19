@@ -188,8 +188,8 @@ export function orderSummaryText(order: {
     order.limitIp === undefined
       ? ""
       : order.limitIp <= 0
-        ? "IP Limit: نامحدود"
-        : `IP Limit: ${order.limitIp} دستگاه`;
+        ? "محدودیت کاربر: نامحدود"
+        : `محدودیت کاربر: ${order.limitIp} کاربر`;
   return [
     `نوع: ${kindLabel}`,
     `حجم: ${vol}`,

@@ -198,14 +198,14 @@ function catLabel(c: string) {
   if (c === "national") return "اینترنت ملی";
   if (c === "unlimited") return "نامحدود";
   if (c === "golden") return "پیشنهاد ویژه";
-  return "حجمی (دیتا)";
+  return "سرویس VIP بین الملل";
 }
 
 function catEmoji(c: string) {
   if (c === "national") return "🇮🇷";
-  if (c === "unlimited") return "💎";
+  if (c === "unlimited") return "♾️";
   if (c === "golden") return "⭐";
-  return "📦";
+  return "💎";
 }
 
 function planTitle(trafficGb: number | null, months: number) {
@@ -275,7 +275,7 @@ async function showPricingHome(ctx: Context) {
     .text("✏️ تنظیم نرخ‌ها", "cc:pricing:rates")
     .primary()
     .row()
-    .text(`${catEmoji("data")} حجمی — ${counts.data} پلن`, "cc:pricing:data")
+    .text(`${catEmoji("data")} VIP بین الملل — ${counts.data} پلن`, "cc:pricing:data")
     .row()
     .text(`${catEmoji("national")} اینترنت ملی — ${counts.national} پلن`, "cc:pricing:national")
     .row()
@@ -358,10 +358,10 @@ async function askRateStep(
 async function showPricingDataMonths(ctx: Context) {
   const months = await listDataMonths();
   const text = [
-    "📦 حجمی (دیتا)",
+    "💎 VIP بین الملل",
     "",
     "اول دستهٔ ماهانه را انتخاب کنید؛",
-    "سپس پلن‌های حجمی همان مدت را ببینید یا بسازید.",
+    "سپس پلن‌های VIP بین‌الملل همان مدت را ببینید یا بسازید.",
   ].join("\n");
 
   const kb = new InlineKeyboard();
@@ -383,11 +383,11 @@ async function showPricingDataMonth(ctx: Context, months: number, page = 0) {
   const dur = months === 1 ? "۱ ماهه" : `${months} ماهه`;
 
   const text = [
-    `📦 حجمی · ${dur}`,
+    `💎 VIP بین الملل · ${dur}`,
     "",
     cells.length
       ? "روی هر حجم بزنید تا قیمت را ببینید یا ویرایش کنید."
-      : "هنوز حجمی برای این مدت نیست. با دکمه زیر بسازید.",
+      : "هنوز پلنی برای این مدت نیست. با دکمه زیر بسازید.",
   ].join("\n");
 
   const kb = new InlineKeyboard();
@@ -539,7 +539,7 @@ async function showNewPlanVolume(ctx: Context, category: PlanCategory, months?: 
 
 async function showNewDataMonthPick(ctx: Context) {
   const text = [
-    "➕ ساخت پلن حجمی",
+    "➕ ساخت پلن VIP بین الملل",
     "",
     "اول مدت (دسته ماهانه) را انتخاب کنید:",
   ].join("\n");
@@ -776,7 +776,7 @@ async function showPanelDetail(ctx: Context, id: string) {
     "دسته‌ها را با دکمه‌ها روشن/خاموش کنید.",
   ].join("\n");
   const kb = new InlineKeyboard()
-    .text(`${on("data")} حجمی`, `cc:panels:cat:${p.id}:data`)
+    .text(`${on("data")} VIP`, `cc:panels:cat:${p.id}:data`)
     .text(`${on("national")} نت ملی`, `cc:panels:cat:${p.id}:national`)
     .text(`${on("unlimited")} نامحدود`, `cc:panels:cat:${p.id}:unlimited`)
     .row()
@@ -1384,12 +1384,12 @@ export function registerControlCenter(bot: Bot) {
     const cur = await getSetting("default_limit_ip");
     await ctx.editMessageText(
       [
-        "📱 محدودیت IP / تعداد دستگاه",
+        "📱 محدودیت کاربر",
         "",
         "این مقدار پیش‌فرض برای کانفیگ‌های جدید است.",
-        "۰ = نامحدود | مثلاً ۲ یعنی حداکثر ۲ دستگاه همزمان",
+        "۰ = نامحدود | مثلاً ۲ یعنی حداکثر ۲ کاربر/دستگاه همزمان",
         "",
-        `پیش‌فرض فعلی: ${cur === "0" ? "نامحدود" : `${cur} دستگاه`}`,
+        `پیش‌فرض فعلی: ${cur === "0" ? "نامحدود" : `${cur} کاربر`}`,
         "",
         "کاربر هنگام خرید می‌تواند با دکمه +/- تغییر دهد.",
       ].join("\n"),
@@ -1802,8 +1802,8 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     }
     await setSetting("default_limit_ip", String(n));
     ccWait.delete(tid);
-    await ctx.reply(`پیش‌فرض IP Limit: ${n === 0 ? "نامحدود" : `${n} دستگاه`} ✅`, {
-      reply_markup: new InlineKeyboard().text("📱 IP Limit", "cc:iplimit").row().text("🎛 کنترل سنتر", "cc:home"),
+    await ctx.reply(`پیش‌فرض محدودیت کاربر: ${n === 0 ? "نامحدود" : `${n} کاربر`} ✅`, {
+      reply_markup: new InlineKeyboard().text("📱 محدودیت کاربر", "cc:iplimit").row().text("🎛 کنترل سنتر", "cc:home"),
     });
     return true;
   }
@@ -1857,7 +1857,7 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
           [
             `✅ سرور «${p.name}» ساخته شد.`,
             "",
-            "پیش‌فرض دسته‌ها: حجمی + نامحدود.",
+            "پیش‌فرض دسته‌ها: VIP بین الملل + نامحدود.",
             "برای نت ملی، سرور را باز کنید و دسته نت ملی را روشن کنید (و از سرور دیگر خاموش کنید).",
           ].join("\n"),
           {

@@ -408,10 +408,7 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
     if (!activatedAt && panelExpiry > 0) activatedAt = new Date();
   }
 
-  const totalGB =
-    order.trafficGb !== undefined && order.trafficGb !== null
-      ? gbToBytes(order.trafficGb)
-      : (client.totalGB ?? gbToBytes(sub.trafficGb));
+  const totalGB = order.trafficGb === null ? 0 : gbToBytes(order.trafficGb);
 
   await resolved.xui.updateClient(sub.email, {
     ...client,
@@ -419,6 +416,9 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
     expiryTime,
     totalGB,
     enable: true,
+    // Reset usage so the renewed package starts fresh
+    up: 0,
+    down: 0,
     ...(typeof order.limitIp === "number" && order.limitIp >= 0 ? { limitIp: order.limitIp } : {}),
   });
 

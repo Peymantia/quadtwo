@@ -70,7 +70,7 @@ export function mainMenuReply(opts: MainMenuOpts) {
 export function buyCategoryKeyboard(enabled: SalesCategories) {
   const kb = new InlineKeyboard();
   if (enabled.data) {
-    kb.text("📦 سرویس حجمی (دیتا)", "buy:cat:data").success().row();
+    kb.text("💎 سرویس VIP بین الملل", "buy:cat:data").success().row();
   }
   if (enabled.national) {
     kb.text("🇮🇷 کانفیگ نت ملی", "buy:cat:national").success().row();
@@ -134,7 +134,7 @@ export function buyWizardKeyboard(opts: {
       ? ""
       : ` · جمع ${formatToman(opts.price * opts.quantity)}`;
   const cat =
-    opts.category === "national" ? "🇮🇷 ملی" : opts.category === "unlimited" ? "💎 نامحدود" : "📦 دیتا";
+    opts.category === "national" ? "🇮🇷 ملی" : opts.category === "unlimited" ? "💎 نامحدود" : "💎 VIP بین الملل";
   const maxMonths = opts.maxMonths ?? 1;
   const showMonthStepper = maxMonths > 1 && opts.category !== "national";
 
@@ -178,7 +178,7 @@ export function buyWizardKeyboard(opts: {
 export function salesCategoriesAdminKeyboard(cats: SalesCategories) {
   const on = (v: boolean) => (v ? "🟢" : "🔴");
   return new InlineKeyboard()
-    .text(`${on(cats.data)} حجمی (دیتا)`, "cc:sales:cat:tog:data")
+    .text(`${on(cats.data)} VIP بین الملل`, "cc:sales:cat:tog:data")
     .row()
     .text(`${on(cats.national)} نت ملی`, "cc:sales:cat:tog:national")
     .row()
@@ -194,7 +194,7 @@ export function salesCategoriesAdminText(cats: SalesCategories, maxMonths: numbe
     "",
     "دسته‌هایی که کاربر در «خرید سرویس» می‌بیند:",
     "",
-    `📦 حجمی (دیتا): ${on(cats.data)}`,
+    `💎 VIP بین الملل: ${on(cats.data)}`,
     `🇮🇷 نت ملی: ${on(cats.national)}`,
     `💎 نامحدود: ${on(cats.unlimited)}`,
     "",
@@ -340,13 +340,29 @@ export function renewPickKeyboard(subs: Array<{ id: string; code: string; email?
 export function renewWizardKeyboard(opts: {
   subId: string;
   months: number;
+  trafficGb: number | null;
+  unlimited: boolean;
   price: number | null;
   maxMonths?: number;
+  category?: string;
 }) {
   const priceLabel = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
   const maxMonths = opts.maxMonths ?? 1;
+  const vol = opts.unlimited ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
+  const showMonthStepper = maxMonths > 1 && opts.category !== "national";
+
   const kb = new InlineKeyboard();
-  if (maxMonths > 1) {
+
+  if (opts.category === "unlimited") {
+    kb.text(`📦 ${vol}`, "wiz:noop").row();
+  } else {
+    kb.text("−", `renew:vol:${opts.subId}:-`)
+      .text(`📦 ${vol}`, "wiz:noop")
+      .text("+", `renew:vol:${opts.subId}:+`)
+      .row();
+  }
+
+  if (showMonthStepper) {
     kb.text("−", `renew:mon:${opts.subId}:-`)
       .text(`⏳ ${opts.months} ماه`, "wiz:noop")
       .text("+", `renew:mon:${opts.subId}:+`)
@@ -354,6 +370,7 @@ export function renewWizardKeyboard(opts: {
   } else {
     kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
   }
+
   return kb
     .text(`💰 ${priceLabel}`, "wiz:noop")
     .row()
@@ -398,14 +415,14 @@ export function buyDraftText(opts: {
       ? "🇮🇷 کانفیگ نت ملی"
       : opts.category === "unlimited"
         ? "💎 نامحدود"
-        : "📦 حجمی (دیتا)";
+        : "💎 VIP بین الملل";
   return [
     qty > 1 ? "🛒 خرید عمده (Bulk)" : "🛒 خرید سرویس",
     catLabel,
     opts.category === "national" ? "فقط ۱ ماهه · حجم از ۱ گیگ" : "مدت: ۱ ماهه",
     "",
     matrixLine(opts.trafficGb, opts.months, opts.price, qty),
-    `📱 محدودیت دستگاه: ${formatLimitIp(opts.limitIp)}`,
+    `📱 محدودیت کاربر: ${formatLimitIp(opts.limitIp)}`,
     "",
     `نام پایه اکانت: ${opts.accountMode === "custom" && opts.accountName ? opts.accountName : "رندوم (بعد از تأیید)"}`,
     qty > 1 ? `⚠️ تعداد ${qty} اکانت در پنل سنایی ساخته می‌شود.` : "",
@@ -488,7 +505,7 @@ export function controlCenterKeyboard() {
     .text("📖 آموزش و دانلود اپ", "cc:guide")
     .row()
     .text("🧪 سرویس تست", "cc:test")
-    .text("📱 IP Limit", "cc:iplimit")
+    .text("📱 محدودیت کاربر", "cc:iplimit")
     .row()
     .text("👑 ادمین‌ها", "cc:admins")
     .text("🏷 نام نماینده من", "agent:set")

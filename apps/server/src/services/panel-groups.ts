@@ -114,7 +114,7 @@ export function clampLimitIp(n: number) {
 }
 
 export function formatLimitIp(n: number) {
-  return n <= 0 ? "نامحدود" : `${n} دستگاه`;
+  return n <= 0 ? "نامحدود" : `${n} کاربر`;
 }
 
 export type { UserRole };

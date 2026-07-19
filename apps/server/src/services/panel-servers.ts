@@ -307,7 +307,7 @@ export async function resolvePanelForSubscription(sub: {
 export function categoryLabelFa(c: PlanCategory) {
   if (c === "national") return "نت ملی";
   if (c === "unlimited") return "نامحدود";
-  return "حجمی";
+  return "VIP بین الملل";
 }
 
 export function formatPanelSummary(p: PanelServer) {

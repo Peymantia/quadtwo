@@ -37,7 +37,12 @@ import {
   upsertUserFromTelegram,
 } from "../services/users.js";
 import { assertAgentReadyForPurchase, sanitizePanelGroupSlug } from "../services/panel-groups.js";
-import { clampMonths } from "../services/pricing.js";
+import { clampMonths, nextNationalVolume, nextVolume } from "../services/pricing.js";
+import {
+  checkRenewEligibility,
+  inferRenewCategory,
+  listRenewableSubscriptions,
+} from "../services/renew-eligibility.js";
 import { formatToman, formatTraffic } from "../utils/format.js";
 import { friendlyBotError } from "../panel/xui-errors.js";
 import { auditLog } from "../services/audit.js";
@@ -98,7 +103,10 @@ const waitingMatrix = new Map<number, string>();
 const waitingWalletAmount = new Set<number>();
 const waitingAgentName = new Set<number>();
 /** Renew wizard: telegramId → { subId, months } */
-const renewState = new Map<number, { subId: string; months: number }>();
+const renewState = new Map<
+  number,
+  { subId: string; months: number; trafficGb: number | null; unlimited: boolean; category: string }
+>();
 
 async function requireChannel(ctx: Context) {
   const channels = await getChannels();
@@ -170,34 +178,83 @@ async function startBuyFlow(ctx: Context) {
   await showBuyCategoryPicker(ctx);
 }
 
-async function showRenewWizard(ctx: Context, subId: string, months: number, edit = false) {
+async function showRenewWizard(
+  ctx: Context,
+  subId: string,
+  opts: { months?: number; trafficGb?: number | null; unlimited?: boolean } = {},
+  edit = false,
+) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
   if (!sub) {
     await ctx.reply("سرویس پیدا نشد.");
     return;
   }
-  const m = Math.min(await getMaxPurchaseMonths(), clampMonths(months));
-  renewState.set(ctx.from!.id, { subId, months: m });
-  const category = sub.trafficGb === null ? "unlimited" : "data";
+
+  const eligibility = await checkRenewEligibility(sub.id);
+  if (!eligibility.ok) {
+    await ctx.reply(eligibility.message);
+    return;
+  }
+
+  const category = await inferRenewCategory(sub);
+  const maxMonths = await getMaxPurchaseMonths();
+  const prev = renewState.get(ctx.from!.id);
+  const same = prev?.subId === subId ? prev : null;
+
+  let unlimited =
+    opts.unlimited ??
+    same?.unlimited ??
+    (category === "unlimited" || sub.trafficGb === null);
+  let trafficGb =
+    opts.trafficGb !== undefined
+      ? opts.trafficGb
+      : (same?.trafficGb ?? (unlimited ? null : sub.trafficGb ?? 10));
+  if (category === "unlimited") {
+    unlimited = true;
+    trafficGb = null;
+  } else if (category === "national" && (trafficGb === null || trafficGb < 1)) {
+    unlimited = false;
+    trafficGb = Math.max(1, sub.trafficGb ?? 1);
+  }
+
+  const months = Math.min(maxMonths, clampMonths(opts.months ?? same?.months ?? 1));
+  renewState.set(ctx.from!.id, { subId, months, trafficGb, unlimited, category });
+
   const priced = await draftPrice(user, {
-    trafficGb: sub.trafficGb,
-    months: m,
-    unlimited: sub.trafficGb === null,
+    trafficGb,
+    months,
+    unlimited,
     category,
   });
+
   const text = [
     "♻️ تمدید سرویس",
     "",
     `سرویس: ${sub.code}`,
     `اکانت: ${sub.email}`,
     `حجم فعلی: ${sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb)}`,
+    eligibility.reason ? `وضعیت: ${eligibility.message}` : "",
     "",
-    "مدت تمدید: ۱ ماه (فعلاً فقط یک‌ماهه).",
-    priced ? `قیمت: ${formatToman(priced.price)}` : "این مدت قیمت‌گذاری نشده.",
-  ].join("\n");
-  const maxMonths = await getMaxPurchaseMonths();
-  const kb = renewWizardKeyboard({ subId, months: m, price: priced?.price ?? null, maxMonths });
+    "حجم و مدت تمدید را با +/− انتخاب کنید.",
+    maxMonths <= 1 ? "مدت: ۱ ماهه (فعلاً فقط یک‌ماهه)." : "",
+    "",
+    `حجم تمدید: ${unlimited ? "نامحدود" : formatTraffic(trafficGb)}`,
+    `مدت: ${months} ماه`,
+    priced ? `قیمت: ${formatToman(priced.price)}` : "این ترکیب قیمت‌گذاری نشده.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const kb = renewWizardKeyboard({
+    subId,
+    months,
+    trafficGb,
+    unlimited,
+    price: priced?.price ?? null,
+    maxMonths,
+    category,
+  });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
   } else {
@@ -299,13 +356,17 @@ async function handleMyServices(ctx: Context) {
 
 async function handleRenew(ctx: Context) {
   const user = await upsertUserFromTelegram(ctx.from!);
-  const subs = await prisma.subscription.findMany({
-    where: { userId: user.id, status: "active", isTest: false },
-    orderBy: { createdAt: "desc" },
-    take: 12,
-  });
+  const subs = await listRenewableSubscriptions(user.id);
   if (!subs.length) {
-    await ctx.reply("سرویس فعالی برای تمدید نیست.");
+    await ctx.reply(
+      [
+        "سرویسی آمادهٔ تمدید نیست.",
+        "",
+        "تمدید فقط وقتی فعال می‌شود که سرویس:",
+        "• در حال اتمام باشد (حجم یا تاریخ)، یا",
+        "• تمام شده باشد.",
+      ].join("\n"),
+    );
     return;
   }
   await ctx.reply("کدام سرویس را تمدید می‌کنید؟", {
@@ -1228,16 +1289,57 @@ export function createBot() {
     });
     if (!sub) return ctx.reply("سرویس پیدا نشد.");
     if (sub.isTest) return ctx.reply("سرویس تست قابل تمدید نیست. لطفاً سرویس اصلی بخرید.");
-    await showRenewWizard(ctx, sub.id, 1);
+    const eligibility = await checkRenewEligibility(sub.id);
+    if (!eligibility.ok) return ctx.reply(eligibility.message);
+    renewState.delete(ctx.from!.id);
+    await showRenewWizard(ctx, sub.id, {});
+  });
+
+  bot.callbackQuery(/^renew:vol:([^:]+):([+-])$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const subId = ctx.match![1]!;
+    const dir = ctx.match![2] === "+" ? 1 : -1;
+    const cur = renewState.get(ctx.from!.id);
+    if (!cur || cur.subId !== subId) {
+      await showRenewWizard(ctx, subId, {}, true);
+      return;
+    }
+    if (cur.category === "unlimited") {
+      await showRenewWizard(ctx, subId, { months: cur.months, trafficGb: null, unlimited: true }, true);
+      return;
+    }
+    if (cur.category === "national") {
+      const gb = nextNationalVolume(cur.trafficGb, dir);
+      await showRenewWizard(ctx, subId, { months: cur.months, trafficGb: gb, unlimited: false }, true);
+      return;
+    }
+    const next = nextVolume(cur.trafficGb, cur.unlimited, dir);
+    await showRenewWizard(
+      ctx,
+      subId,
+      { months: cur.months, trafficGb: next.trafficGb, unlimited: next.unlimited },
+      true,
+    );
   });
 
   bot.callbackQuery(/^renew:mon:([^:]+):([+-])$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const subId = ctx.match![1];
+    const subId = ctx.match![1]!;
     const dir = ctx.match![2] === "+" ? 1 : -1;
     const cur = renewState.get(ctx.from!.id);
-    const months = clampMonths((cur?.subId === subId ? cur.months : 1) + dir);
-    await showRenewWizard(ctx, subId, months, true);
+    const maxMonths = await getMaxPurchaseMonths();
+    const base = cur?.subId === subId ? cur.months : 1;
+    const months = Math.min(maxMonths, clampMonths(base + dir));
+    await showRenewWizard(
+      ctx,
+      subId,
+      {
+        months,
+        trafficGb: cur?.subId === subId ? cur.trafficGb : undefined,
+        unlimited: cur?.subId === subId ? cur.unlimited : undefined,
+      },
+      true,
+    );
   });
 
   bot.callbackQuery(/^renew:checkout:(.+)$/, async (ctx) => {
@@ -1260,18 +1362,28 @@ export function createBot() {
       });
       return;
     }
-    const subId = ctx.match![1];
+    const subId = ctx.match![1]!;
     const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
     if (!sub || sub.isTest) {
       await ctx.reply("سرویس برای تمدید معتبر نیست.");
       return;
     }
-    const months = renewState.get(ctx.from!.id)?.subId === subId ? renewState.get(ctx.from!.id)!.months : 1;
-    const category = sub.trafficGb === null ? "unlimited" : "data";
+    const eligibility = await checkRenewEligibility(sub.id);
+    if (!eligibility.ok) {
+      await ctx.reply(eligibility.message);
+      return;
+    }
+    const state = renewState.get(ctx.from!.id);
+    const unlimited = state?.subId === subId ? state.unlimited : sub.trafficGb === null;
+    const trafficGb = state?.subId === subId ? state.trafficGb : sub.trafficGb;
+    let category = state?.subId === subId ? state.category : await inferRenewCategory(sub);
+    if (unlimited || trafficGb === null) category = "unlimited";
+    const months =
+      state?.subId === subId ? state.months : Math.min(1, await getMaxPurchaseMonths());
     try {
       const order = await createMatrixOrder({
         userId: user.id,
-        trafficGb: sub.trafficGb,
+        trafficGb: unlimited ? null : trafficGb,
         months,
         accountName: sub.email,
         kind: OrderKind.renew,

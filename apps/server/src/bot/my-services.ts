@@ -3,6 +3,7 @@ import type { Subscription } from "@prisma/client";
 import { prisma } from "../db.js";
 import { getLiveSubscriptionStatus, liveStatusText, type LiveSubStatus } from "../services/live-status.js";
 import { toggleSubscriptionEnabled } from "../services/provision.js";
+import { checkRenewEligibility } from "../services/renew-eligibility.js";
 import { upsertUserFromTelegram } from "../services/users.js";
 import { friendlyBotError } from "../panel/xui-errors.js";
 import { myServicesListKeyboard, subscriptionDetailKeyboard } from "./keyboards.js";
@@ -121,10 +122,11 @@ export async function showSubscriptionDetail(ctx: Context, subId: string, edit =
       ].join("\n");
 
   const panelEnabled = live?.panelEnabled;
+  const renew = sub.isTest ? { ok: false } : await checkRenewEligibility(sub.id);
   const kb = subscriptionDetailKeyboard({
     subId: sub.id,
     panelEnabled,
-    canRenew: !sub.isTest,
+    canRenew: renew.ok,
   });
 
   if (edit && ctx.callbackQuery?.message) {
