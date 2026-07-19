@@ -459,14 +459,49 @@ async function handleConfigLookup(ctx: Context) {
 }
 
 async function handleDashboard(ctx: Context) {
-  const url = await getSetting("miniapp_url");
-  if (!url) {
-    await ctx.reply("داشبورد هنوز تنظیم نشده است.");
-    return;
+  const { dashBaseUrl } = await import("../config/env.js");
+  const url = dashBaseUrl();
+  await ctx.reply(
+    [
+      "🌐 *داشبورد وب Piing*",
+      "",
+      `آدرس: ${url}`,
+      "",
+      "ورود با رمز عبور یا کد یکبار مصرف از تلگرام.",
+      "برای دریافت کد، دکمه «کد ورود داشبورد» را بزنید.",
+    ].join("\n"),
+    {
+      parse_mode: "Markdown",
+      reply_markup: new InlineKeyboard()
+        .url("باز کردن داشبورد", url)
+        .row()
+        .text("🔐 دریافت کد OTP", "dash:otp"),
+    },
+  );
+}
+
+async function handleDashOtp(ctx: Context) {
+  try {
+    const { mintOtpPayloadForTelegramUser } = await import("../routes/dash.js");
+    const { dashBaseUrl } = await import("../config/env.js");
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const { code, login } = await mintOtpPayloadForTelegramUser(Number(user.telegramId));
+    await ctx.reply(
+      [
+        "🔐 *کد ورود داشبورد*",
+        "",
+        `\`${code}\``,
+        "",
+        `شناسه ورود: \`${login}\``,
+        "اعتبار: ۵ دقیقه",
+        "",
+        dashBaseUrl(),
+      ].join("\n"),
+      { parse_mode: "Markdown" },
+    );
+  } catch (err) {
+    await ctx.reply(friendlyBotError(err));
   }
-  await ctx.reply("ورود به داشبورد:", {
-    reply_markup: new InlineKeyboard().webApp("🚀 Open", url),
-  });
 }
 
 async function handleSupport(ctx: Context) {
@@ -689,6 +724,14 @@ export function createBot() {
   bot.callbackQuery("m:dashboard", async (ctx) => {
     await ctx.answerCallbackQuery();
     await handleDashboard(ctx);
+  });
+  bot.callbackQuery("m:dashotp", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleDashOtp(ctx);
+  });
+  bot.callbackQuery("dash:otp", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleDashOtp(ctx);
   });
   bot.callbackQuery("m:cfglookup", async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -1282,6 +1325,7 @@ export function createBot() {
   });
   bot.hears(BTN.support, async (ctx) => handleSupport(ctx));
   bot.hears(BTN.dashboard, async (ctx) => handleDashboard(ctx));
+  bot.hears(BTN.dashOtp, async (ctx) => handleDashOtp(ctx));
   bot.hears(BTN.configLookup, async (ctx) => handleConfigLookup(ctx));
   bot.hears(BTN.agentPanel, async (ctx) => handlePartnerPanel(ctx));
   bot.hears(BTN.controlCenter, async (ctx) => {

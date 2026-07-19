@@ -109,8 +109,10 @@ XUI_INBOUND_ID=${XUI_INBOUND_ID}
 XUI_SUB_BASE=${XUI_SUB_BASE}
 
 PUBLIC_DOMAIN=${PUBLIC_DOMAIN}
-NEXT_PUBLIC_API_URL=https://${PUBLIC_DOMAIN}
-NEXT_PUBLIC_APP_URL=https://${PUBLIC_DOMAIN}
+DASH_DOMAIN=${DASH_DOMAIN}
+NEXT_PUBLIC_API_URL=https://${DASH_DOMAIN}
+NEXT_PUBLIC_APP_URL=https://${DASH_DOMAIN}
+CORS_ORIGINS=https://${DASH_DOMAIN},https://${PUBLIC_DOMAIN}
 EOF
   chmod 600 "${env_file}"
   log "Config written: ${env_file}"
@@ -134,11 +136,22 @@ build_app() {
   log "Installing npm dependencies..."
   npm install
 
+  # Load domains from .env when updating (prompts already set vars on fresh install)
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    # shellcheck disable=SC1091
+    set -a
+    # shellcheck source=/dev/null
+    source "${INSTALL_DIR}/.env"
+    set +a
+  fi
+
   log "Building packages..."
   npm run build -w @quadtwo/shared
   npm run db:generate -w @quadtwo/server
   DATABASE_URL="file:${INSTALL_DIR}/data/quadtwo.db" npm run db:push -w @quadtwo/server
   npm run build -w @quadtwo/server
+  log "Building web dashboard..."
+  NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN:-dash.anthropics.ir}" npm run build -w @quadtwo/web
 }
 
 write_systemd() {
@@ -165,6 +178,29 @@ EOF
   systemctl enable "${SERVICE_NAME}"
   systemctl restart "${SERVICE_NAME}"
   log "Service ${SERVICE_NAME} started."
+
+  cat > "/etc/systemd/system/${SERVICE_NAME}-web.service" <<EOF
+[Unit]
+Description=Quadtwo Piing Web Dashboard
+After=network.target ${SERVICE_NAME}.service
+
+[Service]
+Type=simple
+WorkingDirectory=${INSTALL_DIR}/apps/web
+EnvironmentFile=${INSTALL_DIR}/.env
+Environment=PORT=3000
+ExecStart=/usr/bin/npx next start -p 3000
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable "${SERVICE_NAME}-web"
+  systemctl restart "${SERVICE_NAME}-web"
+  log "Service ${SERVICE_NAME}-web started."
 }
 
 write_helper() {
@@ -281,8 +317,9 @@ do_install() {
   prompt XUI_API_TOKEN "3x-ui API token"
   prompt XUI_INBOUND_ID "Inbound ID" "1"
   prompt XUI_SUB_BASE "Subscription base URL (optional)" ""
-  prompt PUBLIC_DOMAIN "Public domain for Mini App" "app.anthropics.ir"
-  prompt PORT "Service port" "4000"
+  prompt PUBLIC_DOMAIN "Public domain for Mini App / API" "app.anthropics.ir"
+  prompt DASH_DOMAIN "Web dashboard domain" "dash.anthropics.ir"
+  prompt PORT "API service port" "4000"
 
   clone_or_update
   write_env
@@ -295,6 +332,8 @@ do_install() {
   echo "  Manage:  quadtwo status | quadtwo logs | quadtwo restart"
   echo "  Config:  quadtwo env"
   echo "  New bot: quadtwo set-token   # after BotFather token change / rebrand"
+  echo "  Dashboard: https://${DASH_DOMAIN:-dash.anthropics.ir}"
+  echo "  Nginx sample: deploy/nginx-dash.anthropics.ir.conf"
   echo "  In bot:  /setcard CARD_NUMBER|CARD_HOLDER_NAME"
   echo "  Then open Telegram and send /start to the bot."
   systemctl --no-pager --full status "${SERVICE_NAME}" || true
@@ -315,8 +354,11 @@ do_update() {
 do_uninstall() {
   need_root
   systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+  systemctl stop "${SERVICE_NAME}-web" 2>/dev/null || true
   systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
+  systemctl disable "${SERVICE_NAME}-web" 2>/dev/null || true
   rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+  rm -f "/etc/systemd/system/${SERVICE_NAME}-web.service"
   systemctl daemon-reload
   rm -f /usr/local/bin/quadtwo
   read -r -p "Also delete ${INSTALL_DIR}? [y/N]: " ans || true

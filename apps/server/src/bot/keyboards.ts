@@ -15,7 +15,8 @@ export const BTN = {
   guide: "💡 آموزش استفاده",
   support: "🆘 پشتیبانی",
   test: "🧪 سرویس تست",
-  dashboard: "🚀 داشبورد وب‌اپ",
+  dashboard: "🌐 داشبورد وب",
+  dashOtp: "🔐 کد ورود داشبورد",
   configLookup: "🔎 مشخصات کانفیگ",
   partner: "🤝 درخواست نمایندگی",
   allConfigs: "📋 نمایش کلیه کانفیگ‌ها",
@@ -58,11 +59,8 @@ export function mainMenuReply(opts: MainMenuOpts) {
     kb.text(BTN.partner).text(BTN.support).row();
   }
 
-  if (opts.miniappUrl) {
-    kb.webApp(BTN.dashboard, opts.miniappUrl).primary().text(BTN.configLookup).row();
-  } else {
-    kb.text(BTN.dashboard).primary().text(BTN.configLookup).row();
-  }
+  kb.text(BTN.dashboard).primary().text(BTN.configLookup).danger().row();
+  kb.text(BTN.dashOtp).row();
 
   if (opts.isAdmin) {
     kb.text(BTN.controlCenter).danger().text(BTN.agentPanel).primary().row();
@@ -109,11 +107,8 @@ export function mainMenuInline(opts: MainMenuOpts) {
     kb.text(BTN.partner, "m:partner").text(BTN.support, "m:support").row();
   }
 
-  if (opts.miniappUrl) {
-    kb.webApp(BTN.dashboard, opts.miniappUrl).primary().text(BTN.configLookup, "m:cfglookup").row();
-  } else {
-    kb.text(BTN.dashboard, "m:dashboard").primary().text(BTN.configLookup, "m:cfglookup").row();
-  }
+  kb.text(BTN.dashboard, "m:dashboard").primary().text(BTN.configLookup, "m:cfglookup").danger().row();
+  kb.text(BTN.dashOtp, "m:dashotp").row();
 
   if (opts.isAdmin) {
     kb.text(BTN.controlCenter, "cc:home").danger().text(BTN.agentPanel, "m:partnerpanel").primary().row();

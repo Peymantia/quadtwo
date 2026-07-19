@@ -54,6 +54,12 @@
 | 📎 **Sub base** | لینک ساب از تنظیمات همان پنل |
 | 🔌 **تست اتصال** | از داخل کنترل سنتر |
 
+### 🌐 داشبورد وب
+| | |
+|:--|:--|
+| 🖥 **dash.anthropics.ir** | پنل گرافیکی ادمین / همکار / ریسلر / کاربر |
+| 🔐 **ورود** | رمز عبور + کد یکبار مصرف از ربات |
+
 ### 🎛 کنترل سنتر ادمین
 - 💰 قیمت‌گذاری ماتریکس یا نرخ (گیگ × ماه)
 - 👑 مدیریت ادمین‌ها و تنزل نقش
@@ -139,7 +145,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install
 👤 حساب من          |  💰 کیف پول من
 🧪 سرویس تست        |  💡 آموزش استفاده
 🤝 درخواست نمایندگی |  🆘 پشتیبانی
-🚀 داشبورد وب‌اپ
+🚀 داشبورد وب / کد ورود داشبورد
 🎛 کنترل سنتر ادمین |  💼 مشخصات نماینده   ← فقط ادمین
 ```
 
@@ -152,16 +158,31 @@ cp .env.example .env
 npm install
 npm run db:push -w @quadtwo/server
 npm run dev -w @quadtwo/server
+# ترمینال دیگر:
+npm run dev -w @quadtwo/web
 ```
 
 اگر از ایران به `api.telegram.org` وصل نمی‌شوید، روی VPS اجرا کنید یا `TELEGRAM_PROXY` بگذارید.
+
+### 🌐 داشبورد وب (`dash.anthropics.ir`)
+
+راهنمای کامل نصب: [`deploy/README.md`](deploy/README.md)
+
+1. در Cloudflare رکورد **A** برای `dash` → IP سرور (Proxy روشن، SSL = Full).
+2. Nginx: [`deploy/nginx-dash.anthropics.ir.conf`](deploy/nginx-dash.anthropics.ir.conf)
+3. `.env`: `DASH_DOMAIN` و `NEXT_PUBLIC_API_URL`
+4. سرویس‌ها: `quadtwo` (API :4000) و `quadtwo-web` (Next :3000)
+5. ورود با **رمز** یا **OTP** از ربات (دکمه «کد ورود داشبورد»)
+
+نقش‌ها: ادمین · همکار (`partner`) · ریسلر (`wholesale`) · کاربر
 
 ### 📁 ساختار پروژه
 
 ```text
 apps/server       # API + ربات (Hono · grammY · Prisma/SQLite)
-apps/web          # اسکلت Mini App / Admin (Next.js)
+apps/web          # داشبورد وب Piing (Next.js)
 packages/shared   # تایپ‌های مشترک
+deploy/           # نمونه Nginx برای dash.*
 install.sh        # نصب‌کننده و CLI روی سرور
 docs/             # معماری و رودمپ
 ```
@@ -172,6 +193,7 @@ docs/             # معماری و رودمپ
 
 | فایل | محتوا |
 |:--|:--|
+| [`deploy/README.md`](deploy/README.md) | نصب وب‌پنل dash.* |
 | [`docs/PROJECT.md`](docs/PROJECT.md) | شرح محصول |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | معماری فنی |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | نقشه راه |

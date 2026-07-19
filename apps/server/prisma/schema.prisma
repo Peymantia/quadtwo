@@ -64,6 +64,9 @@ model User {
   panelGroup    String?
   /// When user claimed the free 1-day / 250MB test account
   testClaimedAt DateTime?
+  /// scrypt hash for web dashboard password login
+  passwordHash  String?
+  passwordSetAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -71,6 +74,21 @@ model User {
   orders         Order[]
   subscriptions  Subscription[]
   partnerRequest PartnerRequest?
+  loginOtps      LoginOtp[]
+}
+
+/// One-time codes for dash.anthropics.ir login (Telegram delivery)
+model LoginOtp {
+  id        String   @id @default(cuid())
+  userId    String
+  codeHash  String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
 }
 
 model Wallet {

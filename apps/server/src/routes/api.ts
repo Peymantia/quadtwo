@@ -1,27 +1,42 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { OrderKind } from "@prisma/client";
 import { parseAndValidateInitData, signSession, verifySession } from "../auth/telegram.js";
 import { prisma } from "../db.js";
-import { createMatrixOrder, orderSummaryText } from "../services/orders.js";
+import { orderSummaryText } from "../services/orders.js";
 import { listPriceMatrix, resolvePrice } from "../services/pricing.js";
-import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.js";
-import { getAllSettings, getPaymentCard, getSetting, setSetting } from "../services/settings.js";
-import { approvePartner, rejectPartner, submitPartnerRequest, upsertUserFromTelegram } from "../services/users.js";
-import { formatTraffic } from "../utils/format.js";
+import { provisionOrder } from "../services/provision.js";
+import { getAllSettings, getSetting } from "../services/settings.js";
+import { upsertUserFromTelegram } from "../services/users.js";
+import { corsOrigins } from "../config/env.js";
+import {
+  registerDashAuthRoutes,
+  registerDashMeRoutes,
+  registerDashPartnerRoutes,
+  registerDashAdminRoutes,
+} from "./dash.js";
 
 type Vars = { userId: string; role: string; telegramId: string };
 
 export function createApiApp() {
   const api = new Hono<{ Variables: Vars }>();
+  const origins = corsOrigins();
 
   api.use(
     "*",
     cors({
-      origin: "*",
+      origin: (origin) => {
+        if (!origin) return origins[0] ?? "*";
+        if (origins.includes(origin) || origins.includes("*")) return origin;
+        if (origins.length === 0) return origin;
+        return origins[0]!;
+      },
       allowHeaders: ["Content-Type", "Authorization"],
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      credentials: true,
     }),
   );
+
+  registerDashAuthRoutes(api);
 
   api.post("/auth/telegram", async (c) => {
     const body = await c.req.json<{ initData?: string }>();
@@ -46,38 +61,39 @@ export function createApiApp() {
         firstName: user.firstName,
         username: user.username,
         panelGroup: user.panelGroup,
+        hasPassword: Boolean(user.passwordHash),
       },
     });
   });
 
-  api.use("/me/*", async (c, next) => {
+  const authBearer = async (
+    c: { req: { header: (n: string) => string | undefined }; set: (k: keyof Vars, v: string) => void; json: (b: unknown, s?: number) => Response },
+    next: () => Promise<void>,
+    requireAdmin = false,
+  ) => {
     const header = c.req.header("Authorization");
     if (!header?.startsWith("Bearer ")) return c.json({ error: "Unauthorized" }, 401);
     try {
       const payload = await verifySession(header.slice(7));
-      c.set("userId", payload.userId);
-      c.set("role", payload.role);
-      c.set("telegramId", payload.telegramId);
+      const fresh = await prisma.user.findUnique({ where: { id: payload.userId } });
+      if (!fresh) return c.json({ error: "Unauthorized" }, 401);
+      if (requireAdmin && fresh.role !== "admin") return c.json({ error: "Forbidden" }, 403);
+      c.set("userId", fresh.id);
+      c.set("role", fresh.role);
+      c.set("telegramId", String(fresh.telegramId));
       await next();
     } catch {
       return c.json({ error: "Unauthorized" }, 401);
     }
-  });
+  };
 
-  api.use("/admin/*", async (c, next) => {
-    const header = c.req.header("Authorization");
-    if (!header?.startsWith("Bearer ")) return c.json({ error: "Unauthorized" }, 401);
-    try {
-      const payload = await verifySession(header.slice(7));
-      if (payload.role !== "admin") return c.json({ error: "Forbidden" }, 403);
-      c.set("userId", payload.userId);
-      c.set("role", payload.role);
-      c.set("telegramId", payload.telegramId);
-      await next();
-    } catch {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-  });
+  api.use("/me/*", (c, next) => authBearer(c, next, false));
+  api.use("/partner/*", (c, next) => authBearer(c, next, false));
+  api.use("/admin/*", (c, next) => authBearer(c, next, true));
+
+  registerDashMeRoutes(api);
+  registerDashPartnerRoutes(api);
+  registerDashAdminRoutes(api);
 
   api.get("/me/profile", async (c) => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
@@ -90,6 +106,7 @@ export function createApiApp() {
         firstName: user.firstName,
         username: user.username,
         panelGroup: user.panelGroup,
+        hasPassword: Boolean(user.passwordHash),
       },
       brand,
       support,
@@ -118,99 +135,19 @@ export function createApiApp() {
     return c.json({ price: priced.price });
   });
 
-  api.post("/me/orders", async (c) => {
-    const body = await c.req.json<{
-      trafficGb: number | null;
-      months: number;
-      accountName?: string;
-      kind?: OrderKind;
-      targetSubId?: string;
-    }>();
-    const accountName = body.accountName?.trim() || `u${Date.now().toString(36)}`;
-    const order = await createMatrixOrder({
-      userId: c.get("userId"),
-      trafficGb: body.trafficGb,
-      months: body.months,
-      accountName,
-      kind: body.kind,
-      targetSubId: body.targetSubId,
-    });
-    const card = await getPaymentCard();
-    return c.json({
-      order: {
-        id: order.id,
-        price: order.price,
-        summary: orderSummaryText(order),
-        trafficGb: order.trafficGb,
-        months: order.months,
-      },
-      card,
-    });
-  });
-
   api.post("/me/orders/:id/receipt", async (c) => {
     const id = c.req.param("id");
     const body = await c.req.json<{ receiptText?: string; receiptFileId?: string }>();
     const order = await prisma.order.updateMany({
       where: { id, userId: c.get("userId") },
       data: {
-        receiptText: body.receiptText ?? "uploaded-via-miniapp",
-        receiptFileId: body.receiptFileId ?? "miniapp",
+        receiptText: body.receiptText ?? "uploaded-via-dashboard",
+        receiptFileId: body.receiptFileId ?? "dashboard",
         status: "awaiting_review",
       },
     });
     if (!order.count) return c.json({ error: "Not found" }, 404);
     return c.json({ ok: true });
-  });
-
-  api.get("/me/subscriptions", async (c) => {
-    const subs = await prisma.subscription.findMany({
-      where: { userId: c.get("userId") },
-      orderBy: { createdAt: "desc" },
-    });
-    return c.json({
-      subscriptions: subs.map((s) => ({
-        id: s.id,
-        code: s.code,
-        email: s.email,
-        trafficLabel: formatTraffic(s.trafficGb),
-        expiresAt: s.expiresAt.toISOString(),
-        subUrl: s.subUrl,
-        status: s.status,
-      })),
-    });
-  });
-
-  api.post("/me/subscriptions/:id/rotate-sub", async (c) => {
-    const sub = await prisma.subscription.findFirst({
-      where: { id: c.req.param("id"), userId: c.get("userId") },
-    });
-    if (!sub) return c.json({ error: "Not found" }, 404);
-    const result = await rotateSubId(sub.id);
-    return c.json({
-      code: result.code,
-      subUrl: result.subUrl,
-      expiresAt: result.expiresAt.toISOString(),
-    });
-  });
-
-  api.post("/me/subscriptions/:id/rotate-uuid", async (c) => {
-    const sub = await prisma.subscription.findFirst({
-      where: { id: c.req.param("id"), userId: c.get("userId") },
-    });
-    if (!sub) return c.json({ error: "Not found" }, 404);
-    const result = await rotateUuid(sub.id);
-    return c.json({
-      code: result.code,
-      subUrl: result.subUrl,
-      expiresAt: result.expiresAt.toISOString(),
-    });
-  });
-
-  api.post("/me/partner-request", async (c) => {
-    const body = await c.req.json<{ fullName: string; phone?: string; note?: string }>();
-    const req = await submitPartnerRequest(c.get("userId"), body.fullName, body.phone, body.note);
-    return c.json({ id: req.id, status: req.status });
   });
 
   api.get("/admin/orders/pending", async (c) => {
@@ -236,23 +173,14 @@ export function createApiApp() {
     if ("kind" in result && result.kind === "wallet_credit") {
       return c.json({ type: "wallet_credit", balance: result.balance });
     }
-    const sub = result as {
-      code: string;
-      subUrl: string;
-      email: string;
-    };
-    return c.json({
-      type: "subscription",
-      code: sub.code,
-      subUrl: sub.subUrl,
-      email: sub.email,
-    });
+    const sub = result as { code: string; subUrl: string; email: string };
+    return c.json({ type: "subscription", code: sub.code, subUrl: sub.subUrl, email: sub.email });
   });
 
   api.post("/admin/orders/:id/reject", async (c) => {
     await prisma.order.update({
       where: { id: c.req.param("id") },
-      data: { status: "rejected", adminNote: "rejected via miniapp" },
+      data: { status: "rejected", adminNote: "rejected via dashboard" },
     });
     return c.json({ ok: true });
   });
@@ -276,14 +204,6 @@ export function createApiApp() {
 
   api.get("/admin/settings", async (c) => c.json({ settings: await getAllSettings() }));
 
-  api.put("/admin/settings", async (c) => {
-    const body = await c.req.json<Record<string, string>>();
-    for (const [k, v] of Object.entries(body)) {
-      await setSetting(k, String(v));
-    }
-    return c.json({ ok: true });
-  });
-
   api.get("/admin/partners/pending", async (c) => {
     const rows = await prisma.partnerRequest.findMany({
       where: { status: "pending" },
@@ -299,16 +219,6 @@ export function createApiApp() {
         username: r.user.username,
       })),
     });
-  });
-
-  api.post("/admin/partners/:id/approve", async (c) => {
-    const req = await approvePartner(c.req.param("id"));
-    return c.json({ ok: true, group: req.user.panelGroup });
-  });
-
-  api.post("/admin/partners/:id/reject", async (c) => {
-    await rejectPartner(c.req.param("id"));
-    return c.json({ ok: true });
   });
 
   return api;
