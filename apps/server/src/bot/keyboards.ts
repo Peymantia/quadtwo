@@ -1,69 +1,131 @@
 import { InlineKeyboard, Keyboard } from "grammy";
 import { matrixLine } from "../services/pricing.js";
-import type { NotifConfig } from "../services/settings.js";
+import type { NotifConfig, SalesCategories } from "../services/settings.js";
 import { formatLimitIp } from "../services/panel-groups.js";
 import { formatToman, formatTraffic } from "../utils/format.js";
+import type { PlanCategory } from "../services/pricing.js";
 
-/** Labels kept so old sticky reply-keyboard taps still work until removed */
+/** Reply-keyboard labels — must match bot.hears() exactly */
 export const BTN = {
-  test: "🧪 سرویس تست",
   buy: "🛒 خرید سرویس جدید",
   renew: "♻️ تمدید سرویس",
   myServices: "📦 سرویس‌های من",
-  wallet: "💳 کیف پول",
-  account: "👤 حساب کاربری",
-  national: "🇮🇷 کانفیگ نت ملی",
-  support: "🆘 ارتباط با پشتیبانی",
-  guide: "📖 آموزش اتصال",
+  wallet: "💰 کیف پول من",
+  account: "👤 حساب من",
+  guide: "💡 آموزش استفاده",
+  support: "🆘 پشتیبانی",
+  test: "🧪 سرویس تست",
+  referral: "👥 معرفی به دوستان",
   dashboard: "🚀 MiniApp Dashboard",
-  partner: "🤝 درخواست نمایندگی فروش",
+  partner: "🤝 درخواست نمایندگی",
+  partnerPanel: "💼 پنل نماینده / عمده",
+  agentPanel: "💼 نام نماینده / گروه پنل",
+  controlCenter: "🎛 کنترل سنتر ادمین",
+  /** @deprecated legacy label */
+  national: "🇮🇷 کانفیگ نت ملی",
   admin: "👑 پنل ادمین",
-  partnerPanel: "💼 پنل نماینده",
 } as const;
 
-/** Colored inline main menu (Bot API button styles) */
-export function mainMenuInline(opts: {
+export type MainMenuOpts = {
   isAdmin: boolean;
   isPartner: boolean;
   isWholesale?: boolean;
   miniappUrl?: string;
-}) {
-  const kb = new InlineKeyboard()
-    .text("🛒 خرید سرویس جدید", "m:buy")
+};
+
+/** Sticky reply keyboard at bottom (main menu) */
+export function mainMenuReply(opts: MainMenuOpts) {
+  const kb = new Keyboard()
+    .text(BTN.buy)
     .success()
-    .text("🇮🇷 کانفیگ نت ملی", "m:national")
-    .success()
     .row()
-    .text("♻️ تمدید سرویس", "m:renew")
-    .text("📦 سرویس‌های من", "m:myservices")
+    .text(BTN.renew)
+    .text(BTN.myServices)
     .row()
-    .text("💰 اعتبار من", "m:wallet")
-    .text("👤 حساب من", "m:account")
+    .text(BTN.wallet)
+    .text(BTN.account)
     .row()
-    .text("💡 آموزش استفاده", "m:guide")
-    .text("🆘 پشتیبانی", "m:support")
+    .text(BTN.guide)
+    .text(BTN.support)
     .row()
-    .text("🧪 سرویس تست", "m:test")
-    .text("👥 معرفی به دوستان", "m:referral")
+    .text(BTN.test)
+    .text(BTN.referral)
     .row();
 
   if (opts.miniappUrl) {
-    kb.webApp("🚀 MiniApp Dashboard", opts.miniappUrl).primary().row();
+    kb.webApp(BTN.dashboard, opts.miniappUrl).primary().row();
   } else {
-    kb.text("🚀 MiniApp Dashboard", "m:dashboard").primary().row();
+    kb.text(BTN.dashboard).primary().row();
   }
 
-  // Only regular users can request agency (not partner / wholesale / admin)
   const canRequestAgency = !opts.isAdmin && !opts.isPartner && !opts.isWholesale;
   if (canRequestAgency) {
-    kb.text("🤝 درخواست نمایندگی", "m:partner").danger().row();
+    kb.text(BTN.partner).danger().row();
   }
 
   if (opts.isPartner || opts.isWholesale) {
-    kb.text("💼 پنل نماینده / عمده", "m:partnerpanel").primary().row();
+    kb.text(BTN.partnerPanel).primary().row();
   }
   if (opts.isAdmin) {
-    kb.text("🎛 کنترل سنتر ادمین", "cc:home").danger().row();
+    kb.text(BTN.agentPanel).primary().row();
+    kb.text(BTN.controlCenter).danger().row();
+  }
+
+  return kb.persistent().resized();
+}
+
+/** Inline category picker inside buy flow */
+export function buyCategoryKeyboard(enabled: SalesCategories) {
+  const kb = new InlineKeyboard();
+  if (enabled.data) {
+    kb.text("📦 سرویس حجمی (دیتا)", "buy:cat:data").success().row();
+  }
+  if (enabled.national) {
+    kb.text("🇮🇷 کانفیگ نت ملی", "buy:cat:national").success().row();
+  }
+  if (enabled.unlimited) {
+    kb.text("💎 سرویس نامحدود", "buy:cat:unlimited").primary().row();
+  }
+  kb.text("« انصراف", "buy:cat:cancel");
+  return kb;
+}
+
+/** @deprecated inline main menu — use mainMenuReply */
+export function mainMenuInline(opts: MainMenuOpts) {
+  const kb = new InlineKeyboard()
+    .text(BTN.buy, "m:buy")
+    .success()
+    .row()
+    .text(BTN.renew, "m:renew")
+    .text(BTN.myServices, "m:myservices")
+    .row()
+    .text(BTN.wallet, "m:wallet")
+    .text(BTN.account, "m:account")
+    .row()
+    .text(BTN.guide, "m:guide")
+    .text(BTN.support, "m:support")
+    .row()
+    .text(BTN.test, "m:test")
+    .text(BTN.referral, "m:referral")
+    .row();
+
+  if (opts.miniappUrl) {
+    kb.webApp(BTN.dashboard, opts.miniappUrl).primary().row();
+  } else {
+    kb.text(BTN.dashboard, "m:dashboard").primary().row();
+  }
+
+  const canRequestAgency = !opts.isAdmin && !opts.isPartner && !opts.isWholesale;
+  if (canRequestAgency) {
+    kb.text(BTN.partner, "m:partner").danger().row();
+  }
+
+  if (opts.isPartner || opts.isWholesale) {
+    kb.text(BTN.partnerPanel, "m:partnerpanel").primary().row();
+  }
+  if (opts.isAdmin) {
+    kb.text(BTN.agentPanel, "m:partnerpanel").primary().row();
+    kb.text(BTN.controlCenter, "cc:home").danger().row();
   }
   return kb;
 }
@@ -80,6 +142,7 @@ export function buyWizardKeyboard(opts: {
   limitIp: number;
   price: number | null;
   category?: string;
+  maxMonths?: number;
 }) {
   const vol = opts.unlimited ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
   const unit = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
@@ -89,6 +152,8 @@ export function buyWizardKeyboard(opts: {
       : ` · جمع ${formatToman(opts.price * opts.quantity)}`;
   const cat =
     opts.category === "national" ? "🇮🇷 ملی" : opts.category === "unlimited" ? "💎 نامحدود" : "📦 دیتا";
+  const maxMonths = opts.maxMonths ?? 1;
+  const showMonthStepper = maxMonths > 1 && opts.category !== "national";
 
   const kb = new InlineKeyboard()
     .text("−", "wiz:vol:-")
@@ -96,18 +161,18 @@ export function buyWizardKeyboard(opts: {
     .text("+", "wiz:vol:+")
     .row();
 
-  if (opts.category === "national") {
-    kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
-  } else {
+  if (showMonthStepper) {
     kb.text("−", "wiz:mon:-")
       .text(`⏳ ${opts.months} ماه`, "wiz:noop")
       .text("+", "wiz:mon:+")
       .row();
+  } else {
+    kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
   }
 
   return kb
     .text("−", "wiz:qty:-")
-    .text(`🔢 ${opts.quantity}${opts.quantity > 1 ? " عمده" : ""}`, "wiz:noop")
+    .text(`🔢 ${opts.quantity}`, "wiz:noop")
     .text("+", "wiz:qty:+")
     .row()
     .text("−", "wiz:ip:-")
@@ -124,7 +189,36 @@ export function buyWizardKeyboard(opts: {
     .text("✅ ادامه خرید", "wiz:checkout")
     .success()
     .row()
-    .text("« بازگشت", "menu:home");
+    .text("« انصراف", "buy:cat:cancel");
+}
+
+export function salesCategoriesAdminKeyboard(cats: SalesCategories) {
+  const on = (v: boolean) => (v ? "🟢" : "🔴");
+  return new InlineKeyboard()
+    .text(`${on(cats.data)} حجمی (دیتا)`, "cc:sales:cat:tog:data")
+    .row()
+    .text(`${on(cats.national)} نت ملی`, "cc:sales:cat:tog:national")
+    .row()
+    .text(`${on(cats.unlimited)} نامحدود`, "cc:sales:cat:tog:unlimited")
+    .row()
+    .text("« کنترل سنتر", "cc:home");
+}
+
+export function salesCategoriesAdminText(cats: SalesCategories, maxMonths: number) {
+  const on = (v: boolean) => (v ? "فعال 🟢" : "غیرفعال 🔴");
+  return [
+    "🏷 دسته‌های فروش",
+    "",
+    "دسته‌هایی که کاربر در «خرید سرویس» می‌بیند:",
+    "",
+    `📦 حجمی (دیتا): ${on(cats.data)}`,
+    `🇮🇷 نت ملی: ${on(cats.national)}`,
+    `💎 نامحدود: ${on(cats.unlimited)}`,
+    "",
+    `⏳ حداکثر مدت خرید/تمدید: ${maxMonths} ماه`,
+    "",
+    "روی هر مورد بزنید تا روشن/خاموش شود.",
+  ].join("\n");
 }
 
 export function payMethodKeyboard(orderId: string, walletBalance: number) {
@@ -153,7 +247,7 @@ export function walletMenuKeyboard() {
     .text("➕ شارژ کیف پول", "wallet:charge")
     .success()
     .row()
-    .text("« بازگشت", "menu:home");
+    .text("« انصراف", "buy:cat:cancel");
 }
 
 export function walletChargeAmountsKeyboard() {
@@ -162,7 +256,7 @@ export function walletChargeAmountsKeyboard() {
     kb.text(`${amount.toLocaleString("fa-IR")}`, `wallet:amt:${amount}`).row();
   }
   kb.text("✍️ مبلغ دلخواه", "wallet:amt:custom").row();
-  kb.text("« بازگشت", "menu:home");
+  kb.text("« انصراف", "buy:cat:cancel");
   return kb;
 }
 
@@ -203,7 +297,7 @@ export function renewPickKeyboard(subs: Array<{ id: string; code: string }>) {
   for (const s of subs.slice(0, 12)) {
     kb.text(`♻️ ${s.code}`, `sub:renew:${s.id}`).row();
   }
-  kb.text("« بازگشت", "menu:home");
+  kb.text("« انصراف", "buy:cat:cancel");
   return kb;
 }
 
@@ -211,19 +305,26 @@ export function renewWizardKeyboard(opts: {
   subId: string;
   months: number;
   price: number | null;
+  maxMonths?: number;
 }) {
   const priceLabel = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
-  return new InlineKeyboard()
-    .text("−", `renew:mon:${opts.subId}:-`)
-    .text(`⏳ ${opts.months} ماه`, "wiz:noop")
-    .text("+", `renew:mon:${opts.subId}:+`)
-    .row()
+  const maxMonths = opts.maxMonths ?? 1;
+  const kb = new InlineKeyboard();
+  if (maxMonths > 1) {
+    kb.text("−", `renew:mon:${opts.subId}:-`)
+      .text(`⏳ ${opts.months} ماه`, "wiz:noop")
+      .text("+", `renew:mon:${opts.subId}:+`)
+      .row();
+  } else {
+    kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
+  }
+  return kb
     .text(`💰 ${priceLabel}`, "wiz:noop")
     .row()
     .text("✅ تأیید و پرداخت تمدید", `renew:checkout:${opts.subId}`)
     .success()
     .row()
-    .text("« بازگشت", "menu:home");
+    .text("« انصراف", "buy:cat:cancel");
 }
 
 export function guideKeyboard(urls: {
@@ -241,7 +342,7 @@ export function guideKeyboard(urls: {
   if (urls.macos) kb.url("💻 مک", urls.macos);
   if (urls.windows || urls.macos) kb.row();
   if (urls.extra) kb.url("📎 لینک آموزش بیشتر", urls.extra).row();
-  kb.text("« بازگشت", "menu:home");
+  kb.text("« انصراف", "buy:cat:cancel");
   return kb;
 }
 
@@ -256,9 +357,16 @@ export function buyDraftText(opts: {
   category?: string;
 }) {
   const qty = opts.quantity ?? 1;
+  const catLabel =
+    opts.category === "national"
+      ? "🇮🇷 کانفیگ نت ملی"
+      : opts.category === "unlimited"
+        ? "💎 نامحدود"
+        : "📦 حجمی (دیتا)";
   return [
-    qty > 1 ? "🛒 خرید عمده (Bulk)" : "🛒 خرید سرویس جدید",
-    opts.category === "national" ? "🇮🇷 کانفیگ نت ملی — فقط ۱ ماهه · حجم از ۱ گیگ" : "",
+    qty > 1 ? "🛒 خرید عمده (Bulk)" : "🛒 خرید سرویس",
+    catLabel,
+    opts.category === "national" ? "فقط ۱ ماهه · حجم از ۱ گیگ" : "مدت: ۱ ماهه",
     "",
     matrixLine(opts.trafficGb, opts.months, opts.price, qty),
     `📱 محدودیت دستگاه: ${formatLimitIp(opts.limitIp)}`,
@@ -266,9 +374,7 @@ export function buyDraftText(opts: {
     `نام پایه اکانت: ${opts.accountMode === "custom" && opts.accountName ? opts.accountName : "رندوم (بعد از تأیید)"}`,
     qty > 1 ? `⚠️ تعداد ${qty} اکانت در پنل سنایی ساخته می‌شود.` : "",
     "",
-    opts.category === "national"
-      ? "حجم را با +/− تنظیم کنید، سپس ادامه خرید را بزنید."
-      : "حجم، مدت، تعداد و IP Limit را تنظیم کنید، سپس ادامه خرید را بزنید.",
+    "حجم و تنظیمات را انتخاب کنید، سپس «ادامه خرید» را بزنید.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -340,12 +446,16 @@ export function controlCenterKeyboard() {
     .text("💰 قیمت‌گذاری اشتراک‌ها", "cc:pricing")
     .success()
     .row()
+    .text("🏷 دسته‌های فروش", "cc:sales:cat")
+    .primary()
+    .row()
     .text("📖 آموزش و دانلود اپ", "cc:guide")
     .row()
     .text("🧪 سرویس تست", "cc:test")
     .text("📱 IP Limit", "cc:iplimit")
     .row()
     .text("👑 ادمین‌ها", "cc:admins")
+    .text("🏷 نام نماینده من", "agent:set")
     .row()
     .text("🆘 پشتیبانی", "cc:support")
     .text("🔔 اعلان‌ها", "cc:notifs")

@@ -69,6 +69,14 @@ const defaults: Record<string, string> = {
     lastStatus: "",
   }),
   notif_config: JSON.stringify(defaultNotifConfig()),
+  /** Which plan categories customers can buy (admin toggles) */
+  sales_categories_json: JSON.stringify({
+    data: true,
+    national: true,
+    unlimited: false,
+  }),
+  /** Max months selectable in buy/renew wizard (1 = disable multi-month for now) */
+  max_purchase_months: "1",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -219,4 +227,48 @@ export async function getPriceRates(): Promise<PriceRates> {
 
 export async function savePriceRates(rates: PriceRates) {
   await setSetting("price_rates_json", JSON.stringify(rates));
+}
+
+export type SalesCategories = {
+  data: boolean;
+  national: boolean;
+  unlimited: boolean;
+};
+
+export function defaultSalesCategories(): SalesCategories {
+  return { data: true, national: true, unlimited: false };
+}
+
+export async function getSalesCategories(): Promise<SalesCategories> {
+  const base = defaultSalesCategories();
+  try {
+    const raw = JSON.parse(await getSetting("sales_categories_json")) as Partial<SalesCategories>;
+    return { ...base, ...raw };
+  } catch {
+    return base;
+  }
+}
+
+export async function saveSalesCategories(cats: SalesCategories) {
+  await setSetting("sales_categories_json", JSON.stringify(cats));
+}
+
+export async function isSalesCategoryEnabled(category: "data" | "national" | "unlimited") {
+  const cats = await getSalesCategories();
+  return cats[category];
+}
+
+export async function getMaxPurchaseMonths(): Promise<number> {
+  const n = Number(await getSetting("max_purchase_months"));
+  if (!n || n < 1) return 1;
+  return Math.min(12, Math.floor(n));
+}
+
+export async function listEnabledSalesCategories(): Promise<Array<"data" | "national" | "unlimited">> {
+  const cats = await getSalesCategories();
+  const out: Array<"data" | "national" | "unlimited"> = [];
+  if (cats.data) out.push("data");
+  if (cats.national) out.push("national");
+  if (cats.unlimited) out.push("unlimited");
+  return out;
 }

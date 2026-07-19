@@ -59,6 +59,8 @@ model User {
   firstName     String?
   lastName      String?
   role          UserRole  @default(user)
+  /// Display name of reseller/admin agent (required for dedicated panel group)
+  agentName     String?
   panelGroup    String?
   /// When user claimed the free 1-day / 250MB test account
   testClaimedAt DateTime?

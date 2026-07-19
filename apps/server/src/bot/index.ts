@@ -25,16 +25,18 @@ import {
 } from "../services/provision.js";
 import { getLiveSubscriptionStatus, liveStatusText } from "../services/live-status.js";
 import { claimTestService } from "../services/test-service.js";
-import { getChannels, getPaymentCard, getSetting, setSetting } from "../services/settings.js";
+import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getSetting, listEnabledSalesCategories, setSetting } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
   approvePartner,
   listNotifyAdminTelegramIds,
   rejectPartner,
+  setAgentName,
   submitPartnerRequest,
   upsertUserFromTelegram,
 } from "../services/users.js";
+import { assertAgentReadyForPurchase, sanitizePanelGroupSlug } from "../services/panel-groups.js";
 import { clampMonths } from "../services/pricing.js";
 import { formatToman, formatTraffic, formatExpiryLabel } from "../utils/format.js";
 import { friendlyBotError } from "../panel/xui-errors.js";
@@ -65,10 +67,11 @@ import {
 import {
   adminOrderKeyboard,
   BTN,
+  buyCategoryKeyboard,
   buyDraftText,
   buyWizardKeyboard,
   guideKeyboard,
-  mainMenuInline,
+  mainMenuReply,
   orderPayText,
   partnerContactKeyboard,
   partnerRequestKeyboard,
@@ -81,11 +84,13 @@ import {
   walletMenuKeyboard,
 } from "./keyboards.js";
 import { createTelegramBot } from "./telegram.js";
+import { syncTelegramMenu, syncTelegramMenuSafe } from "./menu.js";
 
 const waitingName = new Set<number>();
 const waitingPartner = new Map<number, { step: "name" | "phone" | "note"; fullName?: string; phone?: string }>();
 const waitingMatrix = new Map<number, string>();
 const waitingWalletAmount = new Set<number>();
+const waitingAgentName = new Set<number>();
 /** Renew wizard: telegramId → { subId, months } */
 const renewState = new Map<number, { subId: string; months: number }>();
 
@@ -119,28 +124,44 @@ async function requireChannel(ctx: Context) {
   return false;
 }
 
-/** Sticky reply keyboards from older bot versions stay until explicitly removed. */
-async function removeLegacyReplyKeyboard(ctx: Context) {
-  try {
-    await ctx.reply("‎", { reply_markup: { remove_keyboard: true } });
-  } catch {
-    /* ignore */
-  }
-}
-
 async function replyMainMenu(ctx: Context, preface?: string) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const miniapp = await getSetting("miniapp_url");
   const isAdmin = await isControlAdmin(ctx.from!.id);
-  await removeLegacyReplyKeyboard(ctx);
   await ctx.reply(preface?.trim() || "منوی اصلی", {
-    reply_markup: mainMenuInline({
+    reply_markup: mainMenuReply({
       isAdmin,
       isPartner: user.role === "partner",
       isWholesale: user.role === "wholesale",
       miniappUrl: miniapp || undefined,
     }),
   });
+}
+
+async function showBuyCategoryPicker(ctx: Context, edit = false) {
+  const cats = await getSalesCategories();
+  const enabled = await listEnabledSalesCategories();
+  if (!enabled.length) {
+    await ctx.reply("فعلاً هیچ دسته‌ای برای فروش فعال نیست. با پشتیبانی تماس بگیرید.");
+    return;
+  }
+  if (enabled.length === 1) {
+    await setDraftCategory(BigInt(ctx.from!.id), enabled[0]!);
+    await showBuyWizard(ctx, edit);
+    return;
+  }
+  const text = "🛒 خرید سرویس\n\nنوع سرویس را انتخاب کنید:";
+  const kb = buyCategoryKeyboard(cats);
+  if (edit && ctx.callbackQuery?.message) {
+    await ctx.editMessageText(text, { reply_markup: kb });
+  } else {
+    await ctx.reply(text, { reply_markup: kb });
+  }
+}
+
+async function startBuyFlow(ctx: Context) {
+  if (!(await requireChannel(ctx))) return;
+  await showBuyCategoryPicker(ctx);
 }
 
 async function showRenewWizard(ctx: Context, subId: string, months: number, edit = false) {
@@ -150,7 +171,7 @@ async function showRenewWizard(ctx: Context, subId: string, months: number, edit
     await ctx.reply("سرویس پیدا نشد.");
     return;
   }
-  const m = clampMonths(months);
+  const m = Math.min(await getMaxPurchaseMonths(), clampMonths(months));
   renewState.set(ctx.from!.id, { subId, months: m });
   const category = sub.trafficGb === null ? "unlimited" : "data";
   const priced = await draftPrice(user, {
@@ -166,10 +187,11 @@ async function showRenewWizard(ctx: Context, subId: string, months: number, edit
     `اکانت: ${sub.email}`,
     `حجم فعلی: ${sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb)}`,
     "",
-    "مدت تمدید را انتخاب کنید (همان سرویس در پنل تمدید می‌شود).",
+    "مدت تمدید: ۱ ماه (فعلاً فقط یک‌ماهه).",
     priced ? `قیمت: ${formatToman(priced.price)}` : "این مدت قیمت‌گذاری نشده.",
   ].join("\n");
-  const kb = renewWizardKeyboard({ subId, months: m, price: priced?.price ?? null });
+  const maxMonths = await getMaxPurchaseMonths();
+  const kb = renewWizardKeyboard({ subId, months: m, price: priced?.price ?? null, maxMonths });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
   } else {
@@ -191,6 +213,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     accountName: draft.accountName,
     category: draft.category,
   });
+  const maxMonths = await getMaxPurchaseMonths();
   const kb = buyWizardKeyboard({
     trafficGb: draft.trafficGb,
     months: draft.months,
@@ -199,6 +222,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     limitIp: draft.limitIp,
     price: priced?.price ?? null,
     category: draft.category,
+    maxMonths,
   });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
@@ -424,14 +448,40 @@ async function handlePartnerRequest(ctx: Context) {
     return;
   }
   waitingPartner.set(ctx.from!.id, { step: "name" });
-  await ctx.reply("🤝 درخواست نمایندگی فروش\nنام و نام خانوادگی را بفرستید:");
+  await ctx.reply(
+    [
+      "🤝 درخواست نمایندگی فروش",
+      "",
+      "نام نماینده را بفرستید (اجباری).",
+      "این نام برای گروه پنل 3x-ui استفاده می‌شود و باید حداقل یک حرف/عدد انگلیسی داشته باشد.",
+      "مثال: AliShop یا Reseller_Ali",
+    ].join("\n"),
+  );
 }
 
 async function handlePartnerPanel(ctx: Context) {
   const user = await upsertUserFromTelegram(ctx.from!);
   if (user.role !== "partner" && user.role !== "wholesale" && user.role !== "admin") return;
+  const ready = assertAgentReadyForPurchase(user);
   await ctx.reply(
-    `💼 پنل نماینده / عمده\nنقش: ${user.role}\nگروه: ${user.panelGroup ?? "—"}\nخریدها با قیمت نقش شما محاسبه می‌شوند.\nسرویس‌های من = فقط اکانت‌هایی که با همین تلگرام خریده‌اید.`,
+    [
+      "💼 پنل نماینده / عمده / ادمین",
+      `نقش: ${user.role}`,
+      `نام نماینده: ${user.agentName ?? "❌ تعریف نشده"}`,
+      `گروه پنل: ${user.panelGroup ?? "—"}`,
+      "",
+      ready.ok
+        ? "✅ خریدهای شما داخل گروه اختصاصی‌تان در پنل ثبت می‌شود."
+        : "⚠️ قبل از خرید باید نام نماینده را تنظیم کنید.",
+      "کاربران عادی → گروه Telegram",
+    ].join("\n"),
+    {
+      reply_markup: new InlineKeyboard()
+        .text(user.agentName ? "✏️ تغییر نام نماینده" : "➕ تعریف نام نماینده", "agent:set")
+        .primary()
+        .row()
+        .text("« بازگشت", "menu:home"),
+    },
   );
 }
 
@@ -440,6 +490,7 @@ function clearWaits(tid: number) {
   waitingPartner.delete(tid);
   waitingMatrix.delete(tid);
   waitingWalletAmount.delete(tid);
+  waitingAgentName.delete(tid);
   renewState.delete(tid);
   ccWait.delete(tid);
 }
@@ -462,9 +513,8 @@ export function createBot() {
     const isAdmin = await isControlAdmin(ctx.from!.id);
     const displayName = ctx.from?.first_name?.trim() || "دوست";
     const text = [`سلام ${displayName} 🧡`, "", welcome].join("\n");
-    await removeLegacyReplyKeyboard(ctx);
     await ctx.reply(text, {
-      reply_markup: mainMenuInline({
+      reply_markup: mainMenuReply({
         isAdmin,
         isPartner: user.role === "partner",
         isWholesale: user.role === "wholesale",
@@ -485,17 +535,66 @@ export function createBot() {
     await replyMainMenu(ctx);
   });
 
-  bot.callbackQuery("m:buy", async (ctx) => {
+  bot.callbackQuery("buy:cat:cancel", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.deleteMessage().catch(() => undefined);
+  });
+
+  bot.callbackQuery(/^buy:cat:(data|national|unlimited)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
-    await setDraftCategory(BigInt(ctx.from!.id), "data");
-    await showBuyWizard(ctx);
+    const cat = ctx.match![1] as "data" | "national" | "unlimited";
+    const cats = await getSalesCategories();
+    if (!cats[cat]) {
+      await ctx.reply("این دسته فعلاً غیرفعال است.");
+      return;
+    }
+    await setDraftCategory(BigInt(ctx.from!.id), cat);
+    await showBuyWizard(ctx, true);
+  });
+
+  bot.command("buy", async (ctx) => {
+    await startBuyFlow(ctx);
+  });
+
+  bot.command("services", async (ctx) => {
+    if (!(await requireChannel(ctx))) return;
+    await handleMyServices(ctx);
+  });
+
+  bot.command("wallet", async (ctx) => {
+    if (!(await requireChannel(ctx))) return;
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const wallet = await getWallet(user.id);
+    await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
+  });
+
+  bot.command("support", async (ctx) => handleSupport(ctx));
+
+  bot.command("app", async (ctx) => {
+    const url = await getSetting("miniapp_url");
+    if (!url) {
+      await ctx.reply("وب‌اپ هنوز تنظیم نشده است.");
+      return;
+    }
+    await ctx.reply("برای باز کردن داشبورد روی دکمه بزنید:", {
+      reply_markup: new InlineKeyboard().webApp("🚀 باز کردن وب‌اپ", url),
+    });
+  });
+
+  bot.callbackQuery("m:buy", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showBuyCategoryPicker(ctx, true);
   });
   bot.callbackQuery("m:national", async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
+    if (!(await getSalesCategories()).national) {
+      await ctx.reply("نت ملی فعلاً غیرفعال است.");
+      return;
+    }
     await setDraftCategory(BigInt(ctx.from!.id), "national");
-    await showBuyWizard(ctx);
+    await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("m:renew", async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -545,12 +644,35 @@ export function createBot() {
     await handlePartnerPanel(ctx);
   });
 
+  bot.callbackQuery("agent:set", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    if (user.role !== "admin" && user.role !== "partner" && user.role !== "wholesale") {
+      await ctx.reply("فقط ادمین و نماینده می‌توانند نام نماینده تعریف کنند.");
+      return;
+    }
+    waitingAgentName.add(ctx.from!.id);
+    await ctx.reply(
+      [
+        "نام نماینده را بفرستید (اجباری):",
+        "",
+        "• همین نام به‌عنوان گروه پنل 3x-ui استفاده می‌شود",
+        "• باید حداقل یک حرف یا عدد انگلیسی داشته باشد",
+        "مثال: AliShop",
+        "",
+        "لغو: /cancel",
+      ].join("\n"),
+    );
+  });
+
   bot.callbackQuery("wiz:noop", async (ctx) => ctx.answerCallbackQuery());
 
   bot.hears(BTN.buy, async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
-    await setDraftCategory(BigInt(ctx.from!.id), "data");
-    await showBuyWizard(ctx);
+    await startBuyFlow(ctx);
+  });
+
+  bot.hears(BTN.national, async (ctx) => {
+    await startBuyFlow(ctx);
   });
 
   bot.callbackQuery("wiz:vol:+", async (ctx) => {
@@ -617,6 +739,17 @@ export function createBot() {
       return;
     }
     const user = await upsertUserFromTelegram(ctx.from!);
+    const agentOk = assertAgentReadyForPurchase(user);
+    if (!agentOk.ok) {
+      await ctx.reply(agentOk.message, {
+        reply_markup: new InlineKeyboard()
+          .text("➕ تعریف نام نماینده", "agent:set")
+          .primary()
+          .row()
+          .text("« بازگشت", "menu:home"),
+      });
+      return;
+    }
     const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
     const priced = await draftPrice(user, draft);
     if (!priced) {
@@ -795,6 +928,34 @@ export function createBot() {
       return;
     }
 
+    if (waitingAgentName.has(tid)) {
+      try {
+        const user = await upsertUserFromTelegram(ctx.from!);
+        const updated = await setAgentName(user.id, text);
+        waitingAgentName.delete(tid);
+        await ctx.reply(
+          [
+            "✅ نام نماینده ذخیره شد",
+            `نام: ${updated.agentName}`,
+            `گروه پنل: ${updated.panelGroup}`,
+            "",
+            "از این به بعد خریدهای شما داخل این گروه ساخته می‌شود (نه Telegram).",
+          ].join("\n"),
+          {
+            reply_markup: new InlineKeyboard()
+              .text("💼 پنل نماینده", "m:partnerpanel")
+              .row()
+              .text("🛒 خرید", "m:buy")
+              .row()
+              .text("« منوی اصلی", "menu:home"),
+          },
+        );
+      } catch (err) {
+        await ctx.reply(String(err).replace(/^Error:\s*/, "") + "\nدوباره بفرستید یا /cancel");
+      }
+      return;
+    }
+
     if (waitingName.has(tid)) {
       const name = text;
       if (!/^[a-zA-Z0-9._-]{3,32}$/.test(name)) {
@@ -811,6 +972,12 @@ export function createBot() {
     const partnerFlow = waitingPartner.get(tid);
     if (partnerFlow) {
       if (partnerFlow.step === "name") {
+        if (!sanitizePanelGroupSlug(text)) {
+          await ctx.reply(
+            "نام نماینده باید حداقل یک حرف یا عدد انگلیسی داشته باشد.\nمثال: AliShop\nدوباره بفرستید یا انصراف.",
+          );
+          return;
+        }
         waitingPartner.set(tid, { step: "phone", fullName: text });
         await ctx.reply("شماره موبایل را با دکمه زیر ارسال کنید (همان شماره تلگرام شما):", {
           reply_markup: partnerContactKeyboard(),
@@ -1010,18 +1177,20 @@ export function createBot() {
   bot.hears(BTN.myServices, async (ctx) => handleMyServices(ctx));
   bot.hears(BTN.renew, async (ctx) => handleRenew(ctx));
   bot.hears(BTN.test, async (ctx) => handleTest(ctx));
-  bot.hears(BTN.national, async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
-    await setDraftCategory(BigInt(ctx.from!.id), "national");
-    await showBuyWizard(ctx);
-  });
   bot.hears(BTN.account, async (ctx) => handleAccount(ctx));
   bot.hears(BTN.guide, async (ctx) => handleGuide(ctx));
   bot.hears(BTN.dashboard, async (ctx) => handleDashboard(ctx));
   bot.hears(BTN.support, async (ctx) => handleSupport(ctx));
+  bot.hears(BTN.referral, async (ctx) => {
+    await ctx.reply("👥 سیستم معرفی به دوستان به‌زودی فعال می‌شود.");
+  });
   bot.hears(BTN.partner, async (ctx) => handlePartnerRequest(ctx));
   bot.hears(BTN.partnerPanel, async (ctx) => handlePartnerPanel(ctx));
-
+  bot.hears(BTN.agentPanel, async (ctx) => handlePartnerPanel(ctx));
+  bot.hears(BTN.controlCenter, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await showControlCenter(ctx, false);
+  });
   bot.hears(BTN.admin, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await showControlCenter(ctx, false);
@@ -1092,6 +1261,17 @@ export function createBot() {
       return;
     }
     const user = await upsertUserFromTelegram(ctx.from!);
+    const agentOk = assertAgentReadyForPurchase(user);
+    if (!agentOk.ok) {
+      await ctx.reply(agentOk.message, {
+        reply_markup: new InlineKeyboard()
+          .text("➕ تعریف نام نماینده", "agent:set")
+          .primary()
+          .row()
+          .text("« بازگشت", "menu:home"),
+      });
+      return;
+    }
     const subId = ctx.match![1];
     const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
     if (!sub || sub.isTest) {
@@ -1135,7 +1315,7 @@ export function createBot() {
 
   bot.callbackQuery("wallet:charge", async (ctx) => {
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText("مبلغ شارژ را انتخاب کنید:", {
+    await ctx.editMessageText("مبلغ شارژ را انتخاب کنید (تومان):", {
       reply_markup: walletChargeAmountsKeyboard(),
     });
   });
@@ -1296,20 +1476,21 @@ export function createBot() {
   bot.command("miniapp", async (ctx) => {
     const url = await getSetting("miniapp_url");
     if (!url) {
-      await ctx.reply("Mini App URL not set. Admin: /setminiapp https://app.anthropics.ir");
+      await ctx.reply("وب‌اپ هنوز تنظیم نشده. ادمین: /setminiapp https://...");
       return;
     }
-    await ctx.reply("Open Mini App:", {
-      reply_markup: new InlineKeyboard().webApp("🚀 Open Piing", url),
+    await ctx.reply("برای باز کردن داشبورد روی دکمه بزنید:", {
+      reply_markup: new InlineKeyboard().webApp("🚀 باز کردن وب‌اپ", url),
     });
   });
 
   bot.command("setminiapp", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     const url = (ctx.match ?? "").trim();
-    if (!url.startsWith("http")) return ctx.reply("Usage: /setminiapp https://app.anthropics.ir");
+    if (!url.startsWith("http")) return ctx.reply("Usage: /setminiapp https://app.example.com");
     await setSetting("miniapp_url", url);
-    await ctx.reply("Mini App URL saved.");
+    await syncTelegramMenu(ctx.api).catch(() => undefined);
+    await ctx.reply("آدرس وب‌اپ ذخیره شد و منوی ربات به‌روز شد ✅");
   });
 
   bot.catch((err) => {
@@ -1318,6 +1499,8 @@ export function createBot() {
     else if (e instanceof HttpError) console.error("HTTP", e);
     else console.error(e);
   });
+
+  void syncTelegramMenuSafe(bot);
 
   return bot;
 }

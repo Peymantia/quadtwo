@@ -5,7 +5,7 @@ import { adminIds } from "../config/env.js";
 import { createXuiFromEnv } from "../panel/xui-client.js";
 import { env } from "../config/env.js";
 import { getExtraAdminIds } from "./settings.js";
-import { partnerPanelGroupName } from "./panel-groups.js";
+import { partnerPanelGroupName, buildPanelGroupFromAgentName, sanitizePanelGroupSlug } from "./panel-groups.js";
 
 export type TgUserLike = {
   id: number;
@@ -73,7 +73,19 @@ export async function approvePartner(requestId: string, asRole: "partner" | "who
     where: { id: requestId },
     include: { user: true },
   });
-  const group = partnerPanelGroupName(req.user, asRole);
+
+  const agentName = req.fullName.trim();
+  if (!agentName) {
+    throw new Error("نام نماینده در درخواست خالی است.");
+  }
+  if (!sanitizePanelGroupSlug(agentName) && !sanitizePanelGroupSlug(req.user.username ?? "")) {
+    throw new Error(
+      "نام نماینده باید حداقل یک حرف/عدد انگلیسی داشته باشد تا گروه پنل ساخته شود.\nمثال: AliShop",
+    );
+  }
+  const group = sanitizePanelGroupSlug(agentName)
+    ? buildPanelGroupFromAgentName(agentName, req.user.telegramId)
+    : partnerPanelGroupName({ ...req.user, agentName }, asRole);
 
   try {
     const xui = createXuiFromEnv(env);
@@ -87,6 +99,7 @@ export async function approvePartner(requestId: string, asRole: "partner" | "who
     where: { id: req.userId },
     data: {
       role: asRole === "wholesale" ? UserRole.wholesale : UserRole.partner,
+      agentName,
       panelGroup: group,
     },
   });
@@ -95,6 +108,28 @@ export async function approvePartner(requestId: string, asRole: "partner" | "who
     where: { id: requestId },
     data: { status: "approved" },
     include: { user: true },
+  });
+}
+
+/** Set / update نماینده name → panel group for admin/partner/wholesale. */
+export async function setAgentName(userId: string, rawName: string) {
+  const agentName = rawName.trim();
+  if (agentName.length < 2) {
+    throw new Error("نام نماینده خیلی کوتاه است.");
+  }
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  const panelGroup = buildPanelGroupFromAgentName(agentName, user.telegramId);
+
+  try {
+    const xui = createXuiFromEnv(env);
+    await xui.createGroup(panelGroup);
+  } catch {
+    /* exists or panel offline — still save locally */
+  }
+
+  return prisma.user.update({
+    where: { id: userId },
+    data: { agentName, panelGroup },
   });
 }
 
@@ -109,7 +144,7 @@ export async function rejectPartner(requestId: string) {
 export async function demoteToUser(userId: string) {
   return prisma.user.update({
     where: { id: userId },
-    data: { role: UserRole.user, panelGroup: null },
+    data: { role: UserRole.user, panelGroup: null, agentName: null },
   });
 }
 

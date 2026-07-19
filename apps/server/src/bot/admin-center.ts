@@ -21,19 +21,23 @@ import {
   addExtraAdminId,
   getChannels,
   getExtraAdminIds,
+  getMaxPurchaseMonths,
   getNotifConfig,
   getPriceRates,
   getPricingMode,
+  getSalesCategories,
   getSetting,
   removeExtraAdminId,
   saveChannels,
   saveNotifConfig,
   savePriceRates,
+  saveSalesCategories,
   setPricingMode,
   setSetting,
   type ChannelConfig,
   type NotifConfig,
   type PriceRates,
+  type SalesCategories,
 } from "../services/settings.js";
 import { demoteToUser, listNotifyAdminTelegramIds, partnerSalesReport } from "../services/users.js";
 import { formatToman } from "../utils/format.js";
@@ -50,6 +54,8 @@ import {
   controlCenterKeyboard,
   notifSettingsKeyboard,
   notifSettingsText,
+  salesCategoriesAdminKeyboard,
+  salesCategoriesAdminText,
 } from "./keyboards.js";
 
 /** Waiting text input for control-center forms */
@@ -628,6 +634,14 @@ async function showNotifs(ctx: Context) {
   await ctx.editMessageText(notifSettingsText(cfg), { reply_markup: notifSettingsKeyboard(cfg) });
 }
 
+async function showSalesCategories(ctx: Context) {
+  const cats = await getSalesCategories();
+  const maxMonths = await getMaxPurchaseMonths();
+  await ctx.editMessageText(salesCategoriesAdminText(cats, maxMonths), {
+    reply_markup: salesCategoriesAdminKeyboard(cats),
+  });
+}
+
 async function showDemote(ctx: Context) {
   const users = await prisma.user.findMany({
     where: { role: { in: [UserRole.partner, UserRole.wholesale] } },
@@ -1034,6 +1048,27 @@ export function registerControlCenter(bot: Bot) {
         ? "ساعت قبل از انقضا را بفرستید (مثلاً 24 یا 72):\nلغو: /cancel"
         : "آستانه مگابایت باقی‌مانده را بفرستید (مثلاً 200):\nلغو: /cancel",
     );
+  });
+
+  bot.callbackQuery("cc:sales:cat", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showSalesCategories(ctx);
+  });
+
+  bot.callbackQuery(/^cc:sales:cat:tog:(data|national|unlimited)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const key = ctx.match![1] as keyof SalesCategories;
+    const cats = await getSalesCategories();
+    cats[key] = !cats[key];
+    await saveSalesCategories(cats);
+    await auditLog({
+      action: "sales_category_toggle",
+      actorTelegramId: ctx.from?.id,
+      detail: `${key}=${cats[key]}`,
+    });
+    await showSalesCategories(ctx);
   });
 
   bot.callbackQuery("cc:sales", async (ctx) => {
