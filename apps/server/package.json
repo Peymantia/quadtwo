@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "sample:excel": "tsx scripts/generate-import-sample.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
@@ -23,6 +24,7 @@
     "https-proxy-agent": "^9.1.0",
     "jose": "^6.2.3",
     "qrcode": "^1.5.4",
+    "xlsx": "^0.18.5",
     "zod": "^3.25.76"
   },
   "devDependencies": {

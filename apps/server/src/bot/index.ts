@@ -50,6 +50,7 @@ import {
 import {
   ccWait,
   handleControlCenterText,
+  handleExcelImportDocument,
   isControlAdmin,
   registerControlCenter,
   showControlCenter,
@@ -255,17 +256,17 @@ async function deliverResult(
     const text = [
       mode === "renew" ? "✅ سرویس تمدید شد" : all.length > 1 ? "📦 یکی از اکانت‌های عمده" : "🎉 اشتراک شما آماده شد",
       "",
-      `کد: \`${one.code}\``,
-      `اکانت: \`${one.email}\``,
+      `کد: <code>${one.code}</code>`,
+      `اکانت: <code>${one.email}</code>`,
       `حجم: ${formatTraffic(trafficGb)}`,
       mode === "renew"
         ? `انقضا: ${one.expiresAt.toLocaleDateString("fa-IR")}`
         : "⏱ اعتبار: از اولین اتصال شروع می‌شود",
       "",
       "🔗 لینک اشتراک:",
-      `\`${one.subUrl}\``,
+      `<code>${one.subUrl}</code>`,
     ].join("\n");
-    await api.sendMessage(Number(telegramId), text, { parse_mode: "Markdown" });
+    await api.sendMessage(Number(telegramId), text, { parse_mode: "HTML" });
     await api.sendPhoto(Number(telegramId), new InputFile(one.qrPng, "qr.png"), {
       caption: `QR — ${one.email}`,
     });
@@ -809,6 +810,8 @@ export function createBot() {
   });
 
   bot.on(["message:photo", "message:document"], async (ctx) => {
+    if (await handleExcelImportDocument(ctx)) return;
+
     if (!(await requireChannel(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
     const pending = await findPendingPaymentOrder(user.id);
@@ -1185,7 +1188,7 @@ export function createBot() {
     await ctx.answerCallbackQuery();
     const subUrl = await refreshSubscriptionSubUrl(ctx.match![1]!);
     if (!subUrl) return ctx.reply("لینک موجود نیست.");
-    await ctx.reply(`🔗 \`${subUrl}\``, { parse_mode: "Markdown" });
+    await ctx.reply(`🔗 لینک اشتراک:\n<code>${subUrl}</code>`, { parse_mode: "HTML" });
   });
 
   bot.callbackQuery(/^sub:qr:(.+)$/, async (ctx) => {

@@ -5,6 +5,7 @@ import { XuiClient, createXuiFromEnv } from "../panel/xui-client.js";
 import { formatXuiError } from "../panel/xui-errors.js";
 import { parseInboundIds } from "./inbounds.js";
 import type { PlanCategory } from "./pricing.js";
+import { sanitizeSubBase } from "./sub-url.js";
 
 export type PanelCategories = PlanCategory[];
 
@@ -84,7 +85,7 @@ export async function importPanelFromEnv() {
       data: {
         apiToken: snap.apiToken,
         inboundIds: snap.inboundIds,
-        subBase: snap.subBase,
+        subBase: sanitizeSubBase(snap.subBase),
         active: true,
         sellEnabled: true,
       },
@@ -97,7 +98,7 @@ export async function importPanelFromEnv() {
       baseUrl: snap.baseUrl,
       apiToken: snap.apiToken,
       inboundIds: snap.inboundIds,
-      subBase: snap.subBase,
+      subBase: sanitizeSubBase(snap.subBase),
       categories: snap.categories,
       active: true,
       sellEnabled: true,
@@ -129,7 +130,7 @@ export async function createPanelServer(input: {
       baseUrl,
       apiToken: input.apiToken.trim(),
       inboundIds: input.inboundIds?.trim() || "1",
-      subBase: input.subBase?.trim() || null,
+      subBase: sanitizeSubBase(input.subBase) ?? null,
       categories: stringifyPanelCategories(input.categories ?? ["data", "unlimited"]),
       weight: Math.max(1, Math.min(1000, input.weight ?? 100)),
       active: input.active ?? true,
@@ -157,7 +158,20 @@ export async function updatePanelServer(
   if (input.baseUrl !== undefined) data.baseUrl = input.baseUrl.trim().replace(/\/?$/, "/");
   if (input.apiToken !== undefined && input.apiToken.trim()) data.apiToken = input.apiToken.trim();
   if (input.inboundIds !== undefined) data.inboundIds = input.inboundIds.trim() || "1";
-  if (input.subBase !== undefined) data.subBase = input.subBase?.trim() || null;
+  if (input.subBase !== undefined) {
+    const raw = input.subBase?.trim() || "";
+    if (!raw || raw === "-") {
+      data.subBase = null;
+    } else {
+      const clean = sanitizeSubBase(raw);
+      if (!clean) {
+        throw new Error(
+          "Sub base نامعتبر است. باید با http(s) و مسیر باشد، مثلاً:\nhttps://claude.anthropics.ir:65535/info/\n(دامنه Mini App مثل app.piing.ir قبول نمی‌شود)",
+        );
+      }
+      data.subBase = clean;
+    }
+  }
   if (input.categories !== undefined) data.categories = stringifyPanelCategories(input.categories);
   if (input.weight !== undefined) data.weight = Math.max(1, Math.min(1000, input.weight));
   if (input.active !== undefined) data.active = input.active;
@@ -215,7 +229,7 @@ export async function resolvePanelForCategory(category: PlanCategory): Promise<{
       panel,
       xui: createXuiFromPanel(panel),
       inboundIds: panelInboundIds(panel),
-      subBase: panel.subBase,
+      subBase: sanitizeSubBase(panel.subBase),
       name: panel.name,
     };
   }
@@ -228,7 +242,7 @@ export async function resolvePanelForCategory(category: PlanCategory): Promise<{
         panel: null,
         xui: createXuiFromEnv(env),
         inboundIds: parseInboundIds(snap.inboundIds),
-        subBase: snap.subBase,
+        subBase: sanitizeSubBase(snap.subBase),
         name: snap.name,
       };
     }
@@ -256,7 +270,7 @@ export async function resolvePanelForSubscription(sub: {
         panel,
         xui: createXuiFromPanel(panel),
         inboundIds: panelInboundIds(panel),
-        subBase: panel.subBase,
+        subBase: sanitizeSubBase(panel.subBase),
         name: panel.name,
       };
     }
@@ -272,7 +286,7 @@ export async function resolvePanelForSubscription(sub: {
       panel: first,
       xui: createXuiFromPanel(first),
       inboundIds: panelInboundIds(first),
-      subBase: first.subBase,
+      subBase: sanitizeSubBase(first.subBase),
       name: first.name,
     };
   }
@@ -285,7 +299,7 @@ export async function resolvePanelForSubscription(sub: {
     panel: null,
     xui: createXuiFromEnv(env),
     inboundIds: parseInboundIds(snap.inboundIds),
-    subBase: snap.subBase,
+    subBase: sanitizeSubBase(snap.subBase),
     name: snap.name,
   };
 }

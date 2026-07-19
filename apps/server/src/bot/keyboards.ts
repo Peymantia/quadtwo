@@ -316,11 +316,11 @@ export function subscriptionDetailKeyboard(opts: {
     .row();
 
   if (opts.panelEnabled === false) {
-    kb.text("🟢 فعال‌سازی", `sub:toggle:${opts.subId}`).success().row();
+    kb.text("فعال 🟢", `sub:toggle:${opts.subId}`).success().row();
   } else if (opts.panelEnabled === true) {
-    kb.text("🔴 غیرفعال موقت", `sub:toggle:${opts.subId}`).danger().row();
+    kb.text("غیر فعال 🔴", `sub:toggle:${opts.subId}`).danger().row();
   } else {
-    kb.text("🔴/🟢 فعال/غیرفعال", `sub:toggle:${opts.subId}`).row();
+    kb.text("فعال 🟢 / غیر فعال 🔴", `sub:toggle:${opts.subId}`).row();
   }
 
   kb.text("« بازگشت به لیست", "mysvc:list");
@@ -515,6 +515,9 @@ export function controlCenterKeyboard() {
     .row()
     .text("🖥 سرورهای پنل", "cc:panels")
     .primary()
+    .row()
+    .text("📥 ورود از اکسل", "cc:import")
+    .success()
     .row()
     .text("📋 سفارش‌های باز", "cc:pending")
     .primary()

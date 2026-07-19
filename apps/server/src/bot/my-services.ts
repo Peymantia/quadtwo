@@ -169,7 +169,7 @@ export function registerMyServicesHandlers(bot: Bot) {
       const user = await upsertUserFromTelegram(ctx.from!);
       const enabled = await toggleSubscriptionEnabled(ctx.match![1]!, user.id);
       await ctx.answerCallbackQuery({
-        text: enabled ? "🟢 فعال شد" : "🔴 غیرفعال شد",
+        text: enabled ? "فعال 🟢" : "غیر فعال 🔴",
         show_alert: true,
       });
       await showSubscriptionDetail(ctx, ctx.match![1]!, true);

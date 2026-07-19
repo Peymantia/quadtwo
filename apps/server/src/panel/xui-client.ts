@@ -28,6 +28,11 @@ export class XuiClient {
     this.baseUrl = opts.baseUrl.endsWith("/") ? opts.baseUrl : `${opts.baseUrl}/`;
   }
 
+  /** Panel root URL (with trailing slash). */
+  get panelBaseUrl() {
+    return this.baseUrl;
+  }
+
   private url(path: string) {
     const clean = path.replace(/^\//, "");
     return new URL(clean, this.baseUrl).toString();

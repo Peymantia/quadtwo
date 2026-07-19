@@ -48,6 +48,7 @@ import {
   searchUsersAndOrders,
   type SalesPeriod,
 } from "../services/admin-reports.js";
+import { formatImportResult, importWorkbook, readWorkbookFromBuffer } from "../services/bulk-import.js";
 import { auditLog, listRecentAudit } from "../services/audit.js";
 import {
   categoryLabelFa,
@@ -114,7 +115,54 @@ export const ccWait = new Map<
       id: string;
       field: "name" | "url" | "token" | "inbounds" | "subBase" | "weight";
     }
+  | { kind: "excel_import" }
 >();
+
+/** Handle Excel document upload for bulk import. Returns true if consumed. */
+export async function handleExcelImportDocument(ctx: Context): Promise<boolean> {
+  const tid = ctx.from?.id;
+  if (!tid) return false;
+  const wait = ccWait.get(tid);
+  if (!wait || wait.kind !== "excel_import") return false;
+  if (!(await isControlAdmin(tid))) {
+    ccWait.delete(tid);
+    return false;
+  }
+
+  const doc = ctx.message?.document;
+  if (!doc) {
+    await ctx.reply("لطفاً فایل اکسل را به‌صورت Document بفرستید (نه عکس).");
+    return true;
+  }
+  const name = (doc.file_name || "").toLowerCase();
+  const okName = name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv");
+  if (!okName && doc.mime_type && !doc.mime_type.includes("sheet") && !doc.mime_type.includes("excel")) {
+    await ctx.reply("فرمت باید .xlsx باشد.");
+    return true;
+  }
+
+  try {
+    const file = await ctx.getFile();
+    const url = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("دانلود فایل از تلگرام ناموفق بود");
+    const buf = Buffer.from(await res.arrayBuffer());
+    const wb = readWorkbookFromBuffer(buf);
+    const result = await importWorkbook(wb);
+    ccWait.delete(tid);
+    await auditLog({
+      action: "excel_import",
+      actorTelegramId: tid,
+      detail: `settings=${result.settings} prices=${result.prices} promos=${result.promos}`,
+    });
+    await ctx.reply(formatImportResult(result), {
+      reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
+    });
+  } catch (err) {
+    await ctx.reply(`خطا در ورود اکسل:\n${String(err).replace(/^Error:\s*/, "")}`);
+  }
+  return true;
+}
 
 export async function isControlAdmin(telegramId: number | undefined): Promise<boolean> {
   if (telegramId === undefined) return false;
@@ -1532,6 +1580,26 @@ export function registerControlCenter(bot: Bot) {
         await ctx.reply(text, { parse_mode: "Markdown", reply_markup: adminOrderKeyboard(order.id) });
       }
     }
+  });
+
+  bot.callbackQuery("cc:import", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "excel_import" });
+    await ctx.reply(
+      [
+        "📥 ورود یکجای داده از اکسل",
+        "",
+        "فایل نمونه داخل پروژه:",
+        "`samples/quadtwo-import-sample.xlsx`",
+        "",
+        "شیت‌ها: تنظیمات · کانال‌ها · قیمت‌ها · نرخ‌ها · دسته‌ها · پیام‌های تبلیغ · آموزش · سرورهای پنل",
+        "",
+        "همین فایل را (بعد از ویرایش برند/قیمت/تبلیغات) به‌صورت Document بفرستید.",
+        "لغو: /cancel",
+      ].join("\n"),
+      { parse_mode: "Markdown" },
+    );
   });
 
   bot.callbackQuery("cc:panels", async (ctx) => {

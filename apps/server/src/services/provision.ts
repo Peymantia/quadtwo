@@ -13,6 +13,7 @@ import {
 } from "./panel-servers.js";
 import type { PlanCategory } from "./pricing.js";
 import { getDefaultLimitIp } from "./settings.js";
+import { appendSubId, isValidSubBase, sanitizeSubBase } from "./sub-url.js";
 
 export type ProvisionResult = {
   subscriptionId: string;
@@ -23,12 +24,6 @@ export type ProvisionResult = {
   qrPng: Buffer;
 };
 
-function appendSubId(base: string, subId: string) {
-  const trimmed = base.trim();
-  if (!trimmed) return subId;
-  return trimmed.endsWith("/") ? `${trimmed}${subId}` : `${trimmed}/${subId}`;
-}
-
 function panelSubTls(settings?: Record<string, unknown>) {
   const cert = settings?.subCertFile;
   const key = settings?.subKeyFile;
@@ -37,48 +32,74 @@ function panelSubTls(settings?: Record<string, unknown>) {
   return false;
 }
 
-/** Build subscription page URL the same way 3x-ui panel does (subURI + subId). */
+function hostnameFromPanelUrl(panelBaseUrl?: string | null): string {
+  const candidates = [panelBaseUrl, env.XUI_BASE_URL];
+  for (const c of candidates) {
+    if (!c?.trim()) continue;
+    try {
+      const host = new URL(c).hostname;
+      if (host && host !== "127.0.0.1" && host !== "localhost") return host;
+      if (host) return host;
+    } catch {
+      /* ignore */
+    }
+  }
+  return "";
+}
+
+/** Rebuild like 3x-ui BuildSubURIBase + subPath. */
+function reconstructSubBase(
+  settings?: Record<string, unknown>,
+  panelBaseUrl?: string | null,
+): string | null {
+  const subPathRaw =
+    typeof settings?.subPath === "string" && settings.subPath.trim()
+      ? settings.subPath.trim()
+      : "/sub/";
+  const subPath = subPathRaw.startsWith("/") ? subPathRaw : `/${subPathRaw}`;
+  const pathNorm = subPath.endsWith("/") ? subPath : `${subPath}/`;
+
+  const subDomain =
+    (typeof settings?.subDomain === "string" && settings.subDomain.trim()) ||
+    hostnameFromPanelUrl(panelBaseUrl);
+  if (!subDomain) return null;
+
+  const subPort = Number(settings?.subPort ?? 2096);
+  const subTls = panelSubTls(settings);
+  const scheme = subTls ? "https" : "http";
+  const hidePort = (subPort === 443 && subTls) || (subPort === 80 && !subTls);
+  const host = hidePort ? subDomain : `${subDomain}:${subPort}`;
+  return `${scheme}://${host}${pathNorm}`;
+}
+
+/**
+ * Build subscription page URL the same way 3x-ui panel does.
+ * Never falls back to PUBLIC_DOMAIN / Mini App host.
+ */
 export function buildSubUrl(
   subId: string,
   settings?: Record<string, unknown>,
   subBaseOverride?: string | null,
+  panelBaseUrl?: string | null,
 ): string {
-  if (subBaseOverride?.trim()) {
-    return appendSubId(subBaseOverride.trim(), subId);
-  }
-  if (env.XUI_SUB_BASE?.trim()) {
-    return appendSubId(env.XUI_SUB_BASE.trim(), subId);
-  }
+  const override = sanitizeSubBase(subBaseOverride);
+  if (override) return appendSubId(override, subId);
+
+  const fromEnv = sanitizeSubBase(env.XUI_SUB_BASE);
+  if (fromEnv) return appendSubId(fromEnv, subId);
 
   const subURI = typeof settings?.subURI === "string" ? settings.subURI.trim() : "";
-  if (subURI) {
-    return appendSubId(subURI, subId);
-  }
+  const fromPanel = sanitizeSubBase(subURI);
+  if (fromPanel) return appendSubId(fromPanel, subId);
 
-  const subDomain = typeof settings?.subDomain === "string" ? settings.subDomain.trim() : "";
-  const subPort = Number(settings?.subPort ?? 2096);
-  const subPathRaw = typeof settings?.subPath === "string" && settings.subPath ? settings.subPath : "/sub/";
-  const subPath = subPathRaw.startsWith("/") ? subPathRaw : `/${subPathRaw}`;
-  const pathNorm = subPath.endsWith("/") ? subPath : `${subPath}/`;
-  const subTls = panelSubTls(settings);
+  const rebuilt = reconstructSubBase(settings, panelBaseUrl);
+  if (rebuilt) return appendSubId(rebuilt, subId);
 
-  if (subDomain) {
-    const scheme = subTls ? "https" : "http";
-    const hidePort = (subPort === 443 && subTls) || (subPort === 80 && !subTls);
-    const host = hidePort ? subDomain : `${subDomain}:${subPort}`;
-    return `${scheme}://${host}${pathNorm}${subId}`;
-  }
-
-  try {
-    const u = new URL(env.XUI_BASE_URL!);
-    return `${u.protocol}//${u.hostname}:2096/sub/${subId}`;
-  } catch {
-    return `sub://${subId}`;
-  }
+  return `sub://${subId}`;
 }
 
 async function panelSettings(xui: XuiClient) {
-  let merged: Record<string, unknown> | undefined;
+  let merged: Record<string, unknown> = {};
   try {
     const all = await xui.getSettings();
     if (all.obj && typeof all.obj === "object") merged = { ...all.obj };
@@ -86,6 +107,7 @@ async function panelSettings(xui: XuiClient) {
     /* ignore */
   }
   try {
+    // defaultSettings includes computed subURI (same as panel UI)
     const def = await xui.getDefaultSettings();
     if (def.obj && typeof def.obj === "object") {
       merged = { ...merged, ...def.obj };
@@ -102,7 +124,7 @@ export async function resolveSubUrl(
   subBaseOverride?: string | null,
 ): Promise<string> {
   const settings = await panelSettings(xui);
-  return buildSubUrl(subId, settings, subBaseOverride);
+  return buildSubUrl(subId, settings, subBaseOverride, xui.panelBaseUrl);
 }
 
 export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise<string | null> {
@@ -120,7 +142,21 @@ export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise
     }
     if (!panelSubId) return sub.subUrl;
 
-    const subUrl = await resolveSubUrl(panelSubId, resolved.xui, resolved.subBase);
+    const subBase = sanitizeSubBase(resolved.subBase);
+    const subUrl = await resolveSubUrl(panelSubId, resolved.xui, subBase);
+
+    // Heal bad PanelServer.subBase so next reads don't keep using Mini App host
+    if (resolved.panel && resolved.subBase && !isValidSubBase(resolved.subBase)) {
+      try {
+        await prisma.panelServer.update({
+          where: { id: resolved.panel.id },
+          data: { subBase: null },
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+
     const data: { subUrl: string; panelSubId: string; panelServerId?: string } = {
       subUrl,
       panelSubId,
@@ -132,8 +168,12 @@ export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise
       await prisma.subscription.update({ where: { id: sub.id }, data });
     }
     return subUrl;
-  } catch {
-    return sub.subUrl;
+  } catch (err) {
+    console.error("refreshSubscriptionSubUrl", subscriptionId, err);
+    if (sub.subUrl?.startsWith("http") && isValidSubBase(sub.subUrl.replace(/\/[^/]+\/?$/, "/"))) {
+      return sub.subUrl;
+    }
+    return sub.subUrl?.startsWith("http") ? sub.subUrl : null;
   }
 }
 
