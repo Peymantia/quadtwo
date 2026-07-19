@@ -1,4 +1,5 @@
 import type { Bot, Context } from "grammy";
+import { InlineKeyboard } from "grammy";
 import type { Subscription } from "@prisma/client";
 import { prisma } from "../db.js";
 import { getLiveSubscriptionStatus, liveStatusText, type LiveSubStatus } from "../services/live-status.js";
@@ -6,17 +7,19 @@ import { toggleSubscriptionEnabled } from "../services/provision.js";
 import { checkRenewEligibility } from "../services/renew-eligibility.js";
 import { upsertUserFromTelegram } from "../services/users.js";
 import { friendlyBotError } from "../panel/xui-errors.js";
-import { myServicesListKeyboard, subscriptionDetailKeyboard } from "./keyboards.js";
+import { myServicesListKeyboard, subscriptionDetailKeyboard, BTN } from "./keyboards.js";
 
 const PAGE_SIZE = 20;
+const NOTE_MAX = 500;
 
 export const myServicesQuery = new Map<number, string>();
 export const waitingMyServicesSearch = new Set<number>();
+/** telegramId → subscriptionId waiting for note text */
+export const waitingServiceNote = new Map<number, string>();
 
-function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest">) {
+function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest" | "note">) {
   const name = (sub.email || sub.title || "").trim();
   const id = (sub.code || "").trim();
-  // Always show account name and/or service code — never traffic volume
   let label: string;
   if (name && id && name.toLowerCase() !== id.toLowerCase()) {
     label = name.length <= 16 ? `${id} · ${name}` : name;
@@ -24,6 +27,7 @@ function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest">
     label = name || id || "سرویس";
   }
   if (sub.isTest) label = `🧪 ${label}`;
+  if (sub.note?.trim()) label = `📝 ${label}`;
   return label.length > 30 ? `${label.slice(0, 29)}…` : label;
 }
 
@@ -34,7 +38,8 @@ function filterSubs(subs: Subscription[], query: string) {
     (s) =>
       s.email.toLowerCase().includes(q) ||
       s.code.toLowerCase().includes(q) ||
-      (s.title?.toLowerCase().includes(q) ?? false),
+      (s.title?.toLowerCase().includes(q) ?? false) ||
+      (s.note?.toLowerCase().includes(q) ?? false),
   );
 }
 
@@ -88,11 +93,15 @@ export async function showMyServicesList(
   }
 }
 
-function detailText(live: LiveSubStatus, createdAt: Date) {
+function detailText(live: LiveSubStatus, createdAt: Date, note?: string | null) {
   const created = createdAt.toLocaleDateString("fa-IR");
+  const noteLine = note?.trim()
+    ? `\n📝 یادداشت:\n${note.trim()}`
+    : "\n📝 یادداشت: —";
   return [
     ...liveStatusText(live).split("\n"),
     `📅 تاریخ ساخت: ${created}`,
+    noteLine,
     live.subUrl ? `\n🔗 لینک ساب در دکمه‌های زیر` : "",
   ]
     .filter(Boolean)
@@ -113,12 +122,13 @@ export async function showSubscriptionDetail(ctx: Context, subId: string, edit =
 
   const live = await getLiveSubscriptionStatus(sub.id);
   const text = live
-    ? detailText(live, sub.createdAt)
+    ? detailText(live, sub.createdAt, sub.note)
     : [
         `🆔 ${sub.code}`,
         `📛 نام: ${sub.email}`,
         `حجم: ${sub.isTest ? "۲۵۰ مگابایت" : `${sub.trafficGb ?? "—"} GB`}`,
         `📅 تاریخ ساخت: ${sub.createdAt.toLocaleDateString("fa-IR")}`,
+        sub.note?.trim() ? `📝 یادداشت:\n${sub.note.trim()}` : "📝 یادداشت: —",
       ].join("\n");
 
   const panelEnabled = live?.panelEnabled;
@@ -166,6 +176,36 @@ export function registerMyServicesHandlers(bot: Bot) {
     await showSubscriptionDetail(ctx, ctx.match![1]!, true);
   });
 
+  bot.callbackQuery(/^sub:note:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const subId = ctx.match![1]!;
+    const sub = await prisma.subscription.findFirst({
+      where: { id: subId, userId: user.id },
+    });
+    if (!sub) {
+      await ctx.reply("سرویس پیدا نشد.");
+      return;
+    }
+    waitingServiceNote.set(ctx.from!.id, sub.id);
+    const current = sub.note?.trim();
+    await ctx.reply(
+      [
+        "📝 ثبت / ویرایش یادداشت",
+        "",
+        `سرویس: ${sub.code} · ${sub.email}`,
+        current ? `یادداشت فعلی:\n${current}` : "هنوز یادداشتی ثبت نشده.",
+        "",
+        "متن یادداشت را بفرستید (حداکثر ۵۰۰ کاراکتر).",
+        "برای پاک کردن یادداشت: -",
+        "لغو: انصراف",
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard().text("« بازگشت", `mysvc:open:${sub.id}`),
+      },
+    );
+  });
+
   bot.callbackQuery(/^sub:toggle:(.+)$/, async (ctx) => {
     try {
       const user = await upsertUserFromTelegram(ctx.from!);
@@ -191,7 +231,43 @@ export async function handleMyServicesSearch(ctx: Context, text: string): Promis
   return true;
 }
 
+/** Handle note text while waiting. Returns true if consumed. */
+export async function handleServiceNoteText(ctx: Context, text: string): Promise<boolean> {
+  const tid = ctx.from?.id;
+  if (!tid) return false;
+  const subId = waitingServiceNote.get(tid);
+  if (!subId) return false;
+
+  // Don't capture main-menu taps as note content
+  if ((Object.values(BTN) as string[]).includes(text.trim())) {
+    waitingServiceNote.delete(tid);
+    return false;
+  }
+
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const sub = await prisma.subscription.findFirst({
+    where: { id: subId, userId: user.id },
+  });
+  waitingServiceNote.delete(tid);
+  if (!sub) {
+    await ctx.reply("سرویس پیدا نشد.");
+    return true;
+  }
+
+  const raw = text.trim();
+  const note = raw === "-" || raw === "—" || raw === "پاک" ? null : raw.slice(0, NOTE_MAX);
+  await prisma.subscription.update({
+    where: { id: sub.id },
+    data: { note },
+  });
+
+  await ctx.reply(note ? "یادداشت ذخیره شد ✅" : "یادداشت پاک شد ✅");
+  await showSubscriptionDetail(ctx, sub.id, false);
+  return true;
+}
+
 export function clearMyServicesWaits(tid: number) {
   waitingMyServicesSearch.delete(tid);
+  waitingServiceNote.delete(tid);
   myServicesQuery.delete(tid);
 }

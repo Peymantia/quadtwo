@@ -8,7 +8,8 @@ import {
   type PanelCategories,
 } from "./panel-servers.js";
 import {
-  defaultPriceRates,
+  getPriceRates,
+  getSalesCategories,
   saveChannels,
   savePriceRates,
   saveSalesCategories,
@@ -16,7 +17,6 @@ import {
   setSetting,
   type ChannelConfig,
   type PriceRates,
-  type SalesCategories,
 } from "./settings.js";
 import type { PlanCategory } from "./pricing.js";
 
@@ -46,6 +46,12 @@ function cellStr(row: Record<string, unknown>, ...keys: string[]): string {
     }
   }
   return "";
+}
+
+/** Explicit clear markers in Excel (empty cell = skip / keep existing). */
+function isClearMarker(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  return v === "-" || v === "—" || v === "clear" || v === "پاک" || v === "حذف";
 }
 
 function cellBool(row: Record<string, unknown>, key: string, def = false): boolean {
@@ -113,31 +119,35 @@ export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {
   let replacePrices = true;
 
   // ── Settings ──
+  // Empty value → skip (keep existing). "-" / CLEAR / پاک → wipe setting.
   for (const row of sheetRows(wb, "تنظیمات")) {
     const key = cellStr(row, "key", "کلید");
     if (!key) continue;
     if (key === "replace_prices") {
       const raw = cellStr(row, "value", "مقدار").toLowerCase();
+      // empty → keep default true; explicit false/خیر → merge prices
+      if (!raw) continue;
       replacePrices = !["false", "0", "no", "خیر"].includes(raw);
       continue;
     }
     const value = cellStr(row, "value", "مقدار");
+    if (!value) continue; // empty cell → do not overwrite
+    const store = isClearMarker(value) ? "" : value;
     if (SETTING_KEYS.has(key)) {
       if (key === "pricing_mode") {
-        await setPricingMode(value === "rate" ? "rate" : "matrix");
+        if (store) await setPricingMode(store === "rate" ? "rate" : "matrix");
       } else {
-        await setSetting(key, value);
+        await setSetting(key, store);
       }
       result.settings++;
     } else if (GUIDE_KEYS.has(key)) {
-      await setSetting(key, value);
+      await setSetting(key, store);
       result.guides++;
     } else if (key.startsWith("promo_")) {
-      await setSetting(key, value);
+      await setSetting(key, store);
       result.promos++;
     } else {
-      // allow custom keys for branding / ads
-      await setSetting(key, value);
+      await setSetting(key, store);
       result.settings++;
     }
   }
@@ -145,9 +155,10 @@ export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {
   // ── Guide sheet ──
   for (const row of sheetRows(wb, "لینک‌های آموزش")) {
     const key = cellStr(row, "key", "کلید");
-    const value = cellStr(row, "value", "مقدار");
     if (!key) continue;
-    await setSetting(key, value);
+    const value = cellStr(row, "value", "مقدار");
+    if (!value) continue;
+    await setSetting(key, isClearMarker(value) ? "" : value);
     result.guides++;
   }
 
@@ -157,18 +168,27 @@ export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {
     if (!key) continue;
     const title = cellStr(row, "title", "عنوان");
     const text = cellStr(row, "text", "متن");
+    if (!title && !text) continue; // empty promo → skip
+    if (isClearMarker(text) || isClearMarker(title)) {
+      await setSetting(key.startsWith("promo_") ? key : `promo_${key}`, "");
+      result.promos++;
+      continue;
+    }
     const payload = JSON.stringify({ title, text });
     await setSetting(key.startsWith("promo_") ? key : `promo_${key}`, payload);
     result.promos++;
   }
 
   // ── Channels ──
+  // Sheet missing or only empty rows → keep existing channels.
+  // Any real username row → REPLACE the whole channel list with rows present.
   const channelRows = sheetRows(wb, "کانال‌ها");
   if (channelRows.length) {
     const channels: ChannelConfig[] = [];
     for (const row of channelRows) {
       const username = cellStr(row, "username", "یوزرنیم").replace(/^@/, "");
       if (!username) continue;
+      if (isClearMarker(username)) continue;
       channels.push({ username, required: cellBool(row, "required", true) });
     }
     if (channels.length) {
@@ -178,33 +198,50 @@ export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {
   }
 
   // ── Sales categories ──
+  // Sheet with rows → update only listed categories; unlisted keep previous defaults merge
   const catRows = sheetRows(wb, "دسته‌های فروش");
   if (catRows.length) {
-    const cats: SalesCategories = { data: true, national: true, unlimited: false };
+    const cats = await getSalesCategories();
+    let touched = false;
     for (const row of catRows) {
       const c = cellStr(row, "category", "دسته").toLowerCase();
-      if (c === "data" || c === "national" || c === "unlimited") {
-        cats[c] = cellBool(row, "enabled", true);
+      if (c !== "data" && c !== "national" && c !== "unlimited") continue;
+      const enabledRaw = row["enabled"] ?? row["فعال"];
+      if (enabledRaw === undefined || enabledRaw === null || String(enabledRaw).trim() === "") {
+        continue; // empty enabled → don't change this category
       }
+      cats[c] = cellBool(row, "enabled", true);
+      touched = true;
     }
-    await saveSalesCategories(cats);
-    result.salesCategories = true;
+    if (touched) {
+      await saveSalesCategories(cats);
+      result.salesCategories = true;
+    }
   }
 
   // ── Rates ──
   const rateRows = sheetRows(wb, "نرخ‌ها");
   if (rateRows.length) {
-    const rates = defaultPriceRates();
+    const rates = await getPriceRates();
+    let touched = false;
     for (const row of rateRows) {
       const role = cellStr(row, "role", "نقش").toLowerCase() as keyof PriceRates;
       if (role !== "user" && role !== "partner" && role !== "wholesale") continue;
-      const perGb = cellNum(row, "perGb") ?? rates[role].perGb;
-      const perMonth = cellNum(row, "perMonth") ?? rates[role].perMonth;
-      const unlimitedPerMonth = cellNum(row, "unlimitedPerMonth") ?? rates[role].unlimitedPerMonth;
-      rates[role] = { perGb, perMonth, unlimitedPerMonth };
+      const perGb = cellNum(row, "perGb");
+      const perMonth = cellNum(row, "perMonth");
+      const unlimitedPerMonth = cellNum(row, "unlimitedPerMonth");
+      if (perGb === null && perMonth === null && unlimitedPerMonth === null) continue;
+      rates[role] = {
+        perGb: perGb ?? rates[role].perGb,
+        perMonth: perMonth ?? rates[role].perMonth,
+        unlimitedPerMonth: unlimitedPerMonth ?? rates[role].unlimitedPerMonth,
+      };
+      touched = true;
     }
-    await savePriceRates(rates);
-    result.rates = true;
+    if (touched) {
+      await savePriceRates(rates);
+      result.rates = true;
+    }
   }
 
   // ── Prices ──

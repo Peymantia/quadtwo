@@ -16,7 +16,9 @@ export const BTN = {
   support: "🆘 پشتیبانی",
   test: "🧪 سرویس تست",
   dashboard: "🚀 داشبورد وب‌اپ",
+  configLookup: "🔎 مشخصات کانفیگ",
   partner: "🤝 درخواست نمایندگی",
+  allConfigs: "📋 نمایش کلیه کانفیگ‌ها",
   /** @deprecated not on main menu */
   partnerPanel: "💼 پنل نماینده / عمده",
   agentPanel: "💼 مشخصات نماینده",
@@ -48,15 +50,18 @@ export function mainMenuReply(opts: MainMenuOpts) {
     .row()
     .text(BTN.test)
     .text(BTN.guide)
-    .row()
-    .text(BTN.partner)
-    .text(BTN.support)
     .row();
 
-  if (opts.miniappUrl) {
-    kb.webApp(BTN.dashboard, opts.miniappUrl).primary().row();
+  if (opts.isAdmin) {
+    kb.text(BTN.allConfigs).text(BTN.support).row();
   } else {
-    kb.text(BTN.dashboard).primary().row();
+    kb.text(BTN.partner).text(BTN.support).row();
+  }
+
+  if (opts.miniappUrl) {
+    kb.webApp(BTN.dashboard, opts.miniappUrl).primary().text(BTN.configLookup).row();
+  } else {
+    kb.text(BTN.dashboard).primary().text(BTN.configLookup).row();
   }
 
   if (opts.isAdmin) {
@@ -96,15 +101,18 @@ export function mainMenuInline(opts: MainMenuOpts) {
     .row()
     .text(BTN.test, "m:test")
     .text(BTN.guide, "m:guide")
-    .row()
-    .text(BTN.partner, "m:partner")
-    .text(BTN.support, "m:support")
     .row();
 
-  if (opts.miniappUrl) {
-    kb.webApp(BTN.dashboard, opts.miniappUrl).primary().row();
+  if (opts.isAdmin) {
+    kb.text(BTN.allConfigs, "m:configs").text(BTN.support, "m:support").row();
   } else {
-    kb.text(BTN.dashboard, "m:dashboard").primary().row();
+    kb.text(BTN.partner, "m:partner").text(BTN.support, "m:support").row();
+  }
+
+  if (opts.miniappUrl) {
+    kb.webApp(BTN.dashboard, opts.miniappUrl).primary().text(BTN.configLookup, "m:cfglookup").row();
+  } else {
+    kb.text(BTN.dashboard, "m:dashboard").primary().text(BTN.configLookup, "m:cfglookup").row();
   }
 
   if (opts.isAdmin) {
@@ -155,7 +163,7 @@ export function buyWizardKeyboard(opts: {
 
   return kb
     .text("−", "wiz:qty:-")
-    .text(`🔢 ${opts.quantity}`, "wiz:noop")
+    .text(`${opts.quantity} عدد`, "wiz:noop")
     .text("+", "wiz:qty:+")
     .row()
     .text("−", "wiz:ip:-")
@@ -323,6 +331,7 @@ export function subscriptionDetailKeyboard(opts: {
     kb.text("فعال 🟢 / غیر فعال 🔴", `sub:toggle:${opts.subId}`).row();
   }
 
+  kb.text("📝 یادداشت", `sub:note:${opts.subId}`).row();
   kb.text("« بازگشت به لیست", "mysvc:list");
   return kb;
 }

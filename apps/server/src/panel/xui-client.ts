@@ -197,6 +197,22 @@ export class XuiClient {
     return this.request<string[]>(`panel/api/clients/subLinks/${encodeURIComponent(subId)}`);
   }
 
+  listGroups() {
+    return this.request<Array<{ name: string; clientCount?: number }>>("panel/api/clients/groups");
+  }
+
+  groupEmails(name: string) {
+    return this.request<string[]>(`panel/api/clients/groups/${encodeURIComponent(name)}/emails`);
+  }
+
+  /** Delete client by email across inbounds. */
+  deleteClient(email: string) {
+    return this.request(`panel/api/clients/del/${encodeURIComponent(email)}`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
   createGroup(name: string) {
     return this.request("panel/api/clients/groups/create", {
       method: "POST",
@@ -213,6 +229,36 @@ export class XuiClient {
 
   getNewUUID() {
     return this.request<string>("panel/api/server/getNewUUID");
+  }
+
+  listClients() {
+    return this.request<
+      Array<{
+        email?: string;
+        subId?: string;
+        uuid?: string;
+        id?: string;
+        totalGB?: number;
+        expiryTime?: number;
+        enable?: boolean;
+        limitIp?: number;
+        inboundIds?: number[];
+      }>
+    >("panel/api/clients/list");
+  }
+
+  /** Traffic / identity by client UUID (id). */
+  getClientTrafficById(uuid: string) {
+    return this.request<
+      Array<{
+        email?: string;
+        up?: number;
+        down?: number;
+        total?: number;
+        expiryTime?: number;
+        enable?: boolean;
+      }>
+    >(`panel/api/inbounds/getClientTrafficsById/${encodeURIComponent(uuid)}`);
   }
 }
 

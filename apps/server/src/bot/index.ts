@@ -38,6 +38,7 @@ import {
 } from "../services/users.js";
 import { assertAgentReadyForPurchase, sanitizePanelGroupSlug } from "../services/panel-groups.js";
 import { clampMonths, nextNationalVolume, nextVolume } from "../services/pricing.js";
+import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
 import {
   checkRenewEligibility,
   inferRenewCategory,
@@ -60,6 +61,7 @@ import {
   registerControlCenter,
   showControlCenter,
 } from "./admin-center.js";
+import { registerAdminConfigs, showConfigGroups } from "./admin-configs.js";
 import {
   adjustDraftMonths,
   adjustDraftQty,
@@ -73,6 +75,7 @@ import {
 import {
   clearMyServicesWaits,
   handleMyServicesSearch,
+  handleServiceNoteText,
   registerMyServicesHandlers,
   showMyServicesList,
 } from "./my-services.js";
@@ -107,6 +110,7 @@ const renewState = new Map<
   number,
   { subId: string; months: number; trafficGb: number | null; unlimited: boolean; category: string }
 >();
+const waitingConfigLookup = new Set<number>();
 
 async function requireChannel(ctx: Context) {
   const channels = await getChannels();
@@ -448,6 +452,12 @@ async function handleAccount(ctx: Context) {
   );
 }
 
+async function handleConfigLookup(ctx: Context) {
+  if (!(await requireChannel(ctx))) return;
+  waitingConfigLookup.add(ctx.from!.id);
+  await ctx.reply("🔍 لطفاً لینک کانفیگ یا UUID را ارسال کنید.\n\nلغو: انصراف");
+}
+
 async function handleDashboard(ctx: Context) {
   const url = await getSetting("miniapp_url");
   if (!url) {
@@ -533,6 +543,7 @@ function clearWaits(tid: number) {
   waitingWalletAmount.delete(tid);
   waitingAgentName.delete(tid);
   renewState.delete(tid);
+  waitingConfigLookup.delete(tid);
   ccWait.delete(tid);
   clearMyServicesWaits(tid);
 }
@@ -547,6 +558,7 @@ export function createBot() {
 
   registerControlCenter(bot);
   registerMyServicesHandlers(bot);
+  registerAdminConfigs(bot);
 
   bot.command("start", async (ctx) => {
     if (!(await requireChannel(ctx))) return;
@@ -678,9 +690,21 @@ export function createBot() {
     await ctx.answerCallbackQuery();
     await handleDashboard(ctx);
   });
+  bot.callbackQuery("m:cfglookup", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleConfigLookup(ctx);
+  });
   bot.callbackQuery("m:partner", async (ctx) => {
     await ctx.answerCallbackQuery();
     await handlePartnerRequest(ctx);
+  });
+  bot.callbackQuery("m:configs", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await isControlAdmin(ctx.from?.id))) {
+      await ctx.reply("فقط ادمین.");
+      return;
+    }
+    await showConfigGroups(ctx);
   });
   bot.callbackQuery("m:partnerpanel", async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -960,6 +984,23 @@ export function createBot() {
 
     if (await handleControlCenterText(ctx, text)) return;
     if (await handleMyServicesSearch(ctx, text)) return;
+    if (await handleServiceNoteText(ctx, text)) return;
+
+    if (waitingConfigLookup.has(tid)) {
+      if ((Object.values(BTN) as string[]).includes(text)) {
+        waitingConfigLookup.delete(tid);
+      } else {
+        waitingConfigLookup.delete(tid);
+        await ctx.reply("⏳ در حال بررسی…");
+        try {
+          const result = await lookupConfigByLinkOrUuid(text);
+          await ctx.reply(result.message);
+        } catch (err) {
+          await ctx.reply(friendlyBotError(err));
+        }
+        return;
+      }
+    }
 
     if (waitingWalletAmount.has(tid)) {
       const amount = Number(text.replace(/[^\d]/g, ""));
@@ -1232,8 +1273,16 @@ export function createBot() {
   bot.hears(BTN.test, async (ctx) => handleTest(ctx));
   bot.hears(BTN.guide, async (ctx) => handleGuide(ctx));
   bot.hears(BTN.partner, async (ctx) => handlePartnerRequest(ctx));
+  bot.hears(BTN.allConfigs, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) {
+      await ctx.reply("فقط ادمین.");
+      return;
+    }
+    await showConfigGroups(ctx);
+  });
   bot.hears(BTN.support, async (ctx) => handleSupport(ctx));
   bot.hears(BTN.dashboard, async (ctx) => handleDashboard(ctx));
+  bot.hears(BTN.configLookup, async (ctx) => handleConfigLookup(ctx));
   bot.hears(BTN.agentPanel, async (ctx) => handlePartnerPanel(ctx));
   bot.hears(BTN.controlCenter, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;

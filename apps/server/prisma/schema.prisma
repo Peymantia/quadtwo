@@ -198,6 +198,8 @@ model Subscription {
   isTest          Boolean            @default(false)
   expiresAt       DateTime
   subUrl          String?
+  /// User-facing memo / note for this service
+  note            String?
   status          SubscriptionStatus @default(active)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt

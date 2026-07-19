@@ -10,6 +10,7 @@ export type AuditAction =
   | "partner_request"
   | "partner_approved"
   | "partner_rejected"
+  | "admin_config_delete"
   | "test_claimed"
   | "backup_sent"
   | "admin_search"
