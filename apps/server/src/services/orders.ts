@@ -1,6 +1,8 @@
 import { OrderKind, OrderStatus, PaymentMethod } from "@prisma/client";
 import { prisma } from "../db.js";
-import { resolvePrice } from "./pricing.js";
+import { resolvePanelForCategory, resolvePanelForSubscription } from "./panel-servers.js";
+import { getDefaultLimitIp } from "./settings.js";
+import { resolvePrice, type PlanCategory } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
 
@@ -17,20 +19,41 @@ export async function createMatrixOrder(input: {
   limitIp?: number;
 }) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
-  const category = (input.category as "data" | "national" | "unlimited") || "data";
+  const category = (input.category as PlanCategory) || "data";
   const priced = await resolvePrice(user, input.trafficGb, input.months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
   const quantity = Math.max(1, Math.min(50, input.quantity ?? 1));
-  const limitIp = Math.max(0, Math.min(10, input.limitIp ?? 0));
+  const defaultIp = await getDefaultLimitIp();
+  const limitIp =
+    input.limitIp === undefined
+      ? defaultIp
+      : Math.max(0, Math.min(10, input.limitIp));
+
+  const kind = input.kind ?? OrderKind.new;
+  let panelServerId: string | null = null;
+
+  if (kind === OrderKind.renew && input.targetSubId) {
+    const target = await prisma.subscription.findUnique({ where: { id: input.targetSubId } });
+    if (target?.panelServerId) {
+      panelServerId = target.panelServerId;
+    } else if (target) {
+      const resolved = await resolvePanelForSubscription(target);
+      panelServerId = resolved.panel?.id ?? null;
+    }
+  } else if (kind === OrderKind.new || !input.targetSubId) {
+    const resolved = await resolvePanelForCategory(category);
+    panelServerId = resolved.panel?.id ?? null;
+  }
 
   return prisma.order.create({
     data: {
       userId: user.id,
-      kind: input.kind ?? OrderKind.new,
+      kind,
       trafficGb: input.trafficGb,
       months: input.months,
       quantity,
       limitIp,
+      panelServerId,
       price: priced.price * quantity,
       accountName: input.accountName,
       customName: input.accountName,

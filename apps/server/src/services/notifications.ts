@@ -1,9 +1,8 @@
 import type { Api } from "grammy";
 import { SubscriptionStatus } from "@prisma/client";
-import { env } from "../config/env.js";
 import { prisma } from "../db.js";
-import { createXuiFromEnv } from "../panel/xui-client.js";
 import { formatTraffic } from "../utils/format.js";
+import { resolvePanelForSubscription } from "./panel-servers.js";
 import { getNotifConfig, type NotifConfig } from "./settings.js";
 import { syncSubscriptionExpiryFromPanel } from "./provision.js";
 
@@ -22,16 +21,14 @@ async function alreadySent(subscriptionId: string, kind: string, bucket: string)
 }
 
 async function markSent(subscriptionId: string, kind: string, bucket: string) {
-  await prisma.notificationLog.create({
-    data: { subscriptionId, kind, bucket },
-  }).catch(() => undefined);
+  await prisma.notificationLog
+    .create({
+      data: { subscriptionId, kind, bucket },
+    })
+    .catch(() => undefined);
 }
 
-async function sendUser(
-  api: Api,
-  telegramId: bigint,
-  text: string,
-) {
+async function sendUser(api: Api, telegramId: bigint, text: string) {
   try {
     await api.sendMessage(Number(telegramId), text);
     return true;
@@ -47,23 +44,10 @@ function remainingMb(totalBytes: number, usedBytes: number): number | null {
   return rem / (1024 * 1024);
 }
 
-/**
- * Sweep active subscriptions and send configured alerts.
- * Safe to run every 15–30 minutes; deduped via NotificationLog.
- */
 export async function runNotificationSweep(api: Api): Promise<{ sent: number; checked: number }> {
   const cfg = await getNotifConfig();
   if (!cfg.expiryDays.enabled && !cfg.traffic.enabled && !cfg.preDelete.enabled && !cfg.deleted.enabled) {
     return { sent: 0, checked: 0 };
-  }
-
-  let xui: ReturnType<typeof createXuiFromEnv> | null = null;
-  try {
-    if (env.XUI_BASE_URL && env.XUI_API_TOKEN) {
-      xui = createXuiFromEnv(env);
-    }
-  } catch {
-    xui = null;
   }
 
   const subs = await prisma.subscription.findMany({
@@ -77,7 +61,6 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
   const now = Date.now();
 
   for (const sub of subs) {
-    // Sync first-connect → absolute expiry from panel when activated
     if (sub.startsOnConnect && !sub.activatedAt) {
       await syncSubscriptionExpiryFromPanel(sub.id);
       const fresh = await prisma.subscription.findUnique({ where: { id: sub.id } });
@@ -87,10 +70,8 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
       }
     }
 
-    // Don't send expiry/pre-delete alerts until first connection started the clock
     const clockStarted = !sub.startsOnConnect || Boolean(sub.activatedAt);
 
-    // ── expiry days ──
     if (cfg.expiryDays.enabled && clockStarted) {
       const msLeft = sub.expiresAt.getTime() - now;
       const hoursLeft = msLeft / MS_HOUR;
@@ -119,11 +100,9 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
       }
     }
 
-    // ── pre-delete (near/past expiry, before we mark deleted) ──
     if (cfg.preDelete.enabled && clockStarted) {
       const msAfter = now - sub.expiresAt.getTime();
       const hoursPast = msAfter / MS_HOUR;
-      // warn from (preDelete.hours) before expiry through a short window after
       const msUntil = sub.expiresAt.getTime() - now;
       const inWindow =
         (msUntil > 0 && msUntil <= cfg.preDelete.hours * MS_HOUR) ||
@@ -150,10 +129,18 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
       }
     }
 
-    // ── traffic remaining ──
-    if (cfg.traffic.enabled && sub.trafficGb !== null && xui) {
+    let panelXui: Awaited<ReturnType<typeof resolvePanelForSubscription>>["xui"] | null = null;
+    if (cfg.traffic.enabled || cfg.deleted.enabled) {
       try {
-        const traf = await xui.getClientTraffic(sub.email);
+        panelXui = (await resolvePanelForSubscription(sub)).xui;
+      } catch {
+        panelXui = null;
+      }
+    }
+
+    if (cfg.traffic.enabled && sub.trafficGb !== null && panelXui) {
+      try {
+        const traf = await panelXui.getClientTraffic(sub.email);
         if (traf) {
           const total = traf.total > 0 ? traf.total : sub.trafficGb * 1024 * 1024 * 1024;
           const remMb = remainingMb(total, traf.used);
@@ -185,13 +172,12 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
       }
     }
 
-    // ── deleted / missing on panel ──
-    if (cfg.deleted.enabled && xui && clockStarted) {
+    if (cfg.deleted.enabled && panelXui && clockStarted) {
       const pastGrace = now > sub.expiresAt.getTime() + cfg.preDelete.hours * MS_HOUR;
       if (pastGrace || now > sub.expiresAt.getTime() + 2 * MS_DAY) {
         let missing = false;
         try {
-          const got = await xui.getClient(sub.email);
+          const got = await panelXui.getClient(sub.email);
           if (!got.obj?.client) missing = true;
           else if (got.obj.client.enable === false && now > sub.expiresAt.getTime()) missing = true;
         } catch {
@@ -224,7 +210,6 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
     }
   }
 
-  // Also mark locally expired (no panel check) after long overdue
   await prisma.subscription.updateMany({
     where: {
       status: SubscriptionStatus.active,
@@ -247,7 +232,6 @@ export function startNotificationCron(api: Api, intervalMs = 20 * 60 * 1000) {
       console.error("notif sweep error", err);
     }
   };
-  // first run after 45s (let bot/panel settle)
   setTimeout(tick, 45_000);
   return setInterval(tick, intervalMs);
 }

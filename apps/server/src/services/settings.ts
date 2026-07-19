@@ -180,6 +180,16 @@ export async function getDefaultLimitIp(): Promise<number> {
   return Math.min(10, Math.floor(raw));
 }
 
+/** Effective IP limit for buy wizard / checkout (unset draft → admin default). */
+export async function resolvePurchaseLimitIp(draft: {
+  limitIp: number;
+  limitIpTouched: boolean;
+}): Promise<number> {
+  if (draft.limitIpTouched) return draft.limitIp;
+  if (draft.limitIp > 0) return draft.limitIp;
+  return getDefaultLimitIp();
+}
+
 export type PricingMode = "matrix" | "rate";
 
 export type RoleRates = {

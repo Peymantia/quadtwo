@@ -129,17 +129,25 @@ model PriceCell {
 }
 
 model PanelServer {
-  id           String   @id @default(cuid())
-  name         String
-  baseUrl      String
-  apiTokenEnc  String
-  inboundId    Int
-  active       Boolean  @default(true)
-  sellEnabled  Boolean  @default(true)
-  weight       Int      @default(100)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  /// Display name e.g. "سرور اصلی" / "نت ملی"
+  name        String
+  baseUrl     String
+  /// API bearer token (plain in v1, same trust model as .env)
+  apiToken    String
+  /// Comma / range inbound ids, e.g. "1,2,3"
+  inboundIds  String   @default("1")
+  /// Optional subscription URL base override (like XUI_SUB_BASE)
+  subBase     String?
+  /// JSON array of categories this panel serves: ["data","national","unlimited"]
+  categories  String   @default("[\"data\",\"unlimited\"]")
+  active      Boolean  @default(true)
+  sellEnabled Boolean  @default(true)
+  weight      Int      @default(100)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   subscriptions Subscription[]
+  orders        Order[]
 }
 
 model Order {
@@ -160,11 +168,14 @@ model Order {
   quantity        Int           @default(1)
   /// Max simultaneous IPs/devices (0 = unlimited)
   limitIp         Int           @default(0)
+  /// Resolved panel for this purchase (category routing)
+  panelServerId   String?
   targetSubId     String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   user            User          @relation(fields: [userId], references: [id])
   plan            Plan?         @relation(fields: [planId], references: [id])
+  panelServer     PanelServer?  @relation(fields: [panelServerId], references: [id])
   subscription    Subscription?
   targetSub       Subscription? @relation("OrderTargetSub", fields: [targetSubId], references: [id])
 }
@@ -248,7 +259,9 @@ model BuyDraft {
   unlimited   Boolean  @default(false)
   quantity    Int      @default(1)
   /// Max IPs for new purchase (0 = unlimited)
-  limitIp     Int      @default(0)
+  limitIp         Int      @default(0)
+  /// User explicitly changed IP limit in wizard (0 then means unlimited)
+  limitIpTouched  Boolean  @default(false)
   category    String   @default("data")
   accountMode String   @default("random")
   accountName String?

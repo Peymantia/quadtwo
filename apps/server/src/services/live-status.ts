@@ -1,8 +1,7 @@
-import { env } from "../config/env.js";
 import { prisma } from "../db.js";
-import { createXuiFromEnv } from "../panel/xui-client.js";
 import { formatExpiryLabel, formatTraffic } from "../utils/format.js";
-import { syncSubscriptionExpiryFromPanel } from "./provision.js";
+import { resolvePanelForSubscription } from "./panel-servers.js";
+import { syncSubscriptionExpiryFromPanel, refreshSubscriptionSubUrl } from "./provision.js";
 
 const TEST_BYTES = 250 * 1024 * 1024;
 
@@ -18,6 +17,8 @@ export type LiveSubStatus = {
   onlineHint: string;
   limitIpLabel: string;
   subUrl: string | null;
+  panelEnabled: boolean | null;
+  panelName: string | null;
 };
 
 function formatBytes(bytes: number): string {
@@ -29,46 +30,50 @@ function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1024)} کیلوبایت`;
 }
 
-/** Fetch live traffic/expiry from 3x-ui and format a user-facing card. */
+/** Fetch live traffic/expiry from the subscription's 3x-ui panel. */
 export async function getLiveSubscriptionStatus(subscriptionId: string): Promise<LiveSubStatus | null> {
   const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
   if (!sub) return null;
 
   await syncSubscriptionExpiryFromPanel(sub.id);
+  const subUrl = await refreshSubscriptionSubUrl(sub.id);
   const fresh = (await prisma.subscription.findUnique({ where: { id: sub.id } })) ?? sub;
 
   let used = 0;
   let total = fresh.trafficGb === null ? 0 : fresh.trafficGb * 1024 * 1024 * 1024;
   let onlineHint = "";
   let limitIpLabel = "";
+  let panelEnabled: boolean | null = null;
+  let panelName: string | null = null;
 
   try {
-    if (env.XUI_BASE_URL && env.XUI_API_TOKEN) {
-      const xui = createXuiFromEnv(env);
-      const traf = await xui.getClientTraffic(fresh.email);
-      if (traf) {
-        used = traf.used;
-        if (traf.total > 0) total = traf.total;
-        onlineHint = traf.enable === false ? "🔴 غیرفعال در پنل" : "🟢 فعال در پنل";
-      }
-      const got = await xui.getClient(fresh.email).catch(() => null);
-      const client = got?.obj?.client;
-      if (client) {
-        const lip = Number(client.limitIp ?? 0);
-        limitIpLabel = lip <= 0 ? "نامحدود" : `${lip} دستگاه`;
-      }
-      const panelExp = Number(client?.expiryTime ?? 0);
-      if (panelExp > 0 && (!fresh.activatedAt || fresh.expiresAt.getTime() !== panelExp)) {
-        await prisma.subscription.update({
-          where: { id: fresh.id },
-          data: {
-            expiresAt: new Date(panelExp),
-            activatedAt: fresh.activatedAt ?? new Date(),
-          },
-        });
-        fresh.expiresAt = new Date(panelExp);
-        fresh.activatedAt = fresh.activatedAt ?? new Date();
-      }
+    const resolved = await resolvePanelForSubscription(fresh);
+    panelName = resolved.name;
+    const traf = await resolved.xui.getClientTraffic(fresh.email);
+    if (traf) {
+      used = traf.used;
+      if (traf.total > 0) total = traf.total;
+      if (traf.enable !== undefined) panelEnabled = traf.enable;
+      onlineHint = traf.enable === false ? "🔴 غیرفعال در پنل" : "🟢 فعال در پنل";
+    }
+    const got = await resolved.xui.getClient(fresh.email).catch(() => null);
+    const client = got?.obj?.client;
+    if (client) {
+      const lip = Number(client.limitIp ?? 0);
+      limitIpLabel = lip <= 0 ? "نامحدود" : `${lip} دستگاه`;
+      if (client.enable !== undefined) panelEnabled = client.enable;
+    }
+    const panelExp = Number(client?.expiryTime ?? 0);
+    if (panelExp > 0 && (!fresh.activatedAt || fresh.expiresAt.getTime() !== panelExp)) {
+      await prisma.subscription.update({
+        where: { id: fresh.id },
+        data: {
+          expiresAt: new Date(panelExp),
+          activatedAt: fresh.activatedAt ?? new Date(),
+        },
+      });
+      fresh.expiresAt = new Date(panelExp);
+      fresh.activatedAt = fresh.activatedAt ?? new Date();
     }
   } catch {
     onlineHint = "⚠️ وضعیت پنل در دسترس نیست";
@@ -96,7 +101,9 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     }),
     onlineHint,
     limitIpLabel,
-    subUrl: fresh.subUrl,
+    subUrl: subUrl ?? fresh.subUrl,
+    panelEnabled,
+    panelName,
   };
 }
 
@@ -106,6 +113,7 @@ export function liveStatusText(live: LiveSubStatus): string {
     "",
     `🆔 ${live.code}`,
     `اکانت: ${live.email}`,
+    live.panelName ? `🖥 سرور: ${live.panelName}` : "",
     `حجم کل: ${live.trafficLabel}`,
     `مصرف‌شده: ${live.usedLabel}`,
     `باقی‌مانده: ${live.remainingLabel}`,

@@ -18,14 +18,14 @@ import {
 import { listPriceMatrix, upsertPriceCell } from "../services/pricing.js";
 import {
   provisionOrder,
+  refreshSubscriptionSubUrl,
   rotateSubId,
   rotateUuid,
   type ProvisionResult,
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
-import { getLiveSubscriptionStatus, liveStatusText } from "../services/live-status.js";
 import { claimTestService } from "../services/test-service.js";
-import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getSetting, listEnabledSalesCategories, setSetting } from "../services/settings.js";
+import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getSetting, listEnabledSalesCategories, resolvePurchaseLimitIp, setSetting } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
@@ -38,7 +38,7 @@ import {
 } from "../services/users.js";
 import { assertAgentReadyForPurchase, sanitizePanelGroupSlug } from "../services/panel-groups.js";
 import { clampMonths } from "../services/pricing.js";
-import { formatToman, formatTraffic, formatExpiryLabel } from "../utils/format.js";
+import { formatToman, formatTraffic } from "../utils/format.js";
 import { friendlyBotError } from "../panel/xui-errors.js";
 import { auditLog } from "../services/audit.js";
 import {
@@ -65,6 +65,12 @@ import {
   setDraftNameMode,
 } from "./draft.js";
 import {
+  clearMyServicesWaits,
+  handleMyServicesSearch,
+  registerMyServicesHandlers,
+  showMyServicesList,
+} from "./my-services.js";
+import {
   adminOrderKeyboard,
   BTN,
   buyCategoryKeyboard,
@@ -79,7 +85,6 @@ import {
   payMethodKeyboard,
   renewPickKeyboard,
   renewWizardKeyboard,
-  subscriptionKeyboard,
   walletChargeAmountsKeyboard,
   walletMenuKeyboard,
 } from "./keyboards.js";
@@ -202,13 +207,14 @@ async function showRenewWizard(ctx: Context, subId: string, months: number, edit
 async function showBuyWizard(ctx: Context, edit = false) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
+  const limitIp = await resolvePurchaseLimitIp(draft);
   const priced = await draftPrice(user, draft);
   const text = buyDraftText({
     trafficGb: draft.unlimited ? null : draft.trafficGb,
     months: draft.months,
     price: priced?.price ?? null,
     quantity: draft.quantity,
-    limitIp: draft.limitIp,
+    limitIp,
     accountMode: draft.accountMode,
     accountName: draft.accountName,
     category: draft.category,
@@ -219,7 +225,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     months: draft.months,
     unlimited: draft.unlimited,
     quantity: draft.quantity,
-    limitIp: draft.limitIp,
+    limitIp,
     price: priced?.price ?? null,
     category: draft.category,
     maxMonths,
@@ -287,34 +293,7 @@ async function startCardPayment(ctx: Context, orderId: string, summary: string) 
 }
 
 async function handleMyServices(ctx: Context) {
-  const user = await upsertUserFromTelegram(ctx.from!);
-  const subs = await prisma.subscription.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
-  if (!subs.length) {
-    await ctx.reply("سرویسی ندارید.\nاکانت‌ها با شناسه تلگرام شما ذخیره می‌شوند.");
-    return;
-  }
-  await ctx.reply("در حال دریافت وضعیت زنده از پنل…");
-  for (const sub of subs) {
-    const live = await getLiveSubscriptionStatus(sub.id);
-    const text = live
-      ? liveStatusText(live)
-      : [
-          `🆔 ${sub.code}`,
-          `اکانت: ${sub.email}`,
-          `حجم: ${sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb)}`,
-          `انقضا: ${formatExpiryLabel({
-            expiresAt: sub.expiresAt,
-            startsOnConnect: sub.startsOnConnect,
-            activatedAt: sub.activatedAt,
-            createdAt: sub.createdAt,
-          })}`,
-        ].join("\n");
-    await ctx.reply(text, { reply_markup: subscriptionKeyboard(sub.id) });
-  }
+  await showMyServicesList(ctx);
 }
 
 async function handleRenew(ctx: Context) {
@@ -329,7 +308,7 @@ async function handleRenew(ctx: Context) {
     return;
   }
   await ctx.reply("کدام سرویس را تمدید می‌کنید؟", {
-    reply_markup: renewPickKeyboard(subs.map((s) => ({ id: s.id, code: s.code }))),
+    reply_markup: renewPickKeyboard(subs.map((s) => ({ id: s.id, code: s.code, email: s.email }))),
   });
 }
 
@@ -493,6 +472,7 @@ function clearWaits(tid: number) {
   waitingAgentName.delete(tid);
   renewState.delete(tid);
   ccWait.delete(tid);
+  clearMyServicesWaits(tid);
 }
 
 export function createBot() {
@@ -504,6 +484,7 @@ export function createBot() {
   });
 
   registerControlCenter(bot);
+  registerMyServicesHandlers(bot);
 
   bot.command("start", async (ctx) => {
     if (!(await requireChannel(ctx))) return;
@@ -768,7 +749,7 @@ export function createBot() {
       accountName,
       quantity: draft.quantity,
       category: draft.category,
-      limitIp: draft.limitIp,
+      limitIp: await resolvePurchaseLimitIp(draft),
     });
     await auditLog({
       action: "order_created",
@@ -914,6 +895,7 @@ export function createBot() {
     }
 
     if (await handleControlCenterText(ctx, text)) return;
+    if (await handleMyServicesSearch(ctx, text)) return;
 
     if (waitingWalletAmount.has(tid)) {
       const amount = Number(text.replace(/[^\d]/g, ""));
@@ -1176,21 +1158,24 @@ export function createBot() {
 
   bot.hears(BTN.myServices, async (ctx) => handleMyServices(ctx));
   bot.hears(BTN.renew, async (ctx) => handleRenew(ctx));
-  bot.hears(BTN.test, async (ctx) => handleTest(ctx));
   bot.hears(BTN.account, async (ctx) => handleAccount(ctx));
-  bot.hears(BTN.guide, async (ctx) => handleGuide(ctx));
-  bot.hears(BTN.dashboard, async (ctx) => handleDashboard(ctx));
-  bot.hears(BTN.support, async (ctx) => handleSupport(ctx));
-  bot.hears(BTN.referral, async (ctx) => {
-    await ctx.reply("👥 سیستم معرفی به دوستان به‌زودی فعال می‌شود.");
+  bot.hears(BTN.wallet, async (ctx) => {
+    if (!(await requireChannel(ctx))) return;
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const wallet = await getWallet(user.id);
+    await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
   });
+  bot.hears(BTN.test, async (ctx) => handleTest(ctx));
+  bot.hears(BTN.guide, async (ctx) => handleGuide(ctx));
   bot.hears(BTN.partner, async (ctx) => handlePartnerRequest(ctx));
-  bot.hears(BTN.partnerPanel, async (ctx) => handlePartnerPanel(ctx));
+  bot.hears(BTN.support, async (ctx) => handleSupport(ctx));
+  bot.hears(BTN.dashboard, async (ctx) => handleDashboard(ctx));
   bot.hears(BTN.agentPanel, async (ctx) => handlePartnerPanel(ctx));
   bot.hears(BTN.controlCenter, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await showControlCenter(ctx, false);
   });
+  bot.hears(BTN.partnerPanel, async (ctx) => handlePartnerPanel(ctx));
   bot.hears(BTN.admin, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await showControlCenter(ctx, false);
@@ -1198,17 +1183,17 @@ export function createBot() {
 
   bot.callbackQuery(/^sub:link:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const sub = await prisma.subscription.findUnique({ where: { id: ctx.match![1] } });
-    if (!sub?.subUrl) return ctx.reply("لینک موجود نیست.");
-    await ctx.reply(`🔗 \`${sub.subUrl}\``, { parse_mode: "Markdown" });
+    const subUrl = await refreshSubscriptionSubUrl(ctx.match![1]!);
+    if (!subUrl) return ctx.reply("لینک موجود نیست.");
+    await ctx.reply(`🔗 \`${subUrl}\``, { parse_mode: "Markdown" });
   });
 
   bot.callbackQuery(/^sub:qr:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const sub = await prisma.subscription.findUnique({ where: { id: ctx.match![1] } });
-    if (!sub?.subUrl) return ctx.reply("لینک موجود نیست.");
+    const subUrl = await refreshSubscriptionSubUrl(ctx.match![1]!);
+    if (!subUrl) return ctx.reply("لینک موجود نیست.");
     const { default: QRCode } = await import("qrcode");
-    const png = await QRCode.toBuffer(sub.subUrl, { type: "png", width: 512, margin: 2 });
+    const png = await QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
     await ctx.replyWithPhoto(new InputFile(png, "qr.png"));
   });
 
@@ -1304,13 +1289,6 @@ export function createBot() {
     } catch (err) {
       await ctx.reply(friendlyBotError(err));
     }
-  });
-
-  bot.hears(BTN.wallet, async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
-    const user = await upsertUserFromTelegram(ctx.from!);
-    const wallet = await getWallet(user.id);
-    await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
   });
 
   bot.callbackQuery("wallet:charge", async (ctx) => {

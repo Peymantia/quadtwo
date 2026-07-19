@@ -174,7 +174,22 @@ export class XuiClient {
   }
 
   getSettings() {
-    return this.request<Record<string, unknown>>("panel/api/setting/all");
+    return this.request<Record<string, unknown>>("panel/api/setting/all", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  /** Computed subscription URLs (subURI, subJsonURI, …) — same as panel UI. */
+  getDefaultSettings() {
+    return this.request<Record<string, unknown>>("panel/api/setting/defaultSettings", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  subLinks(subId: string) {
+    return this.request<string[]>(`panel/api/clients/subLinks/${encodeURIComponent(subId)}`);
   }
 
   createGroup(name: string) {

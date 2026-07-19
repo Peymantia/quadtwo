@@ -6,6 +6,16 @@ import { createXuiFromEnv } from "../panel/xui-client.js";
 import { env } from "../config/env.js";
 import { getExtraAdminIds } from "./settings.js";
 import { partnerPanelGroupName, buildPanelGroupFromAgentName, sanitizePanelGroupSlug } from "./panel-groups.js";
+import { resolvePanelForCategory } from "./panel-servers.js";
+
+async function xuiForAgentGroups() {
+  try {
+    return (await resolvePanelForCategory("data")).xui;
+  } catch {
+    if (env.XUI_BASE_URL && env.XUI_API_TOKEN) return createXuiFromEnv(env);
+    throw new Error("هیچ پنل فعالی برای ساخت گروه پیدا نشد");
+  }
+}
 
 export type TgUserLike = {
   id: number;
@@ -88,7 +98,7 @@ export async function approvePartner(requestId: string, asRole: "partner" | "who
     : partnerPanelGroupName({ ...req.user, agentName }, asRole);
 
   try {
-    const xui = createXuiFromEnv(env);
+    const xui = await xuiForAgentGroups();
     await xui.createGroup(group);
     await xui.createGroup("Telegram").catch(() => undefined);
   } catch {
@@ -121,7 +131,7 @@ export async function setAgentName(userId: string, rawName: string) {
   const panelGroup = buildPanelGroupFromAgentName(agentName, user.telegramId);
 
   try {
-    const xui = createXuiFromEnv(env);
+    const xui = await xuiForAgentGroups();
     await xui.createGroup(panelGroup);
   } catch {
     /* exists or panel offline — still save locally */

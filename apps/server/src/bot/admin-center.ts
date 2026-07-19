@@ -50,6 +50,19 @@ import {
 } from "../services/admin-reports.js";
 import { auditLog, listRecentAudit } from "../services/audit.js";
 import {
+  categoryLabelFa,
+  createPanelServer,
+  deletePanelServer,
+  formatPanelSummary,
+  getPanelServer,
+  importPanelFromEnv,
+  listPanelServers,
+  parsePanelCategories,
+  testPanelConnection,
+  updatePanelServer,
+  type PanelCategories,
+} from "../services/panel-servers.js";
+import {
   adminOrderKeyboard,
   controlCenterKeyboard,
   notifSettingsKeyboard,
@@ -88,6 +101,18 @@ export const ccWait = new Map<
       role: "user" | "partner" | "wholesale";
       field: "perGb" | "perMonth" | "unlimitedPerMonth";
       partial: PriceRates;
+    }
+  | {
+      kind: "panel_add";
+      step: "name" | "url" | "token" | "inbounds";
+      name?: string;
+      baseUrl?: string;
+      apiToken?: string;
+    }
+  | {
+      kind: "panel_edit";
+      id: string;
+      field: "name" | "url" | "token" | "inbounds" | "subBase" | "weight";
     }
 >();
 
@@ -640,6 +665,93 @@ async function showSalesCategories(ctx: Context) {
   await ctx.editMessageText(salesCategoriesAdminText(cats, maxMonths), {
     reply_markup: salesCategoriesAdminKeyboard(cats),
   });
+}
+
+async function showPanelsList(ctx: Context, edit = true) {
+  const panels = await listPanelServers();
+  const lines = [
+    "🖥 سرورهای پنل 3x-ui",
+    "",
+    "هر سرور نام، API و دسته‌های فروش خودش را دارد.",
+    "خرید نت ملی / دیتا بر اساس دسته‌های هر سرور مسیریابی می‌شود.",
+    "",
+  ];
+  if (!panels.length) {
+    lines.push("هنوز سروری ثبت نشده.");
+    lines.push("از «ورود از .env» پنل فعلی را وارد کنید، یا سرور جدید بسازید.");
+  } else {
+    for (const p of panels) {
+      const cats = parsePanelCategories(p.categories).map(categoryLabelFa).join("، ");
+      const st = `${p.active ? "🟢" : "⚫"}${p.sellEnabled ? "🛒" : ""}`;
+      lines.push(`${st} ${p.name}`);
+      lines.push(`   دسته: ${cats} · وزن ${p.weight}`);
+      lines.push("");
+    }
+  }
+  const kb = new InlineKeyboard()
+    .text("➕ افزودن سرور", "cc:panels:add")
+    .success()
+    .row()
+    .text("📥 ورود از .env", "cc:panels:import")
+    .primary()
+    .row();
+  for (const p of panels.slice(0, 12)) {
+    kb.text(`⚙️ ${p.name.slice(0, 28)}`, `cc:panels:view:${p.id}`).row();
+  }
+  kb.text("« کنترل سنتر", "cc:home");
+  const text = lines.join("\n");
+  if (edit && ctx.callbackQuery?.message) {
+    await ctx.editMessageText(text, { reply_markup: kb });
+  } else {
+    await ctx.reply(text, { reply_markup: kb });
+  }
+}
+
+async function showPanelDetail(ctx: Context, id: string) {
+  const p = await getPanelServer(id);
+  if (!p) {
+    await ctx.editMessageText("سرور پیدا نشد.", {
+      reply_markup: new InlineKeyboard().text("« سرورها", "cc:panels"),
+    });
+    return;
+  }
+  const cats = parsePanelCategories(p.categories);
+  const on = (c: PlanCategory) => (cats.includes(c) ? "🟢" : "⚪");
+  const text = [
+    `🖥 ${p.name}`,
+    "",
+    formatPanelSummary(p),
+    "",
+    `URL: ${p.baseUrl}`,
+    `Sub base: ${p.subBase || "(از تنظیمات پنل)"}`,
+    "",
+    "دسته‌ها را با دکمه‌ها روشن/خاموش کنید.",
+  ].join("\n");
+  const kb = new InlineKeyboard()
+    .text(`${on("data")} حجمی`, `cc:panels:cat:${p.id}:data`)
+    .text(`${on("national")} نت ملی`, `cc:panels:cat:${p.id}:national`)
+    .text(`${on("unlimited")} نامحدود`, `cc:panels:cat:${p.id}:unlimited`)
+    .row()
+    .text(p.active ? "🟢 فعال" : "⚫ خاموش", `cc:panels:tog:active:${p.id}`)
+    .text(p.sellEnabled ? "🛒 فروش روشن" : "🚫 فروش خاموش", `cc:panels:tog:sell:${p.id}`)
+    .row()
+    .text("🔌 تست اتصال", `cc:panels:test:${p.id}`)
+    .primary()
+    .row()
+    .text("✏️ نام", `cc:panels:edit:${p.id}:name`)
+    .text("🔗 URL", `cc:panels:edit:${p.id}:url`)
+    .row()
+    .text("🔑 Token", `cc:panels:edit:${p.id}:token`)
+    .text("📡 Inbounds", `cc:panels:edit:${p.id}:inbounds`)
+    .row()
+    .text("📎 Sub base", `cc:panels:edit:${p.id}:subBase`)
+    .text("⚖️ وزن", `cc:panels:edit:${p.id}:weight`)
+    .row()
+    .text("🗑 حذف", `cc:panels:del:${p.id}`)
+    .danger()
+    .row()
+    .text("« سرورها", "cc:panels");
+  await ctx.editMessageText(text, { reply_markup: kb });
 }
 
 async function showDemote(ctx: Context) {
@@ -1421,6 +1533,128 @@ export function registerControlCenter(bot: Bot) {
       }
     }
   });
+
+  bot.callbackQuery("cc:panels", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showPanelsList(ctx, true);
+  });
+
+  bot.callbackQuery("cc:panels:import", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    try {
+      const p = await importPanelFromEnv();
+      await ctx.answerCallbackQuery({ text: "وارد شد" });
+      await auditLog({
+        action: "panel_import_env",
+        actorTelegramId: ctx.from?.id,
+        target: p.id,
+      });
+      await showPanelsList(ctx, true);
+    } catch (err) {
+      await ctx.answerCallbackQuery({ text: "خطا", show_alert: true });
+      await ctx.reply(String(err).replace(/^Error:\s*/, ""));
+    }
+  });
+
+  bot.callbackQuery("cc:panels:add", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "panel_add", step: "name" });
+    await ctx.reply("نام نمایشی سرور را بفرستید (مثلاً سرور اصلی یا نت ملی):\nلغو: /cancel");
+  });
+
+  bot.callbackQuery(/^cc:panels:view:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showPanelDetail(ctx, ctx.match![1]!);
+  });
+
+  bot.callbackQuery(/^cc:panels:test:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const p = await getPanelServer(ctx.match![1]!);
+    if (!p) {
+      await ctx.answerCallbackQuery({ text: "یافت نشد", show_alert: true });
+      return;
+    }
+    try {
+      const r = await testPanelConnection(p);
+      await ctx.answerCallbackQuery({
+        text: `اتصال OK · ${r.inboundCount} inbound`,
+        show_alert: true,
+      });
+    } catch (err) {
+      await ctx.answerCallbackQuery({
+        text: String(err).replace(/^Error:\s*/, "").slice(0, 180),
+        show_alert: true,
+      });
+    }
+  });
+
+  bot.callbackQuery(/^cc:panels:tog:(active|sell):(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const field = ctx.match![1] as "active" | "sell";
+    const id = ctx.match![2]!;
+    const p = await getPanelServer(id);
+    if (!p) return;
+    if (field === "active") await updatePanelServer(id, { active: !p.active });
+    else await updatePanelServer(id, { sellEnabled: !p.sellEnabled });
+    await showPanelDetail(ctx, id);
+  });
+
+  bot.callbackQuery(/^cc:panels:cat:([^:]+):(data|national|unlimited)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const id = ctx.match![1]!;
+    const cat = ctx.match![2] as PlanCategory;
+    const p = await getPanelServer(id);
+    if (!p) {
+      await ctx.answerCallbackQuery({ text: "یافت نشد", show_alert: true });
+      return;
+    }
+    const set = new Set(parsePanelCategories(p.categories));
+    if (set.has(cat)) set.delete(cat);
+    else set.add(cat);
+    const next = [...set] as PanelCategories;
+    if (!next.length) {
+      await ctx.answerCallbackQuery({ text: "حداقل یک دسته لازم است", show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await updatePanelServer(id, { categories: next });
+    await showPanelDetail(ctx, id);
+  });
+
+  bot.callbackQuery(/^cc:panels:edit:([^:]+):(name|url|token|inbounds|subBase|weight)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const id = ctx.match![1]!;
+    const field = ctx.match![2] as "name" | "url" | "token" | "inbounds" | "subBase" | "weight";
+    ccWait.set(ctx.from!.id, { kind: "panel_edit", id, field });
+    const prompts: Record<typeof field, string> = {
+      name: "نام جدید سرور را بفرستید:",
+      url: "آدرس پنل را بفرستید (با / آخر، مثلاً http://IP:PORT/path/):",
+      token: "API Token جدید را بفرستید:",
+      inbounds: "Inbound IDs را بفرستید (مثلاً 1,2,3 یا 1-10):",
+      subBase: "Subscription base URL را بفرستید (خالی = پاک کردن، مثال https://domain:port/info/):",
+      weight: "وزن تقسیم بار را بفرستید (۱ تا ۱۰۰۰):",
+    };
+    await ctx.reply(`${prompts[field]}\nلغو: /cancel`);
+  });
+
+  bot.callbackQuery(/^cc:panels:del:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    try {
+      await deletePanelServer(ctx.match![1]!);
+      await ctx.answerCallbackQuery({ text: "حذف شد" });
+      await showPanelsList(ctx, true);
+    } catch (err) {
+      await ctx.answerCallbackQuery({
+        text: String(err).replace(/^Error:\s*/, "").slice(0, 180),
+        show_alert: true,
+      });
+    }
+  });
 }
 
 /** Handle text replies for control-center wait states. Returns true if consumed. */
@@ -1503,6 +1737,109 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     await ctx.reply(`پیش‌فرض IP Limit: ${n === 0 ? "نامحدود" : `${n} دستگاه`} ✅`, {
       reply_markup: new InlineKeyboard().text("📱 IP Limit", "cc:iplimit").row().text("🎛 کنترل سنتر", "cc:home"),
     });
+    return true;
+  }
+
+  if (wait.kind === "panel_add") {
+    if (wait.step === "name") {
+      ccWait.set(tid, { kind: "panel_add", step: "url", name: text.trim() });
+      await ctx.reply("آدرس پنل را بفرستید (با / آخر):\nمثال: http://127.0.0.1:2053/");
+      return true;
+    }
+    if (wait.step === "url") {
+      let url = text.trim();
+      if (!/^https?:\/\//i.test(url)) {
+        await ctx.reply("آدرس باید با http:// یا https:// شروع شود.");
+        return true;
+      }
+      if (!url.endsWith("/")) url += "/";
+      ccWait.set(tid, { kind: "panel_add", step: "token", name: wait.name, baseUrl: url });
+      await ctx.reply("API Token پنل را بفرستید (Settings → Security):");
+      return true;
+    }
+    if (wait.step === "token") {
+      ccWait.set(tid, {
+        kind: "panel_add",
+        step: "inbounds",
+        name: wait.name,
+        baseUrl: wait.baseUrl,
+        apiToken: text.trim(),
+      });
+      await ctx.reply("Inbound IDs را بفرستید (Enter برای پیش‌فرض 1):\nمثال: 1,2,3 یا 1-10");
+      return true;
+    }
+    if (wait.step === "inbounds") {
+      const inboundIds = text.trim() || "1";
+      try {
+        const p = await createPanelServer({
+          name: wait.name!,
+          baseUrl: wait.baseUrl!,
+          apiToken: wait.apiToken!,
+          inboundIds,
+          categories: ["data", "unlimited"],
+        });
+        ccWait.delete(tid);
+        await auditLog({
+          action: "panel_created",
+          actorTelegramId: tid,
+          target: p.id,
+          detail: p.name,
+        });
+        await ctx.reply(
+          [
+            `✅ سرور «${p.name}» ساخته شد.`,
+            "",
+            "پیش‌فرض دسته‌ها: حجمی + نامحدود.",
+            "برای نت ملی، سرور را باز کنید و دسته نت ملی را روشن کنید (و از سرور دیگر خاموش کنید).",
+          ].join("\n"),
+          {
+            reply_markup: new InlineKeyboard()
+              .text("⚙️ تنظیمات سرور", `cc:panels:view:${p.id}`)
+              .row()
+              .text("🖥 سرورها", "cc:panels"),
+          },
+        );
+      } catch (err) {
+        await ctx.reply(String(err).replace(/^Error:\s*/, ""));
+      }
+      return true;
+    }
+  }
+
+  if (wait.kind === "panel_edit") {
+    try {
+      if (wait.field === "name") await updatePanelServer(wait.id, { name: text.trim() });
+      else if (wait.field === "url") {
+        let url = text.trim();
+        if (!/^https?:\/\//i.test(url)) {
+          await ctx.reply("آدرس باید با http شروع شود.");
+          return true;
+        }
+        if (!url.endsWith("/")) url += "/";
+        await updatePanelServer(wait.id, { baseUrl: url });
+      } else if (wait.field === "token") await updatePanelServer(wait.id, { apiToken: text.trim() });
+      else if (wait.field === "inbounds") await updatePanelServer(wait.id, { inboundIds: text.trim() || "1" });
+      else if (wait.field === "subBase") {
+        const v = text.trim();
+        await updatePanelServer(wait.id, { subBase: v === "-" || v === "" ? null : v });
+      } else if (wait.field === "weight") {
+        const n = Number(text.replace(/[^\d]/g, ""));
+        if (!n || n < 1) {
+          await ctx.reply("وزن باید عدد مثبت باشد.");
+          return true;
+        }
+        await updatePanelServer(wait.id, { weight: n });
+      }
+      ccWait.delete(tid);
+      await ctx.reply("ذخیره شد ✅", {
+        reply_markup: new InlineKeyboard()
+          .text("⚙️ سرور", `cc:panels:view:${wait.id}`)
+          .row()
+          .text("🖥 سرورها", "cc:panels"),
+      });
+    } catch (err) {
+      await ctx.reply(String(err).replace(/^Error:\s*/, ""));
+    }
     return true;
   }
 

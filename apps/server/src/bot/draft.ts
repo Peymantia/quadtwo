@@ -7,7 +7,7 @@ import {
   type PlanCategory,
 } from "../services/pricing.js";
 import { clampLimitIp } from "../services/panel-groups.js";
-import { getDefaultLimitIp, getMaxPurchaseMonths, isSalesCategoryEnabled } from "../services/settings.js";
+import { getDefaultLimitIp, getMaxPurchaseMonths, isSalesCategoryEnabled, resolvePurchaseLimitIp } from "../services/settings.js";
 import type { User } from "@prisma/client";
 
 async function capMonths(m: number) {
@@ -17,7 +17,7 @@ async function capMonths(m: number) {
 
 export async function getOrCreateDraft(telegramId: bigint) {
   const defaultIp = await getDefaultLimitIp();
-  return prisma.buyDraft.upsert({
+  const draft = await prisma.buyDraft.upsert({
     where: { telegramId },
     create: {
       telegramId,
@@ -26,11 +26,20 @@ export async function getOrCreateDraft(telegramId: bigint) {
       unlimited: false,
       quantity: 1,
       limitIp: defaultIp,
+      limitIpTouched: false,
       category: "data",
       accountMode: "random",
     },
     update: {},
   });
+
+  if (!draft.limitIpTouched && draft.limitIp === 0 && defaultIp > 0) {
+    return prisma.buyDraft.update({
+      where: { telegramId },
+      data: { limitIp: defaultIp },
+    });
+  }
+  return draft;
 }
 
 export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
@@ -82,15 +91,17 @@ export async function adjustDraftQty(telegramId: bigint, dir: 1 | -1) {
 
 export async function adjustDraftLimitIp(telegramId: bigint, dir: 1 | -1) {
   const draft = await getOrCreateDraft(telegramId);
+  const current = await resolvePurchaseLimitIp(draft);
   return prisma.buyDraft.update({
     where: { telegramId },
-    data: { limitIp: clampLimitIp(draft.limitIp + dir) },
+    data: { limitIp: clampLimitIp(current + dir), limitIpTouched: true },
   });
 }
 
 export async function setDraftCategory(telegramId: bigint, category: PlanCategory) {
   await getOrCreateDraft(telegramId);
   const months = await capMonths(1);
+  const defaultIp = await getDefaultLimitIp();
   return prisma.buyDraft.update({
     where: { telegramId },
     data: {
@@ -99,6 +110,8 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
       trafficGb: category === "unlimited" ? null : category === "national" ? 1 : 10,
       months,
       quantity: 1,
+      limitIp: defaultIp,
+      limitIpTouched: false,
     },
   });
 }
@@ -121,3 +134,5 @@ export async function draftPrice(
   const category = (draft.category as PlanCategory) || (gb === null ? "unlimited" : "data");
   return resolvePrice(user, gb, draft.months, category);
 }
+
+export { resolvePurchaseLimitIp };

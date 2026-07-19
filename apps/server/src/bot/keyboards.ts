@@ -15,13 +15,14 @@ export const BTN = {
   guide: "💡 آموزش استفاده",
   support: "🆘 پشتیبانی",
   test: "🧪 سرویس تست",
-  referral: "👥 معرفی به دوستان",
-  dashboard: "🚀 MiniApp Dashboard",
+  dashboard: "🚀 داشبورد وب‌اپ",
   partner: "🤝 درخواست نمایندگی",
+  /** @deprecated not on main menu */
   partnerPanel: "💼 پنل نماینده / عمده",
-  agentPanel: "💼 نام نماینده / گروه پنل",
+  agentPanel: "💼 مشخصات نماینده",
   controlCenter: "🎛 کنترل سنتر ادمین",
-  /** @deprecated legacy label */
+  /** @deprecated legacy */
+  referral: "👥 معرفی به دوستان",
   national: "🇮🇷 کانفیگ نت ملی",
   admin: "👑 پنل ادمین",
 } as const;
@@ -39,17 +40,17 @@ export function mainMenuReply(opts: MainMenuOpts) {
     .text(BTN.buy)
     .success()
     .row()
-    .text(BTN.renew)
     .text(BTN.myServices)
+    .text(BTN.renew)
     .row()
-    .text(BTN.wallet)
     .text(BTN.account)
-    .row()
-    .text(BTN.guide)
-    .text(BTN.support)
+    .text(BTN.wallet)
     .row()
     .text(BTN.test)
-    .text(BTN.referral)
+    .text(BTN.guide)
+    .row()
+    .text(BTN.partner)
+    .text(BTN.support)
     .row();
 
   if (opts.miniappUrl) {
@@ -58,17 +59,8 @@ export function mainMenuReply(opts: MainMenuOpts) {
     kb.text(BTN.dashboard).primary().row();
   }
 
-  const canRequestAgency = !opts.isAdmin && !opts.isPartner && !opts.isWholesale;
-  if (canRequestAgency) {
-    kb.text(BTN.partner).danger().row();
-  }
-
-  if (opts.isPartner || opts.isWholesale) {
-    kb.text(BTN.partnerPanel).primary().row();
-  }
   if (opts.isAdmin) {
-    kb.text(BTN.agentPanel).primary().row();
-    kb.text(BTN.controlCenter).danger().row();
+    kb.text(BTN.controlCenter).danger().text(BTN.agentPanel).primary().row();
   }
 
   return kb.persistent().resized();
@@ -96,17 +88,17 @@ export function mainMenuInline(opts: MainMenuOpts) {
     .text(BTN.buy, "m:buy")
     .success()
     .row()
-    .text(BTN.renew, "m:renew")
     .text(BTN.myServices, "m:myservices")
+    .text(BTN.renew, "m:renew")
     .row()
-    .text(BTN.wallet, "m:wallet")
     .text(BTN.account, "m:account")
-    .row()
-    .text(BTN.guide, "m:guide")
-    .text(BTN.support, "m:support")
+    .text(BTN.wallet, "m:wallet")
     .row()
     .text(BTN.test, "m:test")
-    .text(BTN.referral, "m:referral")
+    .text(BTN.guide, "m:guide")
+    .row()
+    .text(BTN.partner, "m:partner")
+    .text(BTN.support, "m:support")
     .row();
 
   if (opts.miniappUrl) {
@@ -115,17 +107,8 @@ export function mainMenuInline(opts: MainMenuOpts) {
     kb.text(BTN.dashboard, "m:dashboard").primary().row();
   }
 
-  const canRequestAgency = !opts.isAdmin && !opts.isPartner && !opts.isWholesale;
-  if (canRequestAgency) {
-    kb.text(BTN.partner, "m:partner").danger().row();
-  }
-
-  if (opts.isPartner || opts.isWholesale) {
-    kb.text(BTN.partnerPanel, "m:partnerpanel").primary().row();
-  }
   if (opts.isAdmin) {
-    kb.text(BTN.agentPanel, "m:partnerpanel").primary().row();
-    kb.text(BTN.controlCenter, "cc:home").danger().row();
+    kb.text(BTN.controlCenter, "cc:home").danger().text(BTN.agentPanel, "m:partnerpanel").primary().row();
   }
   return kb;
 }
@@ -281,21 +264,74 @@ export function partnerRequestKeyboard(requestId: string) {
 }
 
 export function subscriptionKeyboard(subId: string) {
-  return new InlineKeyboard()
-    .text("🔗 لینک ساب", `sub:link:${subId}`)
-    .text("📱 QR", `sub:qr:${subId}`)
-    .row()
-    .text("♻️ تمدید", `sub:renew:${subId}`)
-    .success()
-    .row()
-    .text("🔄 تغییر ساب", `sub:rotsub:${subId}`)
-    .text("🔑 تغییر کانفیگ", `sub:rotuuid:${subId}`);
+  return subscriptionDetailKeyboard({ subId, canRenew: true });
 }
 
-export function renewPickKeyboard(subs: Array<{ id: string; code: string }>) {
+export function myServicesListKeyboard(opts: {
+  items: Array<{ id: string; label: string }>;
+  page: number;
+  pages: number;
+  hasQuery: boolean;
+}) {
+  const kb = new InlineKeyboard();
+  kb.text("🔍 جستجو", "mysvc:search").row();
+  if (opts.hasQuery) {
+    kb.text("✖️ پاک کردن فیلتر", "mysvc:clear").row();
+  }
+  for (let i = 0; i < opts.items.length; i += 2) {
+    const a = opts.items[i]!;
+    const b = opts.items[i + 1];
+    if (b) {
+      kb.text(a.label, `mysvc:open:${a.id}`).text(b.label, `mysvc:open:${b.id}`).row();
+    } else {
+      kb.text(a.label, `mysvc:open:${a.id}`).row();
+    }
+  }
+  if (opts.pages > 1) {
+    if (opts.page > 0) kb.text("◀️ قبلی", `mysvc:page:${opts.page - 1}`);
+    kb.text(`${opts.page + 1}/${opts.pages}`, "wiz:noop");
+    if (opts.page < opts.pages - 1) kb.text("بعدی ▶️", `mysvc:page:${opts.page + 1}`);
+    kb.row();
+  }
+  kb.text("« بستن", "buy:cat:cancel");
+  return kb;
+}
+
+export function subscriptionDetailKeyboard(opts: {
+  subId: string;
+  panelEnabled?: boolean | null;
+  canRenew?: boolean;
+}) {
+  const kb = new InlineKeyboard()
+    .text("🔗 لینک ساب", `sub:link:${opts.subId}`)
+    .text("📱 QR Code", `sub:qr:${opts.subId}`)
+    .row();
+
+  if (opts.canRenew !== false) {
+    kb.text("♻️ تمدید سرویس", `sub:renew:${opts.subId}`).success().row();
+  }
+
+  kb.text("🔄 تغییر لینک ساب", `sub:rotsub:${opts.subId}`)
+    .text("🔑 تغییر لینک کانفیگ", `sub:rotuuid:${opts.subId}`)
+    .row();
+
+  if (opts.panelEnabled === false) {
+    kb.text("🟢 فعال‌سازی", `sub:toggle:${opts.subId}`).success().row();
+  } else if (opts.panelEnabled === true) {
+    kb.text("🔴 غیرفعال موقت", `sub:toggle:${opts.subId}`).danger().row();
+  } else {
+    kb.text("🔴/🟢 فعال/غیرفعال", `sub:toggle:${opts.subId}`).row();
+  }
+
+  kb.text("« بازگشت به لیست", "mysvc:list");
+  return kb;
+}
+
+export function renewPickKeyboard(subs: Array<{ id: string; code: string; email?: string }>) {
   const kb = new InlineKeyboard();
   for (const s of subs.slice(0, 12)) {
-    kb.text(`♻️ ${s.code}`, `sub:renew:${s.id}`).row();
+    const label = (s.email || s.code).slice(0, 28);
+    kb.text(`♻️ ${label}`, `sub:renew:${s.id}`).row();
   }
   kb.text("« انصراف", "buy:cat:cancel");
   return kb;
@@ -476,6 +512,9 @@ export function controlCenterKeyboard() {
     .row()
     .text("💳 کارت بانکی", "cc:card")
     .text("📡 Inbounds", "cc:inbounds")
+    .row()
+    .text("🖥 سرورهای پنل", "cc:panels")
+    .primary()
     .row()
     .text("📋 سفارش‌های باز", "cc:pending")
     .primary()

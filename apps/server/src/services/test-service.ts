@@ -1,11 +1,9 @@
 import QRCode from "qrcode";
 import { SubscriptionStatus } from "@prisma/client";
-import { env } from "../config/env.js";
 import { prisma } from "../db.js";
-import { createXuiFromEnv } from "../panel/xui-client.js";
 import { randomSubId, shortCode } from "../utils/format.js";
-import { getConfiguredInboundIds } from "./inbounds.js";
-import { buildSubUrl } from "./provision.js";
+import { resolvePanelForCategory } from "./panel-servers.js";
+import { resolveSubUrl } from "./provision.js";
 import { ensureClientsInGroup, TELEGRAM_GROUP } from "./panel-groups.js";
 import { getDefaultLimitIp, getSetting } from "./settings.js";
 
@@ -22,6 +20,7 @@ export type TestProvisionResult = {
 
 /**
  * One free test account per telegram user: 1 day / 250 MB, starts on first connect.
+ * Uses the panel configured for category "data".
  */
 export async function claimTestService(userId: string): Promise<TestProvisionResult> {
   const enabled = (await getSetting("test_service_enabled")) === "true";
@@ -43,20 +42,19 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
     throw new Error("شما قبلاً سرویس تست را دریافت کرده‌اید.");
   }
 
-  const xui = createXuiFromEnv(env);
+  const resolved = await resolvePanelForCategory("data");
+  if (!resolved.inboundIds.length) {
+    throw new Error("هیچ inbound تنظیم نشده — در کنترل سنتر سرورهای پنل را پر کنید");
+  }
+
   const code = shortCode("TST");
   const email = `test${String(user.telegramId).slice(-8)}${code.slice(-4)}`.toLowerCase();
   const subId = randomSubId();
-  const inboundIds = await getConfiguredInboundIds();
-  if (!inboundIds.length) {
-    throw new Error("هیچ inbound تنظیم نشده — در کنترل سنتر Inbounds را پر کنید");
-  }
-
   const totalGB = TEST_MB * 1024 * 1024;
   const panelExpiry = -TEST_MS;
   const limitIp = await getDefaultLimitIp();
 
-  await xui.addClient({
+  await resolved.xui.addClient({
     client: {
       email,
       enable: true,
@@ -67,30 +65,22 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
       subId,
       comment: `test:${user.telegramId}`,
     },
-    inboundIds,
+    inboundIds: resolved.inboundIds,
   });
 
-  await ensureClientsInGroup(xui, [email], TELEGRAM_GROUP);
-
-  let settings: Record<string, unknown> | undefined;
-  try {
-    const s = await xui.getSettings();
-    settings = s.obj;
-  } catch {
-    /* ignore */
-  }
+  await ensureClientsInGroup(resolved.xui, [email], TELEGRAM_GROUP);
 
   let clientUuid: string | null = null;
   let panelSubId = subId;
   try {
-    const got = await xui.getClient(email);
+    const got = await resolved.xui.getClient(email);
     clientUuid = got.obj?.client?.uuid ?? got.obj?.client?.id ?? null;
     if (got.obj?.client?.subId) panelSubId = got.obj.client.subId;
   } catch {
     /* ignore */
   }
 
-  const subUrl = buildSubUrl(panelSubId, settings);
+  const subUrl = await resolveSubUrl(panelSubId, resolved.xui, resolved.subBase);
   const qrPng = await QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
   const expiresAt = new Date(Date.now() + TEST_MS);
 
@@ -99,6 +89,7 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
       data: {
         code,
         userId: user.id,
+        panelServerId: resolved.panel?.id ?? null,
         title: email,
         email,
         clientUuid,
