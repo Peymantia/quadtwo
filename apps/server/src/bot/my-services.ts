@@ -12,9 +12,18 @@ const PAGE_SIZE = 20;
 export const myServicesQuery = new Map<number, string>();
 export const waitingMyServicesSearch = new Set<number>();
 
-function subLabel(sub: Pick<Subscription, "email" | "code" | "title">) {
-  const raw = (sub.title?.trim() || sub.email || sub.code).trim();
-  return raw.length > 20 ? `${raw.slice(0, 19)}…` : raw;
+function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest">) {
+  const name = (sub.email || sub.title || "").trim();
+  const id = (sub.code || "").trim();
+  // Always show account name and/or service code — never traffic volume
+  let label: string;
+  if (name && id && name.toLowerCase() !== id.toLowerCase()) {
+    label = name.length <= 16 ? `${id} · ${name}` : name;
+  } else {
+    label = name || id || "سرویس";
+  }
+  if (sub.isTest) label = `🧪 ${label}`;
+  return label.length > 30 ? `${label.slice(0, 29)}…` : label;
 }
 
 function filterSubs(subs: Subscription[], query: string) {
