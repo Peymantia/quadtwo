@@ -175,7 +175,8 @@ export function buyWizardKeyboard(opts: {
     .text("✅ ادامه خرید", "wiz:checkout")
     .success()
     .row()
-    .text("« انصراف", "buy:cat:cancel");
+    .text("« بازگشت", "buy:back:cat")
+    .text("❌ انصراف", "buy:cat:cancel");
 }
 
 export function salesCategoriesAdminKeyboard(cats: SalesCategories) {
@@ -215,6 +216,7 @@ export function payMethodKeyboard(orderId: string, walletBalance: number) {
     .text(`👛 کیف پول (${walletBalance.toLocaleString("fa-IR")})`, `pay:wallet:${orderId}`)
     .success()
     .row()
+    .text("« بازگشت", `pay:back:${orderId}`)
     .text("❌ انصراف", `cancel:${orderId}`)
     .danger();
 }
@@ -224,6 +226,7 @@ export function payConfirmKeyboard(orderId: string) {
     .text("✅ پرداخت کردم — ارسال رسید", `paid:${orderId}`)
     .success()
     .row()
+    .text("« بازگشت", `pay:method:${orderId}`)
     .text("❌ انصراف", `cancel:${orderId}`)
     .danger();
 }
@@ -242,7 +245,7 @@ export function walletChargeAmountsKeyboard() {
     kb.text(`${amount.toLocaleString("fa-IR")}`, `wallet:amt:${amount}`).row();
   }
   kb.text("✍️ مبلغ دلخواه", "wallet:amt:custom").row();
-  kb.text("« انصراف", "buy:cat:cancel");
+  kb.text("« بازگشت", "wallet:back").text("❌ انصراف", "buy:cat:cancel");
   return kb;
 }
 
@@ -381,7 +384,8 @@ export function renewWizardKeyboard(opts: {
     .text("✅ تأیید و پرداخت تمدید", `renew:checkout:${opts.subId}`)
     .success()
     .row()
-    .text("« انصراف", "buy:cat:cancel");
+    .text("« بازگشت", "renew:back")
+    .text("❌ انصراف", "buy:cat:cancel");
 }
 
 export function guideKeyboard(urls: {

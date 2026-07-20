@@ -646,6 +646,19 @@ export function createBot() {
   bot.callbackQuery("buy:cat:cancel", async (ctx) => {
     await ctx.answerCallbackQuery();
     await ctx.deleteMessage().catch(() => undefined);
+    await replyMainMenu(ctx, "به منوی اصلی برگشتید.");
+  });
+
+  // Back from buy wizard to category picker (or main menu when only one category)
+  bot.callbackQuery("buy:back:cat", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const enabled = await listEnabledSalesCategories();
+    if (enabled.length <= 1) {
+      await ctx.deleteMessage().catch(() => undefined);
+      await replyMainMenu(ctx, "به منوی اصلی برگشتید.");
+      return;
+    }
+    await showBuyCategoryPicker(ctx, true);
   });
 
   bot.callbackQuery(/^buy:cat:(data|national|unlimited)$/, async (ctx) => {
@@ -1006,6 +1019,78 @@ export function createBot() {
       data: { status: OrderStatus.cancelled },
     });
     await ctx.editMessageText("سفارش لغو شد.");
+    await replyMainMenu(ctx, "به منوی اصلی برگشتید.");
+  });
+
+  // Back from payment-method screen to the previous wizard (cancels the pending order)
+  bot.callbackQuery(/^pay:back:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const order = await prisma.order.findFirst({
+      where: { id: ctx.match![1], userId: user.id },
+    });
+    if (order?.status === OrderStatus.pending_payment) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.cancelled },
+      });
+    }
+    if (order?.kind === OrderKind.wallet_charge) {
+      await ctx.editMessageText("مبلغ شارژ را انتخاب کنید (تومان):", {
+        reply_markup: walletChargeAmountsKeyboard(),
+      });
+      return;
+    }
+    if (order?.kind === OrderKind.renew && order.targetSubId) {
+      await showRenewWizard(ctx, order.targetSubId, {}, true);
+      return;
+    }
+    await showBuyWizard(ctx, true);
+  });
+
+  // Back from card-payment screen to method selection (order stays pending)
+  bot.callbackQuery(/^pay:method:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const order = await prisma.order.findFirst({
+      where: { id: ctx.match![1], userId: user.id, status: OrderStatus.pending_payment },
+    });
+    if (!order) {
+      await ctx.reply("سفارش فعالی پیدا نشد.");
+      return;
+    }
+    if (order.kind === OrderKind.wallet_charge) {
+      // Wallet top-up is card-to-card only → back means picking the amount again
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.cancelled },
+      });
+      await ctx.editMessageText("مبلغ شارژ را انتخاب کنید (تومان):", {
+        reply_markup: walletChargeAmountsKeyboard(),
+      });
+      return;
+    }
+    const wallet = await getWallet(user.id);
+    await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
+      reply_markup: payMethodKeyboard(order.id, wallet.balance),
+    });
+  });
+
+  // Back from renew wizard to the pick-service list
+  bot.callbackQuery("renew:back", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.deleteMessage().catch(() => undefined);
+    await handleRenew(ctx);
+  });
+
+  // Back from charge-amount picker to wallet menu
+  bot.callbackQuery("wallet:back", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const wallet = await getWallet(user.id);
+    await ctx.editMessageText(`💳 موجودی: ${formatToman(wallet.balance)}`, {
+      reply_markup: walletMenuKeyboard(),
+    });
   });
 
   bot.on(["message:photo", "message:document"], async (ctx) => {
