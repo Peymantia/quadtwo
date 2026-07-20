@@ -39,6 +39,7 @@ export type MainMenuOpts = {
 
 /** Sticky reply keyboard at bottom (main menu) */
 export function mainMenuReply(opts: MainMenuOpts) {
+  const isAgent = opts.isPartner || opts.isWholesale || opts.isAdmin;
   const kb = new Keyboard()
     .text(BTN.buy)
     .success()
@@ -55,15 +56,21 @@ export function mainMenuReply(opts: MainMenuOpts) {
 
   if (opts.isAdmin) {
     kb.text(BTN.allConfigs).text(BTN.support).row();
+  } else if (isAgent) {
+    kb.text(BTN.support).row();
   } else {
     kb.text(BTN.partner).text(BTN.support).row();
   }
 
-  kb.text(BTN.dashboard).primary().text(BTN.configLookup).danger().row();
+  if (isAgent) {
+    kb.text(BTN.agentPanel).primary().text(BTN.configLookup).danger().row();
+  } else {
+    kb.text(BTN.configLookup).danger().row();
+  }
   kb.text(BTN.dashOtp).row();
 
   if (opts.isAdmin) {
-    kb.text(BTN.controlCenter).danger().text(BTN.agentPanel).primary().row();
+    kb.text(BTN.controlCenter).danger().row();
   }
 
   return kb.persistent().resized();
@@ -107,11 +114,15 @@ export function mainMenuInline(opts: MainMenuOpts) {
     kb.text(BTN.partner, "m:partner").text(BTN.support, "m:support").row();
   }
 
-  kb.text(BTN.dashboard, "m:dashboard").primary().text(BTN.configLookup, "m:cfglookup").danger().row();
+  if (opts.isAdmin || opts.isPartner || opts.isWholesale) {
+    kb.text(BTN.agentPanel, "m:partnerpanel").primary().text(BTN.configLookup, "m:cfglookup").danger().row();
+  } else {
+    kb.text(BTN.configLookup, "m:cfglookup").danger().row();
+  }
   kb.text(BTN.dashOtp, "m:dashotp").row();
 
   if (opts.isAdmin) {
-    kb.text(BTN.controlCenter, "cc:home").danger().text(BTN.agentPanel, "m:partnerpanel").primary().row();
+    kb.text(BTN.controlCenter, "cc:home").danger().row();
   }
   return kb;
 }
