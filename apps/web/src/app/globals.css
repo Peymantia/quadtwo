@@ -957,6 +957,76 @@ h3 {
   margin-top: 3px;
 }
 
+/* ---------- Toast ---------- */
+
+.toast-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 200;
+  pointer-events: none;
+  padding: 20px;
+}
+
+.toast {
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: min(420px, 90vw);
+  text-align: center;
+  padding: 15px 26px;
+  border-radius: 18px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  backdrop-filter: blur(16px);
+  border: 1px solid;
+  box-shadow: 0 22px 60px rgba(4, 6, 20, 0.6);
+  animation: toast-pop 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.toast.ok {
+  background: rgba(10, 35, 28, 0.92);
+  border-color: rgba(52, 211, 153, 0.5);
+  color: #86efac;
+}
+
+.toast.err {
+  background: rgba(43, 12, 20, 0.92);
+  border-color: rgba(251, 113, 133, 0.55);
+  color: #fda4af;
+}
+
+@keyframes toast-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ---------- Sticky save bar ---------- */
+
+.save-bar {
+  position: sticky;
+  bottom: 14px;
+  z-index: 40;
+  margin-top: 16px;
+}
+
+.save-bar .btn {
+  width: 100%;
+  box-shadow: 0 12px 34px rgba(4, 6, 20, 0.55), 0 8px 24px rgba(56, 189, 248, 0.25);
+}
+
+@media (max-width: 900px) {
+  .save-bar {
+    bottom: calc(var(--nav-h) + 12px);
+  }
+}
+
 .loading-page {
   min-height: 100vh;
   display: grid;
@@ -982,7 +1052,8 @@ h3 {
 
 @media (prefers-reduced-motion: reduce) {
   .logo-orb::before,
-  .logo-orb::after {
+  .logo-orb::after,
+  .toast {
     animation: none;
   }
   .spinner {

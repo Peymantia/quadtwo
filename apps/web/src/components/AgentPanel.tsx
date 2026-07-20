@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "./DashShell";
+import { Toast } from "./Toast";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 
@@ -46,6 +47,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     () => api<{ items: ConfigItem[] }>("/partner/configs").then((r) => setConfigs(r.items ?? [])),
     [],
   );
+
+  const clearFlash = useCallback(() => {
+    setMsg(null);
+    setErr(null);
+  }, []);
 
   useEffect(() => {
     if (!home) return;
@@ -143,8 +149,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       active={tab}
       onTab={setTab}
     >
-      {msg && <div className="alert ok">{msg}</div>}
-      {err && <div className="alert err">{err}</div>}
+      <Toast msg={msg} err={err} onClear={clearFlash} />
 
       {tab === "home" && (
         <>

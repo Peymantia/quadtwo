@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
+import { Toast } from "../../components/Toast";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
@@ -76,6 +77,11 @@ export default function UserAppPage() {
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
     [],
   );
+
+  const clearFlash = useCallback(() => {
+    setMsg(null);
+    setErr(null);
+  }, []);
 
   useEffect(() => {
     if (!home) return;
@@ -213,8 +219,7 @@ export default function UserAppPage() {
       active={tab}
       onTab={setTab}
     >
-      {msg && <div className="alert ok">{msg}</div>}
-      {err && <div className="alert err">{err}</div>}
+      <Toast msg={msg} err={err} onClear={clearFlash} />
 
       {tab === "shop" && (
         <>

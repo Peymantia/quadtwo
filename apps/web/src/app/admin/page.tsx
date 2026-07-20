@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
+import { Toast } from "../../components/Toast";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
@@ -82,6 +83,11 @@ export default function AdminPage() {
     setErr(bad);
   }, []);
 
+  const clearFlash = useCallback(() => {
+    setMsg(null);
+    setErr(null);
+  }, []);
+
   if (loading || !home) return <LoadingScreen />;
 
   const userLabel = home.user.username ? `@${home.user.username}` : home.user.firstName || "";
@@ -100,8 +106,7 @@ export default function AdminPage() {
         flash(null, null);
       }}
     >
-      {msg && <div className="alert ok">{msg}</div>}
-      {err && <div className="alert err">{err}</div>}
+      <Toast msg={msg} err={err} onClear={clearFlash} />
 
       {tab === "home" && <HomeTab onGo={setTab} />}
       {tab === "orders" && <OrdersTab flash={flash} />}
@@ -1181,13 +1186,15 @@ function SettingsTab({ flash }: { flash: Flash }) {
             )}
           </div>
         ))}
-        <button
-          type="button"
-          className="btn primary"
-          onClick={() => save(Object.fromEntries(TEXT_SETTINGS.map((f) => [f.key, settings[f.key] ?? ""])))}
-        >
-          ذخیره اطلاعات پایه
-        </button>
+        <div className="save-bar">
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => save(Object.fromEntries(TEXT_SETTINGS.map((f) => [f.key, settings[f.key] ?? ""])))}
+          >
+            ذخیره اطلاعات پایه
+          </button>
+        </div>
       </div>
     </>
   );

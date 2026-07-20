@@ -1,0 +1,30 @@
+"use client";
+
+import { useEffect } from "react";
+
+/** Centered toast message; auto-dismisses (errors stay a bit longer). */
+export function Toast({
+  msg,
+  err,
+  onClear,
+}: {
+  msg: string | null;
+  err: string | null;
+  onClear: () => void;
+}) {
+  useEffect(() => {
+    if (!msg && !err) return;
+    const t = setTimeout(onClear, err ? 5000 : 2800);
+    return () => clearTimeout(t);
+  }, [msg, err, onClear]);
+
+  if (!msg && !err) return null;
+
+  return (
+    <div className="toast-wrap" role="status" aria-live="polite">
+      <div className={`toast ${err ? "err" : "ok"}`} onClick={onClear}>
+        {err ?? msg}
+      </div>
+    </div>
+  );
+}
