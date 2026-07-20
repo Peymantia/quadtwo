@@ -83,6 +83,8 @@ const defaults: Record<string, string> = {
     national: "اینترنت ملی",
     unlimited: "نامحدود",
   }),
+  /** Web dashboard session lifetime after login, in hours */
+  web_session_hours: "168",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -292,6 +294,13 @@ export async function getCategoryLabels(): Promise<CategoryLabels> {
 
 export async function saveCategoryLabels(labels: CategoryLabels) {
   await setSetting("category_labels_json", JSON.stringify(labels));
+}
+
+/** Web dashboard session lifetime in hours (1..720, default 168 = 7 days). */
+export async function getWebSessionHours(): Promise<number> {
+  const n = Number(await getSetting("web_session_hours"));
+  if (!Number.isFinite(n) || n < 1) return 168;
+  return Math.min(720, Math.floor(n));
 }
 
 export async function getMaxPurchaseMonths(): Promise<number> {

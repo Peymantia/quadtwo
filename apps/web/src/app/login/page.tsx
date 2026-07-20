@@ -103,6 +103,8 @@ export default function LoginPage() {
             <div className="field">
               <label>آی‌دی عددی تلگرام یا یوزرنیم</label>
               <input
+                dir="ltr"
+                style={{ textAlign: "center" }}
                 value={login}
                 onChange={(e) => setLogin(e.target.value)}
                 placeholder="@username یا 123456789"
@@ -183,7 +185,11 @@ export default function LoginPage() {
           )}
         </div>
 
-        <p className="login-foot">رمز عبور ندارید؟ از روش تلگرام استفاده کنید — بعد از ورود می‌توانید رمز تنظیم کنید.</p>
+        <p className="login-foot">
+          رمز عبور ندارید؟ از ربات تلگرام استفاده کنید،
+          <br />
+          بعد از ورود می‌توانید رمز تنظیم کنید.
+        </p>
       </div>
     </div>
   );

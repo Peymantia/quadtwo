@@ -27,6 +27,7 @@ import {
   getPaymentCard,
   getSalesCategories,
   getSetting,
+  getWebSessionHours,
   listEnabledSalesCategories,
   saveCategoryLabels,
   saveSalesCategories,
@@ -68,11 +69,15 @@ async function notifyTelegram(chatId: bigint, text: string) {
 
 async function sessionForUser(userId: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const token = await signSession({
-    userId: user.id,
-    telegramId: String(user.telegramId),
-    role: user.role,
-  });
+  const sessionHours = await getWebSessionHours();
+  const token = await signSession(
+    {
+      userId: user.id,
+      telegramId: String(user.telegramId),
+      role: user.role,
+    },
+    `${sessionHours}h`,
+  );
   return {
     token,
     user: {

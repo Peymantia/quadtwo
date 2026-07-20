@@ -51,10 +51,13 @@ export function parseAndValidateInitData(initData: string): TgInitUser {
   return JSON.parse(userRaw) as TgInitUser;
 }
 
-export async function signSession(payload: { userId: string; telegramId: string; role: string }) {
+export async function signSession(
+  payload: { userId: string; telegramId: string; role: string },
+  expiresIn = "7d",
+) {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("7d")
+    .setExpirationTime(expiresIn)
     .sign(jwtSecret());
 }
 

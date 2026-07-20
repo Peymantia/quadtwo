@@ -1118,6 +1118,29 @@ function SettingsTab({ flash }: { flash: Flash }) {
         </div>
         <div className="setting-row">
           <div>
+            <div className="t">مدت اعتبار نشست داشبورد</div>
+            <div className="d">بعد از ورود، کاربر چند ساعت لاگین بماند (روی ورودهای جدید اثر می‌گذارد).</div>
+          </div>
+          <select
+            value={String(Number(settings.web_session_hours || "168"))}
+            onChange={(e) => save({ web_session_hours: e.target.value })}
+            style={{
+              border: "1px solid var(--line)",
+              background: "rgba(10,13,35,.6)",
+              color: "var(--text)",
+              borderRadius: 10,
+              padding: "8px 12px",
+            }}
+          >
+            {[1, 3, 6, 12, 24, 48, 72, 168, 336, 720].map((h) => (
+              <option key={h} value={String(h)}>
+                {h < 24 ? `${h} ساعت` : `${h / 24} روز (${h} ساعت)`}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="setting-row">
+          <div>
             <div className="t">حالت قیمت‌گذاری</div>
             <div className="d">ماتریکس = پلن‌های ثابت · نرخی = فرمول حجم × ماه</div>
           </div>
