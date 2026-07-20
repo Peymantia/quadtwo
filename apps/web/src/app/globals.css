@@ -91,46 +91,72 @@ h3 {
 
 .logo-orb {
   position: relative;
-  width: 128px;
-  height: 128px;
+  width: 148px;
+  height: 148px;
   display: grid;
   place-items: center;
   margin-bottom: 14px;
 }
 
+/* soft pulsing glow behind the logo */
 .logo-orb::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 6%;
   border-radius: 50%;
-  border: 1px solid var(--line-strong);
-  box-shadow:
-    0 0 44px rgba(56, 189, 248, 0.22),
-    inset 0 0 30px rgba(45, 212, 191, 0.08);
-  animation: orb-breathe 4.5s ease-in-out infinite;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.4), rgba(244, 63, 94, 0.18) 55%, transparent 72%);
+  filter: blur(16px);
+  animation: orb-breathe 3.6s ease-in-out infinite;
+}
+
+/* rotating gradient ring */
+.logo-orb::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  padding: 2px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(251, 191, 36, 0.9) 70deg,
+    rgba(244, 63, 94, 0.7) 140deg,
+    transparent 210deg,
+    rgba(56, 189, 248, 0.5) 290deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: orb-spin 4.5s linear infinite;
 }
 
 .logo-orb img {
-  width: 92px;
-  height: 92px;
+  position: relative;
+  z-index: 1;
+  width: 122px;
+  height: 122px;
   object-fit: contain;
-  background: #f6f8ff;
   border-radius: 50%;
-  padding: 9px;
-  filter: drop-shadow(0 4px 18px rgba(56, 189, 248, 0.35));
+  filter: drop-shadow(0 0 22px rgba(251, 191, 36, 0.35));
 }
 
 @keyframes orb-breathe {
   0%,
   100% {
-    box-shadow:
-      0 0 34px rgba(56, 189, 248, 0.16),
-      inset 0 0 24px rgba(45, 212, 191, 0.06);
+    opacity: 0.55;
+    transform: scale(0.96);
   }
   50% {
-    box-shadow:
-      0 0 54px rgba(56, 189, 248, 0.3),
-      inset 0 0 36px rgba(45, 212, 191, 0.12);
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes orb-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -390,9 +416,8 @@ h3 {
   width: 42px;
   height: 42px;
   object-fit: contain;
-  background: #f6f8ff;
   border-radius: 50%;
-  padding: 4px;
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.3);
 }
 
 .sidebar-brand strong {
@@ -542,9 +567,8 @@ h3 {
     width: 34px;
     height: 34px;
     object-fit: contain;
-    background: #f6f8ff;
     border-radius: 50%;
-    padding: 3px;
+    box-shadow: 0 0 12px rgba(251, 191, 36, 0.3);
   }
 
   .bottom-nav {
@@ -957,7 +981,8 @@ h3 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .logo-orb::before {
+  .logo-orb::before,
+  .logo-orb::after {
     animation: none;
   }
   .spinner {
