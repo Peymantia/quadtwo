@@ -113,36 +113,36 @@ export default function LoginPage() {
               />
             </div>
 
+            <div className="field">
+              <label>کد یکبار مصرف (۶ رقمی)</label>
+              <input
+                className="num"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                inputMode="numeric"
+                maxLength={6}
+                autoFocus={otpSent}
+                placeholder="کد را از ربات دریافت کنید"
+                style={{ textAlign: "center", letterSpacing: "0.35em", fontSize: "1.15rem" }}
+              />
+            </div>
+            <button
+              className="btn primary wide"
+              disabled={busy || !login.trim() || code.length < 6}
+              type="submit"
+              style={{ marginBottom: 12 }}
+            >
+              ورود
+            </button>
+
             <button
               className="btn success wide"
               type="button"
               disabled={busy || !login.trim()}
               onClick={requestOtp}
-              style={{ marginBottom: 12 }}
             >
               دریافت کد ورود از ربات
             </button>
-
-            {otpSent && (
-              <>
-                <div className="field">
-                  <label>کد ۶ رقمی ارسال‌شده در تلگرام</label>
-                  <input
-                    className="num"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    inputMode="numeric"
-                    maxLength={6}
-                    autoFocus
-                    style={{ textAlign: "center", letterSpacing: "0.4em", fontSize: "1.2rem" }}
-                    required
-                  />
-                </div>
-                <button className="btn primary wide" disabled={busy || code.length < 6} type="submit">
-                  تأیید و ورود
-                </button>
-              </>
-            )}
           </form>
 
           <div className="or-divider">یا</div>
