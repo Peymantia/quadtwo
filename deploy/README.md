@@ -132,9 +132,32 @@ grep -R "listen 443" /etc/nginx/sites-enabled/ || true
 | مشکل | بررسی |
 |------|--------|
 | `SSL_ERROR_RX_RECORD_TOO_LONG` | بخش ۵ — Nginx فقط :80 + Cloudflare Flexible |
+| **404 nginx/Ubuntu** | سایت `default` فعال است یا کانفیگ dash لود نشده — دستورات زیر |
 | 502 | `systemctl status quadtwo-web` و `curl -sI http://127.0.0.1:3000/login` |
 | صفحه سفید / API خطا | `NEXT_PUBLIC_API_URL` و بیلد دوباره وب |
 | OTP نمی‌رسد | ربات آنلاین؛ کاربر `/start` زده باشد |
+
+### رفع 404 از nginx (نه از Next)
+
+```bash
+# وب باید مستقیم جواب بدهد
+curl -sI http://127.0.0.1:3000/login
+systemctl status quadtwo-web --no-pager
+
+# سایت پیش‌فرض اوبونتو را خاموش کنید
+rm -f /etc/nginx/sites-enabled/default
+
+# کانفیگ dash را دوباره بگذارید
+cd /opt/quadtwo && git pull
+cp deploy/nginx-dash.anthropics.ir.conf /etc/nginx/sites-available/dash.anthropics.ir
+ln -sf /etc/nginx/sites-available/dash.anthropics.ir /etc/nginx/sites-enabled/dash.anthropics.ir
+
+nginx -t && systemctl reload nginx
+
+# باید از پروکسی Next باشد (نه 404 خالی nginx)
+curl -sI -H "Host: dash.anthropics.ir" http://127.0.0.1/login
+ls -la /etc/nginx/sites-enabled/
+```
 
 ```bash
 journalctl -u quadtwo -u quadtwo-web -f
