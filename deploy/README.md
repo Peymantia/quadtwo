@@ -14,7 +14,14 @@
 |------|------|---------|-------|
 | A | `dash` | IP سرور | Proxied (نارنجی) |
 
-SSL/TLS در Cloudflare روی **Full** (یا Full Strict اگر گواهی معتبر روی origin دارید).
+### SSL/TLS (مهم)
+
+| حالت | چه موقع |
+|------|---------|
+| **Flexible** | پیش‌فرض همین راهنما — Nginx فقط روی پورت **80** (بدون گواهی روی سرور) |
+| **Full** / **Full Strict** | فقط بعد از نصب گواهی واقعی روی origin (certbot) |
+
+اگر Cloudflare روی **Full** باشد ولی روی سرور `listen 443 ssl` بدون فایل گواهی باشد، مرورگر خطای `SSL_ERROR_RX_RECORD_TOO_LONG` می‌دهد.
 
 مثال کامل: `dash.anthropics.ir`
 
@@ -26,8 +33,6 @@ quadtwo env
 nano /opt/quadtwo/.env
 ```
 
-این خطوط را اضافه/به‌روز کنید:
-
 ```env
 DASH_DOMAIN=dash.anthropics.ir
 PUBLIC_DOMAIN=app.anthropics.ir
@@ -36,25 +41,10 @@ NEXT_PUBLIC_APP_URL=https://dash.anthropics.ir
 CORS_ORIGINS=https://dash.anthropics.ir,https://app.anthropics.ir
 ```
 
-ذخیره کنید.
-
 ## ۳) به‌روزرسانی و بیلد
 
 ```bash
 quadtwo update
-```
-
-یا دستی:
-
-```bash
-cd /opt/quadtwo
-git pull
-npm install
-npm run db:generate -w @quadtwo/server
-DATABASE_URL="file:/opt/quadtwo/data/quadtwo.db" npm run db:push -w @quadtwo/server
-npm run build -w @quadtwo/server
-NEXT_PUBLIC_API_URL=https://dash.anthropics.ir npm run build -w @quadtwo/web
-systemctl restart quadtwo quadtwo-web
 ```
 
 سرویس‌ها:
@@ -64,45 +54,71 @@ systemctl restart quadtwo quadtwo-web
 | `quadtwo` | API + ربات | 4000 |
 | `quadtwo-web` | داشبورد Next.js | 3000 |
 
-بررسی:
-
 ```bash
 systemctl status quadtwo quadtwo-web
 curl -s http://127.0.0.1:4000/health
 curl -sI http://127.0.0.1:3000/login
 ```
 
-## ۴) Nginx
+## ۴) Nginx (فقط HTTP روی ۸۰ — مناسب Cloudflare Flexible)
 
 ```bash
 cp /opt/quadtwo/deploy/nginx-dash.anthropics.ir.conf /etc/nginx/sites-available/dash.anthropics.ir
 ln -sf /etc/nginx/sites-available/dash.anthropics.ir /etc/nginx/sites-enabled/
+
+# اگر سایت قدیمی با 443 خراب دارید، همان را جایگزین کنید
 nginx -t && systemctl reload nginx
 ```
 
-نمونه کانفیگ: [`nginx-dash.anthropics.ir.conf`](./nginx-dash.anthropics.ir.conf)
+در Cloudflare → **SSL/TLS** → حالت را روی **Flexible** بگذارید.
 
-- `/api/` و `/health` و `/telegram/` → API (`4000`)
-- بقیه مسیرها → وب (`3000`)
+بررسی از خود سرور:
 
-اگر TLS را خودتان روی سرور می‌خواهید (نه فقط Cloudflare):
+```bash
+curl -sI -H "Host: dash.anthropics.ir" http://127.0.0.1/login
+# باید 200 یا 307 از Next باشد، نه اتصال SSL
+```
+
+### ارتقا به Full (اختیاری)
 
 ```bash
 apt install -y certbot python3-certbot-nginx
+# موقتاً SSL را Flexible نگه دارید یا DNS challenge استفاده کنید
 certbot --nginx -d dash.anthropics.ir
 ```
 
-و خطوط `ssl_certificate` داخل فایل Nginx را از حالت کامنت خارج کنید.
+بعد از موفق بودن certbot، در Cloudflare SSL را به **Full (strict)** تغییر دهید.
 
-## ۵) اولین ورود
+## ۵) رفع سریع `SSL_ERROR_RX_RECORD_TOO_LONG`
 
-1. در تلگرام به ربات `/start` بزنید.
-2. دکمه **کد ورود داشبورد** را بزنید و کد ۶ رقمی را بگیرید.
-3. مرورگر: `https://dash.anthropics.ir/login`
-4. یوزرنیم تلگرام یا آی‌دی عددی + کد OTP.
-5. از تب تنظیمات داخل داشبورد، **رمز عبور** بگذارید تا بعداً بدون OTP هم وارد شوید.
+علت: چیزی روی پورت **443** پاسخ **غیر TLS** می‌دهد (مثلاً Nginx با `listen 443 ssl` بدون `ssl_certificate`).
 
-مسیرها بر اساس نقش:
+روی سرور:
+
+```bash
+# ببینید 443 به چه گوش می‌دهد
+ss -tlnp | grep -E ':80|:443'
+
+# کانفیگ جدید (فقط :80) را بگذارید
+cp /opt/quadtwo/deploy/nginx-dash.anthropics.ir.conf /etc/nginx/sites-available/dash.anthropics.ir
+nginx -t && systemctl reload nginx
+
+# هر vhost دیگری که 443 ssl بدون گواهی دارد را پیدا/حذف کنید
+grep -R "listen 443" /etc/nginx/sites-enabled/ || true
+```
+
+در Cloudflare:
+
+1. SSL/TLS → **Flexible**
+2. Cache → Purge Everything
+3. دوباره `https://dash.anthropics.ir/login` را باز کنید
+
+## ۶) اولین ورود
+
+1. در تلگرام `/start`
+2. دکمه **کد ورود داشبورد**
+3. `https://dash.anthropics.ir/login` + کد OTP
+4. در تنظیمات داشبورد رمز وب بگذارید
 
 | نقش | مسیر |
 |-----|------|
@@ -111,21 +127,14 @@ certbot --nginx -d dash.anthropics.ir
 | ریسلر | `/reseller` |
 | ادمین | `/admin` |
 
-## ۶) دکمه ربات
-
-منوی ربات لینک داشبورد را از `DASH_DOMAIN` می‌سازد:
-
-- 🌐 داشبورد وب
-- 🔐 کد ورود داشبورد
-
-## عیب‌یابی سریع
+## عیب‌یابی
 
 | مشکل | بررسی |
 |------|--------|
-| صفحه سفید / API خطا | `CORS_ORIGINS` و `NEXT_PUBLIC_API_URL` باید همان دامنه داشبورد باشند؛ وب را دوباره بیلد کنید |
-| OTP نمی‌رسد | ربات باید آنلاین باشد؛ کاربر قبلاً `/start` زده باشد |
-| 502 از Cloudflare | `quadtwo-web` و Nginx را چک کنید |
-| نقش اشتباه | در کنترل سنتر ادمین / تب کاربران داشبورد، نقش را عوض کنید |
+| `SSL_ERROR_RX_RECORD_TOO_LONG` | بخش ۵ — Nginx فقط :80 + Cloudflare Flexible |
+| 502 | `systemctl status quadtwo-web` و `curl -sI http://127.0.0.1:3000/login` |
+| صفحه سفید / API خطا | `NEXT_PUBLIC_API_URL` و بیلد دوباره وب |
+| OTP نمی‌رسد | ربات آنلاین؛ کاربر `/start` زده باشد |
 
 ```bash
 journalctl -u quadtwo -u quadtwo-web -f
