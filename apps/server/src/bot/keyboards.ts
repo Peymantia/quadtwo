@@ -16,7 +16,7 @@ export const BTN = {
   support: "🆘 پشتیبانی",
   test: "🧪 دریافت سرویس تست",
   dashboard: "🌐 داشبورد وب",
-  dashOtp: "🔐 کد ورود داشبورد",
+  dashOtp: "🔐 ورود به داشبورد وب اپ",
   configLookup: "🔎 مشخصات کانفیگ",
   partner: "🤝 درخواست نمایندگی",
   allConfigs: "📋 نمایش کلیه کانفیگ‌ها",
