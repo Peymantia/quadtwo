@@ -1515,8 +1515,8 @@ export function registerControlCenter(bot: Bot) {
     await ctx.answerCallbackQuery();
     const number = await getSetting("card_number");
     const holder = await getSetting("card_holder");
-    await ctx.editMessageText(`💳 کارت فعلی:\n\`${number}\`\n${holder}`, {
-      parse_mode: "Markdown",
+    const { formatCardNumberDisplay } = await import("../utils/format.js");
+    await ctx.editMessageText(`💳 کارت فعلی:\n${formatCardNumberDisplay(number)}\n${holder}`, {
       reply_markup: new InlineKeyboard()
         .text("✏️ ویرایش", "cc:card:edit")
         .primary()

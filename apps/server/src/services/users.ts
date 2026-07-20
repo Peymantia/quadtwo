@@ -2,11 +2,11 @@ import type { User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { prisma } from "../db.js";
 import { adminIds } from "../config/env.js";
-import { createXuiFromEnv } from "../panel/xui-client.js";
+import { createXuiFromEnv, type XuiClient } from "../panel/xui-client.js";
 import { env } from "../config/env.js";
 import { getExtraAdminIds } from "./settings.js";
 import { partnerPanelGroupName, buildPanelGroupFromAgentName, sanitizePanelGroupSlug } from "./panel-groups.js";
-import { resolvePanelForCategory } from "./panel-servers.js";
+import { createXuiFromPanel, listPanelServers, resolvePanelForCategory } from "./panel-servers.js";
 
 async function xuiForAgentGroups() {
   try {
@@ -14,6 +14,34 @@ async function xuiForAgentGroups() {
   } catch {
     if (env.XUI_BASE_URL && env.XUI_API_TOKEN) return createXuiFromEnv(env);
     throw new Error("هیچ پنل فعالی برای ساخت گروه پیدا نشد");
+  }
+}
+
+async function allPanelXuIs(): Promise<XuiClient[]> {
+  const panels = await listPanelServers();
+  const list = panels.filter((p) => p.active && p.apiToken).map((p) => createXuiFromPanel(p));
+  if (list.length) return list;
+  if (env.XUI_BASE_URL && env.XUI_API_TOKEN) return [createXuiFromEnv(env)];
+  return [];
+}
+
+/** Rename group on every reachable panel; create new group if rename fails. */
+export async function renamePanelGroupEverywhere(oldName: string, newName: string) {
+  if (!oldName || !newName || oldName === newName) return;
+  const clients = await allPanelXuIs();
+  for (const xui of clients) {
+    try {
+      await xui.renameGroup(oldName, newName);
+    } catch {
+      try {
+        await xui.createGroup(newName);
+        const emails = await xui.groupEmails(oldName);
+        const list = Array.isArray(emails.obj) ? emails.obj : [];
+        if (list.length) await xui.bulkAddToGroup(list, newName);
+      } catch (err) {
+        console.warn("renamePanelGroupEverywhere failed", oldName, "→", newName, err);
+      }
+    }
   }
 }
 
@@ -121,26 +149,101 @@ export async function approvePartner(requestId: string, asRole: "partner" | "who
   });
 }
 
-/** Set / update نماینده name → panel group for admin/partner/wholesale. */
-export async function setAgentName(userId: string, rawName: string) {
+/**
+ * Set / update نماینده name.
+ * - First-time (no agentName) or admin: apply immediately (+ create group)
+ * - Change by partner/wholesale: pending AgentRenameRequest until admin approves
+ */
+export async function setAgentName(
+  userId: string,
+  rawName: string,
+): Promise<
+  | { kind: "applied"; user: User }
+  | { kind: "pending"; requestId: string; newName: string; newGroup: string }
+> {
   const agentName = rawName.trim();
   if (agentName.length < 2) {
     throw new Error("نام نماینده خیلی کوتاه است.");
   }
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   const panelGroup = buildPanelGroupFromAgentName(agentName, user.telegramId);
+  const oldName = user.agentName?.trim() ?? "";
+  const oldGroup = user.panelGroup?.trim() ?? "";
 
-  try {
-    const xui = await xuiForAgentGroups();
-    await xui.createGroup(panelGroup);
-  } catch {
-    /* exists or panel offline — still save locally */
+  const isFirstSet = !oldName;
+  const isAdmin = user.role === UserRole.admin;
+  const unchanged = oldName === agentName && oldGroup === panelGroup;
+  if (unchanged) {
+    return { kind: "applied", user };
   }
 
-  return prisma.user.update({
+  // Partner/wholesale renaming existing name → admin approval
+  if (!isFirstSet && !isAdmin) {
+    await prisma.agentRenameRequest.updateMany({
+      where: { userId: user.id, status: "pending" },
+      data: { status: "rejected" },
+    });
+    const req = await prisma.agentRenameRequest.create({
+      data: {
+        userId: user.id,
+        oldName,
+        oldGroup: oldGroup || oldName,
+        newName: agentName,
+        newGroup: panelGroup,
+      },
+    });
+    return { kind: "pending", requestId: req.id, newName: agentName, newGroup: panelGroup };
+  }
+
+  if (oldGroup && oldGroup !== panelGroup) {
+    await renamePanelGroupEverywhere(oldGroup, panelGroup);
+  } else {
+    try {
+      const xui = await xuiForAgentGroups();
+      await xui.createGroup(panelGroup);
+    } catch {
+      /* exists or offline */
+    }
+  }
+
+  const updated = await prisma.user.update({
     where: { id: userId },
     data: { agentName, panelGroup },
   });
+  return { kind: "applied", user: updated };
+}
+
+export async function approveAgentRename(requestId: string) {
+  const req = await prisma.agentRenameRequest.findUniqueOrThrow({
+    where: { id: requestId },
+    include: { user: true },
+  });
+  if (req.status !== "pending") throw new Error("این درخواست دیگر در انتظار نیست");
+
+  await renamePanelGroupEverywhere(req.oldGroup, req.newGroup);
+
+  const user = await prisma.user.update({
+    where: { id: req.userId },
+    data: { agentName: req.newName, panelGroup: req.newGroup },
+  });
+  await prisma.agentRenameRequest.update({
+    where: { id: requestId },
+    data: { status: "approved" },
+  });
+  return { user, request: req };
+}
+
+export async function rejectAgentRename(requestId: string) {
+  const req = await prisma.agentRenameRequest.findUniqueOrThrow({
+    where: { id: requestId },
+    include: { user: true },
+  });
+  if (req.status !== "pending") throw new Error("این درخواست دیگر در انتظار نیست");
+  await prisma.agentRenameRequest.update({
+    where: { id: requestId },
+    data: { status: "rejected" },
+  });
+  return req;
 }
 
 export async function rejectPartner(requestId: string) {

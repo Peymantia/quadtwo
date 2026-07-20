@@ -1,4 +1,5 @@
 import QRCode from "qrcode";
+import { randomBytes } from "node:crypto";
 import { SubscriptionStatus } from "@prisma/client";
 import { prisma } from "../db.js";
 import { randomSubId, shortCode } from "../utils/format.js";
@@ -56,6 +57,17 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
 
   await resolved.xui.addClient({
     client: {
+      id: await (async () => {
+        try {
+          const nu = await resolved.xui.getNewUUID();
+          if (typeof nu.obj === "string" && nu.obj.trim()) return nu.obj.trim();
+        } catch {
+          /* fall through */
+        }
+        return randomBytes(16)
+          .toString("hex")
+          .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+      })(),
       email,
       enable: true,
       expiryTime: panelExpiry,

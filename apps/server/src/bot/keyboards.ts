@@ -2,7 +2,7 @@ import { InlineKeyboard, Keyboard } from "grammy";
 import { matrixLine } from "../services/pricing.js";
 import type { NotifConfig, SalesCategories } from "../services/settings.js";
 import { formatLimitIp } from "../services/panel-groups.js";
-import { formatToman, formatTraffic } from "../utils/format.js";
+import { formatCardNumberDisplay, formatToman, formatTraffic, ltrIsolate } from "../utils/format.js";
 import type { PlanCategory } from "../services/pricing.js";
 
 /** Reply-keyboard labels — must match bot.hears() exactly */
@@ -14,7 +14,7 @@ export const BTN = {
   account: "👤 حساب من",
   guide: "💡 آموزش استفاده",
   support: "🆘 پشتیبانی",
-  test: "🧪 سرویس تست",
+  test: "🧪 دریافت سرویس تست",
   dashboard: "🌐 داشبورد وب",
   dashOtp: "🔐 کد ورود داشبورد",
   configLookup: "🔎 مشخصات کانفیگ",
@@ -444,11 +444,11 @@ export function orderPayText(summary: string, card: { number: string; holder: st
     summary,
     "",
     "💳 کارت‌به‌کارت",
-    `شماره کارت: \`${card.number}\``,
+    `شماره کارت: ${formatCardNumberDisplay(card.number)}`,
     `به نام: ${card.holder}`,
     "",
     "پس از واریز، روی دکمه زیر بزنید و عکس رسید را بفرستید.",
-    `کد سفارش: \`${orderId.slice(-8)}\``,
+    `کد سفارش: ${ltrIsolate(orderId.slice(-8))}`,
   ].join("\n");
 }
 
@@ -508,7 +508,7 @@ export function controlCenterKeyboard() {
     .row()
     .text("📖 آموزش و دانلود اپ", "cc:guide")
     .row()
-    .text("🧪 سرویس تست", "cc:test")
+    .text("🧪 دریافت سرویس تست", "cc:test")
     .text("📱 محدودیت کاربر", "cc:iplimit")
     .row()
     .text("👑 ادمین‌ها", "cc:admins")

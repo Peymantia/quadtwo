@@ -77,6 +77,12 @@ const defaults: Record<string, string> = {
   }),
   /** Max months selectable in buy/renew wizard (1 = disable multi-month for now) */
   max_purchase_months: "1",
+  /** Display labels for plan categories (web dashboard + bot) */
+  category_labels_json: JSON.stringify({
+    data: "بسته‌های VIP",
+    national: "اینترنت ملی",
+    unlimited: "نامحدود",
+  }),
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -266,6 +272,26 @@ export async function saveSalesCategories(cats: SalesCategories) {
 export async function isSalesCategoryEnabled(category: "data" | "national" | "unlimited") {
   const cats = await getSalesCategories();
   return cats[category];
+}
+
+export type CategoryLabels = Record<"data" | "national" | "unlimited", string>;
+
+export function defaultCategoryLabels(): CategoryLabels {
+  return { data: "بسته‌های VIP", national: "اینترنت ملی", unlimited: "نامحدود" };
+}
+
+export async function getCategoryLabels(): Promise<CategoryLabels> {
+  const base = defaultCategoryLabels();
+  try {
+    const raw = JSON.parse(await getSetting("category_labels_json")) as Partial<CategoryLabels>;
+    return { ...base, ...raw };
+  } catch {
+    return base;
+  }
+}
+
+export async function saveCategoryLabels(labels: CategoryLabels) {
+  await setSetting("category_labels_json", JSON.stringify(labels));
 }
 
 export async function getMaxPurchaseMonths(): Promise<number> {

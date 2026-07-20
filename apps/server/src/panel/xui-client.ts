@@ -21,6 +21,25 @@ export type XuiInbound = {
   remark?: string;
 };
 
+/**
+ * 3x-ui Go model expects Client.id (UUID) as string.
+ * Spreading getClient() can leave numeric id and break update/add.
+ */
+export function sanitizeClientPayload(client: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...client };
+  if (out.id != null && out.id !== "") out.id = String(out.id);
+  if (out.uuid != null && out.uuid !== "") out.uuid = String(out.uuid);
+  if (typeof out.tgId === "string") {
+    const n = Number(out.tgId.replace(/\D/g, ""));
+    if (Number.isFinite(n) && n > 0) out.tgId = n;
+    else delete out.tgId;
+  }
+  // Panel getClient may attach fields that confuse update body
+  delete out.inboundIds;
+  delete out.usedTraffic;
+  return out;
+}
+
 export class XuiClient {
   private readonly baseUrl: string;
 
@@ -88,14 +107,17 @@ export class XuiClient {
   }) {
     return this.request("panel/api/clients/add", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        client: sanitizeClientPayload(body.client),
+        inboundIds: body.inboundIds,
+      }),
     });
   }
 
   updateClient(email: string, body: Record<string, unknown>) {
     return this.request(`panel/api/clients/update/${encodeURIComponent(email)}`, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify(sanitizeClientPayload(body)),
     });
   }
 
@@ -217,6 +239,13 @@ export class XuiClient {
     return this.request("panel/api/clients/groups/create", {
       method: "POST",
       body: JSON.stringify({ name }),
+    });
+  }
+
+  renameGroup(oldName: string, newName: string) {
+    return this.request("panel/api/clients/groups/rename", {
+      method: "POST",
+      body: JSON.stringify({ oldName, newName }),
     });
   }
 

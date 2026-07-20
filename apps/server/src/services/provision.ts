@@ -24,6 +24,18 @@ export type ProvisionResult = {
   qrPng: Buffer;
 };
 
+async function newClientUuid(xui: XuiClient): Promise<string> {
+  try {
+    const nu = await xui.getNewUUID();
+    if (typeof nu.obj === "string" && nu.obj.trim()) return nu.obj.trim();
+  } catch {
+    /* fall through */
+  }
+  return randomBytes(16)
+    .toString("hex")
+    .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+}
+
 function panelSubTls(settings?: Record<string, unknown>) {
   const cert = settings?.subCertFile;
   const key = settings?.subKeyFile;
@@ -291,6 +303,7 @@ async function createOnePanelClient(
 
   await opts.xui.addClient({
     client: {
+      id: await newClientUuid(opts.xui),
       email,
       enable: true,
       expiryTime: panelExpiry,
@@ -310,7 +323,11 @@ async function createOnePanelClient(
   let panelSubId = subId;
   try {
     const got = await opts.xui.getClient(email);
-    clientUuid = got.obj?.client?.uuid ?? got.obj?.client?.id ?? null;
+    clientUuid = got.obj?.client?.uuid
+      ? String(got.obj.client.uuid)
+      : got.obj?.client?.id != null
+        ? String(got.obj.client.id)
+        : null;
     if (got.obj?.client?.subId) panelSubId = got.obj.client.subId;
   } catch {
     /* ignore */
@@ -540,7 +557,8 @@ export async function rotateUuid(subscriptionId: string): Promise<ProvisionResul
   await resolved.xui.updateClient(sub.email, {
     ...client,
     email: sub.email,
-    id: newUuid,
+    id: String(newUuid),
+    uuid: String(newUuid),
   });
 
   const panelSubId = client.subId ?? sub.panelSubId ?? randomSubId();

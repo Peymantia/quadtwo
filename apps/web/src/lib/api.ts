@@ -71,7 +71,7 @@ export function roleLabel(role: Role): string {
     case "partner":
       return "همکار";
     case "wholesale":
-      return "ریسلر";
+      return "عمده‌فروش";
     default:
       return "کاربر";
   }

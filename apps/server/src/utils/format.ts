@@ -17,6 +17,18 @@ export function formatToman(amount: number): string {
   return `${amount.toLocaleString("fa-IR")} تومان`;
 }
 
+/** Isolate LTR runs (card numbers, codes) so RTL Persian UI does not reverse digits on screen. */
+export function ltrIsolate(value: string): string {
+  const v = value.trim();
+  if (!v) return v;
+  return `\u2066${v}\u2069`;
+}
+
+/** Card number for display in RTL chats (copy-friendly, visually LTR). */
+export function formatCardNumberDisplay(number: string): string {
+  return ltrIsolate(number.replace(/\s+/g, ""));
+}
+
 export function formatTraffic(gb: number | null): string {
   if (gb === null) return "نامحدود";
   return `${gb} گیگ`;

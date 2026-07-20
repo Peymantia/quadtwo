@@ -17,8 +17,11 @@ export default function HomeRedirect() {
       .catch(() => router.replace("/login"));
   }, [router]);
   return (
-    <div className="login-page">
-      <p className="muted">در حال انتقال…</p>
+    <div className="loading-page">
+      <div style={{ textAlign: "center" }}>
+        <div className="spinner" />
+        در حال انتقال…
+      </div>
     </div>
   );
 }

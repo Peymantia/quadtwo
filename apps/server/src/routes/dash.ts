@@ -10,19 +10,30 @@ import {
   verifyLoginOtp,
   verifyPassword,
 } from "../services/web-auth.js";
-import { createMatrixOrder, orderSummaryText, payOrderWithWallet } from "../services/orders.js";
-import { listPriceMatrix } from "../services/pricing.js";
-import { rotateSubId, rotateUuid } from "../services/provision.js";
 import {
+  createMatrixOrder,
+  createWalletChargeOrder,
+  getOrderForAdmin,
+  markPaid,
+  orderSummaryText,
+  payOrderWithWallet,
+  rejectOrder,
+} from "../services/orders.js";
+import { deactivateCell, listPriceMatrix, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
+import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.js";
+import {
+  getCategoryLabels,
+  getMaxPurchaseMonths,
   getPaymentCard,
   getSalesCategories,
   getSetting,
   listEnabledSalesCategories,
+  saveCategoryLabels,
   saveSalesCategories,
   setSetting,
   getAllSettings,
 } from "../services/settings.js";
-import { getWallet } from "../services/wallet.js";
+import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { approvePartner, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman } from "../utils/format.js";
@@ -38,9 +49,22 @@ import {
 import { listRecentAudit, auditLog } from "../services/audit.js";
 import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
 import { importWorkbook, readWorkbookFromBuffer, formatImportResult } from "../services/bulk-import.js";
-import { dashBaseUrl } from "../config/env.js";
+import { dashBaseUrl, env } from "../config/env.js";
 
 type Vars = { userId: string; role: string; telegramId: string };
+
+/** Fire-and-forget Telegram notification (plain text). */
+async function notifyTelegram(chatId: bigint, text: string) {
+  try {
+    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: String(chatId), text }),
+    });
+  } catch {
+    /* best-effort */
+  }
+}
 
 async function sessionForUser(userId: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -238,18 +262,24 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/me/catalog", async (c) => {
     const cats = await listEnabledSalesCategories();
+    const labels = await getCategoryLabels();
+    const maxMonths = await getMaxPurchaseMonths();
     const cells = await listPriceMatrix();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
     return c.json({
       categories: cats,
+      categoryLabels: labels,
+      maxMonths,
       cells: cells
-        .filter((cell) => cell.active)
+        .filter((cell) => cell.active && cell.months <= maxMonths)
+        .filter((cell) => cats.includes(cell.category as "data" | "national" | "unlimited"))
         .map((cell) => ({
           id: cell.id,
           category: cell.category,
           trafficGb: cell.trafficGb,
           months: cell.months,
           title: cell.title,
+          isGolden: cell.isGolden,
           price:
             user.role === "wholesale"
               ? cell.priceWholesale
@@ -258,6 +288,52 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
                 : cell.priceUser,
         })),
     });
+  });
+
+  api.get("/me/orders", async (c) => {
+    const orders = await prisma.order.findMany({
+      where: { userId: c.get("userId") },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    });
+    return c.json({
+      orders: orders.map((o) => ({
+        id: o.id,
+        kind: o.kind,
+        status: o.status,
+        price: o.price,
+        trafficGb: o.trafficGb,
+        months: o.months,
+        createdAt: o.createdAt.toISOString(),
+      })),
+    });
+  });
+
+  api.post("/me/wallet/charge", async (c) => {
+    const body = await c.req.json<{ amount?: number; note?: string }>();
+    const amount = Math.floor(Number(body.amount ?? 0));
+    if (!amount || amount < 10_000) return c.json({ error: "حداقل شارژ ۱۰٬۰۰۰ تومان است" }, 400);
+    try {
+      const order = await createWalletChargeOrder(c.get("userId"), amount);
+      // Dashboard flow: receipt info is text-only; goes straight to admin review
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          receiptText: body.note?.trim() ? body.note.trim().slice(0, 500) : "درخواست شارژ از داشبورد وب",
+          status: "awaiting_review",
+        },
+      });
+      const card = await getPaymentCard();
+      await auditLog({
+        action: "web_wallet_charge_request",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: order.id,
+        detail: String(amount),
+      });
+      return c.json({ order: { id: order.id, price: order.price }, card });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
   });
 
   api.post("/me/orders", async (c) => {
@@ -455,6 +531,227 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     });
   });
 
+  api.get("/admin/orders/pending", async (c) => {
+    const orders = await prisma.order.findMany({
+      where: { status: { in: ["awaiting_review", "pending_payment"] } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { user: true },
+    });
+    return c.json({
+      orders: orders.map((o) => ({
+        id: o.id,
+        kind: o.kind,
+        status: o.status,
+        price: o.price,
+        summary: orderSummaryText(o),
+        receiptText: o.receiptText,
+        createdAt: o.createdAt.toISOString(),
+        user: {
+          username: o.user.username,
+          telegramId: String(o.user.telegramId),
+          firstName: o.user.firstName,
+        },
+      })),
+    });
+  });
+
+  api.post("/admin/orders/:id/approve", async (c) => {
+    const orderId = c.req.param("id");
+    const order = await getOrderForAdmin(orderId);
+    if (!order) return c.json({ error: "سفارش پیدا نشد" }, 404);
+    if (order.status === "completed") return c.json({ error: "قبلاً تکمیل شده" }, 400);
+    try {
+      await markPaid(orderId);
+      await auditLog({
+        action: "order_approved",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: orderId,
+      });
+      const result = await provisionOrder(orderId);
+      if ("kind" in result && result.kind === "wallet_credit") {
+        await notifyTelegram(
+          order.user.telegramId,
+          `✅ کیف پول شارژ شد\nموجودی: ${formatToman(result.balance)}`,
+        );
+        return c.json({ ok: true, walletBalance: result.balance });
+      }
+      const prov = result as { code: string; subUrl: string | null };
+      await notifyTelegram(
+        order.user.telegramId,
+        `✅ سفارش شما تأیید شد\nکد: ${prov.code}${prov.subUrl ? `\nلینک اشتراک:\n${prov.subUrl}` : ""}`,
+      );
+      return c.json({ ok: true, code: prov.code, subUrl: prov.subUrl });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/orders/:id/reject", async (c) => {
+    const body = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
+    const order = await rejectOrder(c.req.param("id"), body.note?.trim() || "رد شده توسط ادمین");
+    await auditLog({
+      action: "order_rejected",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: order.id,
+    });
+    await notifyTelegram(order.user.telegramId, `❌ سفارش شما رد شد.\n${body.note?.trim() || ""}`.trim());
+    return c.json({ ok: true });
+  });
+
+  api.get("/admin/prices", async (c) => {
+    const cells = await prisma.priceCell.findMany({
+      where: { active: true },
+      orderBy: [{ category: "asc" }, { months: "asc" }, { trafficGb: "asc" }],
+    });
+    return c.json({
+      cells: cells.map((x) => ({
+        id: x.id,
+        title: x.title,
+        category: x.category,
+        trafficGb: x.trafficGb,
+        months: x.months,
+        priceUser: x.priceUser,
+        pricePartner: x.pricePartner,
+        priceWholesale: x.priceWholesale,
+        isGolden: x.isGolden,
+      })),
+    });
+  });
+
+  api.post("/admin/prices", async (c) => {
+    const body = await c.req.json<{
+      trafficGb: number | null;
+      months: number;
+      priceUser: number;
+      pricePartner: number;
+      priceWholesale?: number;
+      category?: PlanCategory;
+      isGolden?: boolean;
+      title?: string;
+    }>();
+    if (!Number.isFinite(body.months) || body.months < 1) return c.json({ error: "ماه نامعتبر" }, 400);
+    const cell = await upsertPriceCell(body);
+    await auditLog({
+      action: "web_price_upsert",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: cell.id,
+    });
+    return c.json({ ok: true, id: cell.id });
+  });
+
+  api.put("/admin/prices/:id", async (c) => {
+    const body = await c.req.json<Record<string, unknown>>();
+    const data: Record<string, unknown> = {};
+    for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "isGolden", "trafficGb", "months", "category"]) {
+      if (body[k] !== undefined) data[k] = body[k];
+    }
+    await prisma.priceCell.update({ where: { id: c.req.param("id") }, data });
+    return c.json({ ok: true });
+  });
+
+  api.delete("/admin/prices/:id", async (c) => {
+    await deactivateCell(c.req.param("id"));
+    await auditLog({
+      action: "web_price_delete",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: c.req.param("id"),
+    });
+    return c.json({ ok: true });
+  });
+
+  /** Bulk price edit: percent or fixed amount, per role columns, optional category filter. */
+  api.post("/admin/prices/bulk", async (c) => {
+    const body = await c.req.json<{
+      category?: string;
+      mode: "percent" | "amount";
+      value: number;
+      fields?: Array<"priceUser" | "pricePartner" | "priceWholesale">;
+      roundTo?: number;
+    }>();
+    const fields = body.fields?.length ? body.fields : (["priceUser", "pricePartner", "priceWholesale"] as const);
+    const value = Number(body.value);
+    if (!Number.isFinite(value) || value === 0) return c.json({ error: "مقدار نامعتبر" }, 400);
+    const roundTo = Math.max(1, Math.floor(body.roundTo ?? 1000));
+    const cells = await prisma.priceCell.findMany({
+      where: { active: true, ...(body.category ? { category: body.category } : {}) },
+    });
+    let updated = 0;
+    for (const cell of cells) {
+      const data: Record<string, number> = {};
+      for (const f of fields) {
+        const cur = cell[f];
+        const next =
+          body.mode === "percent" ? cur + (cur * value) / 100 : cur + value;
+        data[f] = Math.max(0, Math.round(next / roundTo) * roundTo);
+      }
+      await prisma.priceCell.update({ where: { id: cell.id }, data });
+      updated++;
+    }
+    await auditLog({
+      action: "web_price_bulk",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      detail: `${body.mode}:${value} cat:${body.category ?? "all"} n:${updated}`,
+    });
+    return c.json({ ok: true, updated });
+  });
+
+  api.get("/admin/categories", async (c) => {
+    const enabled = await getSalesCategories();
+    const labels = await getCategoryLabels();
+    const counts = await prisma.priceCell.groupBy({
+      by: ["category"],
+      where: { active: true },
+      _count: { _all: true },
+    });
+    const countMap = new Map(counts.map((x) => [x.category, x._count._all]));
+    return c.json({
+      categories: (["data", "national", "unlimited"] as const).map((key) => ({
+        key,
+        label: labels[key],
+        enabled: enabled[key],
+        cellCount: countMap.get(key) ?? 0,
+      })),
+    });
+  });
+
+  api.put("/admin/categories/:key", async (c) => {
+    const key = c.req.param("key") as "data" | "national" | "unlimited";
+    if (!["data", "national", "unlimited"].includes(key)) return c.json({ error: "دسته نامعتبر" }, 400);
+    const body = await c.req.json<{ label?: string; enabled?: boolean }>();
+    if (body.label?.trim()) {
+      const labels = await getCategoryLabels();
+      labels[key] = body.label.trim().slice(0, 40);
+      await saveCategoryLabels(labels);
+    }
+    if (typeof body.enabled === "boolean") {
+      const cats = await getSalesCategories();
+      cats[key] = body.enabled;
+      await saveSalesCategories(cats);
+    }
+    return c.json({ ok: true });
+  });
+
+  /** "Delete" a category: disable sales + deactivate all its price cells. */
+  api.delete("/admin/categories/:key", async (c) => {
+    const key = c.req.param("key") as "data" | "national" | "unlimited";
+    if (!["data", "national", "unlimited"].includes(key)) return c.json({ error: "دسته نامعتبر" }, 400);
+    const cats = await getSalesCategories();
+    cats[key] = false;
+    await saveSalesCategories(cats);
+    const res = await prisma.priceCell.updateMany({
+      where: { category: key, active: true },
+      data: { active: false },
+    });
+    await auditLog({
+      action: "web_category_delete",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: key,
+      detail: `deactivated:${res.count}`,
+    });
+    return c.json({ ok: true, deactivated: res.count });
+  });
+
   api.get("/admin/sales-categories", async (c) => c.json({ categories: await getSalesCategories() }));
 
   api.put("/admin/sales-categories", async (c) => {
@@ -567,14 +864,100 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     });
   });
 
+  api.get("/admin/users/:id", async (c) => {
+    const user = await prisma.user.findUnique({
+      where: { id: c.req.param("id") },
+      include: {
+        wallet: { include: { txs: { orderBy: { createdAt: "desc" }, take: 20 } } },
+        subscriptions: { orderBy: { createdAt: "desc" }, take: 20 },
+        orders: { orderBy: { createdAt: "desc" }, take: 20 },
+      },
+    });
+    if (!user) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    return c.json({
+      user: {
+        id: user.id,
+        telegramId: String(user.telegramId),
+        username: user.username,
+        firstName: user.firstName,
+        role: user.role,
+        agentName: user.agentName,
+        panelGroup: user.panelGroup,
+        balance: user.wallet?.balance ?? 0,
+        createdAt: user.createdAt.toISOString(),
+      },
+      txs: (user.wallet?.txs ?? []).map((t) => ({
+        id: t.id,
+        type: t.type,
+        amount: t.amount,
+        balanceAfter: t.balanceAfter,
+        note: t.note,
+        createdAt: t.createdAt.toISOString(),
+      })),
+      subscriptions: user.subscriptions.map((s) => ({
+        id: s.id,
+        code: s.code,
+        email: s.email,
+        status: s.status,
+        trafficGb: s.trafficGb,
+        expiresAt: s.expiresAt.toISOString(),
+      })),
+      orders: user.orders.map((o) => ({
+        id: o.id,
+        kind: o.kind,
+        status: o.status,
+        price: o.price,
+        createdAt: o.createdAt.toISOString(),
+      })),
+    });
+  });
+
   api.post("/admin/users/:id/role", async (c) => {
     const body = await c.req.json<{ role: UserRole }>();
     if (!["user", "partner", "wholesale", "admin"].includes(body.role)) {
       return c.json({ error: "نقش نامعتبر" }, 400);
     }
-    await prisma.user.update({ where: { id: c.req.param("id") }, data: { role: body.role } });
+    const target = await prisma.user.findUnique({ where: { id: c.req.param("id") } });
+    if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    await prisma.user.update({ where: { id: target.id }, data: { role: body.role } });
+    await auditLog({
+      action: "web_role_change",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: target.id,
+      detail: `${target.role} -> ${body.role}`,
+    });
     return c.json({ ok: true });
   });
+
+  /** Manual wallet adjustment: positive = credit, negative = debit. */
+  api.post("/admin/users/:id/wallet", async (c) => {
+    const body = await c.req.json<{ amount?: number; note?: string }>();
+    const amount = Math.trunc(Number(body.amount ?? 0));
+    if (!amount) return c.json({ error: "مبلغ نامعتبر" }, 400);
+    try {
+      const balance = await adjustWallet(c.req.param("id"), amount, body.note?.trim() || undefined);
+      await auditLog({
+        action: "web_wallet_adjust",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: c.req.param("id"),
+        detail: String(amount),
+      });
+      const target = await prisma.user.findUnique({ where: { id: c.req.param("id") } });
+      if (target) {
+        await notifyTelegram(
+          target.telegramId,
+          amount > 0
+            ? `💳 کیف پول شما ${formatToman(amount)} شارژ شد.\nموجودی: ${formatToman(balance)}`
+            : `💳 ${formatToman(-amount)} از کیف پول شما کسر شد.\nموجودی: ${formatToman(balance)}`,
+        );
+      }
+      return c.json({ ok: true, balance });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.get("/admin/settings", async (c) => c.json({ settings: await getAllSettings() }));
 
   api.put("/admin/settings", async (c) => {
     const body = await c.req.json<Record<string, string>>();
