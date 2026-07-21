@@ -47,17 +47,43 @@ export async function setUserPassword(userId: string, password: string) {
   });
 }
 
-async function sendTelegramText(chatId: bigint, text: string) {
+async function sendTelegramText(chatId: bigint, text: string, replyMarkup?: { inline_keyboard: unknown[] }) {
   const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: String(chatId), text, parse_mode: "Markdown" }),
+    body: JSON.stringify({
+      chat_id: String(chatId),
+      text,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    }),
   });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`ارسال پیام تلگرام ناموفق: ${body.slice(0, 120)}`);
   }
+}
+
+/** OTP login message with tap-to-copy inline buttons for login id and code. */
+export function buildDashboardOtpTelegramMessage(loginUrl: string, login: string, code: string) {
+  const codeStr = String(code);
+  return {
+    text: [
+      "لینک داشبورد:",
+      loginUrl,
+      "",
+      "👤 شناسه ورود — برای کپی روی مقدار بزنید:",
+      "🔐 رمز ورود — برای کپی روی مقدار بزنید:",
+      "",
+      "اعتبار: ۵ دقیقه",
+    ].join("\n"),
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: login, copy_text: { text: login } }],
+        [{ text: codeStr, copy_text: { text: codeStr } }],
+      ],
+    },
+  };
 }
 
 /** Create OTP and deliver via Telegram. Returns masked destination. */
@@ -85,21 +111,8 @@ export async function requestLoginOtp(login: string): Promise<{ ok: true; hint: 
   const loginUrl = `https://${host}/login`;
   const loginId = user.username ? `@${user.username}` : String(user.telegramId);
   try {
-    await sendTelegramText(
-      user.telegramId,
-      [
-        "لینک داشبورد:",
-        loginUrl,
-        "",
-        "👤 شناسه ورود:",
-        loginId,
-        "",
-        "🔐 رمز ورود:",
-        String(code),
-        "",
-        "اعتبار: ۵ دقیقه",
-      ].join("\n"),
-    );
+    const msg = buildDashboardOtpTelegramMessage(loginUrl, loginId, code);
+    await sendTelegramText(user.telegramId, msg.text, msg.reply_markup);
   } catch (err) {
     return { ok: false, error: String(err instanceof Error ? err.message : err) };
   }

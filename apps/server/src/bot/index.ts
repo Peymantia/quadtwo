@@ -502,23 +502,12 @@ async function handleDashOtp(ctx: Context) {
   try {
     const { mintOtpPayloadForTelegramUser } = await import("../routes/dash.js");
     const { dashBaseUrl } = await import("../config/env.js");
+    const { buildDashboardOtpTelegramMessage } = await import("../services/web-auth.js");
     const user = await upsertUserFromTelegram(ctx.from!);
     const { code, login } = await mintOtpPayloadForTelegramUser(Number(user.telegramId));
     const loginUrl = `${dashBaseUrl().replace(/\/$/, "")}/login`;
-    await ctx.reply(
-      [
-        "لینک داشبورد:",
-        loginUrl,
-        "",
-        "👤 شناسه ورود:",
-        login,
-        "",
-        "🔐 رمز ورود:",
-        String(code),
-        "",
-        "اعتبار: ۵ دقیقه",
-      ].join("\n"),
-    );
+    const msg = buildDashboardOtpTelegramMessage(loginUrl, login, String(code));
+    await ctx.reply(msg.text, { reply_markup: msg.reply_markup });
   } catch (err) {
     await ctx.reply(friendlyBotError(err));
   }
