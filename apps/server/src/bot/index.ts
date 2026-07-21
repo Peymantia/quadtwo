@@ -507,7 +507,7 @@ async function handleDashOtp(ctx: Context) {
     const { code, login } = await mintOtpPayloadForTelegramUser(Number(user.telegramId));
     const loginUrl = `${dashBaseUrl().replace(/\/$/, "")}/login`;
     const msg = buildDashboardOtpTelegramMessage(loginUrl, login, String(code));
-    await ctx.reply(msg.text, { reply_markup: msg.reply_markup });
+    await ctx.reply(msg.text, { parse_mode: msg.parse_mode });
   } catch (err) {
     await ctx.reply(friendlyBotError(err));
   }

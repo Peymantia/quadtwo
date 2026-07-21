@@ -47,7 +47,7 @@ export async function setUserPassword(userId: string, password: string) {
   });
 }
 
-async function sendTelegramText(chatId: bigint, text: string, replyMarkup?: { inline_keyboard: unknown[] }) {
+async function sendTelegramText(chatId: bigint, text: string, parseMode?: "HTML") {
   const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`;
   const res = await fetch(url, {
     method: "POST",
@@ -55,7 +55,7 @@ async function sendTelegramText(chatId: bigint, text: string, replyMarkup?: { in
     body: JSON.stringify({
       chat_id: String(chatId),
       text,
-      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      ...(parseMode ? { parse_mode: parseMode } : {}),
     }),
   });
   if (!res.ok) {
@@ -64,25 +64,28 @@ async function sendTelegramText(chatId: bigint, text: string, replyMarkup?: { in
   }
 }
 
-/** OTP login message with tap-to-copy inline buttons for login id and code. */
+function escapeTelegramHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** OTP login message; <code> values copy to clipboard when tapped in Telegram mobile. */
 export function buildDashboardOtpTelegramMessage(loginUrl: string, login: string, code: string) {
-  const codeStr = String(code);
+  const loginSafe = escapeTelegramHtml(login);
+  const codeSafe = escapeTelegramHtml(String(code));
   return {
     text: [
       "لینک داشبورد:",
       loginUrl,
       "",
-      "👤 شناسه ورود — برای کپی روی مقدار بزنید:",
-      "🔐 رمز ورود — برای کپی روی مقدار بزنید:",
+      "👤 شناسه ورود:",
+      `<code>${loginSafe}</code>`,
+      "",
+      "🔐 رمز ورود:",
+      `<code>${codeSafe}</code>`,
       "",
       "اعتبار: ۵ دقیقه",
     ].join("\n"),
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: login, copy_text: { text: login } }],
-        [{ text: codeStr, copy_text: { text: codeStr } }],
-      ],
-    },
+    parse_mode: "HTML" as const,
   };
 }
 
@@ -112,7 +115,7 @@ export async function requestLoginOtp(login: string): Promise<{ ok: true; hint: 
   const loginId = user.username ? `@${user.username}` : String(user.telegramId);
   try {
     const msg = buildDashboardOtpTelegramMessage(loginUrl, loginId, code);
-    await sendTelegramText(user.telegramId, msg.text, msg.reply_markup);
+    await sendTelegramText(user.telegramId, msg.text, msg.parse_mode);
   } catch (err) {
     return { ok: false, error: String(err instanceof Error ? err.message : err) };
   }
