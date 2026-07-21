@@ -2239,12 +2239,33 @@ function SettingsTab({
   const [loaded, setLoaded] = useState(false);
   const [guideEdit, setGuideEdit] = useState<(typeof GUIDE_PLATFORMS)[number] | null>(null);
   const [guideDraft, setGuideDraft] = useState({ text: "", url: "" });
+  const [channels, setChannels] = useState<Array<{ username: string; required: boolean }>>([]);
+  const [forceMembership, setForceMembership] = useState(false);
+  const [newChannel, setNewChannel] = useState("");
+  const [channelBusy, setChannelBusy] = useState(false);
+  const [backup, setBackup] = useState<{
+    enabled: boolean;
+    hour: number;
+    minute: number;
+    lastAt: string;
+    lastStatus: string;
+  } | null>(null);
+  const [backupBusy, setBackupBusy] = useState(false);
 
   useEffect(() => {
     void api<{ settings: Record<string, string> }>("/admin/settings").then((r) => {
       setSettings(r.settings);
       setLoaded(true);
     });
+    void api<{ channels: Array<{ username: string; required: boolean }>; forceMembership: boolean }>("/admin/channels").then(
+      (r) => {
+        setChannels(r.channels ?? []);
+        setForceMembership(Boolean(r.forceMembership));
+      },
+    );
+    void api<{
+      config: { enabled: boolean; hour: number; minute: number; lastAt: string; lastStatus: string };
+    }>("/admin/backup").then((r) => setBackup(r.config));
   }, []);
 
   function openGuideEdit(platform: (typeof GUIDE_PLATFORMS)[number]) {
@@ -2271,6 +2292,84 @@ function SettingsTab({
     }
   }
 
+  async function persistChannels(
+    next: Array<{ username: string; required: boolean }>,
+    force?: boolean,
+  ) {
+    setChannelBusy(true);
+    try {
+      const r = await api<{
+        channels: Array<{ username: string; required: boolean }>;
+        forceMembership: boolean;
+      }>("/admin/channels", {
+        method: "PUT",
+        body: {
+          channels: next,
+          ...(typeof force === "boolean" ? { forceMembership: force } : {}),
+        },
+      });
+      setChannels(r.channels ?? []);
+      setForceMembership(Boolean(r.forceMembership));
+      flash("تنظیمات کانال ذخیره شد");
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setChannelBusy(false);
+    }
+  }
+
+  async function addChannel() {
+    const username = newChannel.replace(/^@/, "").trim();
+    if (!username) {
+      flash(null, "یوزرنیم کانال را وارد کنید");
+      return;
+    }
+    if (channels.some((c) => c.username.toLowerCase() === username.toLowerCase())) {
+      flash(null, "این کانال قبلاً اضافه شده");
+      return;
+    }
+    setNewChannel("");
+    await persistChannels([...channels, { username, required: forceMembership || channels.length === 0 }]);
+  }
+
+  async function saveBackup(patch: Partial<{ enabled: boolean; hour: number; minute: number }>) {
+    if (!backup) return;
+    setBackupBusy(true);
+    try {
+      const r = await api<{ config: typeof backup }>("/admin/backup", {
+        method: "PUT",
+        body: { ...backup, ...patch },
+      });
+      setBackup(r.config);
+      flash("تنظیمات پشتیبان ذخیره شد");
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function sendBackupNow() {
+    setBackupBusy(true);
+    try {
+      const r = await api<{ ok: boolean; name: string; sent: number; error?: string }>("/admin/backup/send", {
+        method: "POST",
+        body: {},
+      });
+      if (r.ok) {
+        flash(`پشتیبان برای ${r.sent} ادمین ارسال شد`);
+        const refreshed = await api<{ config: NonNullable<typeof backup> }>("/admin/backup");
+        setBackup(refreshed.config);
+      } else {
+        flash(null, r.error || "ارسال پشتیبان ناموفق بود");
+      }
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
   if (!loaded) return <p className="muted">در حال دریافت تنظیمات…</p>;
 
   const multiMonth = Number(settings.max_purchase_months || "1") > 1;
@@ -2278,6 +2377,151 @@ function SettingsTab({
   return (
     <>
       <PasswordSettings hasPassword={hasPassword} onFlash={flash} onSaved={onPasswordSaved} />
+
+      <div className="panel">
+        <h2>کانال‌های ربات</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          کانال‌هایی که کاربر قبل از استفاده از ربات باید عضو شود. عضویت اجباری را می‌توانید کلی یا برای هر کانال جداگانه تنظیم کنید.
+        </p>
+        <div className="setting-row">
+          <div>
+            <div className="t">عضویت اجباری</div>
+            <div className="d">اگر روشن باشد، کاربر تا عضویت در کانال‌های اجباری وارد منوی اصلی نمی‌شود.</div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={forceMembership}
+              disabled={channelBusy}
+              onChange={(e) => void persistChannels(channels, e.target.checked)}
+            />
+            <span className="track" />
+          </label>
+        </div>
+        <div className="list" style={{ marginTop: 8 }}>
+          {channels.map((ch, idx) => (
+            <div key={`${ch.username}-${idx}`} className="row-card" style={{ alignItems: "center" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <strong className="num" dir="ltr">
+                  @{ch.username}
+                </strong>
+                <div className="muted">{ch.required ? "عضویت اجباری" : "اختیاری"}</div>
+              </div>
+              <div className="actions" style={{ alignItems: "center" }}>
+                <label className="switch" title="اجباری / اختیاری">
+                  <input
+                    type="checkbox"
+                    checked={ch.required}
+                    disabled={channelBusy}
+                    onChange={(e) => {
+                      const next = channels.map((c, i) => (i === idx ? { ...c, required: e.target.checked } : c));
+                      void persistChannels(next);
+                    }}
+                  />
+                  <span className="track" />
+                </label>
+                <button
+                  type="button"
+                  className="btn danger sm"
+                  disabled={channelBusy}
+                  onClick={() => void persistChannels(channels.filter((_, i) => i !== idx))}
+                >
+                  حذف
+                </button>
+              </div>
+            </div>
+          ))}
+          {!channels.length && <p className="muted">هنوز کانالی ثبت نشده است.</p>}
+        </div>
+        <div className="bulk-price-row" style={{ marginTop: 12 }}>
+          <input
+            dir="ltr"
+            placeholder="@channel یا channel"
+            value={newChannel}
+            onChange={(e) => setNewChannel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void addChannel();
+              }
+            }}
+          />
+          <button type="button" className="btn success sm" disabled={channelBusy || !newChannel.trim()} onClick={() => void addChannel()}>
+            افزودن کانال
+          </button>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h2>پشتیبان دیتابیس</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          فایل SQLite برای همه ادمین‌های تلگرام ارسال می‌شود. زمان‌بندی بر اساس ساعت محلی سرور است.
+        </p>
+        {backup && (
+          <>
+            <div className="setting-row">
+              <div>
+                <div className="t">پشتیبان خودکار روزانه</div>
+                <div className="d">
+                  آخرین ارسال:{" "}
+                  {backup.lastAt ? new Date(backup.lastAt).toLocaleString("fa-IR") : "هنوز انجام نشده"}
+                  {backup.lastStatus ? ` · ${backup.lastStatus}` : ""}
+                </div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={backup.enabled}
+                  disabled={backupBusy}
+                  onChange={(e) => void saveBackup({ enabled: e.target.checked })}
+                />
+                <span className="track" />
+              </label>
+            </div>
+            <div className="bulk-price-row" style={{ marginTop: 4 }}>
+              <div className="field" style={{ margin: 0, flex: "1 1 120px" }}>
+                <label>ساعت</label>
+                <select
+                  value={String(backup.hour)}
+                  disabled={backupBusy}
+                  onChange={(e) => void saveBackup({ hour: Number(e.target.value) })}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={String(h)}>
+                      {String(h).padStart(2, "0")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field" style={{ margin: 0, flex: "1 1 120px" }}>
+                <label>دقیقه</label>
+                <select
+                  value={String(backup.minute)}
+                  disabled={backupBusy}
+                  onChange={(e) => void saveBackup({ minute: Number(e.target.value) })}
+                >
+                  {Array.from({ length: 60 }, (_, m) => (
+                    <option key={m} value={String(m)}>
+                      {String(m).padStart(2, "0")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="hint">
+              ارسال خودکار هر روز ساعت{" "}
+              <strong className="num">
+                {String(backup.hour).padStart(2, "0")}:{String(backup.minute).padStart(2, "0")}
+              </strong>{" "}
+              (زمان سرور)
+            </p>
+            <button type="button" className="btn primary wide" disabled={backupBusy} onClick={() => void sendBackupNow()}>
+              {backupBusy ? "در حال ارسال…" : "ارسال الان به تلگرام"}
+            </button>
+          </>
+        )}
+        {!backup && <p className="muted">در حال دریافت تنظیمات پشتیبان…</p>}
+      </div>
 
       <div className="panel">
         <h2>قوانین فروش</h2>

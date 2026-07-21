@@ -33,6 +33,7 @@ import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.j
 import {
   getAllSettings,
   getCategoryLabels,
+  getChannels,
   getMaxPurchaseMonths,
   getPaymentCard,
   getPriceRates,
@@ -42,15 +43,19 @@ import {
   getWebSessionHours,
   listEnabledSalesCategories,
   saveCategoryLabels,
+  saveChannels,
   savePriceRates,
   savePricingModes,
   saveSalesCategories,
   sanitizeCategoryKey,
   BUILTIN_CATEGORY_KEYS,
   setSetting,
+  type ChannelConfig,
   type PriceRates,
   type RolePricingModes,
 } from "../services/settings.js";
+import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, type BackupConfig } from "../services/backup.js";
+import { Bot } from "grammy";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { approvePartner, rejectPartner, submitPartnerRequest } from "../services/users.js";
@@ -1407,6 +1412,93 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/settings", async (c) => c.json({ settings: await getAllSettings() }));
+
+  api.get("/admin/channels", async (c) => {
+    const channels = await getChannels();
+    return c.json({
+      channels,
+      forceMembership: channels.length
+        ? channels.some((x) => x.required)
+        : (await getSetting("channel_required")) === "true",
+    });
+  });
+
+  api.put("/admin/channels", async (c) => {
+    const body = await c.req.json<{
+      channels?: ChannelConfig[];
+      forceMembership?: boolean;
+    }>();
+    let channels = Array.isArray(body.channels) ? body.channels : await getChannels();
+    channels = channels
+      .map((ch) => ({
+        username: String(ch.username || "")
+          .replace(/^@/, "")
+          .trim(),
+        required: Boolean(ch.required),
+      }))
+      .filter((ch) => ch.username.length > 0);
+
+    if (typeof body.forceMembership === "boolean") {
+      if (channels.length) {
+        channels = channels.map((ch) => ({ ...ch, required: body.forceMembership! }));
+      } else {
+        await setSetting("channel_required", body.forceMembership ? "true" : "false");
+      }
+    }
+
+    await saveChannels(channels);
+    const saved = await getChannels();
+    await auditLog({
+      action: "setting_changed",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      detail: `channels n=${saved.length}`,
+    });
+    return c.json({
+      channels: saved,
+      forceMembership: saved.length
+        ? saved.some((x) => x.required)
+        : (await getSetting("channel_required")) === "true",
+    });
+  });
+
+  api.get("/admin/backup", async (c) => {
+    const config = await getBackupConfig();
+    return c.json({ config });
+  });
+
+  api.put("/admin/backup", async (c) => {
+    const body = await c.req.json<Partial<BackupConfig>>();
+    const current = await getBackupConfig();
+    const next: BackupConfig = {
+      ...current,
+      enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
+      hour: Number.isFinite(Number(body.hour)) ? Math.min(23, Math.max(0, Math.floor(Number(body.hour)))) : current.hour,
+      minute: Number.isFinite(Number(body.minute))
+        ? Math.min(59, Math.max(0, Math.floor(Number(body.minute))))
+        : current.minute,
+    };
+    await saveBackupConfig(next);
+    await auditLog({
+      action: "setting_changed",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      detail: `backup enabled=${next.enabled} at ${next.hour}:${next.minute}`,
+    });
+    return c.json({ config: next });
+  });
+
+  api.post("/admin/backup/send", async (c) => {
+    const bot = new Bot(env.BOT_TOKEN);
+    const r = await sendBackupToAdmins(bot.api, { reason: "درخواست دستی از پنل وب" });
+    if (r.ok) {
+      await auditLog({
+        action: "backup_sent",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: r.name,
+        detail: `sent=${r.sent} web`,
+      });
+    }
+    return c.json(r);
+  });
 
   api.put("/admin/settings", async (c) => {
     const body = await c.req.json<Record<string, string>>();
