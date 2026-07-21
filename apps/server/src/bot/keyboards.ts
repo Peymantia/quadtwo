@@ -10,22 +10,22 @@ export const BTN = {
   buy: "🛒 خرید سرویس جدید",
   renew: "♻️ تمدید سرویس",
   myServices: "📦 سرویس‌های من",
-  wallet: "💰 کیف پول من",
-  account: "👤 حساب من",
+  wallet: "💰 کیف پول",
+  account: "👤 حساب کاربری",
   guide: "💡 آموزش استفاده",
   support: "🆘 پشتیبانی",
-  test: "🧪 دریافت سرویس تست",
+  test: "🧪 دریافت اکانت تست",
   dashboard: "🌐 داشبورد وب",
   dashOtp: "🔐 ورود به داشبورد وب اپ",
   configLookup: "🔎 مشخصات کانفیگ",
   partner: "🤝 درخواست نمایندگی",
-  allConfigs: "📋 نمایش کلیه کانفیگ‌ها",
+  allConfigs: "📋 نمایش کلیه سرویس‌ها",
   /** @deprecated not on main menu */
   partnerPanel: "💼 پنل نماینده / عمده",
   agentPanel: "💼 مشخصات نماینده",
   controlCenter: "🎛 کنترل سنتر ادمین",
   /** Hide reply keyboard for a fuller chat view */
-  hideKeyboard: "⬇️ تمام‌صفحه",
+  hideKeyboard: "⬇️ نمایش تمام‌صفحه",
   /** @deprecated legacy */
   referral: "👥 معرفی به دوستان",
   national: "🇮🇷 کانفیگ نت ملی",
@@ -39,15 +39,28 @@ export type MainMenuOpts = {
   miniappUrl?: string;
 };
 
-/** Sticky reply keyboard at bottom (main menu) */
+/**
+ * Sticky reply keyboard — layout (admin):
+ * خرید
+ * تمدید | سرویس‌ها
+ * حساب | کیف پول
+ * تست | آموزش
+ * پشتیبانی | کلیه سرویس‌ها
+ * مشخصات کانفیگ | مشخصات نماینده
+ * کنترل سنتر | تمام‌صفحه
+ * ورود داشبورد
+ *
+ * Partner/reseller: same without «کلیه سرویس‌ها» / کنترل سنتر.
+ * User: پشتیبانی | نمایندگی · فقط مشخصات کانفیگ · تمام‌صفحه · داشبورد.
+ */
 export function mainMenuReply(opts: MainMenuOpts) {
   const isAgent = opts.isPartner || opts.isWholesale || opts.isAdmin;
   const kb = new Keyboard()
     .text(BTN.buy)
     .success()
     .row()
-    .text(BTN.myServices)
     .text(BTN.renew)
+    .text(BTN.myServices)
     .row()
     .text(BTN.account)
     .text(BTN.wallet)
@@ -57,27 +70,29 @@ export function mainMenuReply(opts: MainMenuOpts) {
     .row();
 
   if (opts.isAdmin) {
-    kb.text(BTN.allConfigs).text(BTN.support).row();
+    kb.text(BTN.support).text(BTN.allConfigs).row();
   } else if (isAgent) {
     kb.text(BTN.support).row();
   } else {
-    kb.text(BTN.partner).text(BTN.support).row();
+    kb.text(BTN.support).text(BTN.partner).row();
   }
 
   if (isAgent) {
-    kb.text(BTN.agentPanel).primary().text(BTN.configLookup).danger().row();
+    kb.text(BTN.configLookup).danger().text(BTN.agentPanel).primary().row();
   } else {
     kb.text(BTN.configLookup).danger().row();
   }
+
+  if (opts.isAdmin) {
+    kb.text(BTN.controlCenter).danger().text(BTN.hideKeyboard).row();
+  } else {
+    kb.text(BTN.hideKeyboard).row();
+  }
+
   if (opts.miniappUrl) {
     kb.webApp("🚀 داشبورد وب‌اپ", opts.miniappUrl).row();
   } else {
     kb.text(BTN.dashOtp).row();
-  }
-  kb.text(BTN.hideKeyboard).row();
-
-  if (opts.isAdmin) {
-    kb.text(BTN.controlCenter).danger().row();
   }
 
   return kb.persistent().resized();
@@ -107,12 +122,13 @@ export function buyCategoryKeyboard(cats: Array<{ key: string; label: string }>)
 
 /** @deprecated inline main menu — use mainMenuReply */
 export function mainMenuInline(opts: MainMenuOpts) {
+  const isAgent = opts.isPartner || opts.isWholesale || opts.isAdmin;
   const kb = new InlineKeyboard()
     .text(BTN.buy, "m:buy")
     .success()
     .row()
-    .text(BTN.myServices, "m:myservices")
     .text(BTN.renew, "m:renew")
+    .text(BTN.myServices, "m:myservices")
     .row()
     .text(BTN.account, "m:account")
     .text(BTN.wallet, "m:wallet")
@@ -122,21 +138,24 @@ export function mainMenuInline(opts: MainMenuOpts) {
     .row();
 
   if (opts.isAdmin) {
-    kb.text(BTN.allConfigs, "m:configs").text(BTN.support, "m:support").row();
+    kb.text(BTN.support, "m:support").text(BTN.allConfigs, "m:configs").row();
+  } else if (isAgent) {
+    kb.text(BTN.support, "m:support").row();
   } else {
-    kb.text(BTN.partner, "m:partner").text(BTN.support, "m:support").row();
+    kb.text(BTN.support, "m:support").text(BTN.partner, "m:partner").row();
   }
 
-  if (opts.isAdmin || opts.isPartner || opts.isWholesale) {
-    kb.text(BTN.agentPanel, "m:partnerpanel").primary().text(BTN.configLookup, "m:cfglookup").danger().row();
+  if (isAgent) {
+    kb.text(BTN.configLookup, "m:cfglookup").danger().text(BTN.agentPanel, "m:partnerpanel").primary().row();
   } else {
     kb.text(BTN.configLookup, "m:cfglookup").danger().row();
   }
-  kb.text(BTN.dashOtp, "m:dashotp").row();
 
   if (opts.isAdmin) {
     kb.text(BTN.controlCenter, "cc:home").danger().row();
   }
+
+  kb.text(BTN.dashOtp, "m:dashotp").row();
   return kb;
 }
 
@@ -541,7 +560,7 @@ export function controlCenterKeyboard() {
     .row()
     .text("📖 آموزش و دانلود اپ", "cc:guide")
     .row()
-    .text("🧪 دریافت سرویس تست", "cc:test")
+    .text("🧪 دریافت اکانت تست", "cc:test")
     .text("📱 محدودیت کاربر", "cc:iplimit")
     .row()
     .text("👑 ادمین‌ها", "cc:admins")

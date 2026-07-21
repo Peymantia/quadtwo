@@ -25,7 +25,7 @@ export async function showConfigGroups(ctx: Context, edit = false) {
   }
   const groups = await listConfigGroups();
   const text = [
-    "📋 نمایش کلیه کانفیگ‌ها",
+    "📋 نمایش کلیه سرویس‌ها",
     "",
     "یک گروه (همکار) را انتخاب کنید، یا همه کانفیگ‌ها را ببینید.",
   ].join("\n");

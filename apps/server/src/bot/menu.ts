@@ -8,13 +8,13 @@ export async function syncTelegramMenu(api: Api) {
   const commands = [
     { command: "start", description: "منوی اصلی" },
     { command: "update", description: "به‌روزرسانی منو و تغییرات جدید" },
-    { command: "hide", description: "مخفی کردن کیبورد (تمام‌صفحه)" },
+    { command: "hide", description: "مخفی کردن کیبورد (نمایش تمام‌صفحه)" },
     ...(miniapp
       ? [{ command: "app", description: "باز کردن وب‌اپ" }]
       : []),
     { command: "buy", description: "خرید سرویس" },
     { command: "services", description: "سرویس‌های من" },
-    { command: "wallet", description: "کیف پول من" },
+    { command: "wallet", description: "کیف پول" },
     { command: "support", description: "پشتیبانی" },
   ];
 
