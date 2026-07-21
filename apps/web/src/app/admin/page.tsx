@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
+import { Modal } from "../../components/Modal";
 import { ConfirmToast, Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { api, formatToman } from "../../lib/api";
@@ -487,11 +488,12 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       </div>
 
       {selected && (
-        <div className="panel">
-          <h2>
-            {selected.username ? `@${selected.username}` : selected.firstName || selected.telegramId} —{" "}
-            {ROLE_FA[selected.role]}
-          </h2>
+        <Modal
+          open
+          title={`${selected.username ? `@${selected.username}` : selected.firstName || selected.telegramId} — ${ROLE_FA[selected.role]}`}
+          onClose={() => setSelected(null)}
+          wide
+        >
           <div className="grid">
             <div className="stat accent">
               <div className="label">موجودی</div>
@@ -507,7 +509,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
             )}
           </div>
 
-          <h2 style={{ marginTop: 4 }}>تغییر دستی شارژ حساب</h2>
+          <h2 style={{ marginTop: 4, fontSize: "1rem" }}>تغییر دستی شارژ حساب</h2>
           <div className="field">
             <label>مبلغ (تومان)</label>
             <input
@@ -532,14 +534,11 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
             <button type="button" className="btn ghost" disabled={!selected || selected.balance <= 0} onClick={() => void zeroWallet()}>
               صفر کردن موجودی
             </button>
-            <button type="button" className="btn ghost" onClick={() => setSelected(null)}>
-              بستن
-            </button>
           </div>
 
           {detail && (
             <>
-              <h2 style={{ marginTop: 18 }}>سرویس‌ها</h2>
+              <h2 style={{ marginTop: 18, fontSize: "1rem" }}>سرویس‌ها</h2>
               <div className="list">
                 {detail.subscriptions.map((s) => (
                   <div key={s.id} className="row-card">
@@ -551,7 +550,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                 ))}
                 {!detail.subscriptions.length && <p className="muted">سرویسی ندارد.</p>}
               </div>
-              <h2 style={{ marginTop: 18 }}>تراکنش‌های کیف پول</h2>
+              <h2 style={{ marginTop: 18, fontSize: "1rem" }}>تراکنش‌های کیف پول</h2>
               <div className="list">
                 {detail.txs.map((t) => (
                   <div key={t.id} className="row-card">
@@ -566,7 +565,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               </div>
             </>
           )}
-        </div>
+        </Modal>
       )}
     </>
   );
@@ -762,84 +761,76 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
 
       <div className="panel">
         <h2>پلن‌ها و قیمت‌ها</h2>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>پلن</th>
-                <th>کاربر</th>
-                <th>همکار</th>
-                <th>عمده</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((c) => {
-                const e = edits[c.id] ?? {};
-                return (
-                  <tr key={c.id}>
-                    <td>
-                      <strong className="num">{c.trafficGb ?? "∞"}GB · {c.months}ماه</strong>
-                      {c.isGolden && " ⭐"}
-                      <div className="muted">{catLabel(c.category, categories)}</div>
-                    </td>
-                    <td>
-                      <input
-                        className="num"
-                        inputMode="numeric"
-                        dir="ltr"
-                        value={formatPriceInput(e.priceUser ?? c.priceUser)}
-                        onChange={(ev) =>
-                          setEdits((m) => ({
-                            ...m,
-                            [c.id]: { ...m[c.id], priceUser: parsePriceInput(ev.target.value) },
-                          }))
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="num"
-                        inputMode="numeric"
-                        dir="ltr"
-                        value={formatPriceInput(e.pricePartner ?? c.pricePartner)}
-                        onChange={(ev) =>
-                          setEdits((m) => ({
-                            ...m,
-                            [c.id]: { ...m[c.id], pricePartner: parsePriceInput(ev.target.value) },
-                          }))
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="num"
-                        inputMode="numeric"
-                        dir="ltr"
-                        value={formatPriceInput(e.priceWholesale ?? c.priceWholesale)}
-                        onChange={(ev) =>
-                          setEdits((m) => ({
-                            ...m,
-                            [c.id]: { ...m[c.id], priceWholesale: parsePriceInput(ev.target.value) },
-                          }))
-                        }
-                      />
-                    </td>
-                    <td>
-                      <div className="actions">
-                        <button type="button" className="btn primary sm" disabled={!edits[c.id]} onClick={() => saveRow(c)}>
-                          ذخیره
-                        </button>
-                        <button type="button" className="btn danger sm" onClick={() => void deleteRow(c)}>
-                          حذف
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="price-plan-list">
+          {shown.map((c) => {
+            const e = edits[c.id] ?? {};
+            return (
+              <div key={c.id} className="price-plan-card">
+                <div className="price-plan-head">
+                  <strong className="num">
+                    {c.trafficGb ?? "∞"}GB · {c.months}ماه
+                    {c.isGolden && " ⭐"}
+                  </strong>
+                  <span className="muted">{catLabel(c.category, categories)}</span>
+                </div>
+                <div className="price-plan-fields">
+                  <div className="field">
+                    <label>کاربر</label>
+                    <input
+                      className="num"
+                      inputMode="numeric"
+                      dir="ltr"
+                      value={formatPriceInput(e.priceUser ?? c.priceUser)}
+                      onChange={(ev) =>
+                        setEdits((m) => ({
+                          ...m,
+                          [c.id]: { ...m[c.id], priceUser: parsePriceInput(ev.target.value) },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label>همکار</label>
+                    <input
+                      className="num"
+                      inputMode="numeric"
+                      dir="ltr"
+                      value={formatPriceInput(e.pricePartner ?? c.pricePartner)}
+                      onChange={(ev) =>
+                        setEdits((m) => ({
+                          ...m,
+                          [c.id]: { ...m[c.id], pricePartner: parsePriceInput(ev.target.value) },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label>عمده</label>
+                    <input
+                      className="num"
+                      inputMode="numeric"
+                      dir="ltr"
+                      value={formatPriceInput(e.priceWholesale ?? c.priceWholesale)}
+                      onChange={(ev) =>
+                        setEdits((m) => ({
+                          ...m,
+                          [c.id]: { ...m[c.id], priceWholesale: parsePriceInput(ev.target.value) },
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="actions">
+                  <button type="button" className="btn primary sm" disabled={!edits[c.id]} onClick={() => saveRow(c)}>
+                    ذخیره
+                  </button>
+                  <button type="button" className="btn danger sm" onClick={() => void deleteRow(c)}>
+                    حذف
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
         {!shown.length && <p className="muted">پلنی در این دسته نیست.</p>}
         <div className="save-bar">
@@ -1071,6 +1062,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   } | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const [selectedImport, setSelectedImport] = useState<Record<string, boolean>>({});
+  const [searchQ, setSearchQ] = useState("");
 
   useEffect(() => {
     void api<{ groups: typeof groups }>("/admin/configs/groups").then((r) => setGroups(r.groups));
@@ -1079,13 +1071,14 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api<{ items: typeof items; total: number }>(`/admin/configs/${groupKey}?page=${page}`);
+      const q = searchQ.trim() ? `&q=${encodeURIComponent(searchQ.trim())}` : "";
+      const r = await api<{ items: typeof items; total: number }>(`/admin/configs/${groupKey}?page=${page}${q}`);
       setItems(r.items);
       setTotal(r.total);
     } finally {
       setLoading(false);
     }
-  }, [groupKey, page]);
+  }, [groupKey, page, searchQ]);
 
   useEffect(() => {
     void load();
@@ -1312,6 +1305,17 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             </button>
           ))}
         </div>
+        <div className="field" style={{ marginBottom: 12 }}>
+          <label>جستجو (ایمیل، کد، مالک)</label>
+          <input
+            value={searchQ}
+            onChange={(e) => {
+              setSearchQ(e.target.value);
+              setPage(0);
+            }}
+            placeholder="مثلاً email یا کد سرویس"
+          />
+        </div>
         {loading && <p className="muted">در حال دریافت…</p>}
         <div className="list">
           {items.map((c) => (
@@ -1361,8 +1365,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       </div>
 
       {editing && (
-        <div className="panel">
-          <h2>ویرایش اکانت — {editing.code || editing.email}</h2>
+        <Modal open title={`ویرایش اکانت — ${editing.code || editing.email}`} onClose={() => setEditing(null)} wide>
           <div className="muted num" style={{ marginBottom: 12 }}>
             {editing.email}
           </div>
@@ -1417,10 +1420,10 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
               ذخیره تغییرات
             </button>
             <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
-              بستن
+              لغو
             </button>
           </div>
-        </div>
+        </Modal>
       )}
     </>
   );
@@ -1432,6 +1435,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
   const [panels, setPanels] = useState<PanelRow[]>([]);
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [form, setForm] = useState({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
+  const [showAddPanel, setShowAddPanel] = useState(false);
   const [editing, setEditing] = useState<PanelRow | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -1529,6 +1533,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
       await api("/admin/panels", { body: form });
       flash("پنل اضافه شد");
       setForm({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
+      setShowAddPanel(false);
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -1547,8 +1552,13 @@ function PanelsTab({ flash }: { flash: Flash }) {
   return (
     <>
       <div className="panel">
-        <h2>سرورهای پنل</h2>
-        <div className="list">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>سرورهای پنل</h2>
+          <button type="button" className="btn success sm" onClick={() => setShowAddPanel(true)}>
+            افزودن پنل جدید
+          </button>
+        </div>
+        <div className="list" style={{ marginTop: 12 }}>
           {panels.map((p) => (
             <div key={p.id} className="row-card" style={{ cursor: "pointer" }} onClick={() => openEdit(p)}>
               <div>
@@ -1591,8 +1601,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
       </div>
 
       {editing && (
-        <div className="panel">
-          <h2>ویرایش پنل — {editing.name}</h2>
+        <Modal open title={`ویرایش پنل — ${editing.name}`} onClose={() => setEditing(null)} wide>
           <div className="field">
             <label>نام</label>
             <input value={editForm.name} onChange={(e) => setEditForm((s) => ({ ...s, name: e.target.value }))} />
@@ -1678,34 +1687,40 @@ function PanelsTab({ flash }: { flash: Flash }) {
               تست اتصال
             </button>
             <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
-              بستن
+              لغو
             </button>
           </div>
-        </div>
+        </Modal>
       )}
 
-      <div className="panel">
-        <h2>افزودن پنل</h2>
-        <div className="field">
-          <label>نام</label>
-          <input value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
-        </div>
-        <div className="field">
-          <label>آدرس (https://panel.example.com:2053)</label>
-          <input dir="ltr" value={form.baseUrl} onChange={(e) => setForm((s) => ({ ...s, baseUrl: e.target.value }))} />
-        </div>
-        <div className="field">
-          <label>توکن API</label>
-          <input dir="ltr" value={form.apiToken} onChange={(e) => setForm((s) => ({ ...s, apiToken: e.target.value }))} />
-        </div>
-        <div className="field">
-          <label>شناسه اینباندها (مثلاً 1,2,3)</label>
-          <input dir="ltr" className="num" value={form.inboundIds} onChange={(e) => setForm((s) => ({ ...s, inboundIds: e.target.value }))} />
-        </div>
-        <button type="button" className="btn success" disabled={!form.name || !form.baseUrl || !form.apiToken} onClick={add}>
-          افزودن پنل
-        </button>
-      </div>
+      {showAddPanel && (
+        <Modal open title="افزودن پنل جدید" onClose={() => setShowAddPanel(false)} wide>
+          <div className="field">
+            <label>نام</label>
+            <input value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>آدرس (https://panel.example.com:2053)</label>
+            <input dir="ltr" value={form.baseUrl} onChange={(e) => setForm((s) => ({ ...s, baseUrl: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>توکن API</label>
+            <input dir="ltr" value={form.apiToken} onChange={(e) => setForm((s) => ({ ...s, apiToken: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>شناسه اینباندها (مثلاً 1,2,3)</label>
+            <input dir="ltr" className="num" value={form.inboundIds} onChange={(e) => setForm((s) => ({ ...s, inboundIds: e.target.value }))} />
+          </div>
+          <div className="actions">
+            <button type="button" className="btn success" disabled={!form.name || !form.baseUrl || !form.apiToken} onClick={() => void add()}>
+              افزودن پنل
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setShowAddPanel(false)}>
+              لغو
+            </button>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
@@ -1719,8 +1734,14 @@ const TEXT_SETTINGS: Array<{ key: string; label: string; ltr?: boolean; multilin
   { key: "support_username", label: "یوزرنیم پشتیبانی (بدون @)", ltr: true },
   { key: "miniapp_url", label: "آدرس مینی‌اپ", ltr: true },
   { key: "welcome_text", label: "متن خوش‌آمد ربات", multiline: true },
-  { key: "guide_text", label: "متن آموزش اتصال", multiline: true },
 ];
+
+const GUIDE_PLATFORMS = [
+  { id: "android", label: "اندروید", textKey: "guide_android_text", urlKey: "guide_android_url" },
+  { id: "ios", label: "آیفون", textKey: "guide_ios_text", urlKey: "guide_ios_url" },
+  { id: "windows", label: "ویندوز", textKey: "guide_windows_text", urlKey: "guide_windows_url" },
+  { id: "macos", label: "مک", textKey: "guide_macos_text", urlKey: "guide_macos_url" },
+] as const;
 
 function SettingsTab({
   flash,
@@ -1733,6 +1754,8 @@ function SettingsTab({
 }) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
+  const [guideEdit, setGuideEdit] = useState<(typeof GUIDE_PLATFORMS)[number] | null>(null);
+  const [guideDraft, setGuideDraft] = useState({ text: "", url: "" });
 
   useEffect(() => {
     void api<{ settings: Record<string, string> }>("/admin/settings").then((r) => {
@@ -1740,6 +1763,20 @@ function SettingsTab({
       setLoaded(true);
     });
   }, []);
+
+  function openGuideEdit(platform: (typeof GUIDE_PLATFORMS)[number]) {
+    setGuideEdit(platform);
+    setGuideDraft({
+      text: settings[platform.textKey] ?? "",
+      url: settings[platform.urlKey] ?? "",
+    });
+  }
+
+  async function saveGuideEdit() {
+    if (!guideEdit) return;
+    await save({ [guideEdit.textKey]: guideDraft.text, [guideEdit.urlKey]: guideDraft.url });
+    setGuideEdit(null);
+  }
 
   async function save(patch: Record<string, string>) {
     try {
@@ -1880,6 +1917,55 @@ function SettingsTab({
           </select>
         </div>
       </div>
+
+      <div className="panel">
+        <h2>آموزش اتصال</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          برای هر سیستم‌عامل متن راهنما و لینک دانلود اپ را جداگانه تنظیم کنید.
+        </p>
+        <div className="guide-platform-grid">
+          {GUIDE_PLATFORMS.map((p) => (
+            <button key={p.id} type="button" className="btn ghost guide-platform-btn" onClick={() => openGuideEdit(p)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {guideEdit && (
+        <Modal
+          open
+          title={`آموزش اتصال — ${guideEdit.label}`}
+          onClose={() => setGuideEdit(null)}
+          wide
+        >
+          <div className="field">
+            <label>متن آموزش</label>
+            <textarea
+              rows={8}
+              value={guideDraft.text}
+              onChange={(e) => setGuideDraft((s) => ({ ...s, text: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>لینک دانلود اپ</label>
+            <input
+              dir="ltr"
+              value={guideDraft.url}
+              onChange={(e) => setGuideDraft((s) => ({ ...s, url: e.target.value }))}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="actions">
+            <button type="button" className="btn primary" onClick={() => void saveGuideEdit()}>
+              ذخیره
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setGuideEdit(null)}>
+              لغو
+            </button>
+          </div>
+        </Modal>
+      )}
 
       <div className="panel">
         <h2>اطلاعات پایه</h2>

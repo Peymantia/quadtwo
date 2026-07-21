@@ -465,10 +465,43 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/me/guide", async (c) => {
-    const keys = ["guide_ios", "guide_android", "guide_windows", "guide_mac", "guide_text", "support_username"];
-    const out: Record<string, string> = {};
-    for (const k of keys) out[k] = await getSetting(k);
-    return c.json({ guide: out });
+    const [
+      guide_text,
+      guide_android,
+      guide_ios,
+      guide_windows,
+      guide_mac,
+      guide_android_text,
+      guide_ios_text,
+      guide_windows_text,
+      guide_macos_text,
+      support_username,
+    ] = await Promise.all([
+      getSetting("guide_text"),
+      getSetting("guide_android_url"),
+      getSetting("guide_ios_url"),
+      getSetting("guide_windows_url"),
+      getSetting("guide_macos_url"),
+      getSetting("guide_android_text"),
+      getSetting("guide_ios_text"),
+      getSetting("guide_windows_text"),
+      getSetting("guide_macos_text"),
+      getSetting("support_username"),
+    ]);
+    return c.json({
+      guide: {
+        guide_text,
+        guide_android,
+        guide_ios,
+        guide_windows,
+        guide_mac,
+        guide_android_text,
+        guide_ios_text,
+        guide_windows_text,
+        guide_macos_text,
+        support_username,
+      },
+    });
   });
 
   api.post("/me/lookup", async (c) => {
@@ -948,7 +981,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/admin/configs/:groupKey", async (c) => {
     const page = Number(c.req.query("page") ?? 0);
-    return c.json(await listConfigsForGroup(c.req.param("groupKey"), page, 30));
+    const q = String(c.req.query("q") ?? "");
+    return c.json(await listConfigsForGroup(c.req.param("groupKey"), page, 30, q));
   });
 
   api.post("/admin/configs/delete", async (c) => {

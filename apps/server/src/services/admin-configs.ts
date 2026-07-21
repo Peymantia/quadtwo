@@ -278,11 +278,23 @@ function mergePanelOnly(
   }
 }
 
+function filterConfigItems(items: ConfigListItem[], search: string): ConfigListItem[] {
+  const q = search.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter(
+    (x) =>
+      x.email.toLowerCase().includes(q) ||
+      (x.code?.toLowerCase().includes(q) ?? false) ||
+      x.ownerLabel.toLowerCase().includes(q),
+  );
+}
+
 /** List configs for a group key (`all` | `tg` | `p{userId}` | `xg:…`). */
 export async function listConfigsForGroup(
   groupKey: string,
   page = 0,
   pageSize = 12,
+  search = "",
 ): Promise<{ items: ConfigListItem[]; total: number; title: string }> {
   const groups = await listConfigGroups();
   const meta = groups.find((g) => g.key === groupKey);
@@ -310,10 +322,11 @@ export async function listConfigsForGroup(
     }
     mergePanelOnly(byEmail, panelEmails);
 
-    const all = [...byEmail.values()].sort((a, b) => {
+    const sorted = [...byEmail.values()].sort((a, b) => {
       if (a.inDb !== b.inDb) return a.inDb ? -1 : 1;
       return a.email.localeCompare(b.email);
     });
+    const all = filterConfigItems(sorted, search);
     const total = all.length;
     const items = all.slice(page * pageSize, page * pageSize + pageSize);
     return { title: "تمام کانفیگ‌ها", total, items };
@@ -363,7 +376,8 @@ export async function listConfigsForGroup(
 
   mergePanelOnly(byEmail, panelEmails);
 
-  const all = [...byEmail.values()].sort((a, b) => a.email.localeCompare(b.email));
+  const sorted = [...byEmail.values()].sort((a, b) => a.email.localeCompare(b.email));
+  const all = filterConfigItems(sorted, search);
   const total = all.length;
   const items = all.slice(page * pageSize, page * pageSize + pageSize);
   return { title: meta?.label ?? panelGroup, total, items };

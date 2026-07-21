@@ -44,6 +44,30 @@ const defaults: Record<string, string> = {
 ۴) به یک سرور وصل شوید و از اینترنت لذت ببرید
 
 اگر مشکل داشتید با پشتیبانی تماس بگیرید.`,
+  guide_android_text: `📱 اندروید
+
+۱) اپ v2rayNG را از لینک زیر نصب کنید
+۲) لینک ساب را از «سرویس‌های من» کپی کنید
+۳) در اپ + بزنید → Import config from clipboard
+۴) سرور را انتخاب و Connect بزنید`,
+  guide_ios_text: `🍎 آیفون / iOS
+
+۱) اپ Streisand یا V2Box را از App Store نصب کنید
+۲) لینک ساب را از «سرویس‌های من» کپی کنید
+۳) در اپ Add → Import from URL و لینک را بچسبانید
+۴) سرور را انتخاب و وصل شوید`,
+  guide_windows_text: `🖥 ویندوز
+
+۱) v2rayN را از لینک زیر دانلود و اجرا کنید
+۲) لینک ساب را از «سرویس‌های من» کپی کنید
+۳) Subscription → Update subscription from clipboard
+۴) راست‌کلیک روی سرور → Set as active → Enter`,
+  guide_macos_text: `💻 مک
+
+۱) V2Box را از App Store نصب کنید
+۲) لینک ساب را از «سرویس‌های من» کپی کنید
+۳) Add → Import from URL
+۴) سرور را انتخاب و Connect بزنید`,
   guide_url: "",
   guide_ios_url: "https://apps.apple.com/app/streisand/id6450534064",
   guide_android_url: "https://github.com/2dust/v2rayNG/releases/latest",

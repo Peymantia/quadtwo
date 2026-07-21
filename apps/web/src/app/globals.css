@@ -1100,3 +1100,137 @@ h3 {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }
+
+/* ---- Modal ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(4, 6, 20, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.modal-card {
+  width: min(520px, 100%);
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(165deg, rgba(16, 20, 48, 0.98), rgba(10, 13, 35, 0.98));
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.modal-card.wide {
+  width: min(640px, 100%);
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.modal-x {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.modal-x:hover {
+  color: var(--text);
+  border-color: rgba(125, 211, 252, 0.4);
+}
+
+.modal-body {
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+}
+
+/* ---- Price plan cards (mobile-friendly) ---- */
+.price-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.price-plan-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.price-plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin-bottom: 12px;
+}
+
+.price-plan-head .muted {
+  font-size: 0.88rem;
+}
+
+.price-plan-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.price-plan-fields .field {
+  margin: 0;
+}
+
+.price-plan-fields .field label {
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+
+.price-plan-fields input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 520px) {
+  .price-plan-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.guide-platform-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.guide-platform-btn {
+  width: 100%;
+}

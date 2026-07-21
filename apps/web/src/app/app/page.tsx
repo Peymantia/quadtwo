@@ -67,6 +67,7 @@ export default function UserAppPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [guide, setGuide] = useState<Record<string, string>>({});
+  const [guidePlatform, setGuidePlatform] = useState<"android" | "ios" | "windows" | "macos">("android");
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeNote, setChargeNote] = useState("");
@@ -443,28 +444,53 @@ export default function UserAppPage() {
           </div>
           <div className="panel">
             <h2>آموزش اتصال</h2>
+            <div className="chip-row" style={{ marginBottom: 12 }}>
+              {(
+                [
+                  ["android", "اندروید"],
+                  ["ios", "آیفون"],
+                  ["windows", "ویندوز"],
+                  ["macos", "مک"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`chip${guidePlatform === key ? " on" : ""}`}
+                  onClick={() => setGuidePlatform(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <pre className="muted" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", margin: "0 0 12px" }}>
-              {guide.guide_text || "متن راهنما هنوز تنظیم نشده."}
+              {guidePlatform === "android"
+                ? guide.guide_android_text || guide.guide_text || "متن راهنمای اندروید هنوز تنظیم نشده."
+                : guidePlatform === "ios"
+                  ? guide.guide_ios_text || guide.guide_text || "متن راهنمای آیفون هنوز تنظیم نشده."
+                  : guidePlatform === "windows"
+                    ? guide.guide_windows_text || guide.guide_text || "متن راهنمای ویندوز هنوز تنظیم نشده."
+                    : guide.guide_macos_text || guide.guide_text || "متن راهنمای مک هنوز تنظیم نشده."}
             </pre>
             <div className="actions">
-              {guide.guide_android && (
-                <a className="btn ghost sm" href={guide.guide_android} target="_blank" rel="noreferrer">
-                  اندروید
+              {guidePlatform === "android" && guide.guide_android && (
+                <a className="btn primary sm" href={guide.guide_android} target="_blank" rel="noreferrer">
+                  دانلود اپ اندروید
                 </a>
               )}
-              {guide.guide_ios && (
-                <a className="btn ghost sm" href={guide.guide_ios} target="_blank" rel="noreferrer">
-                  iOS
+              {guidePlatform === "ios" && guide.guide_ios && (
+                <a className="btn primary sm" href={guide.guide_ios} target="_blank" rel="noreferrer">
+                  دانلود اپ آیفون
                 </a>
               )}
-              {guide.guide_windows && (
-                <a className="btn ghost sm" href={guide.guide_windows} target="_blank" rel="noreferrer">
-                  ویندوز
+              {guidePlatform === "windows" && guide.guide_windows && (
+                <a className="btn primary sm" href={guide.guide_windows} target="_blank" rel="noreferrer">
+                  دانلود اپ ویندوز
                 </a>
               )}
-              {guide.guide_mac && (
-                <a className="btn ghost sm" href={guide.guide_mac} target="_blank" rel="noreferrer">
-                  مک
+              {guidePlatform === "macos" && guide.guide_mac && (
+                <a className="btn primary sm" href={guide.guide_mac} target="_blank" rel="noreferrer">
+                  دانلود اپ مک
                 </a>
               )}
             </div>
