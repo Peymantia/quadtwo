@@ -1364,10 +1364,10 @@ export function registerControlCenter(bot: Bot) {
         "",
         text.slice(0, 800),
         "",
-        ` iOS: ${ios || "—"}`,
+        `📱 iOS: ${ios || "—"}`,
         `🤖 Android: ${android || "—"}`,
         `🪟 Windows: ${windows || "—"}`,
-        ` Mac: ${macos || "—"}`,
+        `💻 Mac: ${macos || "—"}`,
         extra ? `📎 بیشتر: ${extra}` : "",
       ]
         .filter(Boolean)
@@ -1377,11 +1377,11 @@ export function registerControlCenter(bot: Bot) {
           .text("✏️ ویرایش متن آموزش", "cc:guide:text")
           .primary()
           .row()
-          .text(" لینک آیفون", "cc:guide:url:ios")
+          .text("📱 لینک آیفون", "cc:guide:url:ios")
           .text("🤖 اندروید", "cc:guide:url:android")
           .row()
           .text("🪟 ویندوز", "cc:guide:url:windows")
-          .text(" مک", "cc:guide:url:macos")
+          .text("💻 مک", "cc:guide:url:macos")
           .row()
           .text("📎 لینک اضافه", "cc:guide:url:extra")
           .row()

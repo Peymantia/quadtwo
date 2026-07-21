@@ -429,10 +429,10 @@ export type GuidePlatform = "android" | "ios" | "windows" | "macos";
 export function guidePlatformPickerKeyboard() {
   return new InlineKeyboard()
     .text("🤖 اندروید", "guide:plat:android")
-    .text(" آیفون", "guide:plat:ios")
+    .text("📱 آیفون", "guide:plat:ios")
     .row()
     .text("🪟 ویندوز", "guide:plat:windows")
-    .text(" مک", "guide:plat:macos")
+    .text("💻 مک", "guide:plat:macos")
     .row()
     .text("« انصراف", "buy:cat:cancel");
 }

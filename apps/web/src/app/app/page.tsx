@@ -514,9 +514,9 @@ export default function UserAppPage() {
               {(
                 [
                   ["android", "اندروید"],
-                  ["ios", " آیفون"],
+                  ["ios", "آیفون"],
                   ["windows", "ویندوز"],
-                  ["macos", " مک"],
+                  ["macos", "مک"],
                 ] as const
               ).map(([key, label]) => (
                 <button
@@ -546,7 +546,7 @@ export default function UserAppPage() {
               )}
               {guidePlatform === "ios" && guide.guide_ios && (
                 <a className="btn primary" href={guide.guide_ios} target="_blank" rel="noreferrer">
-                  دانلود اپ  آیفون
+                  دانلود اپ آیفون
                 </a>
               )}
               {guidePlatform === "windows" && guide.guide_windows && (
@@ -556,7 +556,7 @@ export default function UserAppPage() {
               )}
               {guidePlatform === "macos" && guide.guide_mac && (
                 <a className="btn primary" href={guide.guide_mac} target="_blank" rel="noreferrer">
-                  دانلود اپ  مک
+                  دانلود اپ مک
                 </a>
               )}
             </div>

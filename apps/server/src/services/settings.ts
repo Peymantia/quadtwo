@@ -50,7 +50,7 @@ const defaults: Record<string, string> = {
 ۲) لینک ساب را از «سرویس‌های من» کپی کنید
 ۳) در اپ + بزنید → Import config from clipboard
 ۴) سرور را انتخاب و Connect بزنید`,
-  guide_ios_text: ` آیفون / iOS
+  guide_ios_text: `📱 آیفون / iOS
 
 ۱) اپ Streisand یا V2Box را از App Store نصب کنید
 ۲) لینک ساب را از «سرویس‌های من» کپی کنید
@@ -62,7 +62,7 @@ const defaults: Record<string, string> = {
 ۲) لینک ساب را از «سرویس‌های من» کپی کنید
 ۳) Subscription → Update subscription from clipboard
 ۴) راست‌کلیک روی سرور → Set as active → Enter`,
-  guide_macos_text: ` مک
+  guide_macos_text: `💻 مک
 
 ۱) V2Box را از App Store نصب کنید
 ۲) لینک ساب را از «سرویس‌های من» کپی کنید
