@@ -595,7 +595,7 @@ async function showNewNationalVolume(ctx: Context, gb: number) {
   const text = [
     "➕ ساخت پلن جدید — اینترنت ملی",
     "",
-    "حجم را با + و − تنظیم کنید (از ۱ گیگ).",
+    "حجم را با + و − تنظیم کنید (۱ تا ۲۰ گیگ).",
     "مدت: فقط ۱ ماهه",
   ].join("\n");
 

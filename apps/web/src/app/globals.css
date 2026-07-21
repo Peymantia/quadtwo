@@ -1959,3 +1959,170 @@ button.pay-dest-number:active,
   display: block;
   margin-bottom: 2px;
 }
+
+/* —— Rate shop (گیگ + ماه) —— */
+.rate-shop {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rate-shop-cats {
+  gap: 8px;
+}
+
+.rate-shop-card {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.rate-shop-card-label {
+  font-size: 0.82rem;
+  color: var(--mute);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.rate-shop-hint {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+}
+
+.rate-shop-fixed,
+.rate-shop-unlimited {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.rate-stepper {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  gap: 10px;
+  align-items: center;
+  max-width: 320px;
+}
+
+.rate-step-btn {
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--text);
+  font-size: 1.35rem;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.rate-step-btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+.rate-step-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.rate-step-input {
+  height: 48px;
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--elev);
+  color: var(--text);
+  width: 100%;
+  padding: 0 8px;
+}
+
+.rate-step-input:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+.rate-step-value {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--elev);
+}
+
+.rate-shop-price {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.rate-shop-price strong {
+  font-size: 1.35rem;
+  color: var(--teal);
+}
+
+.rate-shop-actions {
+  margin-top: 2px;
+}
+
+.rate-shop .field textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--elev);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.rate-shop .field textarea:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+@media (min-width: 720px) {
+  .rate-shop {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 18px;
+    align-items: start;
+  }
+
+  .rate-shop > .field:first-child,
+  .rate-shop-price,
+  .rate-shop-actions {
+    grid-column: 1 / -1;
+  }
+
+  .rate-stepper {
+    max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .rate-stepper {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 8px;
+  }
+
+  .rate-step-btn,
+  .rate-step-input,
+  .rate-step-value {
+    height: 44px;
+  }
+}
+

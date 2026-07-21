@@ -206,6 +206,8 @@ model Order {
   adminNote       String?
   accountName     String?
   customName      String?
+  /// User-facing memo copied onto the subscription at provision
+  note            String?
   quantity        Int           @default(1)
   /// Max simultaneous IPs/devices (0 = unlimited)
   limitIp         Int           @default(0)

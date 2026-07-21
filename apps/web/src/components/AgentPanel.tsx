@@ -8,6 +8,7 @@ import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
 import { SortSelect, remainingRatio, sortByMode, type ListSort } from "./SortSelect";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
+import { RateShop, type RateOrderPayload, type RateShopCatalog } from "./RateShop";
 
 type Cell = {
   id: string;
@@ -48,6 +49,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [configs, setConfigs] = useState<ConfigItem[]>([]);
   const [cells, setCells] = useState<Cell[]>([]);
   const [catLabels, setCatLabels] = useState<Record<string, string>>({});
+  const [pricingMode, setPricingMode] = useState<"matrix" | "rate">("matrix");
+  const [rateCatalog, setRateCatalog] = useState<RateShopCatalog | null>(null);
   const [selected, setSelected] = useState<Cell | null>(null);
   const [accountName, setAccountName] = useState("");
   const [filter, setFilter] = useState("");
@@ -80,9 +83,23 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       );
     }
     if (tab === "create") {
-      void api<{ cells: Cell[]; categoryLabels: Record<string, string> }>("/me/catalog").then((r) => {
+      void api<{
+        cells: Cell[];
+        categoryLabels: Record<string, string>;
+        categories?: string[];
+        maxMonths?: number;
+        pricingMode?: "matrix" | "rate";
+        volumeRules?: RateShopCatalog["volumeRules"];
+      }>("/me/catalog").then((r) => {
         setCells(r.cells);
         setCatLabels(r.categoryLabels ?? {});
+        setPricingMode(r.pricingMode === "rate" ? "rate" : "matrix");
+        setRateCatalog({
+          categories: r.categories ?? [],
+          categoryLabels: r.categoryLabels ?? {},
+          maxMonths: r.maxMonths ?? 1,
+          volumeRules: r.volumeRules,
+        });
       });
     }
     if (tab === "configs") void loadConfigs();
@@ -136,6 +153,41 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         setResult(r.provisioned);
         setMsg("کانفیگ با موفقیت ساخته شد ✅");
         setAccountName("");
+        await reload();
+      } else {
+        setMsg(`سفارش ${formatToman(r.order!.price)} ثبت شد`);
+      }
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createRate(payload: RateOrderPayload) {
+    setErr(null);
+    setMsg(null);
+    setResult(null);
+    setBusy(true);
+    try {
+      const r = await api<{
+        provisioned?: { code?: string; subUrl?: string | null };
+        order?: { price: number };
+        error?: string;
+      }>("/partner/create", {
+        body: {
+          trafficGb: payload.trafficGb,
+          months: payload.months,
+          category: payload.category,
+          accountName: payload.accountName,
+          limitIp: payload.limitIp,
+          note: payload.note,
+          payWithWallet: true,
+        },
+      });
+      if (r.provisioned) {
+        setResult(r.provisioned);
+        setMsg("کانفیگ با موفقیت ساخته شد ✅");
         await reload();
       } else {
         setMsg(`سفارش ${formatToman(r.order!.price)} ثبت شد`);
@@ -261,46 +313,52 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         <>
           <div className="panel">
             <h2>ساخت کانفیگ برای مشتری</h2>
-            <div className="field">
-              <label>نام اکانت (اختیاری — روی کانفیگ نمایش داده می‌شود)</label>
-              <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="مثلاً ali-mobile" />
-            </div>
-            <div className="plan-grid">
-              {cells.map((c) => (
+            {pricingMode === "rate" && rateCatalog ? (
+              <RateShop catalog={rateCatalog} busy={busy} variant="agent" onSubmit={createRate} />
+            ) : (
+              <>
+                <div className="field">
+                  <label>نام اکانت (اختیاری — روی کانفیگ نمایش داده می‌شود)</label>
+                  <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="مثلاً ali-mobile" />
+                </div>
+                <div className="plan-grid">
+                  {cells.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="plan-card"
+                      style={{
+                        cursor: "pointer",
+                        textAlign: "right",
+                        color: "inherit",
+                        borderColor: selected?.id === c.id ? "rgba(56,189,248,0.7)" : undefined,
+                        background: selected?.id === c.id ? "rgba(56,189,248,0.09)" : undefined,
+                      }}
+                      onClick={() => setSelected(c)}
+                    >
+                      <div className="plan-name">
+                        {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
+                      </div>
+                      <div className="plan-meta">
+                        <span>{catLabels[c.category] || c.category}</span>
+                        <span className="num">{c.months} ماه</span>
+                      </div>
+                      <div className="plan-price num">{formatToman(c.price)}</div>
+                    </button>
+                  ))}
+                </div>
+                {!cells.length && <p className="muted">هنوز پلنی برای فروش تنظیم نشده است.</p>}
                 <button
-                  key={c.id}
                   type="button"
-                  className="plan-card"
-                  style={{
-                    cursor: "pointer",
-                    textAlign: "right",
-                    color: "inherit",
-                    borderColor: selected?.id === c.id ? "rgba(56,189,248,0.7)" : undefined,
-                    background: selected?.id === c.id ? "rgba(56,189,248,0.09)" : undefined,
-                  }}
-                  onClick={() => setSelected(c)}
+                  className="btn success wide"
+                  style={{ marginTop: 14 }}
+                  disabled={!selected || busy}
+                  onClick={create}
                 >
-                  <div className="plan-name">
-                    {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
-                  </div>
-                  <div className="plan-meta">
-                    <span>{catLabels[c.category] || c.category}</span>
-                    <span className="num">{c.months} ماه</span>
-                  </div>
-                  <div className="plan-price num">{formatToman(c.price)}</div>
+                  ساخت و تحویل فوری
                 </button>
-              ))}
-            </div>
-            {!cells.length && <p className="muted">هنوز پلنی برای فروش تنظیم نشده است.</p>}
-            <button
-              type="button"
-              className="btn success wide"
-              style={{ marginTop: 14 }}
-              disabled={!selected || busy}
-              onClick={create}
-            >
-              ساخت و تحویل فوری
-            </button>
+              </>
+            )}
           </div>
           {result?.code && (
             <div className="panel">

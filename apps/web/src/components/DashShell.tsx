@@ -213,6 +213,8 @@ export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
 export type ShellTab = {
   key: string;
   label: string;
+  /** Shorter label for mobile bottom bar (avoids wrapping) */
+  shortLabel?: string;
   icon: IconName;
   /** Keep in mobile bottom bar; remaining tabs go to hamburger */
   pin?: boolean;
@@ -361,7 +363,7 @@ export function DashShell(props: {
             onClick={() => pickTab(t.key)}
           >
             <Icon name={t.icon} size={21} />
-            {t.label}
+            {t.shortLabel || t.label}
           </button>
         ))}
         {hasMore ? (

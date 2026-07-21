@@ -29,7 +29,7 @@ import {
   provisionAdminComplimentary,
   rejectOrder,
 } from "../services/orders.js";
-import { listPriceMatrix, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
+import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.js";
 import {
   getAllSettings,
@@ -38,10 +38,12 @@ import {
   getMaxPurchaseMonths,
   getPaymentCard,
   getPriceRates,
+  getPricingModeForRole,
   getPricingModes,
   getSalesCategories,
   getSetting,
   getWebSessionHours,
+  getDefaultLimitIp,
   listEnabledSalesCategories,
   saveCategoryLabels,
   saveChannels,
@@ -376,10 +378,12 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const maxMonths = await getMaxPurchaseMonths();
     const cells = await listPriceMatrix();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+    const pricingMode = await getPricingModeForRole(user.role);
+    const defaultLimitIp = await getDefaultLimitIp();
     const priced = await Promise.all(
       cells
         .filter((cell) => cell.active && cell.months <= maxMonths)
-        .filter((cell) => cats.includes(cell.category as "data" | "national" | "unlimited"))
+        .filter((cell) => cats.includes(cell.category))
         .map(async (cell) => {
           const resolved = await resolvePrice(user, cell.trafficGb, cell.months, cell.category);
           return {
@@ -394,24 +398,33 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         }),
     );
     return c.json({
+      pricingMode,
       categories: cats,
       categoryLabels: labels,
       maxMonths,
-      cells: priced.filter((c) => c.price != null),
+      defaultLimitIp,
+      volumeRules: {
+        data: { min: 10, max: 100, step: 5 },
+        national: { min: 1, max: 20, step: 1 },
+        unlimited: null,
+      },
+      cells: priced.filter((cell) => cell.price != null),
     });
   });
 
   api.post("/me/quote", async (c) => {
     const body = await c.req.json<{ trafficGb?: number | null; months?: number; category?: string }>();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+    const category = body.category || "data";
+    const trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
     const priced = await resolvePrice(
       user,
-      body.trafficGb ?? null,
+      trafficGb,
       Math.max(1, Number(body.months) || 1),
-      body.category || "data",
+      category,
     );
     if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
-    return c.json({ price: priced.price, mode: priced.mode });
+    return c.json({ price: priced.price, mode: priced.mode, trafficGb });
   });
 
   api.get("/me/orders", async (c) => {
@@ -469,6 +482,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       kind?: OrderKind;
       targetSubId?: string;
       payWithWallet?: boolean;
+      limitIp?: number;
+      note?: string | null;
     }>();
     const accountName = body.accountName?.trim() || `u${Date.now().toString(36)}`;
     const order = await createMatrixOrder({
@@ -479,6 +494,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       accountName,
       kind: body.kind,
       targetSubId: body.targetSubId,
+      limitIp: body.limitIp,
+      note: body.note,
     });
     if (c.get("role") === "admin") {
       try {
@@ -728,6 +745,8 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       category?: string;
       accountName?: string;
       payWithWallet?: boolean;
+      limitIp?: number;
+      note?: string | null;
     }>();
     const order = await createMatrixOrder({
       userId: c.get("userId"),
@@ -736,6 +755,8 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       category: body.category,
       accountName: body.accountName?.trim() || `p${Date.now().toString(36)}`,
       kind: OrderKind.new,
+      limitIp: body.limitIp,
+      note: body.note,
     });
     if (c.get("role") === "admin") {
       try {

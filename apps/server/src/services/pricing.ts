@@ -9,9 +9,52 @@ import {
   type RoleRates,
 } from "./settings.js";
 
-const VOLUME_STEPS = [10, 15, 20, 25, 30, 35, 40, 45, 50] as const;
-export const NATIONAL_MAX_GB = 100;
-export const DATA_VOLUME_PRESETS = [10, 15, 20, 25, 30, 35, 40, 45, 50] as const;
+export const DATA_MIN_GB = 10;
+export const DATA_MAX_GB = 100;
+export const DATA_STEP_GB = 5;
+export const NATIONAL_MIN_GB = 1;
+export const NATIONAL_MAX_GB = 20;
+
+/** VIP / custom categories: 10…100 GB in steps of 5 */
+export const DATA_VOLUME_PRESETS: readonly number[] = Array.from(
+  { length: Math.floor((DATA_MAX_GB - DATA_MIN_GB) / DATA_STEP_GB) + 1 },
+  (_, i) => DATA_MIN_GB + i * DATA_STEP_GB,
+);
+
+const VOLUME_STEPS = DATA_VOLUME_PRESETS;
+
+export function snapDataGb(raw: number): number {
+  const n = Math.round(Number(raw) / DATA_STEP_GB) * DATA_STEP_GB;
+  if (!Number.isFinite(n)) return DATA_MIN_GB;
+  return Math.max(DATA_MIN_GB, Math.min(DATA_MAX_GB, n));
+}
+
+export function snapNationalGb(raw: number): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return NATIONAL_MIN_GB;
+  return Math.max(NATIONAL_MIN_GB, Math.min(NATIONAL_MAX_GB, n));
+}
+
+/** Normalize traffic for purchase (unlimited → null; national 1–20; else 10–100 ×5). */
+export function normalizePurchaseTraffic(category: string, trafficGb: number | null): number | null {
+  if (category === "unlimited") return null;
+  if (trafficGb === null) return category === "unlimited" ? null : snapDataGb(10);
+  if (category === "national") return snapNationalGb(trafficGb);
+  return snapDataGb(trafficGb);
+}
+
+export function volumeRulesForCategory(category: string): {
+  kind: "unlimited" | "national" | "data";
+  min?: number;
+  max?: number;
+  step?: number;
+} {
+  if (category === "unlimited") return { kind: "unlimited" };
+  if (category === "national") {
+    return { kind: "national", min: NATIONAL_MIN_GB, max: NATIONAL_MAX_GB, step: 1 };
+  }
+  return { kind: "data", min: DATA_MIN_GB, max: DATA_MAX_GB, step: DATA_STEP_GB };
+}
 
 /** Builtin: data | national | unlimited — custom slugs allowed too */
 export type PlanCategory = string;
@@ -21,15 +64,15 @@ export function nextVolume(current: number | null, unlimited: boolean, dir: 1 | 
   unlimited: boolean;
 } {
   if (unlimited) {
-    if (dir === -1) return { trafficGb: 50, unlimited: false };
+    if (dir === -1) return { trafficGb: DATA_MAX_GB, unlimited: false };
     return { trafficGb: null, unlimited: true };
   }
-  const idx = VOLUME_STEPS.indexOf(current as (typeof VOLUME_STEPS)[number]);
+  const idx = VOLUME_STEPS.indexOf(current as number);
   const i = idx >= 0 ? idx : 0;
   const next = i + dir;
-  if (next < 0) return { trafficGb: 10, unlimited: false };
+  if (next < 0) return { trafficGb: DATA_MIN_GB, unlimited: false };
   if (next >= VOLUME_STEPS.length) return { trafficGb: null, unlimited: true };
-  return { trafficGb: VOLUME_STEPS[next], unlimited: false };
+  return { trafficGb: VOLUME_STEPS[next]!, unlimited: false };
 }
 
 /** National: 1 GB steps, never unlimited */

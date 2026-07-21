@@ -336,6 +336,7 @@ async function createOnePanelClient(
   const subUrl = await resolveSubUrl(panelSubId, opts.xui, opts.subBase);
   const qrPng = await qrForSub(subUrl);
 
+  const note = order.note?.trim() ? order.note.trim().slice(0, 500) : null;
   const subscription = await prisma.subscription.create({
     data: {
       code,
@@ -351,6 +352,7 @@ async function createOnePanelClient(
       activatedAt: null,
       expiresAt,
       subUrl,
+      note,
       status: SubscriptionStatus.active,
     },
   });

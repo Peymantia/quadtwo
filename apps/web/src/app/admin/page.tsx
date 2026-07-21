@@ -8,10 +8,11 @@ import { PasswordSettings } from "../../components/PasswordSettings";
 import { TrafficProgress } from "../../components/PaymentCard";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
+import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 
 const TABS: ShellTab[] = [
   { key: "home", label: "داشبورد", icon: "home", pin: true },
-  { key: "create", label: "ساخت اکانت", icon: "shop", pin: true },
+  { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true },
   { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true },
   { key: "users", label: "کاربران", icon: "users", pin: true },
   { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true },
@@ -285,15 +286,31 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
   };
   const [cells, setCells] = useState<Cell[]>([]);
   const [catLabels, setCatLabels] = useState<Record<string, string>>({});
+  const [pricingMode, setPricingMode] = useState<"matrix" | "rate">("matrix");
+  const [rateCatalog, setRateCatalog] = useState<RateShopCatalog | null>(null);
   const [selected, setSelected] = useState<Cell | null>(null);
   const [accountName, setAccountName] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ code?: string; subUrl?: string | null } | null>(null);
 
   useEffect(() => {
-    void api<{ cells: Cell[]; categoryLabels: Record<string, string> }>("/me/catalog").then((r) => {
+    void api<{
+      cells: Cell[];
+      categoryLabels: Record<string, string>;
+      categories?: string[];
+      maxMonths?: number;
+      pricingMode?: "matrix" | "rate";
+      volumeRules?: RateShopCatalog["volumeRules"];
+    }>("/me/catalog").then((r) => {
       setCells(r.cells ?? []);
       setCatLabels(r.categoryLabels ?? {});
+      setPricingMode(r.pricingMode === "rate" ? "rate" : "matrix");
+      setRateCatalog({
+        categories: r.categories ?? [],
+        categoryLabels: r.categoryLabels ?? {},
+        maxMonths: r.maxMonths ?? 1,
+        volumeRules: r.volumeRules,
+      });
     });
   }, []);
 
@@ -328,6 +345,37 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
     }
   }
 
+  async function createRate(payload: RateOrderPayload) {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api<{
+        provisioned?: { code?: string; subUrl?: string | null };
+        error?: string;
+      }>("/partner/create", {
+        body: {
+          trafficGb: payload.trafficGb,
+          months: payload.months,
+          category: payload.category,
+          accountName: payload.accountName,
+          limitIp: payload.limitIp,
+          note: payload.note,
+          payWithWallet: true,
+        },
+      });
+      if (r.provisioned) {
+        setResult(r.provisioned);
+        flash("اکانت ساخته شد");
+      } else {
+        flash(null, "ساخت اکانت انجام نشد");
+      }
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="panel">
@@ -335,43 +383,49 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
         <p className="muted" style={{ marginTop: 0 }}>
           ساخت فوری و رایگان توسط ادمین — بدون کسر از کیف پول. اگر گروه پنل اختصاصی ندارید، در گروه Telegram ساخته می‌شود.
         </p>
-        <div className="field">
-          <label>نام اکانت (اختیاری)</label>
-          <input
-            value={accountName}
-            onChange={(e) => setAccountName(e.target.value)}
-            placeholder="مثلاً customer01"
-          />
-        </div>
-        <div className="plan-grid" style={{ marginTop: 12 }}>
-          {cells.map((c) => (
+        {pricingMode === "rate" && rateCatalog ? (
+          <RateShop catalog={rateCatalog} busy={busy} variant="admin" onSubmit={createRate} />
+        ) : (
+          <>
+            <div className="field">
+              <label>نام اکانت (اختیاری)</label>
+              <input
+                value={accountName}
+                onChange={(e) => setAccountName(e.target.value)}
+                placeholder="مثلاً customer01"
+              />
+            </div>
+            <div className="plan-grid" style={{ marginTop: 12 }}>
+              {cells.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`plan-card${selected?.id === c.id ? " on" : ""}${c.isGolden ? " golden" : ""}`}
+                  onClick={() => setSelected(c)}
+                >
+                  <div className="plan-name">
+                    {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
+                  </div>
+                  <div className="plan-meta">
+                    <span>{catLabels[c.category] || c.category}</span>
+                    <span className="num">{c.months} ماه</span>
+                  </div>
+                  <div className="plan-price num">{formatToman(c.price)}</div>
+                </button>
+              ))}
+            </div>
+            {!cells.length && <p className="muted">پلنی برای فروش فعال نیست.</p>}
             <button
-              key={c.id}
               type="button"
-              className={`plan-card${selected?.id === c.id ? " on" : ""}${c.isGolden ? " golden" : ""}`}
-              onClick={() => setSelected(c)}
+              className="btn success wide"
+              style={{ marginTop: 14 }}
+              disabled={!selected || busy}
+              onClick={() => void create()}
             >
-              <div className="plan-name">
-                {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
-              </div>
-              <div className="plan-meta">
-                <span>{catLabels[c.category] || c.category}</span>
-                <span className="num">{c.months} ماه</span>
-              </div>
-              <div className="plan-price num">{formatToman(c.price)}</div>
+              {busy ? "در حال ساخت…" : "ساخت اکانت"}
             </button>
-          ))}
-        </div>
-        {!cells.length && <p className="muted">پلنی برای فروش فعال نیست.</p>}
-        <button
-          type="button"
-          className="btn success wide"
-          style={{ marginTop: 14 }}
-          disabled={!selected || busy}
-          onClick={() => void create()}
-        >
-          {busy ? "در حال ساخت…" : "ساخت اکانت"}
-        </button>
+          </>
+        )}
       </div>
       {result?.code && (
         <div className="panel">

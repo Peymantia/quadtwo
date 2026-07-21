@@ -9,6 +9,7 @@ import { PaymentCardBlock, TrafficProgress } from "../../components/PaymentCard"
 import { SortSelect, remainingRatio, sortByMode, type ListSort } from "../../components/SortSelect";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
+import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 
 type Sub = {
   id: string;
@@ -76,6 +77,8 @@ export default function UserAppPage() {
   const [subs, setSubs] = useState<Sub[]>([]);
   const [cells, setCells] = useState<Cell[]>([]);
   const [catLabels, setCatLabels] = useState<Record<string, string>>({});
+  const [pricingMode, setPricingMode] = useState<"matrix" | "rate">("matrix");
+  const [rateCatalog, setRateCatalog] = useState<RateShopCatalog | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -110,9 +113,23 @@ export default function UserAppPage() {
     setMsg(null);
     setErr(null);
     if (tab === "shop") {
-      void api<{ cells: Cell[]; categoryLabels: Record<string, string> }>("/me/catalog").then((r) => {
+      void api<{
+        cells: Cell[];
+        categoryLabels: Record<string, string>;
+        categories?: string[];
+        maxMonths?: number;
+        pricingMode?: "matrix" | "rate";
+        volumeRules?: RateShopCatalog["volumeRules"];
+      }>("/me/catalog").then((r) => {
         setCells(r.cells);
         setCatLabels(r.categoryLabels ?? {});
+        setPricingMode(r.pricingMode === "rate" ? "rate" : "matrix");
+        setRateCatalog({
+          categories: r.categories ?? [],
+          categoryLabels: r.categoryLabels ?? {},
+          maxMonths: r.maxMonths ?? 1,
+          volumeRules: r.volumeRules,
+        });
       });
     }
     if (tab === "subs") void loadSubs();
@@ -143,6 +160,40 @@ export default function UserAppPage() {
         provisioned?: unknown;
       }>("/me/orders", {
         body: { trafficGb: cell.trafficGb, months: cell.months, category: cell.category, payWithWallet },
+      });
+      if (r.provisioned) {
+        setMsg("سرویس با موفقیت ساخته شد ✅ از تب «اشتراک‌ها» ببینید.");
+        await reload();
+      } else if (r.order && r.card) {
+        setPayCard(r.card);
+        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
+      }
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function buyRate(payload: RateOrderPayload) {
+    setErr(null);
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await api<{
+        order?: { id: string; price: number };
+        card?: PayCard;
+        provisioned?: unknown;
+      }>("/me/orders", {
+        body: {
+          trafficGb: payload.trafficGb,
+          months: payload.months,
+          category: payload.category,
+          accountName: payload.accountName,
+          limitIp: payload.limitIp,
+          note: payload.note,
+          payWithWallet: payload.payWithWallet,
+        },
       });
       if (r.provisioned) {
         setMsg("سرویس با موفقیت ساخته شد ✅ از تب «اشتراک‌ها» ببینید.");
@@ -257,44 +308,53 @@ export default function UserAppPage() {
             </div>
           )}
 
-          {Object.entries(cellsByCat).map(([cat, list]) => (
-            <div className="panel" key={cat}>
-              <h2>{catLabels[cat] || cat}</h2>
-              <div className="plan-grid">
-                {list.map((c) => (
-                  <div key={c.id} className={`plan-card${c.isGolden ? " golden" : ""}`}>
-                    <div className="plan-name">
-                      {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
-                      {c.isGolden && " ⭐"}
-                    </div>
-                    <div className="plan-meta">
-                      <span>مدت</span>
-                      <span className="num">{c.months} ماه</span>
-                    </div>
-                    <div className="plan-meta">
-                      <span>حجم</span>
-                      <span className="num">{c.trafficGb === null ? "∞" : `${c.trafficGb} GB`}</span>
-                    </div>
-                    <div className="plan-price num">{formatToman(c.price)}</div>
-                    <div className="actions stack">
-                      <button type="button" className="btn light wide" disabled={busy} onClick={() => buy(c, true)}>
-                        خرید با کیف پول
-                      </button>
-                      <button type="button" className="btn ghost wide" disabled={busy} onClick={() => buy(c, false)}>
-                        کارت به کارت
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          {!cells.length && (
+          {pricingMode === "rate" && rateCatalog ? (
             <div className="panel">
-              <p className="muted" style={{ margin: 0 }}>
-                هنوز پلنی برای فروش تنظیم نشده است.
-              </p>
+              <h2>ساخت کانفیگ</h2>
+              <RateShop catalog={rateCatalog} busy={busy} variant="user" onSubmit={buyRate} />
             </div>
+          ) : (
+            <>
+              {Object.entries(cellsByCat).map(([cat, list]) => (
+                <div className="panel" key={cat}>
+                  <h2>{catLabels[cat] || cat}</h2>
+                  <div className="plan-grid">
+                    {list.map((c) => (
+                      <div key={c.id} className={`plan-card${c.isGolden ? " golden" : ""}`}>
+                        <div className="plan-name">
+                          {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
+                          {c.isGolden && " ⭐"}
+                        </div>
+                        <div className="plan-meta">
+                          <span>مدت</span>
+                          <span className="num">{c.months} ماه</span>
+                        </div>
+                        <div className="plan-meta">
+                          <span>حجم</span>
+                          <span className="num">{c.trafficGb === null ? "∞" : `${c.trafficGb} GB`}</span>
+                        </div>
+                        <div className="plan-price num">{formatToman(c.price)}</div>
+                        <div className="actions stack">
+                          <button type="button" className="btn light wide" disabled={busy} onClick={() => buy(c, true)}>
+                            خرید با کیف پول
+                          </button>
+                          <button type="button" className="btn ghost wide" disabled={busy} onClick={() => buy(c, false)}>
+                            کارت به کارت
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!cells.length && (
+                <div className="panel">
+                  <p className="muted" style={{ margin: 0 }}>
+                    هنوز پلنی برای فروش تنظیم نشده است.
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
