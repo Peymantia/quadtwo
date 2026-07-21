@@ -76,6 +76,28 @@ model User {
   partnerRequest PartnerRequest?
   agentRenames   AgentRenameRequest[]
   loginOtps      LoginOtp[]
+  webAuthnCreds  WebAuthnCredential[]
+}
+
+/// WebAuthn / Passkey credentials for dashboard biometric login
+model WebAuthnCredential {
+  id           String    @id @default(cuid())
+  userId       String
+  /// base64url credential id
+  credentialId String    @unique
+  /// base64url public key
+  publicKey    String
+  counter      BigInt    @default(0)
+  /// JSON array of transports e.g. ["internal","hybrid"]
+  transports   String?
+  deviceType   String?
+  backedUp     Boolean   @default(false)
+  label        String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// One-time codes for dash.anthropics.ir login (Telegram delivery)

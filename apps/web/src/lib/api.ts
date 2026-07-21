@@ -11,6 +11,8 @@ export type SessionUser = {
   panelGroup: string | null;
   agentName?: string | null;
   hasPassword?: boolean;
+  hasPasskey?: boolean;
+  passkeyCount?: number;
 };
 
 const TOKEN_KEY = "piing_dash_token";

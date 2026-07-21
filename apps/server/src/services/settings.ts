@@ -50,7 +50,7 @@ const defaults: Record<string, string> = {
   guide_windows_url: "https://github.com/2dust/v2rayN/releases/latest",
   guide_macos_url: "https://apps.apple.com/app/v2box/id6446814690",
   test_service_enabled: "true",
-  national_service_note: "سرویس ویژه اینترنت ملی را از منوی خرید انتخاب کنید.",
+  national_service_note: "این سرویس در شرایط اضطراری فعال می‌شود.",
   extra_admin_ids: "",
   /** Default IP/device limit for new configs (0 = unlimited) */
   default_limit_ip: "2",

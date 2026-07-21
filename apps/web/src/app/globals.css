@@ -215,6 +215,18 @@ h3 {
   margin: 16px 0;
 }
 
+.passkey-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.passkey-ico {
+  display: inline-flex;
+  opacity: 0.95;
+}
+
 .or-divider::before,
 .or-divider::after {
   content: "";

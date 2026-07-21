@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "./DashShell";
 import { Toast } from "./Toast";
+import { PasswordSettings } from "./PasswordSettings";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 
@@ -23,6 +24,7 @@ const TABS: ShellTab[] = [
   { key: "create", label: "ساخت کانفیگ", icon: "shop" },
   { key: "configs", label: "کانفیگ‌ها", icon: "wifi" },
   { key: "wallet", label: "کیف پول", icon: "wallet" },
+  { key: "settings", label: "تنظیمات", icon: "gear" },
 ];
 
 export function AgentPanel(props: { title: string; allowed: Role[] }) {
@@ -329,6 +331,17 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             </div>
           </div>
         </>
+      )}
+
+      {tab === "settings" && (
+        <PasswordSettings
+          hasPassword={Boolean(home.user.hasPassword)}
+          onFlash={(ok, bad) => {
+            setMsg(ok);
+            setErr(bad ?? null);
+          }}
+          onSaved={() => void reload()}
+        />
       )}
     </DashShell>
   );

@@ -163,19 +163,25 @@ async function replyMainMenu(ctx: Context, preface?: string) {
 
 async function showBuyCategoryPicker(ctx: Context, edit = false) {
   const enabled = await listEnabledSalesCategories();
-  if (!enabled.length) {
+  const cats = await getSalesCategories();
+  const labels = await getCategoryLabels();
+
+  /** Always list national (even when sales-off) so users see the emergency notice. */
+  const keys = [...enabled];
+  if (!keys.includes("national")) keys.push("national");
+
+  if (!keys.length) {
     await ctx.reply("فعلاً هیچ دسته‌ای برای فروش فعال نیست. با پشتیبانی تماس بگیرید.");
     return;
   }
-  if (enabled.length === 1) {
-    await setDraftCategory(BigInt(ctx.from!.id), enabled[0]!);
+  if (keys.length === 1 && cats[keys[0]!] === true) {
+    await setDraftCategory(BigInt(ctx.from!.id), keys[0]!);
     await showBuyWizard(ctx, edit);
     return;
   }
-  const labels = await getCategoryLabels();
   const text = "🛒 خرید سرویس\n\nنوع سرویس را انتخاب کنید:";
   const kb = buyCategoryKeyboard(
-    enabled.map((key) => ({
+    keys.map((key) => ({
       key,
       label: labels[key] || key,
     })),
@@ -186,6 +192,8 @@ async function showBuyCategoryPicker(ctx: Context, edit = false) {
     await ctx.reply(text, { reply_markup: kb });
   }
 }
+
+const NATIONAL_EMERGENCY_MSG = "این سرویس در شرایط اضطراری فعال می‌شود.";
 
 async function startBuyFlow(ctx: Context) {
   if (!(await requireChannel(ctx))) return;
@@ -496,18 +504,20 @@ async function handleDashOtp(ctx: Context) {
     const { dashBaseUrl } = await import("../config/env.js");
     const user = await upsertUserFromTelegram(ctx.from!);
     const { code, login } = await mintOtpPayloadForTelegramUser(Number(user.telegramId));
+    const loginUrl = `${dashBaseUrl().replace(/\/$/, "")}/login`;
     await ctx.reply(
       [
-        "🔐 *کد ورود داشبورد*",
+        "لینک داشبورد:",
+        loginUrl,
         "",
-        `\`${code}\``,
+        "👤 شناسه ورود:",
+        login,
         "",
-        `شناسه ورود: \`${login}\``,
+        "🔐 رمز ورود:",
+        String(code),
+        "",
         "اعتبار: ۵ دقیقه",
-        "",
-        dashBaseUrl(),
       ].join("\n"),
-      { parse_mode: "Markdown" },
     );
   } catch (err) {
     await ctx.reply(friendlyBotError(err));
@@ -672,7 +682,7 @@ export function createBot() {
     const cat = ctx.match![1]!;
     const cats = await getSalesCategories();
     if (!cats[cat]) {
-      await ctx.reply("این دسته فعلاً برای فروش فعال نیست.");
+      await ctx.reply(cat === "national" ? NATIONAL_EMERGENCY_MSG : "این دسته فعلاً برای فروش فعال نیست.");
       return;
     }
     await setDraftCategory(BigInt(ctx.from!.id), cat);
@@ -716,7 +726,7 @@ export function createBot() {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
     if (!(await getSalesCategories()).national) {
-      await ctx.reply("نت ملی فعلاً غیرفعال است.");
+      await ctx.reply(NATIONAL_EMERGENCY_MSG);
       return;
     }
     await setDraftCategory(BigInt(ctx.from!.id), "national");

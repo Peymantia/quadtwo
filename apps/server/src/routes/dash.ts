@@ -11,6 +11,15 @@ import {
   verifyPassword,
 } from "../services/web-auth.js";
 import {
+  beginPasskeyAuthentication,
+  beginPasskeyRegistration,
+  deleteUserPasskey,
+  finishPasskeyAuthentication,
+  finishPasskeyRegistration,
+  listUserPasskeys,
+  userPasskeyCount,
+} from "../services/webauthn.js";
+import {
   createMatrixOrder,
   createWalletChargeOrder,
   getOrderForAdmin,
@@ -41,7 +50,7 @@ import { claimTestService } from "../services/test-service.js";
 import { approvePartner, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
-import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig } from "../services/admin-configs.js";
+import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot } from "../services/admin-configs.js";
 import {
   createPanelServer,
   getPanelServer,
@@ -102,7 +111,8 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({
       brand: brand || "Piing",
       dashUrl: dashBaseUrl(),
-      authModes: ["password", "otp"],
+      authModes: ["password", "otp", "passkey"],
+      passkeyHint: "ورود با Face ID / اثرانگشت (Passkey)",
     });
   });
 
@@ -129,6 +139,31 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
     if (!result.ok) return c.json({ error: result.error }, 401);
     return c.json(await sessionForUser(result.userId));
   });
+
+  /** Passkey / WebAuthn authentication (Face ID, fingerprint, Windows Hello). */
+  api.post("/auth/passkey/options", async (c) => {
+    const body = await c.req.json<{ login?: string }>().catch(() => ({ login: undefined as string | undefined }));
+    try {
+      const { options, challengeId } = await beginPasskeyAuthentication(body.login);
+      return c.json({ options, challengeId });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/auth/passkey/verify", async (c) => {
+    const body = await c.req.json<{ response?: unknown; challengeId?: string }>();
+    if (!body.response) return c.json({ error: "response لازم است" }, 400);
+    try {
+      const { userId } = await finishPasskeyAuthentication(
+        body.response as Parameters<typeof finishPasskeyAuthentication>[0],
+        body.challengeId,
+      );
+      return c.json(await sessionForUser(userId));
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 401);
+    }
+  });
 }
 
 export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
@@ -140,6 +175,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const active = await prisma.subscription.count({ where: { userId, status: "active" } });
     const brand = await getSetting("brand_name");
     const support = await getSetting("support_username");
+    const passkeyCount = await userPasskeyCount(userId);
     return c.json({
       brand: brand || "Piing",
       support,
@@ -152,11 +188,50 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         panelGroup: user.panelGroup,
         agentName: user.agentName,
         hasPassword: Boolean(user.passwordHash),
+        hasPasskey: passkeyCount > 0,
+        passkeyCount,
         testClaimed: Boolean(user.testClaimedAt),
       },
       wallet: { balance: wallet.balance },
       stats: { subscriptions: subs, active },
     });
+  });
+
+  api.get("/me/passkeys", async (c) => {
+    return c.json({ passkeys: await listUserPasskeys(c.get("userId")) });
+  });
+
+  api.post("/me/passkeys/register/options", async (c) => {
+    try {
+      const options = await beginPasskeyRegistration(c.get("userId"));
+      return c.json({ options });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/me/passkeys/register/verify", async (c) => {
+    const body = await c.req.json<{ response?: unknown; label?: string }>();
+    if (!body.response) return c.json({ error: "response لازم است" }, 400);
+    try {
+      await finishPasskeyRegistration(
+        c.get("userId"),
+        body.response as Parameters<typeof finishPasskeyRegistration>[1],
+        body.label,
+      );
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.delete("/me/passkeys/:id", async (c) => {
+    try {
+      await deleteUserPasskey(c.get("userId"), c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
   });
 
   api.post("/me/password", async (c) => {
@@ -813,6 +888,29 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/configs/groups", async (c) => c.json({ groups: await listConfigGroups() }));
+
+  api.get("/admin/configs/sync-diff", async (c) => {
+    try {
+      return c.json(await diffPanelVsBot());
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/configs/import", async (c) => {
+    const body = await c.req.json<{ emails?: string[] }>().catch(() => ({ emails: undefined as string[] | undefined }));
+    try {
+      const result = await importPanelClientsToBot(body.emails);
+      await auditLog({
+        action: "admin_config_import",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        detail: `imported:${result.imported} skipped:${result.skipped} failed:${result.failed.length}`,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
 
   api.get("/admin/configs/detail", async (c) => {
     const email = c.req.query("email") || "";

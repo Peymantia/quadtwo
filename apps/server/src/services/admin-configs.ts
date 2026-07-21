@@ -1,11 +1,13 @@
-import { UserRole } from "@prisma/client";
+import { UserRole, SubscriptionStatus } from "@prisma/client";
 import { prisma } from "../db.js";
 import { resolvePanelForSubscription, listPanelServers, createXuiFromPanel } from "./panel-servers.js";
 import { createXuiFromEnv, type XuiClient } from "../panel/xui-client.js";
-import { env } from "../config/env.js";
+import { env, adminIds } from "../config/env.js";
 import { TELEGRAM_GROUP } from "./panel-groups.js";
 import { formatXuiError } from "../panel/xui-errors.js";
-import { gbToBytes } from "../utils/format.js";
+import { gbToBytes, shortCode } from "../utils/format.js";
+import { resolveSubUrl } from "./provision.js";
+import { sanitizeSubBase } from "./sub-url.js";
 
 export type ConfigGroup = {
   key: string;
@@ -50,38 +52,77 @@ async function activeXuiClients(): Promise<XuiClient[]> {
 
 /** Collect client emails from one panel (list API, then inbound fallback). */
 async function emailsFromOnePanel(xui: XuiClient): Promise<string[]> {
-  const emails = new Set<string>();
+  return (await clientsFromOnePanel(xui)).map((c) => c.email);
+}
+
+type RawPanelClient = {
+  email: string;
+  uuid?: string | null;
+  id?: string | null;
+  subId?: string | null;
+  totalGB?: number;
+  expiryTime?: number;
+  enable?: boolean;
+  limitIp?: number;
+  comment?: string;
+};
+
+async function clientsFromOnePanel(xui: XuiClient): Promise<RawPanelClient[]> {
+  const byEmail = new Map<string, RawPanelClient>();
+
+  const add = (c: RawPanelClient) => {
+    const e = c.email?.trim();
+    if (!e) return;
+    const k = e.toLowerCase();
+    if (!byEmail.has(k)) byEmail.set(k, { ...c, email: e });
+  };
 
   try {
     const res = await xui.listClients();
     const list = Array.isArray(res.obj) ? res.obj : [];
     for (const c of list) {
-      const e = typeof c?.email === "string" ? c.email.trim() : "";
-      if (e) emails.add(e);
+      if (typeof c?.email === "string" && c.email.trim()) {
+        add({
+          email: c.email,
+          uuid: c.uuid ?? null,
+          id: c.id != null ? String(c.id) : null,
+          subId: c.subId ?? null,
+          totalGB: c.totalGB,
+          expiryTime: c.expiryTime,
+          enable: c.enable,
+          limitIp: c.limitIp,
+        });
+      }
     }
   } catch {
     /* try inbounds below */
   }
 
-  if (emails.size > 0) return [...emails];
+  if (byEmail.size > 0) return [...byEmail.values()];
 
   try {
     const res = await xui.listInbounds();
     const inbounds = Array.isArray(res.obj) ? res.obj : [];
     for (const ib of inbounds as Array<{
-      clientStats?: Array<{ email?: string }>;
-      settings?: string | { clients?: Array<{ email?: string }> };
+      clientStats?: Array<{ email?: string; enable?: boolean; expiryTime?: number; total?: number }>;
+      settings?: string | { clients?: Array<Record<string, unknown>> };
     }>) {
       if (Array.isArray(ib.clientStats)) {
         for (const s of ib.clientStats) {
-          const e = s?.email?.trim();
-          if (e) emails.add(e);
+          if (s?.email?.trim()) {
+            add({
+              email: s.email,
+              enable: s.enable,
+              expiryTime: s.expiryTime,
+              totalGB: s.total,
+            });
+          }
         }
       }
-      let clients: Array<{ email?: string }> | undefined;
+      let clients: Array<Record<string, unknown>> | undefined;
       if (typeof ib.settings === "string") {
         try {
-          const parsed = JSON.parse(ib.settings) as { clients?: Array<{ email?: string }> };
+          const parsed = JSON.parse(ib.settings) as { clients?: Array<Record<string, unknown>> };
           clients = parsed.clients;
         } catch {
           clients = undefined;
@@ -91,8 +132,19 @@ async function emailsFromOnePanel(xui: XuiClient): Promise<string[]> {
       }
       if (Array.isArray(clients)) {
         for (const c of clients) {
-          const e = c?.email?.trim();
-          if (e) emails.add(e);
+          const email = typeof c.email === "string" ? c.email : "";
+          if (!email.trim()) continue;
+          add({
+            email,
+            uuid: c.id != null ? String(c.id) : c.uuid != null ? String(c.uuid) : null,
+            id: c.id != null ? String(c.id) : null,
+            subId: typeof c.subId === "string" ? c.subId : null,
+            totalGB: typeof c.totalGB === "number" ? c.totalGB : undefined,
+            expiryTime: typeof c.expiryTime === "number" ? c.expiryTime : undefined,
+            enable: typeof c.enable === "boolean" ? c.enable : undefined,
+            limitIp: typeof c.limitIp === "number" ? c.limitIp : undefined,
+            comment: typeof c.comment === "string" ? c.comment : undefined,
+          });
         }
       }
     }
@@ -100,7 +152,7 @@ async function emailsFromOnePanel(xui: XuiClient): Promise<string[]> {
     /* panel unreachable */
   }
 
-  return [...emails];
+  return [...byEmail.values()];
 }
 
 /** All client emails currently on connected 3x-ui panels. */
@@ -612,4 +664,313 @@ export async function updateConfig(opts: {
   if (panelUpdated) parts.push("پنل");
   if (sub) parts.push("دیتابیس ربات");
   return { ok: true, message: `ذخیره شد (${parts.join(" + ")})` };
+}
+
+export type SyncDiffItem = {
+  email: string;
+  panelName: string;
+  panelServerId: string | null;
+  trafficGb: number | null;
+  expiresAt: string | null;
+  enable: boolean;
+  limitIp: number;
+  panelSubId: string | null;
+};
+
+export type SyncDiffResult = {
+  panelOnly: SyncDiffItem[];
+  botOnly: Array<{ email: string; code: string; subId: string; ownerLabel: string }>;
+  matched: number;
+  panelTotal: number;
+  botTotal: number;
+};
+
+type DetailedPanelClient = {
+  email: string;
+  panelServerId: string | null;
+  panelName: string;
+  xui: XuiClient;
+  subBase: string | null;
+  uuid: string | null;
+  panelSubId: string | null;
+  trafficGb: number | null;
+  expiryTime: number;
+  enable: boolean;
+  limitIp: number;
+  comment: string | null;
+};
+
+function bytesToGb(totalGB: number | undefined): number | null {
+  const bytes = Number(totalGB ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return null;
+  return Math.max(1, Math.round(bytes / 1024 ** 3));
+}
+
+function expiryFromPanel(expiryTime: number): {
+  expiresAt: Date;
+  startsOnConnect: boolean;
+  activatedAt: Date | null;
+} {
+  if (expiryTime < 0) {
+    return {
+      expiresAt: new Date(Date.now() + Math.abs(expiryTime)),
+      startsOnConnect: true,
+      activatedAt: null,
+    };
+  }
+  if (expiryTime > 0) {
+    return {
+      expiresAt: new Date(expiryTime),
+      startsOnConnect: false,
+      activatedAt: new Date(),
+    };
+  }
+  return {
+    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    startsOnConnect: false,
+    activatedAt: new Date(),
+  };
+}
+
+async function listDetailedPanelClients(): Promise<DetailedPanelClient[]> {
+  const out: DetailedPanelClient[] = [];
+  const seen = new Set<string>();
+
+  const pushMany = (
+    clients: RawPanelClient[],
+    meta: { panelServerId: string | null; panelName: string; xui: XuiClient; subBase: string | null },
+  ) => {
+    for (const c of clients) {
+      const k = c.email.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({
+        email: c.email,
+        panelServerId: meta.panelServerId,
+        panelName: meta.panelName,
+        xui: meta.xui,
+        subBase: meta.subBase,
+        uuid: c.uuid || (c.id != null ? String(c.id) : null),
+        panelSubId: c.subId ?? null,
+        trafficGb: bytesToGb(c.totalGB),
+        expiryTime: Number(c.expiryTime ?? 0),
+        enable: c.enable !== false,
+        limitIp: Number(c.limitIp ?? 0),
+        comment: c.comment?.trim() || null,
+      });
+    }
+  };
+
+  const panels = await listPanelServers();
+  if (panels.length) {
+    for (const p of panels.filter((x) => x.active)) {
+      const xui = createXuiFromPanel(p);
+      pushMany(await clientsFromOnePanel(xui), {
+        panelServerId: p.id,
+        panelName: p.name,
+        xui,
+        subBase: sanitizeSubBase(p.subBase),
+      });
+    }
+  } else if (env.XUI_BASE_URL && env.XUI_API_TOKEN) {
+    const xui = createXuiFromEnv(env);
+    pushMany(await clientsFromOnePanel(xui), {
+      panelServerId: null,
+      panelName: "سرور پیش‌فرض (.env)",
+      xui,
+      subBase: sanitizeSubBase(env.XUI_SUB_BASE),
+    });
+  }
+
+  return out;
+}
+
+/** Owner for accounts created directly on the panel: first admin user. */
+export async function resolvePanelImportOwner() {
+  const admin = await prisma.user.findFirst({
+    where: { role: UserRole.admin },
+    orderBy: { createdAt: "asc" },
+  });
+  if (admin) return admin;
+
+  for (const tid of adminIds()) {
+    const u = await prisma.user.findUnique({ where: { telegramId: tid } });
+    if (u) return u;
+  }
+
+  throw new Error(
+    "هیچ کاربر ادمینی در دیتابیس ربات نیست. ابتدا با اکانت ادمین وارد ربات یا داشبورد شوید.",
+  );
+}
+
+async function uniqueSubCode(): Promise<string> {
+  for (let i = 0; i < 8; i++) {
+    const code = shortCode("QT");
+    const exists = await prisma.subscription.findUnique({ where: { code }, select: { id: true } });
+    if (!exists) return code;
+  }
+  return shortCode("QT") + shortCode("").slice(-4);
+}
+
+/** Compare live 3x-ui clients with bot Subscription rows. */
+export async function diffPanelVsBot(): Promise<SyncDiffResult> {
+  const [panelClients, botSubs] = await Promise.all([
+    listDetailedPanelClients(),
+    prisma.subscription.findMany({
+      include: { user: { select: { username: true, agentName: true, telegramId: true } } },
+    }),
+  ]);
+
+  const botByEmail = new Map(botSubs.map((s) => [s.email.toLowerCase(), s]));
+  const panelEmails = new Set(panelClients.map((c) => c.email.toLowerCase()));
+
+  const panelOnly: SyncDiffItem[] = [];
+  for (const c of panelClients) {
+    if (botByEmail.has(c.email.toLowerCase())) continue;
+    const exp = expiryFromPanel(c.expiryTime);
+    panelOnly.push({
+      email: c.email,
+      panelName: c.panelName,
+      panelServerId: c.panelServerId,
+      trafficGb: c.trafficGb,
+      expiresAt: exp.expiresAt.toISOString(),
+      enable: c.enable,
+      limitIp: c.limitIp,
+      panelSubId: c.panelSubId,
+    });
+  }
+
+  const botOnly = botSubs
+    .filter((s) => !panelEmails.has(s.email.toLowerCase()))
+    .map((s) => ({
+      email: s.email,
+      code: s.code,
+      subId: s.id,
+      ownerLabel: ownerFromUser(s.user),
+    }));
+
+  return {
+    panelOnly,
+    botOnly,
+    matched: botSubs.length - botOnly.length,
+    panelTotal: panelClients.length,
+    botTotal: botSubs.length,
+  };
+}
+
+export type ImportPanelResult = {
+  imported: number;
+  skipped: number;
+  failed: Array<{ email: string; error: string }>;
+  ownerLabel: string;
+};
+
+/**
+ * Import panel-only clients into bot DB under the admin user.
+ * If `emails` is empty/omitted, imports all missing accounts.
+ */
+export async function importPanelClientsToBot(emails?: string[]): Promise<ImportPanelResult> {
+  const owner = await resolvePanelImportOwner();
+  const ownerLabel = owner.username
+    ? `@${owner.username}`
+    : owner.agentName || String(owner.telegramId);
+
+  const wanted = emails?.length
+    ? new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))
+    : null;
+
+  const panelClients = await listDetailedPanelClients();
+  const existing = await prisma.subscription.findMany({ select: { email: true } });
+  const inDb = new Set(existing.map((s) => s.email.toLowerCase()));
+
+  let imported = 0;
+  let skipped = 0;
+  const failed: Array<{ email: string; error: string }> = [];
+
+  for (const c of panelClients) {
+    const key = c.email.toLowerCase();
+    if (wanted && !wanted.has(key)) continue;
+    if (inDb.has(key)) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      // Prefer fresh getClient for subId/uuid when available
+      let uuid = c.uuid;
+      let panelSubId = c.panelSubId;
+      let trafficGb = c.trafficGb;
+      let expiryTime = c.expiryTime;
+      let enable = c.enable;
+      let limitIp = c.limitIp;
+      let comment = c.comment;
+      try {
+        const got = await c.xui.getClient(c.email);
+        const client = got.obj?.client;
+        if (client) {
+          uuid =
+            client.uuid != null
+              ? String(client.uuid)
+              : client.id != null
+                ? String(client.id)
+                : uuid;
+          if (client.subId) panelSubId = client.subId;
+          trafficGb = bytesToGb(client.totalGB) ?? trafficGb;
+          expiryTime = Number(client.expiryTime ?? expiryTime);
+          enable = client.enable !== false;
+          limitIp = Number(client.limitIp ?? limitIp);
+          if (typeof client.comment === "string" && client.comment.trim()) {
+            comment = client.comment.trim();
+          }
+        }
+      } catch {
+        /* use list data */
+      }
+
+      const exp = expiryFromPanel(expiryTime);
+      let subUrl: string | null = null;
+      if (panelSubId) {
+        try {
+          subUrl = await resolveSubUrl(panelSubId, c.xui, c.subBase);
+        } catch {
+          subUrl = null;
+        }
+      }
+
+      const code = await uniqueSubCode();
+      await prisma.subscription.create({
+        data: {
+          code,
+          userId: owner.id,
+          orderId: null,
+          panelServerId: c.panelServerId,
+          title: comment || c.email,
+          email: c.email,
+          clientUuid: uuid,
+          panelSubId,
+          trafficGb,
+          startsOnConnect: exp.startsOnConnect,
+          activatedAt: exp.activatedAt,
+          expiresAt: exp.expiresAt,
+          subUrl,
+          note: "وارد شده از پنل 3x-ui",
+          status: enable ? SubscriptionStatus.active : SubscriptionStatus.disabled,
+          isTest: false,
+        },
+      });
+      inDb.add(key);
+      imported++;
+    } catch (err) {
+      failed.push({
+        email: c.email,
+        error: String(err instanceof Error ? err.message : err).slice(0, 200),
+      });
+    }
+  }
+
+  if (wanted && imported === 0 && skipped === 0 && failed.length === 0) {
+    throw new Error("اکانتی برای وارد کردن پیدا نشد (شاید قبلاً وارد شده یا در پنل نیست).");
+  }
+
+  return { imported, skipped, failed, ownerLabel };
 }

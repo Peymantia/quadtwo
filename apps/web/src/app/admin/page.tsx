@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
 import { ConfirmToast, Toast } from "../../components/Toast";
+import { PasswordSettings } from "../../components/PasswordSettings";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
@@ -103,6 +104,20 @@ function fromLocalInput(v: string) {
   return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
+/** Thousand-separated price for inputs (e.g. 150,000). */
+function formatPriceInput(n: number | string | null | undefined): string {
+  if (n === null || n === undefined || n === "") return "";
+  const num = typeof n === "number" ? n : parsePriceInput(String(n));
+  if (!Number.isFinite(num)) return "";
+  return Math.trunc(num).toLocaleString("en-US");
+}
+
+function parsePriceInput(raw: string): number {
+  const cleaned = String(raw).replace(/[^\d]/g, "");
+  if (!cleaned) return 0;
+  return Number(cleaned);
+}
+
 const ROLE_FA: Record<string, string> = {
   user: "کاربر",
   partner: "همکار",
@@ -111,7 +126,7 @@ const ROLE_FA: Record<string, string> = {
 };
 
 export default function AdminPage() {
-  const { home, loading } = useDashAuth(["admin"]);
+  const { home, loading, reload } = useDashAuth(["admin"]);
   const [tab, setTab] = useState("home");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -177,7 +192,9 @@ export default function AdminPage() {
       {tab === "categories" && <CategoriesTab flash={flash} askConfirm={askConfirm} />}
       {tab === "configs" && <ConfigsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "panels" && <PanelsTab flash={flash} />}
-      {tab === "settings" && <SettingsTab flash={flash} />}
+      {tab === "settings" && (
+        <SettingsTab flash={flash} hasPassword={Boolean(home.user.hasPassword)} onPasswordSaved={() => void reload()} />
+      )}
       {tab === "reports" && <ReportsTab />}
       {tab === "import" && <ImportTab flash={flash} />}
     </DashShell>
@@ -665,9 +682,9 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           category: newCell.category,
           trafficGb: newCell.trafficGb === "" ? null : Number(newCell.trafficGb),
           months: Number(newCell.months),
-          priceUser: Number(newCell.priceUser),
-          pricePartner: Number(newCell.pricePartner),
-          priceWholesale: newCell.priceWholesale ? Number(newCell.priceWholesale) : undefined,
+          priceUser: parsePriceInput(newCell.priceUser),
+          pricePartner: parsePriceInput(newCell.pricePartner),
+          priceWholesale: newCell.priceWholesale ? parsePriceInput(newCell.priceWholesale) : undefined,
           title: newCell.title || undefined,
         },
       });
@@ -770,24 +787,42 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                       <input
                         className="num"
                         inputMode="numeric"
-                        value={String(e.priceUser ?? c.priceUser)}
-                        onChange={(ev) => setEdits((m) => ({ ...m, [c.id]: { ...m[c.id], priceUser: Number(ev.target.value) || 0 } }))}
+                        dir="ltr"
+                        value={formatPriceInput(e.priceUser ?? c.priceUser)}
+                        onChange={(ev) =>
+                          setEdits((m) => ({
+                            ...m,
+                            [c.id]: { ...m[c.id], priceUser: parsePriceInput(ev.target.value) },
+                          }))
+                        }
                       />
                     </td>
                     <td>
                       <input
                         className="num"
                         inputMode="numeric"
-                        value={String(e.pricePartner ?? c.pricePartner)}
-                        onChange={(ev) => setEdits((m) => ({ ...m, [c.id]: { ...m[c.id], pricePartner: Number(ev.target.value) || 0 } }))}
+                        dir="ltr"
+                        value={formatPriceInput(e.pricePartner ?? c.pricePartner)}
+                        onChange={(ev) =>
+                          setEdits((m) => ({
+                            ...m,
+                            [c.id]: { ...m[c.id], pricePartner: parsePriceInput(ev.target.value) },
+                          }))
+                        }
                       />
                     </td>
                     <td>
                       <input
                         className="num"
                         inputMode="numeric"
-                        value={String(e.priceWholesale ?? c.priceWholesale)}
-                        onChange={(ev) => setEdits((m) => ({ ...m, [c.id]: { ...m[c.id], priceWholesale: Number(ev.target.value) || 0 } }))}
+                        dir="ltr"
+                        value={formatPriceInput(e.priceWholesale ?? c.priceWholesale)}
+                        onChange={(ev) =>
+                          setEdits((m) => ({
+                            ...m,
+                            [c.id]: { ...m[c.id], priceWholesale: parsePriceInput(ev.target.value) },
+                          }))
+                        }
                       />
                     </td>
                     <td>
@@ -837,15 +872,33 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           </div>
           <div className="field">
             <label>قیمت کاربر</label>
-            <input className="num" inputMode="numeric" value={newCell.priceUser} onChange={(e) => setNewCell((s) => ({ ...s, priceUser: e.target.value }))} />
+            <input
+              className="num"
+              inputMode="numeric"
+              dir="ltr"
+              value={formatPriceInput(newCell.priceUser)}
+              onChange={(e) => setNewCell((s) => ({ ...s, priceUser: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
+            />
           </div>
           <div className="field">
             <label>قیمت همکار</label>
-            <input className="num" inputMode="numeric" value={newCell.pricePartner} onChange={(e) => setNewCell((s) => ({ ...s, pricePartner: e.target.value }))} />
+            <input
+              className="num"
+              inputMode="numeric"
+              dir="ltr"
+              value={formatPriceInput(newCell.pricePartner)}
+              onChange={(e) => setNewCell((s) => ({ ...s, pricePartner: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
+            />
           </div>
           <div className="field">
             <label>قیمت عمده</label>
-            <input className="num" inputMode="numeric" value={newCell.priceWholesale} onChange={(e) => setNewCell((s) => ({ ...s, priceWholesale: e.target.value }))} />
+            <input
+              className="num"
+              inputMode="numeric"
+              dir="ltr"
+              value={formatPriceInput(newCell.priceWholesale)}
+              onChange={(e) => setNewCell((s) => ({ ...s, priceWholesale: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
+            />
           </div>
           <div className="field">
             <label>عنوان (اختیاری)</label>
@@ -1003,6 +1056,21 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     enable: true,
   });
   const [editBusy, setEditBusy] = useState(false);
+  const [sync, setSync] = useState<{
+    panelOnly: Array<{
+      email: string;
+      panelName: string;
+      trafficGb: number | null;
+      expiresAt: string | null;
+      enable: boolean;
+    }>;
+    botOnly: Array<{ email: string; code: string; subId: string; ownerLabel: string }>;
+    matched: number;
+    panelTotal: number;
+    botTotal: number;
+  } | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [selectedImport, setSelectedImport] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     void api<{ groups: typeof groups }>("/admin/configs/groups").then((r) => setGroups(r.groups));
@@ -1022,6 +1090,56 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function runDiff() {
+    setSyncBusy(true);
+    try {
+      const r = await api<NonNullable<typeof sync>>("/admin/configs/sync-diff");
+      setSync(r);
+      const sel: Record<string, boolean> = {};
+      for (const x of r.panelOnly) sel[x.email] = true;
+      setSelectedImport(sel);
+      flash(`مقایسه شد: ${r.panelOnly.length} فقط پنل · ${r.matched} مشترک · ${r.botOnly.length} فقط ربات`);
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function doImport(emails?: string[]) {
+    const list = emails ?? Object.keys(selectedImport).filter((e) => selectedImport[e]);
+    if (!list.length) {
+      flash(null, "اکانتی برای وارد کردن انتخاب نشده");
+      return;
+    }
+    if (
+      !(await askConfirm(
+        `${list.length} اکانت از پنل وارد دیتابیس ربات شود؟\nمالک همهٔ آن‌ها ادمین خواهد بود.`,
+      ))
+    ) {
+      return;
+    }
+    setSyncBusy(true);
+    try {
+      const r = await api<{
+        imported: number;
+        skipped: number;
+        failed: Array<{ email: string; error: string }>;
+        ownerLabel: string;
+      }>("/admin/configs/import", { body: { emails: list } });
+      const failNote = r.failed.length ? ` · ${r.failed.length} ناموفق` : "";
+      flash(
+        `${r.imported} وارد شد برای ${r.ownerLabel}${r.skipped ? ` · ${r.skipped} رد شد` : ""}${failNote}`,
+      );
+      await runDiff();
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
 
   async function startEdit(email: string, subId: string | null) {
     setEditBusy(true);
@@ -1088,13 +1206,92 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       flash(r.message);
       if (editing?.email === email) setEditing(null);
       await load();
+      if (sync) void runDiff();
     } catch (e) {
       flash(null, errText(e));
     }
   }
 
+  const selectedCount = Object.values(selectedImport).filter(Boolean).length;
+
   return (
     <>
+      <div className="panel">
+        <h2>همگام‌سازی پنل ↔ ربات</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          اکانت‌هایی که مستقیم در 3x-ui ساخته شده‌اند و در دیتابیس ربات نیستند را پیدا و با مالکیت ادمین وارد کنید تا در ربات و داشبورد دیده شوند.
+        </p>
+        <div className="actions" style={{ marginBottom: 12 }}>
+          <button type="button" className="btn primary sm" disabled={syncBusy} onClick={() => void runDiff()}>
+            {syncBusy ? "در حال مقایسه…" : "مقایسه با پنل"}
+          </button>
+          {sync && sync.panelOnly.length > 0 && (
+            <button type="button" className="btn success sm" disabled={syncBusy || !selectedCount} onClick={() => void doImport()}>
+              وارد کردن انتخاب‌شده ({selectedCount})
+            </button>
+          )}
+          {sync && sync.panelOnly.length > 0 && (
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={syncBusy}
+              onClick={() => void doImport(sync.panelOnly.map((x) => x.email))}
+            >
+              وارد کردن همهٔ فقط‌پنل
+            </button>
+          )}
+        </div>
+        {sync && (
+          <div className="grid" style={{ marginBottom: 14 }}>
+            <div className="stat accent">
+              <div className="label">فقط پنل (قابل ورود)</div>
+              <div className="value num">{sync.panelOnly.length}</div>
+            </div>
+            <div className="stat">
+              <div className="label">مشترک</div>
+              <div className="value num">{sync.matched}</div>
+            </div>
+            <div className="stat">
+              <div className="label">فقط ربات</div>
+              <div className="value num">{sync.botOnly.length}</div>
+            </div>
+            <div className="stat">
+              <div className="label">کل پنل / ربات</div>
+              <div className="value num" style={{ fontSize: "1rem" }}>
+                {sync.panelTotal} / {sync.botTotal}
+              </div>
+            </div>
+          </div>
+        )}
+        {sync && sync.panelOnly.length > 0 && (
+          <div className="list">
+            {sync.panelOnly.map((c) => (
+              <div key={c.email} className="row-card" style={{ alignItems: "center" }}>
+                <label className="switch" title="انتخاب برای ورود" style={{ marginInlineEnd: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selectedImport[c.email])}
+                    onChange={(e) => setSelectedImport((m) => ({ ...m, [c.email]: e.target.checked }))}
+                  />
+                  <span className="track" />
+                </label>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <strong className="num">{c.email}</strong> <span className="badge warn">فقط پنل</span>
+                  <div className="muted">
+                    {c.panelName} · {c.trafficGb == null ? "∞ گیگ" : `${c.trafficGb} گیگ`}
+                    {c.expiresAt ? ` · ${new Date(c.expiresAt).toLocaleDateString("fa-IR")}` : ""}
+                  </div>
+                </div>
+                <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
+                  وارد کردن
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {sync && !sync.panelOnly.length && <p className="muted">همهٔ اکانت‌های پنل در دیتابیس ربات هستند.</p>}
+      </div>
+
       <div className="panel">
         <h2>اکانت‌ها بر اساس گروه پنل</h2>
         <p className="muted" style={{ marginTop: 0 }}>
@@ -1127,6 +1324,11 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                 <div className="muted">{c.ownerLabel}</div>
               </div>
               <div className="actions">
+                {!c.inDb && (
+                  <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
+                    وارد کردن
+                  </button>
+                )}
                 <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
                   ویرایش
                 </button>
@@ -1520,7 +1722,15 @@ const TEXT_SETTINGS: Array<{ key: string; label: string; ltr?: boolean; multilin
   { key: "guide_text", label: "متن آموزش اتصال", multiline: true },
 ];
 
-function SettingsTab({ flash }: { flash: Flash }) {
+function SettingsTab({
+  flash,
+  hasPassword,
+  onPasswordSaved,
+}: {
+  flash: Flash;
+  hasPassword: boolean;
+  onPasswordSaved: () => void;
+}) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
 
@@ -1547,6 +1757,8 @@ function SettingsTab({ flash }: { flash: Flash }) {
 
   return (
     <>
+      <PasswordSettings hasPassword={hasPassword} onFlash={flash} onSaved={onPasswordSaved} />
+
       <div className="panel">
         <h2>قوانین فروش</h2>
         <div className="setting-row">

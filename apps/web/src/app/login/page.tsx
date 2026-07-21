@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, getToken, homePathForRole, setToken, type Role, type SessionUser } from "../../lib/api";
+import { canUsePasskey, loginWithPasskey } from "../../lib/passkey";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [brand, setBrand] = useState("Piing");
+  const [passkeyOk, setPasskeyOk] = useState(false);
 
   useEffect(() => {
     const t = getToken();
@@ -26,6 +28,7 @@ export default function LoginPage() {
     api<{ brand: string }>("/auth/meta", { token: null })
       .then((r) => setBrand(r.brand))
       .catch(() => undefined);
+    void canUsePasskey().then(setPasskeyOk);
   }, [router]);
 
   function finishLogin(r: { token: string; user: SessionUser }) {
@@ -82,6 +85,25 @@ export default function LoginPage() {
     }
   }
 
+  async function onPasskey() {
+    setBusy(true);
+    setError(null);
+    setHint(null);
+    try {
+      const r = await loginWithPasskey(login.trim() || undefined);
+      finishLogin(r);
+    } catch (err) {
+      const msg = String(err instanceof Error ? err.message : err);
+      if (/NotAllowedError|abort|cancel/i.test(msg)) {
+        setError("ورود بیومتریک لغو شد.");
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="login-page">
       <div className="login-inner">
@@ -98,6 +120,30 @@ export default function LoginPage() {
         <div className="login-card">
           {error && <div className="alert err">{error}</div>}
           {hint && !error && <div className="alert ok">{hint}</div>}
+
+          {passkeyOk && (
+            <>
+              <button
+                type="button"
+                className="btn primary wide passkey-btn"
+                disabled={busy}
+                onClick={() => void onPasskey()}
+              >
+                <span className="passkey-ico" aria-hidden>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M12 3a5 5 0 0 1 5 5v1h1.5A1.5 1.5 0 0 1 20 10.5v9A1.5 1.5 0 0 1 18.5 21h-13A1.5 1.5 0 0 1 4 19.5v-9A1.5 1.5 0 0 1 5.5 9H7V8a5 5 0 0 1 5-5Z" />
+                    <circle cx="12" cy="15" r="2" />
+                  </svg>
+                </span>
+                ورود با Face ID / اثرانگشت
+              </button>
+              <p className="hint" style={{ textAlign: "center", marginTop: 8 }}>
+                اگر Passkey ثبت کرده‌اید، بدون OTP وارد شوید
+                {login.trim() ? "" : " — یا شناسه را خالی بگذارید"}
+              </p>
+              <div className="or-divider">یا</div>
+            </>
+          )}
 
           <form onSubmit={verifyOtp}>
             <div className="field">
@@ -186,9 +232,9 @@ export default function LoginPage() {
         </div>
 
         <p className="login-foot">
-          رمز عبور ندارید؟ از ربات تلگرام استفاده کنید،
+          رمز یا Passkey ندارید؟ از ربات تلگرام کد بگیرید،
           <br />
-          بعد از ورود می‌توانید رمز تنظیم کنید.
+          بعد از ورود در تنظیمات فعال کنید.
         </p>
       </div>
     </div>

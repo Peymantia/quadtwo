@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
 import { Toast } from "../../components/Toast";
+import { PasswordSettings } from "../../components/PasswordSettings";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
@@ -67,8 +68,6 @@ export default function UserAppPage() {
   const [busy, setBusy] = useState(false);
   const [guide, setGuide] = useState<Record<string, string>>({});
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
-  const [password, setPassword] = useState("");
-  const [currentPassword, setCurrentPassword] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeNote, setChargeNote] = useState("");
   const [card, setCard] = useState<{ number: string; holder: string } | null>(null);
@@ -177,19 +176,6 @@ export default function UserAppPage() {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function savePassword() {
-    setErr(null);
-    try {
-      await api("/me/password", { body: { password, currentPassword: currentPassword || undefined } });
-      setMsg("رمز عبور ذخیره شد ✅ از این پس می‌توانید بدون OTP وارد شوید.");
-      setPassword("");
-      setCurrentPassword("");
-      await reload();
-    } catch (e) {
-      setErr(String(e instanceof Error ? e.message : e));
     }
   }
 
@@ -487,25 +473,14 @@ export default function UserAppPage() {
       )}
 
       {tab === "settings" && (
-        <div className="panel">
-          <h2>رمز ورود مستقیم</h2>
-          <p className="muted" style={{ marginTop: 0 }}>
-            با تنظیم رمز، بدون نیاز به کد یکبار مصرف وارد داشبورد می‌شوید.
-          </p>
-          {home.user.hasPassword && (
-            <div className="field">
-              <label>رمز فعلی</label>
-              <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-            </div>
-          )}
-          <div className="field">
-            <label>رمز جدید (حداقل ۸ کاراکتر)</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
-          <button type="button" className="btn primary" disabled={password.length < 8} onClick={savePassword}>
-            ذخیره رمز عبور
-          </button>
-        </div>
+        <PasswordSettings
+          hasPassword={Boolean(home.user.hasPassword)}
+          onFlash={(ok, bad) => {
+            setMsg(ok);
+            setErr(bad ?? null);
+          }}
+          onSaved={() => void reload()}
+        />
       )}
     </DashShell>
   );

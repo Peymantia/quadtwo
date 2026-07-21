@@ -81,16 +81,23 @@ export async function requestLoginOtp(login: string): Promise<{ ok: true; hint: 
   });
 
   const dash = env.DASH_DOMAIN?.trim() || "dash.anthropics.ir";
+  const host = dash.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const loginUrl = `https://${host}/login`;
+  const loginId = user.username ? `@${user.username}` : String(user.telegramId);
   try {
     await sendTelegramText(
       user.telegramId,
       [
-        "🔐 *کد ورود داشبورد Piing*",
+        "لینک داشبورد:",
+        loginUrl,
         "",
-        `\`${code}\``,
+        "👤 شناسه ورود:",
+        loginId,
+        "",
+        "🔐 رمز ورود:",
+        String(code),
         "",
         "اعتبار: ۵ دقیقه",
-        `ورود: https://${dash.replace(/^https?:\/\//, "")}`,
       ].join("\n"),
     );
   } catch (err) {
