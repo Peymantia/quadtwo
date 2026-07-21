@@ -170,7 +170,7 @@ async function requireChannel(ctx: Context) {
 
   const lines: string[] = [];
   if (missing.length) {
-    lines.push("برای استفاده از ربات ابتدا در کانال(ها) عضو شوید:", "", ...missing.map((u) => `• @${u}`));
+    lines.push("برای استفاده از ربات ابتدا میباست در کانال ما عضو شوید:", "", ...missing.map((u) => `• @${u}`));
   }
   if (botErrors.length) {
     if (lines.length) lines.push("");
