@@ -262,10 +262,13 @@ export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {
     }
     for (const row of priceRows) {
       const categoryRaw = cellStr(row, "category", "دسته").toLowerCase() || "data";
-      const category: PlanCategory =
+      let category: PlanCategory =
         categoryRaw === "national" || categoryRaw === "unlimited" ? categoryRaw : "data";
       let trafficGb = cellNum(row, "trafficGb");
-      if (category === "unlimited") trafficGb = null;
+      if (category === "unlimited" || trafficGb === null) {
+        trafficGb = null;
+        category = "unlimited";
+      }
       const months = cellNum(row, "months") ?? 1;
       const priceUser = cellNum(row, "priceUser");
       const pricePartner = cellNum(row, "pricePartner");

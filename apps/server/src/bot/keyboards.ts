@@ -36,7 +36,6 @@ export type MainMenuOpts = {
   isAdmin: boolean;
   isPartner: boolean;
   isWholesale?: boolean;
-  miniappUrl?: string;
 };
 
 /**
@@ -83,11 +82,8 @@ export function mainMenuReply(opts: MainMenuOpts) {
     kb.text(BTN.hideKeyboard).row();
   }
 
-  if (opts.miniappUrl) {
-    kb.webApp("🚀 داشبورد وب‌اپ", opts.miniappUrl).danger().row();
-  } else {
-    kb.text(BTN.dashOtp).danger().row();
-  }
+  // Always OTP credentials first — do not open Mini App directly (no password on screen).
+  kb.text(BTN.dashOtp).danger().row();
 
   return kb.persistent().resized();
 }

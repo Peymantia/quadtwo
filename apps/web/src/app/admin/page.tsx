@@ -780,10 +780,16 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
 
   async function addCell() {
     try {
+      const isUnlimited = newCell.category === "unlimited";
+      const trafficGb = isUnlimited ? null : newCell.trafficGb === "" ? null : Number(newCell.trafficGb);
+      if (!isUnlimited && (trafficGb === null || !Number.isFinite(trafficGb) || trafficGb <= 0)) {
+        flash(null, "برای دسته‌های حجمی، حجم GB را وارد کنید. نامحدود را از دستهٔ «نامحدود» بسازید.");
+        return;
+      }
       await api("/admin/prices", {
         body: {
-          category: newCell.category,
-          trafficGb: newCell.trafficGb === "" ? null : Number(newCell.trafficGb),
+          category: isUnlimited || trafficGb === null ? "unlimited" : newCell.category,
+          trafficGb,
           months: Number(newCell.months),
           priceUser: parsePriceInput(newCell.priceUser),
           pricePartner: parsePriceInput(newCell.pricePartner),
@@ -1063,8 +1069,15 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             </select>
           </div>
           <div className="field">
-            <label>حجم GB (خالی = نامحدود)</label>
-            <input className="num" inputMode="numeric" value={newCell.trafficGb} onChange={(e) => setNewCell((s) => ({ ...s, trafficGb: e.target.value }))} />
+            <label>{newCell.category === "unlimited" ? "حجم (نامحدود)" : "حجم GB"}</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              disabled={newCell.category === "unlimited"}
+              placeholder={newCell.category === "unlimited" ? "∞" : "مثلاً 25"}
+              value={newCell.category === "unlimited" ? "" : newCell.trafficGb}
+              onChange={(e) => setNewCell((s) => ({ ...s, trafficGb: e.target.value }))}
+            />
           </div>
           <div className="field">
             <label>مدت (ماه)</label>
@@ -1108,7 +1121,12 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         <button
           type="button"
           className="btn success"
-          disabled={!newCell.months || !newCell.priceUser || !newCell.pricePartner}
+          disabled={
+            !newCell.months ||
+            !newCell.priceUser ||
+            !newCell.pricePartner ||
+            (newCell.category !== "unlimited" && !newCell.trafficGb)
+          }
           onClick={addCell}
         >
           افزودن پلن

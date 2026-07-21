@@ -190,14 +190,12 @@ async function requireChannel(ctx: Context) {
 
 async function replyMainMenu(ctx: Context, preface?: string) {
   const user = await upsertUserFromTelegram(ctx.from!);
-  const miniapp = await getSetting("miniapp_url");
   const isAdmin = await isControlAdmin(ctx.from!.id);
   await ctx.reply(preface?.trim() || "منوی اصلی", {
     reply_markup: mainMenuReply({
       isAdmin,
       isPartner: user.role === "partner",
       isWholesale: user.role === "wholesale",
-      miniappUrl: miniapp || undefined,
     }),
   });
 }
@@ -600,7 +598,10 @@ async function handleDashOtp(ctx: Context) {
     const { code, login } = await mintOtpPayloadForTelegramUser(Number(user.telegramId));
     const loginUrl = `${dashBaseUrl().replace(/\/$/, "")}/login`;
     const msg = buildDashboardOtpTelegramMessage(loginUrl, login, String(code));
-    await ctx.reply(msg.text, { parse_mode: msg.parse_mode });
+    await ctx.reply(msg.text, {
+      parse_mode: msg.parse_mode,
+      reply_markup: new InlineKeyboard().url("🚀 ورود به داشبورد", loginUrl),
+    });
   } catch (err) {
     await ctx.reply(friendlyBotError(err));
   }
@@ -714,7 +715,6 @@ export function createBot() {
     if (!(await requireChannel(ctx))) return;
     const welcome = await getSetting("welcome_text");
     const user = await upsertUserFromTelegram(ctx.from!);
-    const miniapp = await getSetting("miniapp_url");
     const isAdmin = await isControlAdmin(ctx.from!.id);
     const displayName = ctx.from?.first_name?.trim() || "دوست";
     const text = [`سلام ${displayName} 🧡`, "", welcome].join("\n");
@@ -723,7 +723,6 @@ export function createBot() {
         isAdmin,
         isPartner: user.role === "partner",
         isWholesale: user.role === "wholesale",
-        miniappUrl: miniapp || undefined,
       }),
     });
   });
@@ -821,14 +820,7 @@ export function createBot() {
   bot.command("support", async (ctx) => handleSupport(ctx));
 
   bot.command("app", async (ctx) => {
-    const url = await getSetting("miniapp_url");
-    if (!url) {
-      await ctx.reply("وب‌اپ هنوز تنظیم نشده است.");
-      return;
-    }
-    await ctx.reply("برای باز کردن داشبورد روی دکمه بزنید:", {
-      reply_markup: new InlineKeyboard().webApp("🚀 باز کردن وب‌اپ", url),
-    });
+    await handleDashOtp(ctx);
   });
 
   bot.callbackQuery("m:buy", async (ctx) => {
@@ -2087,14 +2079,7 @@ export function createBot() {
   });
 
   bot.command("miniapp", async (ctx) => {
-    const url = await getSetting("miniapp_url");
-    if (!url) {
-      await ctx.reply("وب‌اپ هنوز تنظیم نشده. ادمین: /setminiapp https://...");
-      return;
-    }
-    await ctx.reply("برای باز کردن داشبورد روی دکمه بزنید:", {
-      reply_markup: new InlineKeyboard().webApp("🚀 باز کردن وب‌اپ", url),
-    });
+    await handleDashOtp(ctx);
   });
 
   bot.command("setminiapp", async (ctx) => {
@@ -2108,15 +2093,8 @@ export function createBot() {
     await ctx.reply(
       [
         "آدرس وب‌اپ ذخیره شد ✅",
-        "دکمه منوی کنار چت روی «داشبورد» (Mini App) تنظیم شد.",
         "",
-        "در BotFather هم ثبت کنید:",
-        "BotFather → بات شما → Bot Settings → Menu Button",
-        "→ Configure menu button → Web App URL",
-        url,
-        "",
-        "یا: /newapp برای ثبت Mini App جداگانه با همین آدرس.",
-        "کاربران با /app یا دکمه کیبورد وارد می‌شوند.",
+        "کاربران با /app یا دکمه «ورود به داشبورد وب اپ» شناسه و رمز موقت می‌گیرند، سپس وارد می‌شوند.",
       ].join("\n"),
     );
   });

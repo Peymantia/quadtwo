@@ -28,8 +28,19 @@ function scale(base: number, months: number) {
   return Math.round(base * 2.55);
 }
 
+/** ∞GB belongs only under category "unlimited" — strip bad VIP/national rows. */
+export async function cleanupInvalidUnlimitedCells() {
+  const result = await prisma.priceCell.deleteMany({
+    where: { trafficGb: null, NOT: { category: "unlimited" } },
+  });
+  if (result.count > 0) {
+    console.log(`removed ${result.count} invalid ∞GB price cell(s) outside unlimited category`);
+  }
+}
+
 export async function seedIfNeeded() {
   await ensureDefaultSettings();
+  await cleanupInvalidUnlimitedCells();
 
   const count = await prisma.priceCell.count();
   if (count === 0) {

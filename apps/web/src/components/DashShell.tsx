@@ -288,7 +288,6 @@ export function DashShell(props: {
           <span>{props.brand}</span>
         </div>
         <div className="topbar-side">
-          {isAdmin && <AdminPanelSwitcher />}
           {props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>}
           {hasMore && (
             <button

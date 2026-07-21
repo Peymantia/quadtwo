@@ -963,6 +963,11 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "isGolden", "trafficGb", "months", "category", "active"]) {
       if (body[k] !== undefined) data[k] = body[k];
     }
+    // ∞GB only belongs in unlimited category
+    if (data.trafficGb === null || data.category === "unlimited") {
+      data.trafficGb = null;
+      data.category = "unlimited";
+    }
     await prisma.priceCell.update({ where: { id: c.req.param("id") }, data });
     return c.json({ ok: true });
   });
