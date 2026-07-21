@@ -5,6 +5,7 @@ import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashSh
 import { Modal } from "../../components/Modal";
 import { ConfirmToast, Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
+import { TrafficProgress } from "../../components/PaymentCard";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
@@ -53,6 +54,7 @@ type PriceRow = {
   pricePartner: number;
   priceWholesale: number;
   isGolden: boolean;
+  active: boolean;
 };
 
 type CategoryRow = { key: string; label: string; enabled: boolean; cellCount: number; builtin?: boolean };
@@ -765,6 +767,17 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     }
   }
 
+  async function toggleActive(c: PriceRow, active: boolean) {
+    try {
+      await api(`/admin/prices/${c.id}`, { method: "PUT", body: { active } });
+      setCells((list) => list.map((x) => (x.id === c.id ? { ...x, active } : x)));
+      flash(active ? "پلن فعال شد" : "پلن غیرفعال شد");
+    } catch (e) {
+      flash(null, errText(e));
+      await load();
+    }
+  }
+
   async function addCell() {
     try {
       await api("/admin/prices", {
@@ -926,21 +939,13 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             </button>
           ))}
         </div>
-        <div className="actions" style={{ alignItems: "center" }}>
-          <select value={bulkMode} onChange={(e) => setBulkMode(e.target.value as "percent" | "amount")} className="chip on" style={{ cursor: "pointer" }}>
+        <div className="bulk-price-row">
+          <select value={bulkMode} onChange={(e) => setBulkMode(e.target.value as "percent" | "amount")}>
             <option value="percent">درصدی</option>
             <option value="amount">مبلغ ثابت</option>
           </select>
           <input
             className="num"
-            style={{
-              border: "1px solid var(--line)",
-              background: "rgba(10,13,35,.6)",
-              color: "var(--text)",
-              borderRadius: 11,
-              padding: "9px 12px",
-              width: 130,
-            }}
             inputMode="numeric"
             placeholder={bulkMode === "percent" ? "مثلاً 10 یا -5" : "مثلاً 5000"}
             value={bulkValue}
@@ -959,13 +964,23 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           {shown.map((c) => {
             const e = edits[c.id] ?? {};
             return (
-              <div key={c.id} className="price-plan-card">
+              <div key={c.id} className={`price-plan-card${c.active === false ? " off" : ""}`}>
                 <div className="price-plan-head">
-                  <strong className="num">
-                    {c.trafficGb ?? "∞"}GB · {c.months}ماه
-                    {c.isGolden && " ⭐"}
-                  </strong>
-                  <span className="muted">{catLabel(c.category, categories)}</span>
+                  <div className="price-plan-title">
+                    <strong className="num">
+                      {c.trafficGb ?? "∞"}GB · {c.months}ماه
+                      {c.isGolden && " ⭐"}
+                    </strong>
+                    <span className="muted">{catLabel(c.category, categories)}</span>
+                  </div>
+                  <label className="switch" title="فعال / غیرفعال">
+                    <input
+                      type="checkbox"
+                      checked={c.active !== false}
+                      onChange={(ev) => void toggleActive(c, ev.target.checked)}
+                    />
+                    <span className="track" />
+                  </label>
                 </div>
                 <div className="price-plan-fields">
                   <div className="field">
@@ -1014,7 +1029,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                     />
                   </div>
                 </div>
-                <div className="actions">
+                <div className="price-plan-actions">
                   <button type="button" className="btn primary sm" disabled={!edits[c.id]} onClick={() => saveRow(c)}>
                     ذخیره
                   </button>
@@ -1205,7 +1220,7 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
         <label>نام نمایشی</label>
         <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="ویژه ۲" />
       </div>
-      <button type="button" className="btn success" disabled={!newKey.trim()} onClick={() => void addCategory()}>
+      <button type="button" className="btn success wide" disabled={!newKey.trim()} onClick={() => void addCategory()}>
         افزودن دسته
       </button>
     </div>
@@ -1217,7 +1232,21 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [groups, setGroups] = useState<Array<{ key: string; label: string }>>([]);
   const [groupKey, setGroupKey] = useState("all");
-  const [items, setItems] = useState<Array<{ email: string; code: string | null; subId: string | null; status: string | null; inDb: boolean; ownerLabel: string }>>([]);
+  const [items, setItems] = useState<
+    Array<{
+      email: string;
+      code: string | null;
+      subId: string | null;
+      status: string | null;
+      inDb: boolean;
+      ownerLabel: string;
+      title?: string | null;
+      trafficGb?: number | null;
+      usedTrafficBytes?: number;
+      expiresAt?: string | null;
+      subUrl?: string | null;
+    }>
+  >([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -1234,24 +1263,6 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     limitIp: number;
     enable: boolean;
   } | null>(null);
-  const [detailView, setDetailView] = useState<{
-    email: string;
-    subId: string | null;
-    code: string | null;
-    title: string | null;
-    note: string | null;
-    comment: string | null;
-    trafficGb: number | null;
-    usedTrafficBytes: number;
-    expiresAt: string | null;
-    limitIp: number;
-    enable: boolean;
-    status: string | null;
-    ownerLabel: string;
-    inDb: boolean;
-    panelFound: boolean;
-  } | null>(null);
-  const [detailBusy, setDetailBusy] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
     trafficGb: "",
@@ -1405,19 +1416,6 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     panelFound: boolean;
   };
 
-  async function openDetail(email: string, subId: string | null) {
-    setDetailBusy(true);
-    try {
-      const q = `email=${encodeURIComponent(email)}${subId ? `&subId=${encodeURIComponent(subId)}` : ""}`;
-      const d = await api<ConfigDetailFull>(`/admin/configs/detail?${q}`);
-      setDetailView(d);
-    } catch (e) {
-      flash(null, errText(e));
-    } finally {
-      setDetailBusy(false);
-    }
-  }
-
   async function startEdit(email: string, subId: string | null) {
     setEditBusy(true);
     try {
@@ -1439,28 +1437,33 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     }
   }
 
-  function fmtTraffic(bytes: number): string {
-    if (!bytes) return "۰";
-    const gb = bytes / 1024 ** 3;
-    if (gb >= 1) return `${gb.toFixed(1)} GB`;
-    const mb = bytes / 1024 ** 2;
-    if (mb >= 1) return `${mb.toFixed(0)} MB`;
-    return `${(bytes / 1024).toFixed(0)} KB`;
-  }
-
-  function remainDays(isoDate: string | null): number | null {
+  function remainDays(isoDate: string | null | undefined): number | null {
     if (!isoDate) return null;
     const ms = new Date(isoDate).getTime() - Date.now();
     return Math.ceil(ms / 86400000);
   }
 
-  function fmtDate(isoDate: string | null): string {
+  function fmtDate(isoDate: string | null | undefined): string {
     if (!isoDate) return "—";
     try {
       return new Date(isoDate).toLocaleDateString("fa-IR");
     } catch {
       return isoDate;
     }
+  }
+
+  function daysLabel(isoDate: string | null | undefined): string {
+    const days = remainDays(isoDate);
+    if (days == null) return "—";
+    if (days < 0) return `${Math.abs(days)} روز گذشته`;
+    if (days === 0) return "کمتر از یک روز";
+    return `${days} روز`;
+  }
+
+  function fmtUsedBytes(bytes: number): string {
+    if (bytes <= 0) return "۰";
+    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+    return `${Math.round(bytes / 1024 ** 2)} MB`;
   }
 
   async function saveEdit() {
@@ -1512,29 +1515,31 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
         <p className="muted" style={{ marginTop: 0 }}>
           اگر در پنل 3x-ui اکانت را حذف، غیرفعال یا ویرایش کردید، با «اعمال تغییرات پنل» وضعیت ربات به‌روز می‌شود. همچنین هر ۱۰ دقیقه خودکار همگام می‌شود.
         </p>
-        <div className="actions" style={{ marginBottom: 12 }}>
-          <button type="button" className="btn primary sm" disabled={syncBusy} onClick={() => void runDiff()}>
+        <div className="sync-actions">
+          <button type="button" className="btn primary" disabled={syncBusy} onClick={() => void runDiff()}>
             {syncBusy ? "در حال مقایسه…" : "مقایسه با پنل"}
           </button>
-          <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void runReconcile()}>
+          <button type="button" className="btn success" disabled={syncBusy} onClick={() => void runReconcile()}>
             اعمال تغییرات پنل روی ربات
           </button>
-          {sync && sync.panelOnly.length > 0 && (
-            <button type="button" className="btn ghost sm" disabled={syncBusy || !selectedCount} onClick={() => void doImport()}>
-              وارد کردن انتخاب‌شده ({selectedCount})
-            </button>
-          )}
-          {sync && sync.panelOnly.length > 0 && (
-            <button
-              type="button"
-              className="btn ghost sm"
-              disabled={syncBusy}
-              onClick={() => void doImport(sync.panelOnly.map((x) => x.email))}
-            >
-              وارد کردن همهٔ فقط‌پنل
-            </button>
-          )}
-          {sync && (
+        </div>
+        {sync && (
+          <div className="actions" style={{ marginBottom: 12 }}>
+            {sync.panelOnly.length > 0 && (
+              <button type="button" className="btn ghost sm" disabled={syncBusy || !selectedCount} onClick={() => void doImport()}>
+                وارد کردن انتخاب‌شده ({selectedCount})
+              </button>
+            )}
+            {sync.panelOnly.length > 0 && (
+              <button
+                type="button"
+                className="btn ghost sm"
+                disabled={syncBusy}
+                onClick={() => void doImport(sync.panelOnly.map((x) => x.email))}
+              >
+                وارد کردن همهٔ فقط‌پنل
+              </button>
+            )}
             <button
               type="button"
               className="btn ghost sm"
@@ -1545,8 +1550,8 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             >
               انصراف
             </button>
-          )}
-        </div>
+          </div>
+        )}
         {sync && (
           <div className="grid" style={{ marginBottom: 14 }}>
             <div className="stat accent">
@@ -1628,34 +1633,53 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
         </div>
         {loading && <p className="muted">در حال دریافت…</p>}
         <div className="list">
-          {items.map((c) => (
-            <div key={c.email} className="row-card">
-              <div>
-                <strong className="num">{c.code || c.email}</strong>{" "}
-                {!c.inDb && <span className="badge warn">فقط پنل</span>}
-                {c.status === "active" && <span className="badge ok">فعال</span>}
-                {c.status === "disabled" && <span className="badge warn">غیرفعال</span>}
-                <div className="muted num">{c.email}</div>
-                <div className="muted">{c.ownerLabel}</div>
-              </div>
-              <div className="actions">
-                {!c.inDb && (
-                  <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
-                    وارد کردن
+          {items.map((c) => {
+            const expired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
+            return (
+              <div key={c.email} className="row-card" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                <div>
+                  <strong className="num">{c.code || c.email}</strong>{" "}
+                  {!c.inDb && <span className="badge warn">فقط پنل</span>}
+                  {c.status === "active" && !expired && <span className="badge ok">فعال</span>}
+                  {(c.status === "disabled" || expired) && (
+                    <span className="badge warn">{expired ? "منقضی" : "غیرفعال"}</span>
+                  )}
+                  {c.title && <div className="muted">{c.title}</div>}
+                  <div className="muted num">{c.email}</div>
+                  <div className="muted">{c.ownerLabel}</div>
+                  <div className="muted" style={{ marginTop: 8 }}>
+                    حجم کل:{" "}
+                    <strong className="num">
+                      {c.trafficGb == null || c.trafficGb <= 0 ? "نامحدود" : `${c.trafficGb} GB`}
+                    </strong>
+                    {" · "}
+                    مصرف‌شده: <strong className="num">{fmtUsedBytes(c.usedTrafficBytes ?? 0)}</strong>
+                    {" · "}
+                    انقضا: <strong className="num">{fmtDate(c.expiresAt)}</strong>
+                    {" · "}
+                    باقی‌مانده:{" "}
+                    <strong className={remainDays(c.expiresAt) != null && remainDays(c.expiresAt)! < 0 ? "bad" : undefined}>
+                      {daysLabel(c.expiresAt)}
+                    </strong>
+                  </div>
+                  <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
+                </div>
+                <div className="actions" style={{ marginTop: 10 }}>
+                  {!c.inDb && (
+                    <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
+                      وارد کردن
+                    </button>
+                  )}
+                  <button type="button" className="btn primary sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
+                    ویرایش
                   </button>
-                )}
-                <button type="button" className="btn ghost sm" disabled={detailBusy} onClick={() => void openDetail(c.email, c.subId)}>
-                  جزئیات
-                </button>
-                <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
-                  ویرایش
-                </button>
-                <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
-                  حذف
-                </button>
+                  <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
+                    حذف
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {!items.length && !loading && <p className="muted">اکانتی در این گروه نیست.</p>}
         </div>
         {total > 30 && (
@@ -1739,102 +1763,6 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
           </div>
         </Modal>
       )}
-
-      {detailView && (() => {
-        const d = detailView;
-        const totalBytes = d.trafficGb != null && d.trafficGb > 0 ? d.trafficGb * 1024 ** 3 : 0;
-        const pct = totalBytes > 0 ? Math.min(100, Math.round((d.usedTrafficBytes / totalBytes) * 100)) : 0;
-        const days = remainDays(d.expiresAt);
-        const daysLabel =
-          days == null ? "—" : days < 0 ? `${Math.abs(days)} روز گذشته` : days === 0 ? "کمتر از یک روز" : `${days} روز`;
-        return (
-          <Modal open title={`جزئیات اکانت — ${d.code || d.email}`} onClose={() => setDetailView(null)} wide>
-            <div className="muted num" style={{ marginBottom: 12 }}>
-              {d.email}
-            </div>
-            {!d.panelFound && (
-              <p className="muted" style={{ marginBottom: 12 }}>
-                این اکانت روی پنل پیدا نشد؛ اطلاعات از دیتابیس ربات است.
-              </p>
-            )}
-            <div className="config-detail-grid">
-              <div className="config-detail-item">
-                <span className="label">نام</span>
-                <strong>{d.title?.trim() || "—"}</strong>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">کامنت پنل</span>
-                <strong>{d.comment?.trim() || "—"}</strong>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">توضیحات / نوت</span>
-                <strong>{d.note?.trim() || "—"}</strong>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">مالک</span>
-                <strong>{d.ownerLabel}</strong>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">وضعیت</span>
-                <strong>
-                  {d.enable === false || d.status === "disabled" ? "غیرفعال" : "فعال"}
-                  {d.inDb ? "" : " · فقط پنل"}
-                </strong>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">لیمیت IP</span>
-                <strong className="num">{d.limitIp <= 0 ? "نامحدود" : d.limitIp}</strong>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">حجم کل</span>
-                <strong className="num">{d.trafficGb == null || d.trafficGb <= 0 ? "نامحدود" : `${d.trafficGb} GB`}</strong>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">حجم مصرف‌شده</span>
-                <strong className="num">{fmtTraffic(d.usedTrafficBytes)}</strong>
-              </div>
-              <div className="config-detail-item span-2">
-                <span className="label">مصرف ترافیک</span>
-                <div className="traffic-progress">
-                  <div className="traffic-progress-track">
-                    <div
-                      className={`traffic-progress-fill${pct >= 90 ? " danger" : pct >= 70 ? " warn" : ""}`}
-                      style={{ width: `${totalBytes > 0 ? pct : 0}%` }}
-                    />
-                  </div>
-                  <div className="traffic-progress-meta num">
-                    {totalBytes > 0 ? `${pct}% · ${fmtTraffic(d.usedTrafficBytes)} از ${d.trafficGb} GB` : `${fmtTraffic(d.usedTrafficBytes)} مصرف‌شده (بدون سقف)`}
-                  </div>
-                </div>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">تاریخ انقضا</span>
-                <strong className="num">{fmtDate(d.expiresAt)}</strong>
-              </div>
-              <div className="config-detail-item">
-                <span className="label">روزهای باقی‌مانده</span>
-                <strong className={days != null && days < 0 ? "bad" : undefined}>{daysLabel}</strong>
-              </div>
-            </div>
-            <div className="actions" style={{ marginTop: 16 }}>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={editBusy}
-                onClick={() => {
-                  setDetailView(null);
-                  void startEdit(d.email, d.subId);
-                }}
-              >
-                ویرایش
-              </button>
-              <button type="button" className="btn ghost" onClick={() => setDetailView(null)}>
-                بستن
-              </button>
-            </div>
-          </Modal>
-        );
-      })()}
     </>
   );
 }
@@ -2021,10 +1949,14 @@ function PanelsTab({ flash }: { flash: Flash }) {
           </button>
         </div>
         {!!panels.length && (
-          <>
-            <div className="grid" style={{ marginTop: 14, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <div className="panel-routing">
+            <div className="panel-routing-card">
+              <div className="panel-routing-title">همه دسته‌ها روی یک سرور</div>
+              <p className="panel-routing-desc">
+                همه دسته‌های فروش فقط روی سرور انتخابی فعال می‌شوند و از بقیه سرورها برداشته می‌شوند.
+              </p>
               <div className="field">
-                <label>همه دسته‌ها از یک سرور</label>
+                <label>سرور مقصد</label>
                 <select value={routeAllPanelId} onChange={(e) => setRouteAllPanelId(e.target.value)}>
                   {panels.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -2033,44 +1965,58 @@ function PanelsTab({ flash }: { flash: Flash }) {
                   ))}
                 </select>
               </div>
-              <div className="actions" style={{ alignItems: "end" }}>
-                <button type="button" className="btn primary sm" disabled={routingBusy || !routeAllPanelId} onClick={() => void applyAllCategoriesToPanel()}>
-                  اعمال این حالت
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn primary wide"
+                disabled={routingBusy || !routeAllPanelId}
+                onClick={() => void applyAllCategoriesToPanel()}
+              >
+                همه دسته‌ها را روی این سرور بگذار
+              </button>
             </div>
-            <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-              <div className="field">
-                <label>یک دسته روی سرور خاص</label>
-                <select value={dedicatedCategory} onChange={(e) => setDedicatedCategory(e.target.value)}>
-                  {categories.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+
+            <div className="panel-routing-card">
+              <div className="panel-routing-title">یک دسته فقط روی یک سرور</div>
+              <p className="panel-routing-desc">
+                دسته انتخابی فقط روی سرور مشخص فعال می‌شود و از سرورهای دیگر حذف می‌گردد. بقیه دسته‌ها دست‌نخورده می‌مانند.
+              </p>
+              <div className="panel-routing-fields">
+                <div className="field">
+                  <label>دسته</label>
+                  <select value={dedicatedCategory} onChange={(e) => setDedicatedCategory(e.target.value)}>
+                    {categories.map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>سرور آن دسته</label>
+                  <select value={dedicatedPanelId} onChange={(e) => setDedicatedPanelId(e.target.value)}>
+                    {panels.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="field">
-                <label>سرور آن دسته</label>
-                <select value={dedicatedPanelId} onChange={(e) => setDedicatedPanelId(e.target.value)}>
-                  {panels.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="actions" style={{ alignItems: "end" }}>
-                <button type="button" className="btn ghost sm" disabled={routingBusy || !dedicatedPanelId} onClick={() => void dedicateCategoryToPanel()}>
-                  اختصاص فقط این دسته
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn success wide"
+                disabled={routingBusy || !dedicatedPanelId}
+                onClick={() => void dedicateCategoryToPanel()}
+              >
+                این دسته را فقط به این سرور اختصاص بده
+              </button>
             </div>
-            <p className="hint" style={{ marginTop: 0 }}>
-              وزن فقط بین سرورهایی اعمال می‌شود که همان دسته را دارند. پس می‌توانید مثلاً «نت ملی» را فقط روی یک سرور بگذارید و
-              دسته‌های دیگر را بین بقیه سرورها لودبالانس کنید.
+
+            <p className="hint" style={{ margin: 0 }}>
+              وزن فقط بین سرورهایی اعمال می‌شود که همان دسته را دارند. مثلاً «نت ملی» را فقط روی یک سرور بگذارید و بقیه
+              دسته‌ها را بین چند سرور لودبالانس کنید.
             </p>
-          </>
+          </div>
         )}
         <div className="list" style={{ marginTop: 12 }}>
           {panels.map((p) => {

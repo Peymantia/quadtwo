@@ -28,7 +28,7 @@ import {
   payOrderWithWallet,
   rejectOrder,
 } from "../services/orders.js";
-import { deactivateCell, listPriceMatrix, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
+import { listPriceMatrix, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.js";
 import {
   getAllSettings,
@@ -589,47 +589,84 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
     const groups = await listConfigGroups();
     const mine = groups.find((g) => g.panelGroup === user.panelGroup);
     if (!mine) return c.json({ items: [], total: 0, title: user.panelGroup });
-    const result = await listConfigsForGroup(mine.key, 0, 100);
+    const result = await listConfigsForGroup(mine.key, 0, 2000);
     const items = await Promise.all(
       result.items.map(async (item) => {
-        if (!item.subId) return { ...item, usedTrafficBytes: 0 };
-        const traf = await getSubscriptionTrafficBytes(item.subId).catch(() => ({
-          usedBytes: 0,
-          totalBytes: 0,
-          totalGb: item.trafficGb ?? null,
-        }));
+        if (!item.subId) return { ...item, usedTrafficBytes: 0, subUrl: null as string | null };
+        const [traf, sub] = await Promise.all([
+          getSubscriptionTrafficBytes(item.subId).catch(() => ({
+            usedBytes: 0,
+            totalBytes: 0,
+            totalGb: item.trafficGb ?? null,
+          })),
+          prisma.subscription.findUnique({
+            where: { id: item.subId },
+            select: { subUrl: true },
+          }),
+        ]);
         return {
           ...item,
           trafficGb: traf.totalGb ?? item.trafficGb ?? null,
           usedTrafficBytes: traf.usedBytes,
+          subUrl: sub?.subUrl ?? null,
         };
       }),
     );
     return c.json({ ...result, items });
   });
 
-  async function assertPartnerConfigAccess(userId: string, role: string, email: string, subId?: string | null) {
-    if (role === "admin") return;
+  /** Resolve a config the partner may touch; never trust client subId alone when email differs. */
+  async function resolvePartnerConfigAccess(
+    userId: string,
+    role: string,
+    email?: string | null,
+    subId?: string | null,
+  ): Promise<{ email: string; subId: string | null }> {
+    const emailNorm = (email ?? "").trim().toLowerCase();
+    if (role === "admin") {
+      if (subId) {
+        const sub = await prisma.subscription.findUnique({ where: { id: subId }, select: { id: true, email: true } });
+        if (sub) return { email: sub.email, subId: sub.id };
+      }
+      if (emailNorm) {
+        const sub = await prisma.subscription.findFirst({
+          where: { email: email!.trim() },
+          select: { id: true, email: true },
+        });
+        return { email: sub?.email ?? email!.trim(), subId: sub?.id ?? null };
+      }
+      throw new Error("ایمیل یا شناسه اکانت لازم است");
+    }
+
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     if (!user.panelGroup) throw new Error("گروه پنل ندارید");
     const groups = await listConfigGroups();
     const mine = groups.find((g) => g.panelGroup === user.panelGroup);
     if (!mine) throw new Error("گروه پنل پیدا نشد");
-    const list = await listConfigsForGroup(mine.key, 0, 500);
-    const ok = list.items.some(
-      (i) =>
-        i.email.toLowerCase() === email.trim().toLowerCase() ||
-        (subId && i.subId === subId),
-    );
-    if (!ok) throw new Error("دسترسی به این کانفیگ ندارید");
+    const list = await listConfigsForGroup(mine.key, 0, 5000);
+
+    let match =
+      (emailNorm ? list.items.find((i) => i.email.toLowerCase() === emailNorm) : undefined) ??
+      (subId ? list.items.find((i) => i.subId === subId) : undefined);
+
+    if (!match) throw new Error("دسترسی به این کانفیگ ندارید");
+
+    if (emailNorm && match.email.toLowerCase() !== emailNorm) {
+      throw new Error("دسترسی به این کانفیگ ندارید");
+    }
+    if (subId && match.subId && match.subId !== subId) {
+      throw new Error("دسترسی به این کانفیگ ندارید");
+    }
+
+    return { email: match.email, subId: match.subId };
   }
 
   api.get("/partner/configs/detail", async (c) => {
     const email = c.req.query("email") || "";
     const subId = c.req.query("subId") || null;
     try {
-      await assertPartnerConfigAccess(c.get("userId"), c.get("role"), email, subId);
-      return c.json(await getConfigDetail({ email, subId }));
+      const access = await resolvePartnerConfigAccess(c.get("userId"), c.get("role"), email, subId);
+      return c.json(await getConfigDetail({ email: access.email, subId: access.subId }));
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }
@@ -644,15 +681,27 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       enable?: boolean;
     }>();
     try {
-      await assertPartnerConfigAccess(c.get("userId"), c.get("role"), body.email, body.subId);
+      const access = await resolvePartnerConfigAccess(c.get("userId"), c.get("role"), body.email, body.subId);
       const result = await updateConfig({
-        email: body.email,
-        subId: body.subId,
+        email: access.email,
+        subId: access.subId,
         title: body.title,
         note: body.note,
         enable: body.enable,
       });
       return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/partner/configs/rotate-sub", async (c) => {
+    const body = await c.req.json<{ email?: string; subId?: string | null }>();
+    try {
+      const access = await resolvePartnerConfigAccess(c.get("userId"), c.get("role"), body.email, body.subId);
+      if (!access.subId) return c.json({ error: "اکانت در دیتابیس ربات نیست" }, 404);
+      const result = await rotateSubId(access.subId);
+      return c.json({ code: result.code, subUrl: result.subUrl });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }
@@ -822,7 +871,6 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/admin/prices", async (c) => {
     const cells = await prisma.priceCell.findMany({
-      where: { active: true },
       orderBy: [{ category: "asc" }, { months: "asc" }, { trafficGb: "asc" }],
     });
     return c.json({
@@ -836,6 +884,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         pricePartner: x.pricePartner,
         priceWholesale: x.priceWholesale,
         isGolden: x.isGolden,
+        active: x.active,
       })),
       modes: await getPricingModes(),
       rates: await getPriceRates(),
@@ -906,7 +955,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.put("/admin/prices/:id", async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
     const data: Record<string, unknown> = {};
-    for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "isGolden", "trafficGb", "months", "category"]) {
+    for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "isGolden", "trafficGb", "months", "category", "active"]) {
       if (body[k] !== undefined) data[k] = body[k];
     }
     await prisma.priceCell.update({ where: { id: c.req.param("id") }, data });
@@ -914,7 +963,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.delete("/admin/prices/:id", async (c) => {
-    await deactivateCell(c.req.param("id"));
+    await prisma.priceCell.delete({ where: { id: c.req.param("id") } });
     await auditLog({
       action: "web_price_delete",
       actorTelegramId: BigInt(c.get("telegramId")),
@@ -1143,7 +1192,32 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/admin/configs/:groupKey", async (c) => {
     const page = Number(c.req.query("page") ?? 0);
     const q = String(c.req.query("q") ?? "");
-    return c.json(await listConfigsForGroup(c.req.param("groupKey"), page, 30, q));
+    const result = await listConfigsForGroup(c.req.param("groupKey"), page, 30, q);
+    const items = await Promise.all(
+      result.items.map(async (item) => {
+        let usedTrafficBytes = 0;
+        let trafficGb = item.trafficGb ?? null;
+        let subUrl: string | null = null;
+        if (item.subId) {
+          const [traf, sub] = await Promise.all([
+            getSubscriptionTrafficBytes(item.subId).catch(() => ({
+              usedBytes: 0,
+              totalBytes: 0,
+              totalGb: item.trafficGb ?? null,
+            })),
+            prisma.subscription.findUnique({
+              where: { id: item.subId },
+              select: { subUrl: true },
+            }),
+          ]);
+          usedTrafficBytes = traf.usedBytes;
+          trafficGb = traf.totalGb ?? trafficGb;
+          subUrl = sub?.subUrl ?? null;
+        }
+        return { ...item, usedTrafficBytes, trafficGb, subUrl };
+      }),
+    );
+    return c.json({ ...result, items });
   });
 
   api.post("/admin/configs/delete", async (c) => {

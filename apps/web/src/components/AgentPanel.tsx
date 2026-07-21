@@ -6,7 +6,6 @@ import { Toast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
 import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
 import { SortSelect, remainingRatio, sortByMode, type ListSort } from "./SortSelect";
-import { Modal } from "./Modal";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 
@@ -31,6 +30,7 @@ type ConfigItem = {
   expiresAt?: string | null;
   createdAt?: string | null;
   usedTrafficBytes?: number;
+  subUrl?: string | null;
 };
 
 const TABS: ShellTab[] = [
@@ -59,9 +59,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [chargeAmount, setChargeAmount] = useState("");
   const [payCard, setPayCard] = useState<{ number: string; holder: string } | null>(null);
   const [txs, setTxs] = useState<Array<{ id: string; type: string; amount: number; createdAt: string; note?: string | null }>>([]);
-  const [editTarget, setEditTarget] = useState<ConfigItem | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editNote, setEditNote] = useState("");
 
   const loadConfigs = useCallback(
     () => api<{ items: ConfigItem[] }>("/partner/configs").then((r) => setConfigs(r.items ?? [])),
@@ -172,39 +169,32 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     }
   }
 
-  async function toggleEnable(c: ConfigItem, enable: boolean) {
-    setBusy(true);
-    setErr(null);
-    try {
-      await api("/partner/configs/update", {
-        method: "PUT",
-        body: { email: c.email, subId: c.subId, enable },
-      });
-      setMsg(enable ? "کانفیگ فعال شد" : "کانفیگ موقتاً غیرفعال شد");
-      await loadConfigs();
-    } catch (e) {
-      setErr(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusy(false);
+  async function copySubLink(c: ConfigItem) {
+    if (!c.subUrl) {
+      setErr("لینک اشتراک برای این کانفیگ موجود نیست");
+      return;
     }
+    await navigator.clipboard.writeText(c.subUrl);
+    setMsg("لینک اشتراک کپی شد");
   }
 
-  async function saveEdit() {
-    if (!editTarget) return;
+  async function rotateSubLink(c: ConfigItem) {
+    if (!c.subId && !c.email) {
+      setErr("این کانفیگ در دیتابیس ربات نیست");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
-      await api("/partner/configs/update", {
-        method: "PUT",
-        body: {
-          email: editTarget.email,
-          subId: editTarget.subId,
-          title: editTitle.trim() || null,
-          note: editNote.trim() || null,
-        },
+      const r = await api<{ subUrl?: string | null }>("/partner/configs/rotate-sub", {
+        body: { email: c.email, subId: c.subId },
       });
-      setMsg("مشخصات کانفیگ ذخیره شد");
-      setEditTarget(null);
+      if (r.subUrl) {
+        await navigator.clipboard.writeText(r.subUrl);
+        setMsg("لینک ساب جدید ساخته و کپی شد");
+      } else {
+        setMsg("لینک ساب جدید ساخته شد");
+      }
       await loadConfigs();
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
@@ -347,47 +337,60 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             {filteredSorted.map((c) => {
               const expired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
               const active = c.status === "active" && !expired;
+              const remain = c.expiresAt
+                ? Math.ceil((new Date(c.expiresAt).getTime() - Date.now()) / 86400000)
+                : null;
+              const usedLabel =
+                (c.usedTrafficBytes ?? 0) <= 0
+                  ? "۰"
+                  : (c.usedTrafficBytes ?? 0) >= 1024 ** 3
+                    ? `${((c.usedTrafficBytes ?? 0) / 1024 ** 3).toFixed(2)} GB`
+                    : `${Math.round((c.usedTrafficBytes ?? 0) / 1024 ** 2)} MB`;
               return (
                 <div key={c.email} className="row-card" style={{ flexDirection: "column", alignItems: "stretch" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div>
-                      <strong className="num">{c.code || c.email}</strong>{" "}
-                      <span className={`badge ${active ? "ok" : "bad"}`}>
-                        {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
-                      </span>
-                      {c.title && <div className="muted">{c.title}</div>}
-                      <div className="muted num" style={{ marginTop: 4 }}>
-                        {c.email}
-                      </div>
+                  <div>
+                    <strong className="num">{c.code || c.email}</strong>{" "}
+                    <span className={`badge ${active ? "ok" : "bad"}`}>
+                      {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
+                    </span>
+                    {c.title && <div className="muted">{c.title}</div>}
+                    <div className="muted num" style={{ marginTop: 4 }}>
+                      {c.email}
                     </div>
-                    <div className="muted num" style={{ textAlign: "left" }}>
-                      {c.expiresAt ? `انقضا ${new Date(c.expiresAt).toLocaleDateString("fa-IR")}` : "—"}
+                    <div className="muted" style={{ marginTop: 8 }}>
+                      حجم کل:{" "}
+                      <strong className="num">
+                        {c.trafficGb == null || c.trafficGb <= 0 ? "نامحدود" : `${c.trafficGb} GB`}
+                      </strong>
+                      {" · "}
+                      مصرف‌شده: <strong className="num">{usedLabel}</strong>
+                      {" · "}
+                      انقضا:{" "}
+                      <strong className="num">
+                        {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString("fa-IR") : "—"}
+                      </strong>
+                      {" · "}
+                      باقی‌مانده:{" "}
+                      <strong className={remain != null && remain < 0 ? "bad" : undefined}>
+                        {remain == null
+                          ? "—"
+                          : remain < 0
+                            ? `${Math.abs(remain)} روز گذشته`
+                            : remain === 0
+                              ? "کمتر از یک روز"
+                              : `${remain} روز`}
+                      </strong>
                     </div>
                   </div>
                   {c.note && <div className="muted" style={{ marginTop: 6 }}>یادداشت: {c.note}</div>}
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                   <div className="actions" style={{ marginTop: 10 }}>
-                    <button
-                      type="button"
-                      className="btn primary sm"
-                      disabled={busy}
-                      onClick={() => {
-                        setEditTarget(c);
-                        setEditTitle(c.title ?? "");
-                        setEditNote(c.note ?? "");
-                      }}
-                    >
-                      ویرایش
+                    <button type="button" className="btn primary sm" disabled={busy || !c.subUrl} onClick={() => void copySubLink(c)}>
+                      کپی لینک اشتراک
                     </button>
-                    {active ? (
-                      <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void toggleEnable(c, false)}>
-                        غیرفعال موقت
-                      </button>
-                    ) : (
-                      <button type="button" className="btn success sm" disabled={busy || expired} onClick={() => void toggleEnable(c, true)}>
-                        فعال‌سازی
-                      </button>
-                    )}
+                    <button type="button" className="btn ghost sm" disabled={busy || !c.subId} onClick={() => void rotateSubLink(c)}>
+                      تغییر لینک ساب
+                    </button>
                   </div>
                 </div>
               );
@@ -459,36 +462,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           onSaved={() => void reload()}
         />
       )}
-
-      <Modal
-        open={Boolean(editTarget)}
-        title="ویرایش کانفیگ"
-        onClose={() => setEditTarget(null)}
-      >
-        {editTarget && (
-          <>
-            <p className="muted num" style={{ marginTop: 0 }}>
-              {editTarget.code || editTarget.email}
-            </p>
-            <div className="field">
-              <label>عنوان</label>
-              <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-            </div>
-            <div className="field">
-              <label>یادداشت</label>
-              <input value={editNote} onChange={(e) => setEditNote(e.target.value)} />
-            </div>
-            <div className="actions stack">
-              <button type="button" className="btn primary wide" disabled={busy} onClick={() => void saveEdit()}>
-                ذخیره
-              </button>
-              <button type="button" className="btn ghost wide" disabled={busy} onClick={() => setEditTarget(null)}>
-                لغو
-              </button>
-            </div>
-          </>
-        )}
-      </Modal>
     </DashShell>
   );
 }

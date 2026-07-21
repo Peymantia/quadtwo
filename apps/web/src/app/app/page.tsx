@@ -315,6 +315,11 @@ export default function UserAppPage() {
                 }),
             }).map((s) => {
               const expired = new Date(s.expiresAt) < new Date();
+              const totalGb = s.isTest ? 0.25 : s.trafficGb;
+              const remain = Math.ceil((new Date(s.expiresAt).getTime() - Date.now()) / 86400000);
+              const used = s.usedTrafficBytes ?? 0;
+              const usedLabel =
+                used <= 0 ? "۰" : used >= 1024 ** 3 ? `${(used / 1024 ** 3).toFixed(2)} GB` : `${Math.round(used / 1024 ** 2)} MB`;
               return (
                 <div key={s.id} className="row-card" style={{ alignItems: "flex-start", flexDirection: "column" }}>
                   <div style={{ width: "100%" }}>
@@ -331,10 +336,26 @@ export default function UserAppPage() {
                               : s.status}
                     </span>
                     {s.isTest && <span className="badge info">تست</span>}
-                    <div className="muted" style={{ marginTop: 5 }}>
-                      انقضا {new Date(s.expiresAt).toLocaleDateString("fa-IR")}
+                    <div className="muted" style={{ marginTop: 8 }}>
+                      حجم کل:{" "}
+                      <strong className="num">
+                        {totalGb == null || totalGb <= 0 ? "نامحدود" : `${totalGb} GB`}
+                      </strong>
+                      {" · "}
+                      مصرف‌شده: <strong className="num">{usedLabel}</strong>
+                      {" · "}
+                      انقضا: <strong className="num">{new Date(s.expiresAt).toLocaleDateString("fa-IR")}</strong>
+                      {" · "}
+                      باقی‌مانده:{" "}
+                      <strong className={remain < 0 ? "bad" : undefined}>
+                        {remain < 0
+                          ? `${Math.abs(remain)} روز گذشته`
+                          : remain === 0
+                            ? "کمتر از یک روز"
+                            : `${remain} روز`}
+                      </strong>
                     </div>
-                    <TrafficProgress usedBytes={s.usedTrafficBytes ?? 0} totalGb={s.isTest ? 0.25 : s.trafficGb} />
+                    <TrafficProgress usedBytes={used} totalGb={totalGb} />
                     <div className="note-row">
                       <div className="field">
                         <label>یادداشت شخصی</label>
@@ -377,15 +398,20 @@ export default function UserAppPage() {
                       className="btn ghost sm"
                       onClick={async () => {
                         try {
-                          await api(`/me/subscriptions/${s.id}/rotate-sub`);
-                          setMsg("لینک اشتراک جدید ساخته شد");
+                          const r = await api<{ subUrl?: string | null }>(`/me/subscriptions/${s.id}/rotate-sub`);
+                          if (r.subUrl) {
+                            await navigator.clipboard.writeText(r.subUrl);
+                            setMsg("لینک ساب جدید ساخته و کپی شد");
+                          } else {
+                            setMsg("لینک اشتراک جدید ساخته شد");
+                          }
                           await loadSubs();
                         } catch (e) {
                           setErr(String(e instanceof Error ? e.message : e));
                         }
                       }}
                     >
-                      تعویض لینک
+                      تغییر لینک ساب
                     </button>
                   </div>
                 </div>
