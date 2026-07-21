@@ -1102,6 +1102,12 @@ h3 {
   background: linear-gradient(160deg, rgba(251, 191, 36, 0.08), rgba(24, 29, 63, 0.5));
 }
 
+.plan-card.on {
+  border-color: rgba(52, 211, 153, 0.65);
+  background: rgba(52, 211, 153, 0.1);
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.25);
+}
+
 .plan-card .plan-name {
   font-weight: 800;
   font-size: 1.05rem;
