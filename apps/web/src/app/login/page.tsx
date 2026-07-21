@@ -44,6 +44,7 @@ export default function LoginPage() {
       }
 
       try {
+        // Browser: don't wait on telegram.org CDN. Mini App bridge is usually pre-injected.
         const tg = await loginWithTelegramWebApp();
         if (tg && !cancelled) {
           router.replace(homePathForRole(tg.user.role as Role));
