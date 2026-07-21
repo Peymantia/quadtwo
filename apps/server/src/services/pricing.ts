@@ -61,8 +61,8 @@ export function priceFromCell(
   role: UserRole,
   cell: { priceUser: number; pricePartner: number; priceWholesale: number },
 ) {
-  if (role === "wholesale") return cell.priceWholesale || cell.pricePartner;
-  if (role === "partner" || role === "admin") return cell.pricePartner;
+  if (role === "wholesale" || role === "admin") return cell.priceWholesale || cell.pricePartner;
+  if (role === "partner") return cell.pricePartner;
   return cell.priceUser;
 }
 

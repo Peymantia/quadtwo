@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { parseAndValidateInitData, signSession, verifySession } from "../auth/telegram.js";
 import { prisma } from "../db.js";
 import { orderSummaryText } from "../services/orders.js";
-import { listPriceMatrix, resolvePrice } from "../services/pricing.js";
+import { listPriceMatrix, priceFromCell, resolvePrice } from "../services/pricing.js";
 import { provisionOrder } from "../services/provision.js";
 import { getAllSettings, getSetting } from "../services/settings.js";
 import { upsertUserFromTelegram } from "../services/users.js";
@@ -120,9 +120,10 @@ export function createApiApp() {
       cells: cells.map((cell) => ({
         trafficGb: cell.trafficGb,
         months: cell.months,
-        price: user.role === "partner" || user.role === "admin" ? cell.pricePartner : cell.priceUser,
+        price: priceFromCell(user.role, cell),
         priceUser: cell.priceUser,
         pricePartner: cell.pricePartner,
+        priceWholesale: cell.priceWholesale,
       })),
     });
   });

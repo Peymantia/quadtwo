@@ -322,8 +322,8 @@ export async function getPricingModes(): Promise<RolePricingModes> {
 
 export async function getPricingModeForRole(role: string): Promise<PricingMode> {
   const modes = await getPricingModes();
-  if (role === "wholesale") return modes.wholesale;
-  if (role === "partner" || role === "admin") return modes.partner;
+  if (role === "wholesale" || role === "admin") return modes.wholesale;
+  if (role === "partner") return modes.partner;
   return modes.user;
 }
 
@@ -388,7 +388,11 @@ export function ratesForRoleCategory(
   rates: PriceRates,
 ): RoleRates {
   const roleKey: RolePricingKey =
-    role === "wholesale" ? "wholesale" : role === "partner" || role === "admin" ? "partner" : "user";
+    role === "wholesale" || role === "admin"
+      ? "wholesale"
+      : role === "partner"
+        ? "partner"
+        : "user";
   const base = rates[roleKey];
   const cat = category === "unlimited" ? undefined : rates.categories?.[category]?.[roleKey];
   return {
