@@ -103,6 +103,26 @@ export async function payOrderWithWallet(orderId: string, userId: string) {
   return provisionOrder(order.id);
 }
 
+/** Admin complimentary create: mark paid without debit, then provision. */
+export async function provisionAdminComplimentary(orderId: string, adminUserId: string) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId: adminUserId, status: OrderStatus.pending_payment },
+  });
+  if (!order) throw new Error("سفارش پیدا نشد");
+  if (order.kind === OrderKind.wallet_charge) {
+    throw new Error("شارژ کیف پول باید کارت‌به‌کارت باشد");
+  }
+  await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      paymentMethod: PaymentMethod.wallet,
+      status: OrderStatus.paid,
+      adminNote: "ساخت رایگان توسط ادمین",
+    },
+  });
+  return provisionOrder(order.id);
+}
+
 export async function attachReceipt(orderId: string, userId: string, fileId: string, caption?: string) {
   const order = await prisma.order.findFirst({
     where: {

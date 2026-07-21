@@ -11,6 +11,7 @@ import { useDashAuth } from "../../lib/useDashAuth";
 
 const TABS: ShellTab[] = [
   { key: "home", label: "داشبورد", icon: "home", pin: true },
+  { key: "create", label: "ساخت اکانت", icon: "shop", pin: true },
   { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true },
   { key: "users", label: "کاربران", icon: "users", pin: true },
   { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true },
@@ -189,6 +190,7 @@ export default function AdminPage() {
       )}
 
       {tab === "home" && <HomeTab onGo={setTab} />}
+      {tab === "create" && <AdminCreateTab flash={flash} />}
       {tab === "orders" && <OrdersTab flash={flash} />}
       {tab === "users" && <UsersTab flash={flash} askConfirm={askConfirm} />}
       {tab === "prices" && <PricesTab flash={flash} askConfirm={askConfirm} />}
@@ -248,6 +250,9 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
       <div className="panel">
         <h2>دسترسی سریع</h2>
         <div className="quick-actions">
+          <button type="button" className="btn success wide" onClick={() => onGo("create")}>
+            ساخت اکانت
+          </button>
           <button type="button" className="btn primary wide" onClick={() => onGo("orders")}>
             بررسی سفارش‌ها
           </button>
@@ -262,6 +267,132 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+/* ---------------- Create account (admin complimentary) ---------------- */
+
+function AdminCreateTab({ flash }: { flash: Flash }) {
+  type Cell = {
+    id: string;
+    trafficGb: number | null;
+    months: number;
+    title: string | null;
+    price: number;
+    category: string;
+    isGolden?: boolean;
+  };
+  const [cells, setCells] = useState<Cell[]>([]);
+  const [catLabels, setCatLabels] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<Cell | null>(null);
+  const [accountName, setAccountName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ code?: string; subUrl?: string | null } | null>(null);
+
+  useEffect(() => {
+    void api<{ cells: Cell[]; categoryLabels: Record<string, string> }>("/me/catalog").then((r) => {
+      setCells(r.cells ?? []);
+      setCatLabels(r.categoryLabels ?? {});
+    });
+  }, []);
+
+  async function create() {
+    if (!selected) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api<{
+        provisioned?: { code?: string; subUrl?: string | null };
+        error?: string;
+      }>("/partner/create", {
+        body: {
+          trafficGb: selected.trafficGb,
+          months: selected.months,
+          category: selected.category,
+          accountName: accountName.trim() || undefined,
+          payWithWallet: true,
+        },
+      });
+      if (r.provisioned) {
+        setResult(r.provisioned);
+        flash("اکانت ساخته شد");
+        setAccountName("");
+      } else {
+        flash(null, "ساخت اکانت انجام نشد");
+      }
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="panel">
+        <h2>ساخت اکانت</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          ساخت فوری و رایگان توسط ادمین — بدون کسر از کیف پول. اگر گروه پنل اختصاصی ندارید، در گروه Telegram ساخته می‌شود.
+        </p>
+        <div className="field">
+          <label>نام اکانت (اختیاری)</label>
+          <input
+            value={accountName}
+            onChange={(e) => setAccountName(e.target.value)}
+            placeholder="مثلاً customer01"
+          />
+        </div>
+        <div className="plan-grid" style={{ marginTop: 12 }}>
+          {cells.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`plan-card${selected?.id === c.id ? " on" : ""}${c.isGolden ? " golden" : ""}`}
+              onClick={() => setSelected(c)}
+            >
+              <div className="plan-name">
+                {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
+              </div>
+              <div className="plan-meta">
+                <span>{catLabels[c.category] || c.category}</span>
+                <span className="num">{c.months} ماه</span>
+              </div>
+              <div className="plan-price num">{formatToman(c.price)}</div>
+            </button>
+          ))}
+        </div>
+        {!cells.length && <p className="muted">پلنی برای فروش فعال نیست.</p>}
+        <button
+          type="button"
+          className="btn success wide"
+          style={{ marginTop: 14 }}
+          disabled={!selected || busy}
+          onClick={() => void create()}
+        >
+          {busy ? "در حال ساخت…" : "ساخت اکانت"}
+        </button>
+      </div>
+      {result?.code && (
+        <div className="panel">
+          <h2>اکانت ساخته شد</h2>
+          <p className="muted">
+            کد: <strong className="num">{result.code}</strong>
+          </p>
+          {result.subUrl && (
+            <button
+              type="button"
+              className="btn primary wide"
+              onClick={() => {
+                void navigator.clipboard.writeText(result.subUrl!);
+                flash("لینک اشتراک کپی شد");
+              }}
+            >
+              کپی لینک اشتراک
+            </button>
+          )}
+        </div>
+      )}
     </>
   );
 }

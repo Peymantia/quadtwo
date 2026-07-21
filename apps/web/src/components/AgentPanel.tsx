@@ -299,7 +299,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               disabled={!selected || busy}
               onClick={create}
             >
-              ساخت و پرداخت از کیف پول
+              ساخت و تحویل فوری
             </button>
           </div>
           {result?.code && (

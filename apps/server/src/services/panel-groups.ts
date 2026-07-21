@@ -6,7 +6,8 @@ export const TELEGRAM_GROUP = "Telegram";
 
 /** Roles that must buy into their own named panel group (not Telegram). */
 export function needsDedicatedPanelGroup(role: UserRole | string): boolean {
-  return role === "admin" || role === "partner" || role === "wholesale";
+  // Admin creates into Telegram (or their optional panelGroup) without forcing agent name.
+  return role === "partner" || role === "wholesale";
 }
 
 /** ASCII slug for 3x-ui group names (panel usually expects Latin). */
@@ -50,11 +51,11 @@ export function partnerPanelGroupName(
  * - admin / partner / wholesale → their panelGroup (from نام نماینده)
  */
 export function resolveClientGroup(user: User): string {
-  if (!needsDedicatedPanelGroup(user.role)) {
-    return TELEGRAM_GROUP;
-  }
   if (user.panelGroup?.trim()) {
     return user.panelGroup.trim();
+  }
+  if (!needsDedicatedPanelGroup(user.role)) {
+    return TELEGRAM_GROUP;
   }
   if (user.agentName?.trim()) {
     return buildPanelGroupFromAgentName(user.agentName, user.telegramId);
@@ -66,6 +67,9 @@ export function resolveClientGroup(user: User): string {
 
 /** Block checkout until agent name + panel group are ready. */
 export function assertAgentReadyForPurchase(user: User): { ok: true } | { ok: false; message: string } {
+  if (user.role === "admin") {
+    return { ok: true };
+  }
   if (!needsDedicatedPanelGroup(user.role)) {
     return { ok: true };
   }
@@ -75,10 +79,10 @@ export function assertAgentReadyForPurchase(user: User): { ok: true } | { ok: fa
       message: [
         "❌ نام نماینده هنوز تعریف نشده است.",
         "",
-        "ادمین/نماینده نمی‌تواند بدون نام اختصاصی خرید کند.",
+        "نماینده نمی‌تواند بدون نام اختصاصی خرید کند.",
         "گروه پنل شما از روی نام نماینده ساخته می‌شود (نه گروه Telegram).",
         "",
-        "از «💼 پنل نماینده» یا کنترل سنتر، نام نماینده را تنظیم کنید.",
+        "از «💼 پنل نماینده»، نام نماینده را تنظیم کنید.",
         "مثال: AliShop",
       ].join("\n"),
     };

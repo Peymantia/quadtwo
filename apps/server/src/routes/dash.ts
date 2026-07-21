@@ -26,6 +26,7 @@ import {
   markPaid,
   orderSummaryText,
   payOrderWithWallet,
+  provisionAdminComplimentary,
   rejectOrder,
 } from "../services/orders.js";
 import { listPriceMatrix, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
@@ -479,6 +480,14 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       kind: body.kind,
       targetSubId: body.targetSubId,
     });
+    if (c.get("role") === "admin") {
+      try {
+        const result = await provisionAdminComplimentary(order.id, c.get("userId"));
+        return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
+      } catch (err) {
+        return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+      }
+    }
     if (body.payWithWallet) {
       try {
         const result = await payOrderWithWallet(order.id, c.get("userId"));
@@ -728,6 +737,14 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       accountName: body.accountName?.trim() || `p${Date.now().toString(36)}`,
       kind: OrderKind.new,
     });
+    if (c.get("role") === "admin") {
+      try {
+        const result = await provisionAdminComplimentary(order.id, c.get("userId"));
+        return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
+      } catch (err) {
+        return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+      }
+    }
     if (body.payWithWallet) {
       try {
         const result = await payOrderWithWallet(order.id, c.get("userId"));
