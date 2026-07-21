@@ -123,32 +123,68 @@ const checkoutLocks = new Set<number>();
 const walletPayLocks = new Set<string>();
 
 async function requireChannel(ctx: Context) {
+  if (!ctx.from) return true;
+  // Bot operators shouldn't be blocked by join gates.
+  if (await isControlAdmin(ctx.from.id)) return true;
+
   const channels = await getChannels();
   const required = channels.filter((c) => c.required);
   if (!required.length) return true;
 
   const missing: string[] = [];
+  const botErrors: string[] = [];
+
   for (const ch of required) {
-    const username = ch.username.replace(/^@/, "");
+    const username = ch.username.replace(/^@/, "").trim();
+    if (!username) continue;
     try {
-      const member = await ctx.api.getChatMember(`@${username}`, ctx.from!.id);
-      if (!["creator", "administrator", "member", "restricted"].includes(member.status)) {
+      const member = await ctx.api.getChatMember(`@${username}`, ctx.from.id);
+      // "left" / "kicked" = not a member. creator/admin/member/restricted = OK.
+      if (member.status === "left" || member.status === "kicked") {
         missing.push(username);
       }
-    } catch {
-      missing.push(username);
+    } catch (err) {
+      const msg = String(err instanceof Error ? err.message : err);
+      console.warn(`requireChannel getChatMember @${username} failed:`, msg);
+      // Bot is not in the channel / not admin / wrong username → cannot verify.
+      if (
+        /chat not found|bot is not a member|not enough rights|have no rights|CHAT_ADMIN_REQUIRED|PEER_ID_INVALID|user not found/i.test(
+          msg,
+        )
+      ) {
+        botErrors.push(`@${username}`);
+      } else {
+        // Unknown API failure — don't falsely accuse the user of not joining.
+        botErrors.push(`@${username}`);
+      }
     }
   }
-  if (!missing.length) return true;
+
+  if (!missing.length && !botErrors.length) return true;
 
   const kb = new InlineKeyboard();
   for (const username of missing) {
     kb.url(`📢 عضویت @${username}`, `https://t.me/${username}`).row();
   }
   kb.text("✅ بررسی عضویت", "check:channel");
-  await ctx.reply(`برای استفاده از ربات ابتدا در کانال(ها) عضو شوید:\n\n${missing.map((u) => `@${u}`).join("\n")}`, {
-    reply_markup: kb,
-  });
+
+  const lines: string[] = [];
+  if (missing.length) {
+    lines.push("برای استفاده از ربات ابتدا در کانال(ها) عضو شوید:", "", ...missing.map((u) => `• @${u}`));
+  }
+  if (botErrors.length) {
+    if (lines.length) lines.push("");
+    lines.push(
+      "⚠️ ربات فعلاً نمی‌تواند عضویت این کانال(ها) را بررسی کند:",
+      "",
+      ...botErrors.map((u) => `• ${u}`),
+      "",
+      "بات را به کانال اضافه کنید و ادمین کنید (حداقل دسترسی دیدن اعضا).",
+      "اگر بات را تازه ساختید، ادمین بودن بات قبلی کافی نیست — بات جدید را دوباره ادمین کنید.",
+    );
+  }
+
+  await ctx.reply(lines.join("\n"), { reply_markup: kb });
   return false;
 }
 
