@@ -5,7 +5,8 @@ import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashSh
 import { Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { CardPayModal } from "../../components/CardPayModal";
-import { PaymentCardBlock } from "../../components/PaymentCard";
+import { PaymentCardBlock, TrafficProgress } from "../../components/PaymentCard";
+import { SortSelect, remainingRatio, sortByMode, type ListSort } from "../../components/SortSelect";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
@@ -16,7 +17,10 @@ type Sub = {
   title: string | null;
   note: string | null;
   trafficLabel: string;
+  trafficGb: number | null;
+  usedTrafficBytes?: number;
   expiresAt: string;
+  createdAt?: string;
   subUrl: string | null;
   status: string;
   isTest?: boolean;
@@ -83,6 +87,7 @@ export default function UserAppPage() {
   const [chargeNote, setChargeNote] = useState("");
   const [payCard, setPayCard] = useState<PayCard | null>(null);
   const [payModal, setPayModal] = useState<PayModalState>(null);
+  const [subSort, setSubSort] = useState<ListSort>("newest");
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -271,11 +276,11 @@ export default function UserAppPage() {
                       <span className="num">{c.trafficGb === null ? "∞" : `${c.trafficGb} GB`}</span>
                     </div>
                     <div className="plan-price num">{formatToman(c.price)}</div>
-                    <div className="actions">
-                      <button type="button" className="btn light" style={{ flex: 1 }} disabled={busy} onClick={() => buy(c, true)}>
+                    <div className="actions stack">
+                      <button type="button" className="btn light wide" disabled={busy} onClick={() => buy(c, true)}>
                         خرید با کیف پول
                       </button>
-                      <button type="button" className="btn ghost" disabled={busy} onClick={() => buy(c, false)}>
+                      <button type="button" className="btn ghost wide" disabled={busy} onClick={() => buy(c, false)}>
                         کارت به کارت
                       </button>
                     </div>
@@ -297,12 +302,22 @@ export default function UserAppPage() {
       {tab === "subs" && (
         <div className="panel">
           <h2>سرویس‌های من</h2>
+          <SortSelect value={subSort} onChange={setSubSort} />
           <div className="list">
-            {subs.map((s) => {
+            {sortByMode(subs, subSort, {
+              createdAt: (s) => (s.createdAt ? new Date(s.createdAt).getTime() : 0),
+              expiresAt: (s) => new Date(s.expiresAt).getTime(),
+              remainingRatio: (s) =>
+                remainingRatio({
+                  expiresAt: s.expiresAt,
+                  usedBytes: s.usedTrafficBytes ?? 0,
+                  totalGb: s.trafficGb,
+                }),
+            }).map((s) => {
               const expired = new Date(s.expiresAt) < new Date();
               return (
-                <div key={s.id} className="row-card" style={{ alignItems: "flex-start" }}>
-                  <div style={{ flex: 1, minWidth: 220 }}>
+                <div key={s.id} className="row-card" style={{ alignItems: "flex-start", flexDirection: "column" }}>
+                  <div style={{ width: "100%" }}>
                     <strong className="num">{s.code}</strong>{" "}
                     <span className={`badge ${expired || s.status !== "active" ? "bad" : "ok"}`}>
                       {expired
@@ -317,18 +332,34 @@ export default function UserAppPage() {
                     </span>
                     {s.isTest && <span className="badge info">تست</span>}
                     <div className="muted" style={{ marginTop: 5 }}>
-                      {s.trafficLabel} · انقضا {new Date(s.expiresAt).toLocaleDateString("fa-IR")}
+                      انقضا {new Date(s.expiresAt).toLocaleDateString("fa-IR")}
                     </div>
-                    <div className="field" style={{ marginTop: 9, marginBottom: 0 }}>
-                      <label>یادداشت شخصی</label>
-                      <input
-                        value={noteEdits[s.id] ?? s.note ?? ""}
-                        onChange={(e) => setNoteEdits((m) => ({ ...m, [s.id]: e.target.value }))}
-                        placeholder="مثلاً: گوشی مامان"
-                      />
+                    <TrafficProgress usedBytes={s.usedTrafficBytes ?? 0} totalGb={s.isTest ? 0.25 : s.trafficGb} />
+                    <div className="note-row">
+                      <div className="field">
+                        <label>یادداشت شخصی</label>
+                        <input
+                          value={noteEdits[s.id] ?? s.note ?? ""}
+                          onChange={(e) => setNoteEdits((m) => ({ ...m, [s.id]: e.target.value }))}
+                          placeholder="یادداشت…"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn ghost sm"
+                        onClick={async () => {
+                          await api(`/me/subscriptions/${s.id}/note`, {
+                            method: "PATCH",
+                            body: { note: noteEdits[s.id] ?? s.note },
+                          });
+                          setMsg("یادداشت ذخیره شد");
+                        }}
+                      >
+                        ذخیره
+                      </button>
                     </div>
                   </div>
-                  <div className="actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                  <div className="actions" style={{ width: "100%", marginTop: 10 }}>
                     {s.subUrl && (
                       <button
                         type="button"
@@ -341,19 +372,6 @@ export default function UserAppPage() {
                         کپی لینک اشتراک
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className="btn ghost sm"
-                      onClick={async () => {
-                        await api(`/me/subscriptions/${s.id}/note`, {
-                          method: "PATCH",
-                          body: { note: noteEdits[s.id] ?? s.note },
-                        });
-                        setMsg("یادداشت ذخیره شد");
-                      }}
-                    >
-                      ذخیره یادداشت
-                    </button>
                     <button
                       type="button"
                       className="btn ghost sm"
@@ -455,7 +473,7 @@ export default function UserAppPage() {
             </p>
             {(guide.support_username || home.support) && (
               <a
-                className="btn primary"
+                className="btn primary wide"
                 href={`https://t.me/${(guide.support_username || home.support).replace(/^@/, "")}`}
                 target="_blank"
                 rel="noreferrer"
@@ -466,7 +484,7 @@ export default function UserAppPage() {
           </div>
           <div className="panel">
             <h2>آموزش اتصال</h2>
-            <div className="chip-row" style={{ marginBottom: 12 }}>
+            <div className="chip-row full" style={{ marginBottom: 12 }}>
               {(
                 [
                   ["android", "اندروید"],
@@ -494,24 +512,24 @@ export default function UserAppPage() {
                     ? guide.guide_windows_text || guide.guide_text || "متن راهنمای ویندوز هنوز تنظیم نشده."
                     : guide.guide_macos_text || guide.guide_text || "متن راهنمای مک هنوز تنظیم نشده."}
             </pre>
-            <div className="actions">
+            <div className="guide-download-wrap">
               {guidePlatform === "android" && guide.guide_android && (
-                <a className="btn primary sm" href={guide.guide_android} target="_blank" rel="noreferrer">
+                <a className="btn primary" href={guide.guide_android} target="_blank" rel="noreferrer">
                   دانلود اپ اندروید
                 </a>
               )}
               {guidePlatform === "ios" && guide.guide_ios && (
-                <a className="btn primary sm" href={guide.guide_ios} target="_blank" rel="noreferrer">
+                <a className="btn primary" href={guide.guide_ios} target="_blank" rel="noreferrer">
                   دانلود اپ  آیفون
                 </a>
               )}
               {guidePlatform === "windows" && guide.guide_windows && (
-                <a className="btn primary sm" href={guide.guide_windows} target="_blank" rel="noreferrer">
+                <a className="btn primary" href={guide.guide_windows} target="_blank" rel="noreferrer">
                   دانلود اپ ویندوز
                 </a>
               )}
               {guidePlatform === "macos" && guide.guide_mac && (
-                <a className="btn primary sm" href={guide.guide_mac} target="_blank" rel="noreferrer">
+                <a className="btn primary" href={guide.guide_mac} target="_blank" rel="noreferrer">
                   دانلود اپ  مک
                 </a>
               )}

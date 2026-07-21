@@ -225,7 +225,7 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
 
   return (
     <>
-      <div className="grid">
+      <div className="grid stats-row-4">
         <div className="stat accent">
           <div className="label">فروش امروز</div>
           <div className="value num">{stats?.salesToday.label ?? "—"}</div>
@@ -245,17 +245,17 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
       </div>
       <div className="panel">
         <h2>دسترسی سریع</h2>
-        <div className="actions">
-          <button type="button" className="btn primary" onClick={() => onGo("orders")}>
+        <div className="quick-actions">
+          <button type="button" className="btn primary wide" onClick={() => onGo("orders")}>
             بررسی سفارش‌ها
           </button>
-          <button type="button" className="btn ghost" onClick={() => onGo("users")}>
+          <button type="button" className="btn light wide" onClick={() => onGo("users")}>
             مدیریت کاربران
           </button>
-          <button type="button" className="btn ghost" onClick={() => onGo("prices")}>
+          <button type="button" className="btn ghost wide" onClick={() => onGo("prices")}>
             قیمت‌گذاری
           </button>
-          <button type="button" className="btn ghost" onClick={() => onGo("settings")}>
+          <button type="button" className="btn ghost wide" onClick={() => onGo("settings")}>
             تنظیمات
           </button>
         </div>

@@ -68,6 +68,7 @@ import {
 import { listRecentAudit, auditLog } from "../services/audit.js";
 import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
 import { importWorkbook, readWorkbookFromBuffer, formatImportResult } from "../services/bulk-import.js";
+import { getSubscriptionTrafficBytes } from "../services/live-status.js";
 import { dashBaseUrl, env } from "../config/env.js";
 
 type Vars = { userId: string; role: string; telegramId: string };
@@ -281,21 +282,31 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       where: { userId: c.get("userId") },
       orderBy: { createdAt: "desc" },
     });
-    return c.json({
-      subscriptions: subs.map((s) => ({
-        id: s.id,
-        code: s.code,
-        email: s.email,
-        title: s.title,
-        note: s.note,
-        trafficLabel: formatTraffic(s.trafficGb),
-        trafficGb: s.trafficGb,
-        expiresAt: s.expiresAt.toISOString(),
-        subUrl: s.subUrl,
-        status: s.status,
-        isTest: s.isTest,
-      })),
-    });
+    const enriched = await Promise.all(
+      subs.map(async (s) => {
+        const traf = await getSubscriptionTrafficBytes(s.id).catch(() => ({
+          usedBytes: 0,
+          totalBytes: 0,
+          totalGb: s.trafficGb,
+        }));
+        return {
+          id: s.id,
+          code: s.code,
+          email: s.email,
+          title: s.title,
+          note: s.note,
+          trafficLabel: formatTraffic(s.trafficGb),
+          trafficGb: traf.totalGb ?? s.trafficGb,
+          usedTrafficBytes: traf.usedBytes,
+          expiresAt: s.expiresAt.toISOString(),
+          createdAt: s.createdAt.toISOString(),
+          subUrl: s.subUrl,
+          status: s.status,
+          isTest: s.isTest,
+        };
+      }),
+    );
+    return c.json({ subscriptions: enriched });
   });
 
   api.patch("/me/subscriptions/:id/note", async (c) => {
@@ -578,7 +589,73 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
     const groups = await listConfigGroups();
     const mine = groups.find((g) => g.panelGroup === user.panelGroup);
     if (!mine) return c.json({ items: [], total: 0, title: user.panelGroup });
-    return c.json(await listConfigsForGroup(mine.key, 0, 100));
+    const result = await listConfigsForGroup(mine.key, 0, 100);
+    const items = await Promise.all(
+      result.items.map(async (item) => {
+        if (!item.subId) return { ...item, usedTrafficBytes: 0 };
+        const traf = await getSubscriptionTrafficBytes(item.subId).catch(() => ({
+          usedBytes: 0,
+          totalBytes: 0,
+          totalGb: item.trafficGb ?? null,
+        }));
+        return {
+          ...item,
+          trafficGb: traf.totalGb ?? item.trafficGb ?? null,
+          usedTrafficBytes: traf.usedBytes,
+        };
+      }),
+    );
+    return c.json({ ...result, items });
+  });
+
+  async function assertPartnerConfigAccess(userId: string, role: string, email: string, subId?: string | null) {
+    if (role === "admin") return;
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!user.panelGroup) throw new Error("گروه پنل ندارید");
+    const groups = await listConfigGroups();
+    const mine = groups.find((g) => g.panelGroup === user.panelGroup);
+    if (!mine) throw new Error("گروه پنل پیدا نشد");
+    const list = await listConfigsForGroup(mine.key, 0, 500);
+    const ok = list.items.some(
+      (i) =>
+        i.email.toLowerCase() === email.trim().toLowerCase() ||
+        (subId && i.subId === subId),
+    );
+    if (!ok) throw new Error("دسترسی به این کانفیگ ندارید");
+  }
+
+  api.get("/partner/configs/detail", async (c) => {
+    const email = c.req.query("email") || "";
+    const subId = c.req.query("subId") || null;
+    try {
+      await assertPartnerConfigAccess(c.get("userId"), c.get("role"), email, subId);
+      return c.json(await getConfigDetail({ email, subId }));
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.put("/partner/configs/update", async (c) => {
+    const body = await c.req.json<{
+      email: string;
+      subId?: string | null;
+      title?: string | null;
+      note?: string | null;
+      enable?: boolean;
+    }>();
+    try {
+      await assertPartnerConfigAccess(c.get("userId"), c.get("role"), body.email, body.subId);
+      const result = await updateConfig({
+        email: body.email,
+        subId: body.subId,
+        title: body.title,
+        note: body.note,
+        enable: body.enable,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
   });
 
   api.post("/partner/create", async (c) => {

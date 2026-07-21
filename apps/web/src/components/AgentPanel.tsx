@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "./DashShell";
 import { Toast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
-import { PaymentCardBlock } from "./PaymentCard";
+import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
+import { SortSelect, remainingRatio, sortByMode, type ListSort } from "./SortSelect";
+import { Modal } from "./Modal";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 
@@ -18,7 +20,18 @@ type Cell = {
   isGolden?: boolean;
 };
 
-type ConfigItem = { email: string; code: string | null; subId: string | null; status: string | null };
+type ConfigItem = {
+  email: string;
+  code: string | null;
+  subId: string | null;
+  status: string | null;
+  title?: string | null;
+  note?: string | null;
+  trafficGb?: number | null;
+  expiresAt?: string | null;
+  createdAt?: string | null;
+  usedTrafficBytes?: number;
+};
 
 const TABS: ShellTab[] = [
   { key: "home", label: "داشبورد", icon: "home" },
@@ -38,6 +51,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [selected, setSelected] = useState<Cell | null>(null);
   const [accountName, setAccountName] = useState("");
   const [filter, setFilter] = useState("");
+  const [configSort, setConfigSort] = useState<ListSort>("newest");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,6 +59,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [chargeAmount, setChargeAmount] = useState("");
   const [payCard, setPayCard] = useState<{ number: string; holder: string } | null>(null);
   const [txs, setTxs] = useState<Array<{ id: string; type: string; amount: number; createdAt: string; note?: string | null }>>([]);
+  const [editTarget, setEditTarget] = useState<ConfigItem | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editNote, setEditNote] = useState("");
 
   const loadConfigs = useCallback(
     () => api<{ items: ConfigItem[] }>("/partner/configs").then((r) => setConfigs(r.items ?? [])),
@@ -79,6 +96,22 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         .catch(() => undefined);
     }
   }, [home, tab, loadConfigs]);
+
+  const filteredSorted = useMemo(() => {
+    const base = filter.trim()
+      ? configs.filter((c) => (c.code || "").includes(filter) || c.email.includes(filter) || (c.title || "").includes(filter))
+      : configs;
+    return sortByMode(base, configSort, {
+      createdAt: (c) => (c.createdAt ? new Date(c.createdAt).getTime() : 0),
+      expiresAt: (c) => (c.expiresAt ? new Date(c.expiresAt).getTime() : Number.POSITIVE_INFINITY),
+      remainingRatio: (c) =>
+        remainingRatio({
+          expiresAt: c.expiresAt,
+          usedBytes: c.usedTrafficBytes ?? 0,
+          totalGb: c.trafficGb,
+        }),
+    });
+  }, [configs, filter, configSort]);
 
   if (loading || !home) return <LoadingScreen />;
 
@@ -139,9 +172,46 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     }
   }
 
-  const filtered = filter.trim()
-    ? configs.filter((c) => (c.code || "").includes(filter) || c.email.includes(filter))
-    : configs;
+  async function toggleEnable(c: ConfigItem, enable: boolean) {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api("/partner/configs/update", {
+        method: "PUT",
+        body: { email: c.email, subId: c.subId, enable },
+      });
+      setMsg(enable ? "کانفیگ فعال شد" : "کانفیگ موقتاً غیرفعال شد");
+      await loadConfigs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveEdit() {
+    if (!editTarget) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api("/partner/configs/update", {
+        method: "PUT",
+        body: {
+          email: editTarget.email,
+          subId: editTarget.subId,
+          title: editTitle.trim() || null,
+          note: editNote.trim() || null,
+        },
+      });
+      setMsg("مشخصات کانفیگ ذخیره شد");
+      setEditTarget(null);
+      await loadConfigs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const userLabel = home.user.agentName || (home.user.username ? `@${home.user.username}` : "");
 
@@ -182,14 +252,14 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           </div>
           <div className="panel">
             <h2>دسترسی سریع</h2>
-            <div className="actions">
-              <button type="button" className="btn primary" onClick={() => setTab("create")}>
+            <div className="quick-actions">
+              <button type="button" className="btn primary wide" onClick={() => setTab("create")}>
                 ساخت کانفیگ جدید
               </button>
-              <button type="button" className="btn ghost" onClick={() => setTab("configs")}>
+              <button type="button" className="btn light wide" onClick={() => setTab("configs")}>
                 مشاهده کانفیگ‌ها
               </button>
-              <button type="button" className="btn ghost" onClick={() => setTab("wallet")}>
+              <button type="button" className="btn ghost wide" onClick={() => setTab("wallet")}>
                 شارژ کیف پول
               </button>
             </div>
@@ -210,7 +280,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                 <button
                   key={c.id}
                   type="button"
-                  className={`plan-card${selected?.id === c.id ? "" : ""}`}
+                  className="plan-card"
                   style={{
                     cursor: "pointer",
                     textAlign: "right",
@@ -251,7 +321,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               {result.subUrl && (
                 <button
                   type="button"
-                  className="btn primary sm"
+                  className="btn primary wide"
                   onClick={() => {
                     void navigator.clipboard.writeText(result.subUrl!);
                     setMsg("لینک اشتراک کپی شد");
@@ -270,21 +340,59 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           <h2>کانفیگ‌های گروه شما</h2>
           <div className="field">
             <label>جستجو</label>
-            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="کد یا ایمیل کانفیگ" />
+            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="کد، ایمیل یا عنوان" />
           </div>
+          <SortSelect value={configSort} onChange={setConfigSort} />
           <div className="list">
-            {filtered.map((c) => (
-              <div key={c.email} className="row-card">
-                <div>
-                  <strong className="num">{c.code || c.email}</strong>
-                  <div className="muted num">{c.email}</div>
+            {filteredSorted.map((c) => {
+              const expired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
+              const active = c.status === "active" && !expired;
+              return (
+                <div key={c.email} className="row-card" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <strong className="num">{c.code || c.email}</strong>{" "}
+                      <span className={`badge ${active ? "ok" : "bad"}`}>
+                        {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
+                      </span>
+                      {c.title && <div className="muted">{c.title}</div>}
+                      <div className="muted num" style={{ marginTop: 4 }}>
+                        {c.email}
+                      </div>
+                    </div>
+                    <div className="muted num" style={{ textAlign: "left" }}>
+                      {c.expiresAt ? `انقضا ${new Date(c.expiresAt).toLocaleDateString("fa-IR")}` : "—"}
+                    </div>
+                  </div>
+                  {c.note && <div className="muted" style={{ marginTop: 6 }}>یادداشت: {c.note}</div>}
+                  <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
+                  <div className="actions" style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="btn primary sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setEditTarget(c);
+                        setEditTitle(c.title ?? "");
+                        setEditNote(c.note ?? "");
+                      }}
+                    >
+                      ویرایش
+                    </button>
+                    {active ? (
+                      <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void toggleEnable(c, false)}>
+                        غیرفعال موقت
+                      </button>
+                    ) : (
+                      <button type="button" className="btn success sm" disabled={busy || expired} onClick={() => void toggleEnable(c, true)}>
+                        فعال‌سازی
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span className={`badge ${c.status === "active" ? "ok" : c.status ? "bad" : "info"}`}>
-                  {c.status === "active" ? "فعال" : c.status || "پنل"}
-                </span>
-              </div>
-            ))}
-            {!filtered.length && <p className="muted">کانفیگی یافت نشد.</p>}
+              );
+            })}
+            {!filteredSorted.length && <p className="muted">کانفیگی یافت نشد.</p>}
           </div>
         </div>
       )}
@@ -316,7 +424,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                 placeholder="مثلاً 500000"
               />
             </div>
-            <button type="button" className="btn success" disabled={busy} onClick={requestCharge}>
+            <button type="button" className="btn success wide" disabled={busy} onClick={requestCharge}>
               ثبت درخواست شارژ
             </button>
           </div>
@@ -351,6 +459,36 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           onSaved={() => void reload()}
         />
       )}
+
+      <Modal
+        open={Boolean(editTarget)}
+        title="ویرایش کانفیگ"
+        onClose={() => setEditTarget(null)}
+      >
+        {editTarget && (
+          <>
+            <p className="muted num" style={{ marginTop: 0 }}>
+              {editTarget.code || editTarget.email}
+            </p>
+            <div className="field">
+              <label>عنوان</label>
+              <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>یادداشت</label>
+              <input value={editNote} onChange={(e) => setEditNote(e.target.value)} />
+            </div>
+            <div className="actions stack">
+              <button type="button" className="btn primary wide" disabled={busy} onClick={() => void saveEdit()}>
+                ذخیره
+              </button>
+              <button type="button" className="btn ghost wide" disabled={busy} onClick={() => setEditTarget(null)}>
+                لغو
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
     </DashShell>
   );
 }

@@ -142,6 +142,35 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
   };
 }
 
+/** Lightweight used/total bytes for dashboard progress bars. */
+export async function getSubscriptionTrafficBytes(
+  subscriptionId: string,
+): Promise<{ usedBytes: number; totalBytes: number; totalGb: number | null }> {
+  const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+  if (!sub) return { usedBytes: 0, totalBytes: 0, totalGb: null };
+  let usedBytes = 0;
+  let totalBytes = sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
+  let totalGb = sub.trafficGb;
+  try {
+    const resolved = await resolvePanelForSubscription(sub);
+    const traf = await resolved.xui.getClientTraffic(sub.email);
+    if (traf) {
+      usedBytes = traf.used;
+      if (traf.total > 0) {
+        totalBytes = traf.total;
+        totalGb = Math.max(1, Math.round(traf.total / 1024 ** 3));
+      }
+    }
+  } catch {
+    /* keep DB totals */
+  }
+  if (sub.isTest) {
+    totalBytes = TEST_BYTES;
+    totalGb = 0.25;
+  }
+  return { usedBytes, totalBytes, totalGb };
+}
+
 export function liveStatusText(live: LiveSubStatus): string {
   return [
     live.isTest ? "🧪 سرویس تست" : "📦 سرویس شما",

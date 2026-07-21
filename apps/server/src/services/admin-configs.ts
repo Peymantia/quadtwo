@@ -24,6 +24,11 @@ export type ConfigListItem = {
   ownerLabel: string;
   inDb: boolean;
   status: string | null;
+  title?: string | null;
+  note?: string | null;
+  trafficGb?: number | null;
+  expiresAt?: string | null;
+  createdAt?: string | null;
 };
 
 function encodePanelGroupKey(name: string) {
@@ -318,6 +323,11 @@ export async function listConfigsForGroup(
         ownerLabel: ownerFromUser(s.user),
         inDb: true,
         status: s.status,
+        title: s.title,
+        note: s.note,
+        trafficGb: s.trafficGb,
+        expiresAt: s.expiresAt.toISOString(),
+        createdAt: s.createdAt.toISOString(),
       });
     }
     mergePanelOnly(byEmail, panelEmails);
@@ -371,6 +381,11 @@ export async function listConfigsForGroup(
       ownerLabel: ownerFromUser(s.user),
       inDb: true,
       status: s.status,
+      title: s.title,
+      note: s.note,
+      trafficGb: s.trafficGb,
+      expiresAt: s.expiresAt.toISOString(),
+      createdAt: s.createdAt.toISOString(),
     });
   }
 

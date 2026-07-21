@@ -89,7 +89,7 @@ export function PasswordSettings({ hasPassword, onSaved, onFlash }: Props) {
   }
 
   return (
-    <>
+    <div className="settings-auth-grid">
       <div className="panel">
         <h2>ورود با Face ID / اثرانگشت</h2>
         <p className="muted" style={{ marginTop: 0 }}>
@@ -122,7 +122,7 @@ export function PasswordSettings({ hasPassword, onSaved, onFlash }: Props) {
           ))}
           {!passkeys.length && <p className="muted">هنوز Passkeyای ثبت نشده.</p>}
         </div>
-        <button type="button" className="btn success" disabled={!passkeyOk || passBusy} onClick={() => void addPasskey()}>
+        <button type="button" className="btn success wide" disabled={!passkeyOk || passBusy} onClick={() => void addPasskey()}>
           {passBusy ? "در حال ثبت…" : "فعال‌سازی Face ID / اثرانگشت"}
         </button>
       </div>
@@ -161,10 +161,15 @@ export function PasswordSettings({ hasPassword, onSaved, onFlash }: Props) {
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
-        <button type="button" className="btn primary" disabled={busy || password.length < 8 || (hasPassword && !currentPassword)} onClick={() => void save()}>
+        <button
+          type="button"
+          className="btn primary wide"
+          disabled={busy || password.length < 8 || (hasPassword && !currentPassword)}
+          onClick={() => void save()}
+        >
           {busy ? "در حال ذخیره…" : hasPassword ? "تغییر رمز عبور" : "ذخیره رمز عبور"}
         </button>
       </div>
-    </>
+    </div>
   );
 }
