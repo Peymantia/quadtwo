@@ -117,6 +117,7 @@ quadtwo restart         # ری‌استارت
 quadtwo env             # ویرایش .env
 quadtwo update          # به‌روزرسانی از GitHub
 quadtwo set-token       # عوض کردن ربات / rebrand
+quadtwo set-admin       # عوض کردن ادمین تلگرام
 ```
 
 ### 🔁 عوض کردن توکن ربات (rebrand)
@@ -129,6 +130,17 @@ quadtwo set-token 123456789:AAH...new-token
 
 توکن اعتبارسنجی می‌شود، `.env` به‌روز و سرویس ری‌استارت می‌شود. **دیتابیس حفظ می‌ماند** — کاربران فقط باید به ربات جدید `/start` بزنند.
 
+### 👑 عوض کردن ادمین
+
+```bash
+quadtwo set-admin
+# یا
+quadtwo set-admin 123456789
+# چند ادمین:
+quadtwo set-admin 111111111,222222222
+```
+
+`ADMIN_TELEGRAM_IDS` در `.env` عوض می‌شود، ادمین‌های قدیمی دیتابیس به کاربر عادی تنزل می‌یابند، و `extra_admin_ids` پاک می‌شود. از اکانت جدید `/start` بزنید.
 ### 🗑 حذف
 
 ```bash

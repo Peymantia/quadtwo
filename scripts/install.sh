@@ -293,9 +293,52 @@ case "${1:-}" in
     fi
     echo "Users must open the new bot and send /start."
     ;;
+  set-admin|setadmin)
+    ENV_FILE="$(env_file)"
+    [[ -f "$ENV_FILE" ]] || { echo "No .env at $ENV_FILE"; exit 1; }
+    IDS="${2:-}"
+    if [[ -z "$IDS" ]]; then
+      echo "Current ADMIN_TELEGRAM_IDS: $(env_get ADMIN_TELEGRAM_IDS || echo '(empty)')"
+      read -r -p "New admin Telegram numeric ID(s), comma-separated: " IDS
+    fi
+    IDS="$(echo "$IDS" | tr -d '[:space:]' | tr -d '@')"
+    [[ -n "$IDS" ]] || { echo "Admin Telegram ID is required."; exit 1; }
+    if [[ ! "$IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+      echo "Invalid ID list (expected numeric IDs like 123456789 or 111,222)."
+      exit 1
+    fi
+    OLD_IDS="$(env_get ADMIN_TELEGRAM_IDS || true)"
+    set_env_key ADMIN_TELEGRAM_IDS "$IDS"
+    echo "ADMIN_TELEGRAM_IDS: ${OLD_IDS:-'(empty)'} → $IDS"
+    echo "Syncing database roles..."
+    (
+      cd "$DIR"
+      set -a
+      # shellcheck disable=SC1091
+      source "$ENV_FILE"
+      set +a
+      if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
+        "$DIR/node_modules/.bin/tsx" apps/server/scripts/set-admin.ts "$IDS"
+      elif command -v npx >/dev/null 2>&1; then
+        npx --yes tsx apps/server/scripts/set-admin.ts "$IDS"
+      else
+        echo "Warning: tsx not found — .env updated but DB roles were not synced."
+        echo "Run manually: cd $DIR && npx tsx apps/server/scripts/set-admin.ts $IDS"
+      fi
+    ) || {
+      echo "Warning: DB sync failed — .env was still updated."
+      echo "Fix DB with: cd $DIR && npx tsx apps/server/scripts/set-admin.ts $IDS"
+    }
+    echo "Restarting $SERVICE..."
+    systemctl restart "$SERVICE"
+    sleep 1
+    echo "Done. New admin(s): $IDS"
+    echo "Open the bot from the new Telegram account and send /start."
+    echo "Old Telegram accounts are no longer control admins."
+    ;;
   env) ${EDITOR:-nano} "$(env_file)" ;;
   *)
-    echo "Usage: quadtwo {start|stop|restart|status|logs|update|env|set-token [TOKEN]}"
+    echo "Usage: quadtwo {start|stop|restart|status|logs|update|env|set-token [TOKEN]|set-admin [ID,...]}"
     exit 1
     ;;
 esac
@@ -331,7 +374,8 @@ do_install() {
   log "Install complete."
   echo "  Manage:  quadtwo status | quadtwo logs | quadtwo restart"
   echo "  Config:  quadtwo env"
-  echo "  New bot: quadtwo set-token   # after BotFather token change / rebrand"
+  echo "  New bot:   quadtwo set-token   # after BotFather token change / rebrand"
+  echo "  New admin: quadtwo set-admin   # replace ADMIN_TELEGRAM_IDS + demote old admins"
   echo "  Dashboard: https://${DASH_DOMAIN:-dash.anthropics.ir}"
   echo "  Nginx sample: deploy/nginx-dash.anthropics.ir.conf"
   echo "  In bot:  /setcard CARD_NUMBER|CARD_HOLDER_NAME"
