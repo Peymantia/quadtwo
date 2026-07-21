@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
-import { Toast } from "../../components/Toast";
+import { ConfirmToast, Toast } from "../../components/Toast";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
@@ -53,7 +53,7 @@ type PriceRow = {
   isGolden: boolean;
 };
 
-type CategoryRow = { key: string; label: string; enabled: boolean; cellCount: number };
+type CategoryRow = { key: string; label: string; enabled: boolean; cellCount: number; builtin?: boolean };
 
 type PanelRow = {
   id: string;
@@ -63,7 +63,45 @@ type PanelRow = {
   sellEnabled: boolean;
   hasToken: boolean;
   inboundIds: string;
+  subBase?: string | null;
+  weight?: number;
+  categories?: string;
 };
+
+const FALLBACK_CATEGORIES = [
+  { key: "data", label: "حجمی" },
+  { key: "national", label: "ملی" },
+  { key: "unlimited", label: "نامحدود" },
+];
+
+function catLabel(key: string, cats?: Array<{ key: string; label: string }>) {
+  return cats?.find((c) => c.key === key)?.label || FALLBACK_CATEGORIES.find((c) => c.key === key)?.label || key;
+}
+
+function parseCats(raw: string | string[] | null | undefined): string[] {
+  if (Array.isArray(raw)) return raw;
+  if (!raw) return ["data", "unlimited"];
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    return Array.isArray(arr) ? (arr as string[]) : ["data", "unlimited"];
+  } catch {
+    return ["data", "unlimited"];
+  }
+}
+
+function toLocalInput(iso: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fromLocalInput(v: string) {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
 
 const ROLE_FA: Record<string, string> = {
   user: "کاربر",
@@ -77,6 +115,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState("home");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ message: string; resolve: (v: boolean) => void } | null>(null);
 
   const flash = useCallback((ok: string | null, bad: string | null = null) => {
     setMsg(ok);
@@ -87,6 +126,16 @@ export default function AdminPage() {
     setMsg(null);
     setErr(null);
   }, []);
+
+  const askConfirm = useCallback(
+    (message: string) =>
+      new Promise<boolean>((resolve) => {
+        setConfirm({ message, resolve });
+        setMsg(null);
+        setErr(null);
+      }),
+    [],
+  );
 
   if (loading || !home) return <LoadingScreen />;
 
@@ -107,13 +156,26 @@ export default function AdminPage() {
       }}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
+      {confirm && (
+        <ConfirmToast
+          message={confirm.message}
+          onYes={() => {
+            confirm.resolve(true);
+            setConfirm(null);
+          }}
+          onNo={() => {
+            confirm.resolve(false);
+            setConfirm(null);
+          }}
+        />
+      )}
 
       {tab === "home" && <HomeTab onGo={setTab} />}
       {tab === "orders" && <OrdersTab flash={flash} />}
-      {tab === "users" && <UsersTab flash={flash} />}
-      {tab === "prices" && <PricesTab flash={flash} />}
-      {tab === "categories" && <CategoriesTab flash={flash} />}
-      {tab === "configs" && <ConfigsTab flash={flash} />}
+      {tab === "users" && <UsersTab flash={flash} askConfirm={askConfirm} />}
+      {tab === "prices" && <PricesTab flash={flash} askConfirm={askConfirm} />}
+      {tab === "categories" && <CategoriesTab flash={flash} askConfirm={askConfirm} />}
+      {tab === "configs" && <ConfigsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "panels" && <PanelsTab flash={flash} />}
       {tab === "settings" && <SettingsTab flash={flash} />}
       {tab === "reports" && <ReportsTab />}
@@ -123,6 +185,7 @@ export default function AdminPage() {
 }
 
 type Flash = (ok: string | null, bad?: string | null) => void;
+type AskConfirm = (message: string) => Promise<boolean>;
 
 function errText(e: unknown) {
   return String(e instanceof Error ? e.message : e);
@@ -255,7 +318,7 @@ function OrdersTab({ flash }: { flash: Flash }) {
 
 /* ---------------- Users ---------------- */
 
-function UsersTab({ flash }: { flash: Flash }) {
+function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roleFilter, setRoleFilter] = useState("");
   const [q, setQ] = useState("");
@@ -297,7 +360,7 @@ function UsersTab({ flash }: { flash: Flash }) {
     : users;
 
   async function changeRole(u: AdminUser, role: string) {
-    if (!confirm(`نقش ${u.username ? "@" + u.username : u.telegramId} به «${ROLE_FA[role]}» تغییر کند؟`)) return;
+    if (!(await askConfirm(`نقش ${u.username ? "@" + u.username : u.telegramId} به «${ROLE_FA[role]}» تغییر کند؟`))) return;
     try {
       await api(`/admin/users/${u.id}/role`, { body: { role } });
       flash("نقش تغییر کرد");
@@ -317,6 +380,23 @@ function UsersTab({ flash }: { flash: Flash }) {
     try {
       const r = await api<{ balance: number }>(`/admin/users/${selected.id}/wallet`, {
         body: { amount, note: walletNote || undefined },
+      });
+      flash(`انجام شد — موجودی جدید: ${formatToman(r.balance)}`);
+      setWalletAmount("");
+      setWalletNote("");
+      await load();
+      setSelected((s) => (s ? { ...s, balance: r.balance } : s));
+    } catch (e) {
+      flash(null, errText(e));
+    }
+  }
+
+  async function zeroWallet() {
+    if (!selected || selected.balance <= 0) return;
+    if (!(await askConfirm(`موجودی ${formatToman(selected.balance)} صفر شود؟`))) return;
+    try {
+      const r = await api<{ balance: number }>(`/admin/users/${selected.id}/wallet`, {
+        body: { amount: -selected.balance, note: walletNote || "صفر کردن موجودی توسط ادمین" },
       });
       flash(`انجام شد — موجودی جدید: ${formatToman(r.balance)}`);
       setWalletAmount("");
@@ -432,6 +512,9 @@ function UsersTab({ flash }: { flash: Flash }) {
             <button type="button" className="btn danger" onClick={() => adjustWallet(-1)}>
               کسر از موجودی
             </button>
+            <button type="button" className="btn ghost" disabled={!selected || selected.balance <= 0} onClick={() => void zeroWallet()}>
+              صفر کردن موجودی
+            </button>
             <button type="button" className="btn ghost" onClick={() => setSelected(null)}>
               بستن
             </button>
@@ -474,10 +557,11 @@ function UsersTab({ flash }: { flash: Flash }) {
 
 /* ---------------- Prices ---------------- */
 
-function PricesTab({ flash }: { flash: Flash }) {
+function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [cells, setCells] = useState<PriceRow[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<PriceRow>>>({});
   const [catFilter, setCatFilter] = useState("");
+  const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [bulkMode, setBulkMode] = useState<"percent" | "amount">("percent");
   const [bulkValue, setBulkValue] = useState("");
   const [newCell, setNewCell] = useState({
@@ -495,6 +579,18 @@ function PricesTab({ flash }: { flash: Flash }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void api<{ categories: CategoryRow[] }>("/admin/categories")
+      .then((r) => {
+        if (r.categories?.length) {
+          setCategories(r.categories.map((c) => ({ key: c.key, label: c.label })));
+        }
+      })
+      .catch(() => {
+        /* keep fallback */
+      });
+  }, []);
 
   const shown = catFilter ? cells.filter((c) => c.category === catFilter) : cells;
 
@@ -523,8 +619,36 @@ function PricesTab({ flash }: { flash: Flash }) {
     }
   }
 
+  async function saveAll() {
+    const ids = Object.keys(edits);
+    if (!ids.length) return;
+    try {
+      let n = 0;
+      for (const id of ids) {
+        const c = cells.find((x) => x.id === id);
+        const e = edits[id];
+        if (!c || !e) continue;
+        await api(`/admin/prices/${id}`, {
+          method: "PUT",
+          body: {
+            priceUser: Number(e.priceUser ?? c.priceUser),
+            pricePartner: Number(e.pricePartner ?? c.pricePartner),
+            priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
+            title: e.title ?? c.title,
+          },
+        });
+        n++;
+      }
+      setEdits({});
+      flash(`${n} پلن ذخیره شد`);
+      await load();
+    } catch (er) {
+      flash(null, errText(er));
+    }
+  }
+
   async function deleteRow(c: PriceRow) {
-    if (!confirm(`پلن ${c.trafficGb ?? "∞"}GB / ${c.months} ماه حذف شود؟`)) return;
+    if (!(await askConfirm(`پلن ${c.trafficGb ?? "∞"}GB / ${c.months} ماه حذف شود؟`))) return;
     try {
       await api(`/admin/prices/${c.id}`, { method: "DELETE" });
       flash("پلن حذف شد");
@@ -565,7 +689,7 @@ function PricesTab({ flash }: { flash: Flash }) {
       bulkMode === "percent"
         ? `${value}% ${value > 0 ? "افزایش" : "کاهش"}`
         : `${formatToman(Math.abs(value))} ${value > 0 ? "افزایش" : "کاهش"}`;
-    if (!confirm(`قیمت ${catFilter ? "دستهٔ انتخابی" : "همهٔ پلن‌ها"} ${label} یابد؟`)) return;
+    if (!(await askConfirm(`قیمت ${catFilter ? "دستهٔ انتخابی" : "همهٔ پلن‌ها"} ${label} یابد؟`))) return;
     try {
       const r = await api<{ updated: number }>("/admin/prices/bulk", {
         body: { category: catFilter || undefined, mode: bulkMode, value, roundTo: 1000 },
@@ -583,9 +707,12 @@ function PricesTab({ flash }: { flash: Flash }) {
       <div className="panel">
         <h2>ویرایش گروهی قیمت‌ها</h2>
         <div className="actions" style={{ marginBottom: 12 }}>
-          {["", "data", "national", "unlimited"].map((c) => (
-            <button key={c || "all"} type="button" className={`chip${catFilter === c ? " on" : ""}`} onClick={() => setCatFilter(c)}>
-              {c === "" ? "همه" : c === "data" ? "حجمی" : c === "national" ? "ملی" : "نامحدود"}
+          <button key="all" type="button" className={`chip${catFilter === "" ? " on" : ""}`} onClick={() => setCatFilter("")}>
+            همه
+          </button>
+          {categories.map((c) => (
+            <button key={c.key} type="button" className={`chip${catFilter === c.key ? " on" : ""}`} onClick={() => setCatFilter(c.key)}>
+              {c.label}
             </button>
           ))}
         </div>
@@ -609,7 +736,7 @@ function PricesTab({ flash }: { flash: Flash }) {
             value={bulkValue}
             onChange={(e) => setBulkValue(e.target.value)}
           />
-          <button type="button" className="btn primary sm" onClick={bulk}>
+          <button type="button" className="btn primary sm" onClick={() => void bulk()}>
             اعمال روی {catFilter ? "این دسته" : "همه"}
           </button>
         </div>
@@ -637,7 +764,7 @@ function PricesTab({ flash }: { flash: Flash }) {
                     <td>
                       <strong className="num">{c.trafficGb ?? "∞"}GB · {c.months}ماه</strong>
                       {c.isGolden && " ⭐"}
-                      <div className="muted">{c.category === "data" ? "حجمی" : c.category === "national" ? "ملی" : "نامحدود"}</div>
+                      <div className="muted">{catLabel(c.category, categories)}</div>
                     </td>
                     <td>
                       <input
@@ -668,7 +795,7 @@ function PricesTab({ flash }: { flash: Flash }) {
                         <button type="button" className="btn primary sm" disabled={!edits[c.id]} onClick={() => saveRow(c)}>
                           ذخیره
                         </button>
-                        <button type="button" className="btn danger sm" onClick={() => deleteRow(c)}>
+                        <button type="button" className="btn danger sm" onClick={() => void deleteRow(c)}>
                           حذف
                         </button>
                       </div>
@@ -680,6 +807,11 @@ function PricesTab({ flash }: { flash: Flash }) {
           </table>
         </div>
         {!shown.length && <p className="muted">پلنی در این دسته نیست.</p>}
+        <div className="save-bar">
+          <button type="button" className="btn primary" disabled={!Object.keys(edits).length} onClick={() => void saveAll()}>
+            ذخیره همه تغییرات قیمت‌ها ({Object.keys(edits).length})
+          </button>
+        </div>
       </div>
 
       <div className="panel">
@@ -688,9 +820,11 @@ function PricesTab({ flash }: { flash: Flash }) {
           <div className="field">
             <label>دسته</label>
             <select value={newCell.category} onChange={(e) => setNewCell((s) => ({ ...s, category: e.target.value }))}>
-              <option value="data">حجمی</option>
-              <option value="national">ملی</option>
-              <option value="unlimited">نامحدود</option>
+              {categories.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
             </select>
           </div>
           <div className="field">
@@ -733,9 +867,11 @@ function PricesTab({ flash }: { flash: Flash }) {
 
 /* ---------------- Categories ---------------- */
 
-function CategoriesTab({ flash }: { flash: Flash }) {
+function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [cats, setCats] = useState<CategoryRow[]>([]);
   const [labelEdits, setLabelEdits] = useState<Record<string, string>>({});
+  const [newKey, setNewKey] = useState("");
+  const [newLabel, setNewLabel] = useState("");
 
   const load = useCallback(() => api<{ categories: CategoryRow[] }>("/admin/categories").then((r) => setCats(r.categories)), []);
 
@@ -754,10 +890,26 @@ function CategoriesTab({ flash }: { flash: Flash }) {
   }
 
   async function remove(c: CategoryRow) {
-    if (!confirm(`دستهٔ «${c.label}» حذف شود؟ فروش غیرفعال و ${c.cellCount} پلن آن حذف می‌شود.`)) return;
+    if (!(await askConfirm(`دستهٔ «${c.label}» حذف شود؟ فروش غیرفعال و ${c.cellCount} پلن آن حذف می‌شود.`))) return;
     try {
       const r = await api<{ deactivated: number }>(`/admin/categories/${c.key}`, { method: "DELETE" });
       flash(`دسته حذف شد (${r.deactivated} پلن غیرفعال شد)`);
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    }
+  }
+
+  async function addCategory() {
+    if (!newKey.trim()) {
+      flash(null, "کلید دسته را وارد کنید");
+      return;
+    }
+    try {
+      await api("/admin/categories", { body: { key: newKey.trim(), label: newLabel.trim() || newKey.trim() } });
+      flash("دسته اضافه شد");
+      setNewKey("");
+      setNewLabel("");
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -777,6 +929,7 @@ function CategoriesTab({ flash }: { flash: Flash }) {
               <div className="field" style={{ marginBottom: 6 }}>
                 <label>
                   نام دسته ({c.key}) — {c.cellCount} پلن
+                  {c.builtin ? " · پیش‌فرض" : ""}
                 </label>
                 <input
                   value={labelEdits[c.key] ?? c.label}
@@ -797,26 +950,59 @@ function CategoriesTab({ flash }: { flash: Flash }) {
               >
                 ذخیره نام
               </button>
-              <button type="button" className="btn danger sm" onClick={() => remove(c)}>
+              <button type="button" className="btn danger sm" onClick={() => void remove(c)}>
                 حذف دسته
               </button>
             </div>
           </div>
         ))}
       </div>
+
+      <h2 style={{ marginTop: 18 }}>افزودن دسته</h2>
+      <div className="field">
+        <label>کلید (انگلیسی، مثلاً vip2)</label>
+        <input dir="ltr" value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="vip2" />
+      </div>
+      <div className="field">
+        <label>نام نمایشی</label>
+        <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="ویژه ۲" />
+      </div>
+      <button type="button" className="btn success" disabled={!newKey.trim()} onClick={() => void addCategory()}>
+        افزودن دسته
+      </button>
     </div>
   );
 }
 
 /* ---------------- Configs (panel accounts) ---------------- */
 
-function ConfigsTab({ flash }: { flash: Flash }) {
+function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [groups, setGroups] = useState<Array<{ key: string; label: string }>>([]);
   const [groupKey, setGroupKey] = useState("all");
   const [items, setItems] = useState<Array<{ email: string; code: string | null; subId: string | null; status: string | null; inDb: boolean; ownerLabel: string }>>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<{
+    email: string;
+    subId: string | null;
+    code: string | null;
+    title: string | null;
+    note: string | null;
+    trafficGb: number | null;
+    expiresAt: string | null;
+    limitIp: number;
+    enable: boolean;
+  } | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    trafficGb: "",
+    expiresAt: "",
+    limitIp: "0",
+    note: "",
+    enable: true,
+  });
+  const [editBusy, setEditBusy] = useState(false);
 
   useEffect(() => {
     void api<{ groups: typeof groups }>("/admin/configs/groups").then((r) => setGroups(r.groups));
@@ -837,11 +1023,70 @@ function ConfigsTab({ flash }: { flash: Flash }) {
     void load();
   }, [load]);
 
+  async function startEdit(email: string, subId: string | null) {
+    setEditBusy(true);
+    try {
+      const q = `email=${encodeURIComponent(email)}${subId ? `&subId=${encodeURIComponent(subId)}` : ""}`;
+      const d = await api<{
+        email: string;
+        subId: string | null;
+        code: string | null;
+        title: string | null;
+        note: string | null;
+        trafficGb: number | null;
+        expiresAt: string | null;
+        limitIp: number;
+        enable: boolean;
+      }>(`/admin/configs/detail?${q}`);
+      setEditing(d);
+      setEditForm({
+        title: d.title ?? "",
+        trafficGb: d.trafficGb == null ? "" : String(d.trafficGb),
+        expiresAt: toLocalInput(d.expiresAt),
+        limitIp: String(d.limitIp ?? 0),
+        note: d.note ?? "",
+        enable: d.enable !== false,
+      });
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    setEditBusy(true);
+    try {
+      const r = await api<{ message: string }>("/admin/configs/update", {
+        method: "PUT",
+        body: {
+          email: editing.email,
+          subId: editing.subId,
+          title: editForm.title || null,
+          note: editForm.note || null,
+          trafficGb: editForm.trafficGb === "" ? null : Number(editForm.trafficGb),
+          expiresAt: fromLocalInput(editForm.expiresAt),
+          limitIp: Number(editForm.limitIp) || 0,
+          enable: editForm.enable,
+        },
+      });
+      flash(r.message);
+      setEditing(null);
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   async function remove(email: string, subId: string | null) {
-    if (!confirm(`اکانت ${email} از پنل و ربات حذف شود؟`)) return;
+    if (!(await askConfirm(`اکانت ${email} از پنل و ربات حذف شود؟`))) return;
     try {
       const r = await api<{ message: string }>("/admin/configs/delete", { body: { email, subId } });
       flash(r.message);
+      if (editing?.email === email) setEditing(null);
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -849,63 +1094,133 @@ function ConfigsTab({ flash }: { flash: Flash }) {
   }
 
   return (
-    <div className="panel">
-      <h2>اکانت‌ها بر اساس گروه پنل</h2>
-      <p className="muted" style={{ marginTop: 0 }}>
-        شامل اکانت‌هایی که مستقیم در پنل 3x-ui ساخته شده‌اند (برچسب «فقط پنل»).
-      </p>
-      <div className="chip-row" style={{ marginBottom: 13 }}>
-        {groups.map((g) => (
-          <button
-            key={g.key}
-            type="button"
-            className={`chip${groupKey === g.key ? " on" : ""}`}
-            onClick={() => {
-              setGroupKey(g.key);
-              setPage(0);
-            }}
-          >
-            {g.label}
-          </button>
-        ))}
-      </div>
-      {loading && <p className="muted">در حال دریافت…</p>}
-      <div className="list">
-        {items.map((c) => (
-          <div key={c.email} className="row-card">
-            <div>
-              <strong className="num">{c.code || c.email}</strong>{" "}
-              {!c.inDb && <span className="badge warn">فقط پنل</span>}
-              {c.status === "active" && <span className="badge ok">فعال</span>}
-              <div className="muted num">{c.email}</div>
-              <div className="muted">{c.ownerLabel}</div>
+    <>
+      <div className="panel">
+        <h2>اکانت‌ها بر اساس گروه پنل</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          اکانت‌های دیتابیس ربات به‌همراه کلاینت‌های زنده‌ی 3x-ui. اگر فقط روی پنل ساخته شده باشند با برچسب «فقط پنل» دیده می‌شوند.
+        </p>
+        <div className="chip-row" style={{ marginBottom: 13 }}>
+          {groups.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              className={`chip${groupKey === g.key ? " on" : ""}`}
+              onClick={() => {
+                setGroupKey(g.key);
+                setPage(0);
+              }}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+        {loading && <p className="muted">در حال دریافت…</p>}
+        <div className="list">
+          {items.map((c) => (
+            <div key={c.email} className="row-card">
+              <div>
+                <strong className="num">{c.code || c.email}</strong>{" "}
+                {!c.inDb && <span className="badge warn">فقط پنل</span>}
+                {c.status === "active" && <span className="badge ok">فعال</span>}
+                <div className="muted num">{c.email}</div>
+                <div className="muted">{c.ownerLabel}</div>
+              </div>
+              <div className="actions">
+                <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
+                  ویرایش
+                </button>
+                <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
+                  حذف
+                </button>
+              </div>
             </div>
-            <button type="button" className="btn danger sm" onClick={() => remove(c.email, c.subId)}>
-              حذف
+          ))}
+          {!items.length && !loading && <p className="muted">اکانتی در این گروه نیست.</p>}
+        </div>
+        {total > 30 && (
+          <div className="actions" style={{ marginTop: 13 }}>
+            <button type="button" className="btn ghost sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+              قبلی
+            </button>
+            <span className="muted" style={{ alignSelf: "center" }}>
+              صفحه {page + 1} از {Math.ceil(total / 30)}
+            </span>
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={(page + 1) * 30 >= total}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              بعدی
             </button>
           </div>
-        ))}
-        {!items.length && !loading && <p className="muted">اکانتی در این گروه نیست.</p>}
+        )}
       </div>
-      {total > 30 && (
-        <div className="actions" style={{ marginTop: 13 }}>
-          <button type="button" className="btn ghost sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-            قبلی
-          </button>
-          <span className="muted" style={{ alignSelf: "center" }}>
-            صفحه {page + 1} از {Math.ceil(total / 30)}
-          </span>
-          <button
-            type="button"
-            className="btn ghost sm"
-            disabled={(page + 1) * 30 >= total}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            بعدی
-          </button>
+
+      {editing && (
+        <div className="panel">
+          <h2>ویرایش اکانت — {editing.code || editing.email}</h2>
+          <div className="muted num" style={{ marginBottom: 12 }}>
+            {editing.email}
+          </div>
+          <div className="field">
+            <label>نام</label>
+            <input value={editForm.title} onChange={(e) => setEditForm((s) => ({ ...s, title: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>حجم GB (خالی = نامحدود)</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              value={editForm.trafficGb}
+              onChange={(e) => setEditForm((s) => ({ ...s, trafficGb: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>انقضا</label>
+            <input
+              type="datetime-local"
+              dir="ltr"
+              value={editForm.expiresAt}
+              onChange={(e) => setEditForm((s) => ({ ...s, expiresAt: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>لیمیت IP (۰ = نامحدود)</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              value={editForm.limitIp}
+              onChange={(e) => setEditForm((s) => ({ ...s, limitIp: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>نوت</label>
+            <input value={editForm.note} onChange={(e) => setEditForm((s) => ({ ...s, note: e.target.value }))} />
+          </div>
+          <div className="setting-row" style={{ marginBottom: 12 }}>
+            <div className="t">فعال</div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={editForm.enable}
+                onChange={(e) => setEditForm((s) => ({ ...s, enable: e.target.checked }))}
+              />
+              <span className="track" />
+            </label>
+          </div>
+          <div className="actions">
+            <button type="button" className="btn primary" disabled={editBusy} onClick={() => void saveEdit()}>
+              ذخیره تغییرات
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
+              بستن
+            </button>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -913,13 +1228,53 @@ function ConfigsTab({ flash }: { flash: Flash }) {
 
 function PanelsTab({ flash }: { flash: Flash }) {
   const [panels, setPanels] = useState<PanelRow[]>([]);
+  const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [form, setForm] = useState({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
+  const [editing, setEditing] = useState<PanelRow | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    baseUrl: "",
+    apiToken: "",
+    inboundIds: "1",
+    subBase: "",
+    weight: "100",
+    categories: ["data", "unlimited"] as string[],
+    active: true,
+    sellEnabled: true,
+  });
 
   const load = useCallback(() => api<{ panels: PanelRow[] }>("/admin/panels").then((r) => setPanels(r.panels)), []);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void api<{ categories: CategoryRow[] }>("/admin/categories")
+      .then((r) => {
+        if (r.categories?.length) {
+          setCategories(r.categories.map((c) => ({ key: c.key, label: c.label })));
+        }
+      })
+      .catch(() => {
+        /* keep fallback */
+      });
+  }, []);
+
+  function openEdit(p: PanelRow) {
+    setEditing(p);
+    setEditForm({
+      name: p.name,
+      baseUrl: p.baseUrl,
+      apiToken: "",
+      inboundIds: p.inboundIds || "1",
+      subBase: p.subBase ?? "",
+      weight: String(p.weight ?? 100),
+      categories: parseCats(p.categories),
+      active: p.active,
+      sellEnabled: p.sellEnabled,
+    });
+  }
 
   async function test(id: string) {
     try {
@@ -934,6 +1289,33 @@ function PanelsTab({ flash }: { flash: Flash }) {
     try {
       await api(`/admin/panels/${p.id}`, { method: "PUT", body: { [key]: value } });
       flash("ذخیره شد");
+      await load();
+      if (editing?.id === p.id) {
+        setEditing((e) => (e ? { ...e, [key]: value } : e));
+        setEditForm((s) => ({ ...s, [key]: value }));
+      }
+    } catch (e) {
+      flash(null, errText(e));
+    }
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    try {
+      const body: Record<string, unknown> = {
+        name: editForm.name,
+        baseUrl: editForm.baseUrl,
+        inboundIds: editForm.inboundIds || "1",
+        subBase: editForm.subBase.trim() || null,
+        weight: Number(editForm.weight) || 100,
+        categories: editForm.categories,
+        active: editForm.active,
+        sellEnabled: editForm.sellEnabled,
+      };
+      if (editForm.apiToken.trim()) body.apiToken = editForm.apiToken.trim();
+      await api(`/admin/panels/${editing.id}`, { method: "PUT", body });
+      flash("پنل ذخیره شد");
+      setEditing(null);
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -951,25 +1333,51 @@ function PanelsTab({ flash }: { flash: Flash }) {
     }
   }
 
+  function toggleCat(key: string) {
+    setEditForm((s) => {
+      const set = new Set(s.categories);
+      if (set.has(key)) set.delete(key);
+      else set.add(key);
+      return { ...s, categories: [...set] };
+    });
+  }
+
   return (
     <>
       <div className="panel">
         <h2>سرورهای پنل</h2>
         <div className="list">
           {panels.map((p) => (
-            <div key={p.id} className="row-card">
+            <div key={p.id} className="row-card" style={{ cursor: "pointer" }} onClick={() => openEdit(p)}>
               <div>
                 <strong>{p.name}</strong>
                 <div className="muted num">{p.baseUrl}</div>
                 <div className="muted">
                   اینباند: <span className="num">{p.inboundIds}</span> · توکن {p.hasToken ? "✓" : "✗"}
+                  {p.weight != null && (
+                    <>
+                      {" "}
+                      · وزن <span className="num">{p.weight}</span>
+                    </>
+                  )}
                 </div>
               </div>
-              <div className="actions" style={{ alignItems: "center" }}>
+              <div className="actions" style={{ alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
                 <label className="switch" title="فعال">
                   <input type="checkbox" checked={p.active} onChange={(e) => toggle(p, "active", e.target.checked)} />
                   <span className="track" />
                 </label>
+                <label className="switch" title="فروش">
+                  <input
+                    type="checkbox"
+                    checked={p.sellEnabled}
+                    onChange={(e) => toggle(p, "sellEnabled", e.target.checked)}
+                  />
+                  <span className="track" />
+                </label>
+                <button type="button" className="btn ghost sm" onClick={() => openEdit(p)}>
+                  ویرایش
+                </button>
                 <button type="button" className="btn ghost sm" onClick={() => test(p.id)}>
                   تست اتصال
                 </button>
@@ -979,6 +1387,101 @@ function PanelsTab({ flash }: { flash: Flash }) {
           {!panels.length && <p className="muted">پنلی ثبت نشده — از .env استفاده می‌شود.</p>}
         </div>
       </div>
+
+      {editing && (
+        <div className="panel">
+          <h2>ویرایش پنل — {editing.name}</h2>
+          <div className="field">
+            <label>نام</label>
+            <input value={editForm.name} onChange={(e) => setEditForm((s) => ({ ...s, name: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>آدرس</label>
+            <input dir="ltr" value={editForm.baseUrl} onChange={(e) => setEditForm((s) => ({ ...s, baseUrl: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>توکن API</label>
+            <input
+              dir="ltr"
+              value={editForm.apiToken}
+              onChange={(e) => setEditForm((s) => ({ ...s, apiToken: e.target.value }))}
+              placeholder="خالی = بدون تغییر"
+            />
+          </div>
+          <div className="field">
+            <label>شناسه اینباندها</label>
+            <input
+              dir="ltr"
+              className="num"
+              value={editForm.inboundIds}
+              onChange={(e) => setEditForm((s) => ({ ...s, inboundIds: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>Sub base</label>
+            <input dir="ltr" value={editForm.subBase} onChange={(e) => setEditForm((s) => ({ ...s, subBase: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>وزن</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              value={editForm.weight}
+              onChange={(e) => setEditForm((s) => ({ ...s, weight: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>دسته‌ها</label>
+            <div className="actions">
+              {categories.map((c) => (
+                <label key={c.key} className="chip" style={{ cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.categories.includes(c.key)}
+                    onChange={() => toggleCat(c.key)}
+                    style={{ marginLeft: 6 }}
+                  />
+                  {c.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="setting-row">
+            <div className="t">فعال</div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={editForm.active}
+                onChange={(e) => setEditForm((s) => ({ ...s, active: e.target.checked }))}
+              />
+              <span className="track" />
+            </label>
+          </div>
+          <div className="setting-row">
+            <div className="t">فروش فعال</div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={editForm.sellEnabled}
+                onChange={(e) => setEditForm((s) => ({ ...s, sellEnabled: e.target.checked }))}
+              />
+              <span className="track" />
+            </label>
+          </div>
+          <div className="actions" style={{ marginTop: 12 }}>
+            <button type="button" className="btn primary" disabled={!editForm.name || !editForm.baseUrl} onClick={() => void saveEdit()}>
+              ذخیره پنل
+            </button>
+            <button type="button" className="btn ghost" onClick={() => test(editing.id)}>
+              تست اتصال
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
+              بستن
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="panel">
         <h2>افزودن پنل</h2>
         <div className="field">

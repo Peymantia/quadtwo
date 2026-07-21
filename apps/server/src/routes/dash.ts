@@ -22,6 +22,7 @@ import {
 import { deactivateCell, listPriceMatrix, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.js";
 import {
+  getAllSettings,
   getCategoryLabels,
   getMaxPurchaseMonths,
   getPaymentCard,
@@ -31,21 +32,23 @@ import {
   listEnabledSalesCategories,
   saveCategoryLabels,
   saveSalesCategories,
+  sanitizeCategoryKey,
+  BUILTIN_CATEGORY_KEYS,
   setSetting,
-  getAllSettings,
 } from "../services/settings.js";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { approvePartner, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
-import { listConfigGroups, listConfigsForGroup, deleteConfig } from "../services/admin-configs.js";
+import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig } from "../services/admin-configs.js";
 import {
-  listPanelServers,
   createPanelServer,
-  updatePanelServer,
-  testPanelConnection,
   getPanelServer,
+  listPanelServers,
+  parsePanelCategories,
+  testPanelConnection,
+  updatePanelServer,
 } from "../services/panel-servers.js";
 import { listRecentAudit, auditLog } from "../services/audit.js";
 import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
@@ -710,19 +713,51 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       _count: { _all: true },
     });
     const countMap = new Map(counts.map((x) => [x.category, x._count._all]));
+    const keys = new Set<string>([
+      ...BUILTIN_CATEGORY_KEYS,
+      ...Object.keys(enabled),
+      ...Object.keys(labels),
+      ...counts.map((x) => x.category),
+    ]);
     return c.json({
-      categories: (["data", "national", "unlimited"] as const).map((key) => ({
+      categories: [...keys].map((key) => ({
         key,
-        label: labels[key],
-        enabled: enabled[key],
+        label: labels[key] || key,
+        enabled: enabled[key] === true,
         cellCount: countMap.get(key) ?? 0,
+        builtin: (BUILTIN_CATEGORY_KEYS as readonly string[]).includes(key),
       })),
     });
   });
 
+  api.post("/admin/categories", async (c) => {
+    const body = await c.req.json<{ key?: string; label?: string }>();
+    const key = sanitizeCategoryKey(body.key || body.label || "");
+    if (!key || key.length < 2) {
+      return c.json({ error: "کلید دسته باید حداقل ۲ حرف انگلیسی/عدد باشد (مثلاً vip2)" }, 400);
+    }
+    if (key === "cancel") return c.json({ error: "این کلید مجاز نیست" }, 400);
+    const labels = await getCategoryLabels();
+    if (labels[key] || (await getSalesCategories())[key] !== undefined) {
+      // allow re-enable of existing
+    }
+    const label = (body.label?.trim() || key).slice(0, 40);
+    labels[key] = label;
+    await saveCategoryLabels(labels);
+    const cats = await getSalesCategories();
+    cats[key] = true;
+    await saveSalesCategories(cats);
+    await auditLog({
+      action: "web_category_create",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: key,
+    });
+    return c.json({ ok: true, key, label });
+  });
+
   api.put("/admin/categories/:key", async (c) => {
-    const key = c.req.param("key") as "data" | "national" | "unlimited";
-    if (!["data", "national", "unlimited"].includes(key)) return c.json({ error: "دسته نامعتبر" }, 400);
+    const key = sanitizeCategoryKey(c.req.param("key"));
+    if (!key) return c.json({ error: "دسته نامعتبر" }, 400);
     const body = await c.req.json<{ label?: string; enabled?: boolean }>();
     if (body.label?.trim()) {
       const labels = await getCategoryLabels();
@@ -737,13 +772,21 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({ ok: true });
   });
 
-  /** "Delete" a category: disable sales + deactivate all its price cells. */
+  /** Disable sales + deactivate price cells; remove custom key from settings. */
   api.delete("/admin/categories/:key", async (c) => {
-    const key = c.req.param("key") as "data" | "national" | "unlimited";
-    if (!["data", "national", "unlimited"].includes(key)) return c.json({ error: "دسته نامعتبر" }, 400);
+    const key = sanitizeCategoryKey(c.req.param("key"));
+    if (!key) return c.json({ error: "دسته نامعتبر" }, 400);
     const cats = await getSalesCategories();
     cats[key] = false;
+    if (!(BUILTIN_CATEGORY_KEYS as readonly string[]).includes(key)) {
+      delete cats[key];
+    }
     await saveSalesCategories(cats);
+    if (!(BUILTIN_CATEGORY_KEYS as readonly string[]).includes(key)) {
+      const labels = await getCategoryLabels();
+      delete labels[key];
+      await saveCategoryLabels(labels);
+    }
     const res = await prisma.priceCell.updateMany({
       where: { category: key, active: true },
       data: { active: false },
@@ -760,16 +803,50 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/admin/sales-categories", async (c) => c.json({ categories: await getSalesCategories() }));
 
   api.put("/admin/sales-categories", async (c) => {
-    const body = await c.req.json<{ data?: boolean; national?: boolean; unlimited?: boolean }>();
+    const body = await c.req.json<Record<string, boolean>>();
     const cats = await getSalesCategories();
-    if (typeof body.data === "boolean") cats.data = body.data;
-    if (typeof body.national === "boolean") cats.national = body.national;
-    if (typeof body.unlimited === "boolean") cats.unlimited = body.unlimited;
+    for (const [k, v] of Object.entries(body)) {
+      if (typeof v === "boolean" && sanitizeCategoryKey(k) === k) cats[k] = v;
+    }
     await saveSalesCategories(cats);
     return c.json({ categories: cats });
   });
 
   api.get("/admin/configs/groups", async (c) => c.json({ groups: await listConfigGroups() }));
+
+  api.get("/admin/configs/detail", async (c) => {
+    const email = c.req.query("email") || "";
+    const subId = c.req.query("subId") || null;
+    try {
+      return c.json(await getConfigDetail({ email, subId }));
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.put("/admin/configs/update", async (c) => {
+    const body = await c.req.json<{
+      email: string;
+      subId?: string | null;
+      title?: string | null;
+      note?: string | null;
+      trafficGb?: number | null;
+      expiresAt?: string | null;
+      limitIp?: number;
+      enable?: boolean;
+    }>();
+    try {
+      const result = await updateConfig(body);
+      await auditLog({
+        action: "admin_config_update",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: body.email,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
 
   api.get("/admin/configs/:groupKey", async (c) => {
     const page = Number(c.req.query("page") ?? 0);
@@ -797,7 +874,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         hasToken: Boolean(p.apiToken),
         inboundIds: p.inboundIds,
         subBase: p.subBase,
-        categories: p.categories,
+        categories: parsePanelCategories(p.categories),
         weight: p.weight,
         active: p.active,
         sellEnabled: p.sellEnabled,

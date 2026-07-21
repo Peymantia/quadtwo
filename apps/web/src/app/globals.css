@@ -996,15 +996,35 @@ h3 {
   color: #fda4af;
 }
 
-@keyframes toast-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.9) translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+.toast-wrap-modal {
+  pointer-events: auto;
+  background: rgba(4, 6, 20, 0.55);
+}
+
+.toast.confirm {
+  cursor: default;
+  background: rgba(12, 16, 40, 0.96);
+  border-color: rgba(125, 211, 252, 0.45);
+  color: var(--text);
+  padding: 20px 22px;
+  max-width: min(440px, 92vw);
+}
+
+.toast-confirm-msg {
+  margin: 0 0 16px;
+  font-weight: 700;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.toast-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.toast-confirm-actions .btn {
+  min-width: 88px;
 }
 
 /* ---------- Sticky save bar ---------- */

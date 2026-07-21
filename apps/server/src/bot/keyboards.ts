@@ -77,16 +77,12 @@ export function mainMenuReply(opts: MainMenuOpts) {
 }
 
 /** Inline category picker inside buy flow */
-export function buyCategoryKeyboard(enabled: SalesCategories) {
+export function buyCategoryKeyboard(cats: Array<{ key: string; label: string }>) {
   const kb = new InlineKeyboard();
-  if (enabled.data) {
-    kb.text("💎 سرویس VIP بین الملل", "buy:cat:data").success().row();
-  }
-  if (enabled.national) {
-    kb.text("🇮🇷 کانفیگ نت ملی", "buy:cat:national").success().row();
-  }
-  if (enabled.unlimited) {
-    kb.text("💎 سرویس نامحدود", "buy:cat:unlimited").primary().row();
+  for (const c of cats) {
+    const style = c.key === "unlimited" ? "primary" : "success";
+    if (style === "primary") kb.text(c.label, `buy:cat:${c.key}`).primary().row();
+    else kb.text(c.label, `buy:cat:${c.key}`).success().row();
   }
   kb.text("« انصراف", "buy:cat:cancel");
   return kb;
@@ -191,32 +187,33 @@ export function buyWizardKeyboard(opts: {
 }
 
 export function salesCategoriesAdminKeyboard(cats: SalesCategories) {
-  const on = (v: boolean) => (v ? "🟢" : "🔴");
-  return new InlineKeyboard()
-    .text(`${on(cats.data)} VIP بین الملل`, "cc:sales:cat:tog:data")
-    .row()
-    .text(`${on(cats.national)} نت ملی`, "cc:sales:cat:tog:national")
-    .row()
-    .text(`${on(cats.unlimited)} نامحدود`, "cc:sales:cat:tog:unlimited")
-    .row()
-    .text("« کنترل سنتر", "cc:home");
+  const on = (v: boolean | undefined) => (v ? "🟢" : "🔴");
+  const kb = new InlineKeyboard();
+  const keys = Object.keys(cats).length ? Object.keys(cats) : ["data", "national", "unlimited"];
+  for (const key of keys) {
+    const label =
+      key === "data" ? "VIP بین الملل" : key === "national" ? "نت ملی" : key === "unlimited" ? "نامحدود" : key;
+    kb.text(`${on(cats[key])} ${label}`, `cc:sales:cat:tog:${key}`).row();
+  }
+  kb.text("« کنترل سنتر", "cc:home");
+  return kb;
 }
 
 export function salesCategoriesAdminText(cats: SalesCategories, maxMonths: number) {
-  const on = (v: boolean) => (v ? "فعال 🟢" : "غیرفعال 🔴");
-  return [
+  const on = (v: boolean | undefined) => (v ? "فعال 🟢" : "غیرفعال 🔴");
+  const lines = [
     "🏷 دسته‌های فروش",
     "",
     "دسته‌هایی که کاربر در «خرید سرویس» می‌بیند:",
     "",
-    `💎 VIP بین الملل: ${on(cats.data)}`,
-    `🇮🇷 نت ملی: ${on(cats.national)}`,
-    `💎 نامحدود: ${on(cats.unlimited)}`,
-    "",
-    `⏳ حداکثر مدت خرید/تمدید: ${maxMonths} ماه`,
-    "",
-    "روی هر مورد بزنید تا روشن/خاموش شود.",
-  ].join("\n");
+  ];
+  for (const [key, enabled] of Object.entries(cats)) {
+    const label =
+      key === "data" ? "VIP بین الملل" : key === "national" ? "نت ملی" : key === "unlimited" ? "نامحدود" : key;
+    lines.push(`${label}: ${on(enabled)}`);
+  }
+  lines.push("", `⏳ حداکثر مدت خرید/تمدید: ${maxMonths} ماه`, "", "روی هر مورد بزنید تا روشن/خاموش شود.");
+  return lines.join("\n");
 }
 
 export function payMethodKeyboard(orderId: string, walletBalance: number) {

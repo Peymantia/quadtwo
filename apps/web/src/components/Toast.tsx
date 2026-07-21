@@ -28,3 +28,30 @@ export function Toast({
     </div>
   );
 }
+
+/** Centered yes/no confirm dialog (replaces window.confirm). */
+export function ConfirmToast({
+  message,
+  onYes,
+  onNo,
+}: {
+  message: string;
+  onYes: () => void;
+  onNo: () => void;
+}) {
+  return (
+    <div className="toast-wrap toast-wrap-modal" role="alertdialog" aria-modal="true">
+      <div className="toast confirm" onClick={(e) => e.stopPropagation()}>
+        <p className="toast-confirm-msg">{message}</p>
+        <div className="toast-confirm-actions">
+          <button type="button" className="btn success sm" onClick={onYes}>
+            بله
+          </button>
+          <button type="button" className="btn ghost sm" onClick={onNo}>
+            خیر
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

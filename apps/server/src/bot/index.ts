@@ -25,7 +25,7 @@ import {
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
 import { claimTestService } from "../services/test-service.js";
-import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getSetting, listEnabledSalesCategories, resolvePurchaseLimitIp, setSetting } from "../services/settings.js";
+import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, resolvePurchaseLimitIp, setSetting } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
@@ -162,7 +162,6 @@ async function replyMainMenu(ctx: Context, preface?: string) {
 }
 
 async function showBuyCategoryPicker(ctx: Context, edit = false) {
-  const cats = await getSalesCategories();
   const enabled = await listEnabledSalesCategories();
   if (!enabled.length) {
     await ctx.reply("فعلاً هیچ دسته‌ای برای فروش فعال نیست. با پشتیبانی تماس بگیرید.");
@@ -173,8 +172,14 @@ async function showBuyCategoryPicker(ctx: Context, edit = false) {
     await showBuyWizard(ctx, edit);
     return;
   }
+  const labels = await getCategoryLabels();
   const text = "🛒 خرید سرویس\n\nنوع سرویس را انتخاب کنید:";
-  const kb = buyCategoryKeyboard(cats);
+  const kb = buyCategoryKeyboard(
+    enabled.map((key) => ({
+      key,
+      label: labels[key] || key,
+    })),
+  );
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
   } else {
@@ -661,13 +666,13 @@ export function createBot() {
     await showBuyCategoryPicker(ctx, true);
   });
 
-  bot.callbackQuery(/^buy:cat:(data|national|unlimited)$/, async (ctx) => {
+  bot.callbackQuery(/^buy:cat:(?!cancel$)([a-z0-9_-]+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
-    const cat = ctx.match![1] as "data" | "national" | "unlimited";
+    const cat = ctx.match![1]!;
     const cats = await getSalesCategories();
     if (!cats[cat]) {
-      await ctx.reply("این دسته فعلاً غیرفعال است.");
+      await ctx.reply("این دسته فعلاً برای فروش فعال نیست.");
       return;
     }
     await setDraftCategory(BigInt(ctx.from!.id), cat);

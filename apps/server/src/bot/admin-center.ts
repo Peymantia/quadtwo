@@ -1218,10 +1218,10 @@ export function registerControlCenter(bot: Bot) {
     await showSalesCategories(ctx);
   });
 
-  bot.callbackQuery(/^cc:sales:cat:tog:(data|national|unlimited)$/, async (ctx) => {
+  bot.callbackQuery(/^cc:sales:cat:tog:([a-z0-9_-]+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    const key = ctx.match![1] as keyof SalesCategories;
+    const key = ctx.match![1]!;
     const cats = await getSalesCategories();
     cats[key] = !cats[key];
     await saveSalesCategories(cats);

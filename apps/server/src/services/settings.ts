@@ -247,11 +247,10 @@ export async function savePriceRates(rates: PriceRates) {
   await setSetting("price_rates_json", JSON.stringify(rates));
 }
 
-export type SalesCategories = {
-  data: boolean;
-  national: boolean;
-  unlimited: boolean;
-};
+/** Builtin + custom category keys → sales enabled flag */
+export type SalesCategories = Record<string, boolean>;
+
+export const BUILTIN_CATEGORY_KEYS = ["data", "national", "unlimited"] as const;
 
 export function defaultSalesCategories(): SalesCategories {
   return { data: true, national: true, unlimited: false };
@@ -260,8 +259,12 @@ export function defaultSalesCategories(): SalesCategories {
 export async function getSalesCategories(): Promise<SalesCategories> {
   const base = defaultSalesCategories();
   try {
-    const raw = JSON.parse(await getSetting("sales_categories_json")) as Partial<SalesCategories>;
-    return { ...base, ...raw };
+    const raw = JSON.parse(await getSetting("sales_categories_json")) as Record<string, unknown>;
+    const out: SalesCategories = { ...base };
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === "boolean" && k.trim()) out[k.trim()] = v;
+    }
+    return out;
   } catch {
     return base;
   }
@@ -271,12 +274,13 @@ export async function saveSalesCategories(cats: SalesCategories) {
   await setSetting("sales_categories_json", JSON.stringify(cats));
 }
 
-export async function isSalesCategoryEnabled(category: "data" | "national" | "unlimited") {
+export async function isSalesCategoryEnabled(category: string) {
   const cats = await getSalesCategories();
-  return cats[category];
+  return Boolean(cats[category]);
 }
 
-export type CategoryLabels = Record<"data" | "national" | "unlimited", string>;
+/** Builtin + custom category keys → display label */
+export type CategoryLabels = Record<string, string>;
 
 export function defaultCategoryLabels(): CategoryLabels {
   return { data: "بسته‌های VIP", national: "اینترنت ملی", unlimited: "نامحدود" };
@@ -285,8 +289,12 @@ export function defaultCategoryLabels(): CategoryLabels {
 export async function getCategoryLabels(): Promise<CategoryLabels> {
   const base = defaultCategoryLabels();
   try {
-    const raw = JSON.parse(await getSetting("category_labels_json")) as Partial<CategoryLabels>;
-    return { ...base, ...raw };
+    const raw = JSON.parse(await getSetting("category_labels_json")) as Record<string, unknown>;
+    const out: CategoryLabels = { ...base };
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === "string" && k.trim() && v.trim()) out[k.trim()] = v.trim();
+    }
+    return out;
   } catch {
     return base;
   }
@@ -294,6 +302,16 @@ export async function getCategoryLabels(): Promise<CategoryLabels> {
 
 export async function saveCategoryLabels(labels: CategoryLabels) {
   await setSetting("category_labels_json", JSON.stringify(labels));
+}
+
+/** Sanitize a new category key: lowercase latin slug. */
+export function sanitizeCategoryKey(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 32);
 }
 
 /** Web dashboard session lifetime in hours (1..720, default 168 = 7 days). */
@@ -309,11 +327,9 @@ export async function getMaxPurchaseMonths(): Promise<number> {
   return Math.min(12, Math.floor(n));
 }
 
-export async function listEnabledSalesCategories(): Promise<Array<"data" | "national" | "unlimited">> {
+export async function listEnabledSalesCategories(): Promise<string[]> {
   const cats = await getSalesCategories();
-  const out: Array<"data" | "national" | "unlimited"> = [];
-  if (cats.data) out.push("data");
-  if (cats.national) out.push("national");
-  if (cats.unlimited) out.push("unlimited");
-  return out;
+  const labels = await getCategoryLabels();
+  const keys = new Set([...Object.keys(cats), ...Object.keys(labels), ...BUILTIN_CATEGORY_KEYS]);
+  return [...keys].filter((k) => cats[k] === true);
 }

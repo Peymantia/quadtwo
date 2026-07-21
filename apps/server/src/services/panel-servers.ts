@@ -15,7 +15,7 @@ export function parsePanelCategories(raw: string): PanelCategories {
     if (!Array.isArray(arr)) return ["data", "unlimited"];
     const out: PanelCategories = [];
     for (const c of arr) {
-      if (c === "data" || c === "national" || c === "unlimited") out.push(c);
+      if (typeof c === "string" && c.trim()) out.push(c.trim());
     }
     return out.length ? out : ["data", "unlimited"];
   } catch {
@@ -307,7 +307,8 @@ export async function resolvePanelForSubscription(sub: {
 export function categoryLabelFa(c: PlanCategory) {
   if (c === "national") return "نت ملی";
   if (c === "unlimited") return "نامحدود";
-  return "VIP بین الملل";
+  if (c === "data") return "VIP بین الملل";
+  return c;
 }
 
 export function formatPanelSummary(p: PanelServer) {

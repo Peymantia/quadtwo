@@ -7,7 +7,8 @@ const VOLUME_STEPS = [10, 15, 20, 25, 30, 35, 40, 45, 50] as const;
 export const NATIONAL_MAX_GB = 100;
 export const DATA_VOLUME_PRESETS = [10, 15, 20, 25, 30, 35, 40, 45, 50] as const;
 
-export type PlanCategory = "data" | "national" | "unlimited";
+/** Builtin: data | national | unlimited — custom slugs allowed too */
+export type PlanCategory = string;
 
 export function nextVolume(current: number | null, unlimited: boolean, dir: 1 | -1): {
   trafficGb: number | null;
