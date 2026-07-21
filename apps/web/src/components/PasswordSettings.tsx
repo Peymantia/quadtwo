@@ -161,7 +161,7 @@ export function PasswordSettings({ hasPassword, onSaved, onFlash }: Props) {
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
-        <button type="button" className="btn primary" disabled={busy || password.length < 8} onClick={() => void save()}>
+        <button type="button" className="btn primary" disabled={busy || password.length < 8 || (hasPassword && !currentPassword)} onClick={() => void save()}>
           {busy ? "در حال ذخیره…" : hasPassword ? "تغییر رمز عبور" : "ذخیره رمز عبور"}
         </button>
       </div>

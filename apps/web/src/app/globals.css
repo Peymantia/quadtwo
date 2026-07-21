@@ -594,18 +594,13 @@ h3 {
     background: rgba(10, 13, 35, 0.92);
     backdrop-filter: blur(18px);
     border-top: 1px solid var(--line);
-    overflow-x: auto;
+    overflow: hidden;
     padding: 0 4px calc(env(safe-area-inset-bottom, 0px));
-    scrollbar-width: none;
-  }
-
-  .bottom-nav::-webkit-scrollbar {
-    display: none;
   }
 
   .bottom-nav button {
-    flex: 1 0 64px;
-    min-width: 64px;
+    flex: 1 1 0;
+    min-width: 0;
     border: 0;
     background: none;
     color: var(--mute);
@@ -626,6 +621,116 @@ h3 {
 
   .bottom-nav button.active svg {
     filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.6));
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(148, 163, 255, 0.08);
+    color: var(--text);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .icon-btn.on {
+    color: var(--cyan);
+    border-color: rgba(56, 189, 248, 0.45);
+    background: rgba(56, 189, 248, 0.12);
+  }
+
+  .more-sheet-root {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+
+  .more-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(4, 6, 20, 0.55);
+    cursor: pointer;
+  }
+
+  .more-sheet {
+    position: relative;
+    z-index: 1;
+    background: linear-gradient(180deg, #161b3f 0%, #0e1230 100%);
+    border-top: 1px solid var(--line-strong);
+    border-radius: 22px 22px 0 0;
+    padding: 10px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+    max-height: min(72vh, 520px);
+    overflow-y: auto;
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.35);
+    animation: more-sheet-up 0.22s ease;
+  }
+
+  @keyframes more-sheet-up {
+    from {
+      transform: translateY(18px);
+      opacity: 0.85;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .more-sheet-handle {
+    width: 42px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(148, 163, 255, 0.28);
+    margin: 2px auto 12px;
+  }
+
+  .more-sheet-title {
+    font-weight: 800;
+    font-size: 0.95rem;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+
+  .more-sheet-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .more-sheet-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 84px;
+    padding: 12px 8px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: rgba(24, 29, 63, 0.65);
+    color: var(--text);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .more-sheet-item.active {
+    border-color: rgba(56, 189, 248, 0.55);
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--cyan);
+  }
+
+  .more-sheet-item.danger {
+    color: var(--pink);
+    border-color: rgba(251, 113, 133, 0.28);
   }
 
   .main {
@@ -820,6 +925,60 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.toast-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.toast-confirm-actions .btn {
+  min-width: 88px;
+}
+
+@media (max-width: 900px) {
+  .actions,
+  .toast-confirm-actions {
+    width: 100%;
+  }
+
+  /*
+   * Pure button rows only (no select/input/chip siblings):
+   * 1 btn → full width · 2 btns → 50/50 · 3+ → wrap in equal halves
+   */
+  .actions:not(:has(> :not(.btn):not(a.btn))) > .btn,
+  .actions:not(:has(> :not(.btn):not(a.btn))) > a.btn,
+  .toast-confirm-actions > .btn {
+    flex: 1 1 calc(50% - 4px);
+    min-width: calc(50% - 4px);
+    max-width: 100%;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+
+  .actions:not(:has(> :not(.btn):not(a.btn))) > .btn:only-child,
+  .actions:not(:has(> :not(.btn):not(a.btn))) > a.btn:only-child,
+  .toast-confirm-actions > .btn:only-child {
+    flex-basis: 100%;
+    min-width: 100%;
+  }
+
+  .row-card {
+    align-items: stretch;
+  }
+
+  .row-card > .actions {
+    width: 100%;
+  }
+
+  /* Lone primary actions under a panel (not inside .actions) */
+  .panel > .btn,
+  .panel > a.btn {
+    width: 100%;
+    box-sizing: border-box;
+  }
 }
 
 .table-wrap {
@@ -1029,16 +1188,6 @@ h3 {
   white-space: pre-wrap;
 }
 
-.toast-confirm-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
-
-.toast-confirm-actions .btn {
-  min-width: 88px;
-}
-
 /* ---------- Sticky save bar ---------- */
 
 .save-bar {
@@ -1152,7 +1301,7 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
-  color: var(--muted);
+  color: var(--mute);
   font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
@@ -1233,4 +1382,96 @@ h3 {
 
 .guide-platform-btn {
   width: 100%;
+}
+
+/* ---------- Config detail modal ---------- */
+
+.config-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+}
+
+.config-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.config-detail-item.span-2 {
+  grid-column: 1 / -1;
+}
+
+.config-detail-item .label {
+  font-size: 0.78rem;
+  color: var(--mute, #8a93a6);
+}
+
+.config-detail-item strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.config-detail-item strong.bad {
+  color: #e35d6a;
+}
+
+.traffic-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.traffic-progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.traffic-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #3d9cf0;
+  transition: width 0.25s ease;
+}
+
+.traffic-progress-fill.warn {
+  background: #e0a23a;
+}
+
+.traffic-progress-fill.danger {
+  background: #e35d6a;
+}
+
+.traffic-progress-meta {
+  font-size: 0.82rem;
+  color: var(--mute, #8a93a6);
+}
+
+@media (max-width: 520px) {
+  .config-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pricing-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.rate-cat-card {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rate-cat-card > strong {
+  display: block;
+  margin-bottom: 2px;
 }

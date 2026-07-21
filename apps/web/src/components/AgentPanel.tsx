@@ -93,6 +93,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         body: {
           trafficGb: selected.trafficGb,
           months: selected.months,
+          category: selected.category,
           accountName: accountName.trim() || undefined,
           payWithWallet: true,
         },
@@ -226,6 +227,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                 </button>
               ))}
             </div>
+            {!cells.length && <p className="muted">هنوز پلنی برای فروش تنظیم نشده است.</p>}
             <button
               type="button"
               className="btn success wide"

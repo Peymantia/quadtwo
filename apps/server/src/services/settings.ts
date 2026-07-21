@@ -78,12 +78,30 @@ const defaults: Record<string, string> = {
   extra_admin_ids: "",
   /** Default IP/device limit for new configs (0 = unlimited) */
   default_limit_ip: "2",
-  /** matrix = discrete PriceCell plans | rate = per-GB + per-month formula */
+  /** Legacy global mode — kept in sync with pricing_modes_json.user */
   pricing_mode: "matrix",
+  /** Per-role: matrix = PriceCell plans | rate = per-GB + per-month formula */
+  pricing_modes_json: JSON.stringify({
+    user: "matrix",
+    partner: "matrix",
+    wholesale: "matrix",
+  }),
   price_rates_json: JSON.stringify({
     user: { perGb: 15_000, perMonth: 30_000, unlimitedPerMonth: 1_500_000 },
     partner: { perGb: 12_000, perMonth: 25_000, unlimitedPerMonth: 1_200_000 },
     wholesale: { perGb: 10_000, perMonth: 20_000, unlimitedPerMonth: 1_000_000 },
+    categories: {
+      data: {
+        user: { perGb: 15_000, perMonth: 30_000 },
+        partner: { perGb: 12_000, perMonth: 25_000 },
+        wholesale: { perGb: 10_000, perMonth: 20_000 },
+      },
+      national: {
+        user: { perGb: 8_000, perMonth: 20_000 },
+        partner: { perGb: 6_000, perMonth: 15_000 },
+        wholesale: { perGb: 5_000, perMonth: 12_000 },
+      },
+    },
   }),
   backup_config: JSON.stringify({
     enabled: true,
@@ -224,43 +242,135 @@ export async function resolvePurchaseLimitIp(draft: {
 
 export type PricingMode = "matrix" | "rate";
 
+export type RolePricingKey = "user" | "partner" | "wholesale";
+
+export type RolePricingModes = Record<RolePricingKey, PricingMode>;
+
 export type RoleRates = {
   perGb: number;
   perMonth: number;
   unlimitedPerMonth: number;
 };
 
+/** Fixed unit prices for a category (GB + month). Unlimited uses RoleRates.unlimitedPerMonth. */
+export type CategoryUnitRates = {
+  perGb: number;
+  perMonth: number;
+};
+
+export type CategoryRoleRates = Partial<Record<RolePricingKey, Partial<CategoryUnitRates>>>;
+
 export type PriceRates = {
   user: RoleRates;
   partner: RoleRates;
   wholesale: RoleRates;
+  /** Per-category overrides: categories.data.user.perGb etc. */
+  categories: Record<string, CategoryRoleRates>;
 };
+
+function asMode(v: unknown): PricingMode {
+  return v === "rate" ? "rate" : "matrix";
+}
+
+export function defaultPricingModes(): RolePricingModes {
+  return { user: "matrix", partner: "matrix", wholesale: "matrix" };
+}
 
 export function defaultPriceRates(): PriceRates {
   return {
     user: { perGb: 15_000, perMonth: 30_000, unlimitedPerMonth: 1_500_000 },
     partner: { perGb: 12_000, perMonth: 25_000, unlimitedPerMonth: 1_200_000 },
     wholesale: { perGb: 10_000, perMonth: 20_000, unlimitedPerMonth: 1_000_000 },
+    categories: {
+      data: {
+        user: { perGb: 15_000, perMonth: 30_000 },
+        partner: { perGb: 12_000, perMonth: 25_000 },
+        wholesale: { perGb: 10_000, perMonth: 20_000 },
+      },
+      national: {
+        user: { perGb: 8_000, perMonth: 20_000 },
+        partner: { perGb: 6_000, perMonth: 15_000 },
+        wholesale: { perGb: 5_000, perMonth: 12_000 },
+      },
+    },
   };
 }
 
+/** Legacy single mode (equals user mode). Prefer getPricingModeForRole. */
 export async function getPricingMode(): Promise<PricingMode> {
-  const m = await getSetting("pricing_mode");
-  return m === "rate" ? "rate" : "matrix";
+  const modes = await getPricingModes();
+  return modes.user;
 }
 
+export async function getPricingModes(): Promise<RolePricingModes> {
+  const base = defaultPricingModes();
+  try {
+    const raw = JSON.parse(await getSetting("pricing_modes_json")) as Partial<RolePricingModes>;
+    if (raw && typeof raw === "object") {
+      return {
+        user: asMode(raw.user ?? base.user),
+        partner: asMode(raw.partner ?? base.partner),
+        wholesale: asMode(raw.wholesale ?? base.wholesale),
+      };
+    }
+  } catch {
+    /* fall through to legacy */
+  }
+  const legacy = asMode(await getSetting("pricing_mode"));
+  return { user: legacy, partner: legacy, wholesale: legacy };
+}
+
+export async function getPricingModeForRole(role: string): Promise<PricingMode> {
+  const modes = await getPricingModes();
+  if (role === "wholesale") return modes.wholesale;
+  if (role === "partner" || role === "admin") return modes.partner;
+  return modes.user;
+}
+
+/** Set the same mode for every role (legacy / bulk). */
 export async function setPricingMode(mode: PricingMode) {
-  await setSetting("pricing_mode", mode);
+  await savePricingModes({ user: mode, partner: mode, wholesale: mode });
+}
+
+export async function savePricingModes(modes: RolePricingModes) {
+  const next: RolePricingModes = {
+    user: asMode(modes.user),
+    partner: asMode(modes.partner),
+    wholesale: asMode(modes.wholesale),
+  };
+  await setSetting("pricing_modes_json", JSON.stringify(next));
+  await setSetting("pricing_mode", next.user);
+}
+
+function mergeRoleRates(base: RoleRates, patch?: Partial<RoleRates>): RoleRates {
+  return {
+    perGb: Number(patch?.perGb ?? base.perGb) || 0,
+    perMonth: Number(patch?.perMonth ?? base.perMonth) || 0,
+    unlimitedPerMonth: Number(patch?.unlimitedPerMonth ?? base.unlimitedPerMonth) || 0,
+  };
 }
 
 export async function getPriceRates(): Promise<PriceRates> {
   const base = defaultPriceRates();
   try {
-    const raw = JSON.parse(await getSetting("price_rates_json")) as Partial<PriceRates>;
+    const raw = JSON.parse(await getSetting("price_rates_json")) as Partial<PriceRates> & {
+      categories?: Record<string, CategoryRoleRates>;
+    };
+    const categories: Record<string, CategoryRoleRates> = { ...base.categories };
+    if (raw.categories && typeof raw.categories === "object") {
+      for (const [cat, roles] of Object.entries(raw.categories)) {
+        if (!cat.trim() || !roles || typeof roles !== "object") continue;
+        categories[cat.trim()] = {
+          ...(categories[cat.trim()] ?? {}),
+          ...roles,
+        };
+      }
+    }
     return {
-      user: { ...base.user, ...(raw.user ?? {}) },
-      partner: { ...base.partner, ...(raw.partner ?? {}) },
-      wholesale: { ...base.wholesale, ...(raw.wholesale ?? {}) },
+      user: mergeRoleRates(base.user, raw.user),
+      partner: mergeRoleRates(base.partner, raw.partner),
+      wholesale: mergeRoleRates(base.wholesale, raw.wholesale),
+      categories,
     };
   } catch {
     return base;
@@ -269,6 +379,23 @@ export async function getPriceRates(): Promise<PriceRates> {
 
 export async function savePriceRates(rates: PriceRates) {
   await setSetting("price_rates_json", JSON.stringify(rates));
+}
+
+/** Effective unit rates for a role + category (falls back to role defaults). */
+export function ratesForRoleCategory(
+  role: string,
+  category: string,
+  rates: PriceRates,
+): RoleRates {
+  const roleKey: RolePricingKey =
+    role === "wholesale" ? "wholesale" : role === "partner" || role === "admin" ? "partner" : "user";
+  const base = rates[roleKey];
+  const cat = category === "unlimited" ? undefined : rates.categories?.[category]?.[roleKey];
+  return {
+    perGb: Number(cat?.perGb ?? base.perGb) || 0,
+    perMonth: Number(cat?.perMonth ?? base.perMonth) || 0,
+    unlimitedPerMonth: base.unlimitedPerMonth,
+  };
 }
 
 /** Builtin + custom category keys → sales enabled flag */

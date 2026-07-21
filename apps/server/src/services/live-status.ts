@@ -37,7 +37,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
 
   await syncSubscriptionExpiryFromPanel(sub.id);
   const subUrl = await refreshSubscriptionSubUrl(sub.id);
-  const fresh = (await prisma.subscription.findUnique({ where: { id: sub.id } })) ?? sub;
+  let fresh = (await prisma.subscription.findUnique({ where: { id: sub.id } })) ?? sub;
 
   let used = 0;
   let total = fresh.trafficGb === null ? 0 : fresh.trafficGb * 1024 * 1024 * 1024;
@@ -58,22 +58,57 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     }
     const got = await resolved.xui.getClient(fresh.email).catch(() => null);
     const client = got?.obj?.client;
-    if (client) {
+    if (!client) {
+      onlineHint = "🔴 در پنل پیدا نشد";
+      panelEnabled = false;
+      if (fresh.status === "active") {
+        fresh = await prisma.subscription.update({
+          where: { id: fresh.id },
+          data: { status: "disabled" },
+        });
+      }
+    } else {
       const lip = Number(client.limitIp ?? 0);
       limitIpLabel = lip <= 0 ? "نامحدود" : `${lip} دستگاه`;
       if (client.enable !== undefined) panelEnabled = client.enable;
-    }
-    const panelExp = Number(client?.expiryTime ?? 0);
-    if (panelExp > 0 && (!fresh.activatedAt || fresh.expiresAt.getTime() !== panelExp)) {
-      await prisma.subscription.update({
-        where: { id: fresh.id },
-        data: {
-          expiresAt: new Date(panelExp),
-          activatedAt: fresh.activatedAt ?? new Date(),
-        },
-      });
-      fresh.expiresAt = new Date(panelExp);
-      fresh.activatedAt = fresh.activatedAt ?? new Date();
+
+      const patch: {
+        status?: "active" | "disabled" | "expired";
+        trafficGb?: number | null;
+        expiresAt?: Date;
+        activatedAt?: Date | null;
+        startsOnConnect?: boolean;
+      } = {};
+
+      if (client.enable === false && fresh.status === "active") {
+        patch.status = "disabled";
+        onlineHint = "🔴 غیرفعال در پنل";
+      } else if (client.enable !== false && fresh.status === "disabled" && fresh.expiresAt.getTime() > Date.now()) {
+        patch.status = "active";
+        onlineHint = "🟢 فعال در پنل";
+      }
+
+      const bytes = Number(client.totalGB ?? 0);
+      const panelGb = bytes > 0 ? Math.max(1, Math.round(bytes / 1024 ** 3)) : null;
+      if (panelGb !== fresh.trafficGb && (bytes > 0 || client.totalGB === 0 || client.totalGB == null)) {
+        // totalGB 0 → unlimited (null)
+        const nextGb = !bytes ? null : panelGb;
+        if (nextGb !== fresh.trafficGb) patch.trafficGb = nextGb;
+      }
+
+      const panelExp = Number(client.expiryTime ?? 0);
+      if (panelExp > 0 && (!fresh.activatedAt || Math.abs(fresh.expiresAt.getTime() - panelExp) > 60_000)) {
+        patch.expiresAt = new Date(panelExp);
+        patch.activatedAt = fresh.activatedAt ?? new Date();
+        patch.startsOnConnect = false;
+      }
+
+      if (Object.keys(patch).length) {
+        fresh = await prisma.subscription.update({
+          where: { id: fresh.id },
+          data: patch,
+        });
+      }
     }
   } catch {
     onlineHint = "⚠️ وضعیت پنل در دسترس نیست";

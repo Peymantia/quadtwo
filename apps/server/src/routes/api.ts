@@ -128,11 +128,11 @@ export function createApiApp() {
   });
 
   api.post("/me/quote", async (c) => {
-    const body = await c.req.json<{ trafficGb: number | null; months: number }>();
+    const body = await c.req.json<{ trafficGb: number | null; months: number; category?: string }>();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
-    const priced = await resolvePrice(user, body.trafficGb, body.months);
+    const priced = await resolvePrice(user, body.trafficGb, body.months, body.category || "data");
     if (!priced) return c.json({ price: null });
-    return c.json({ price: priced.price });
+    return c.json({ price: priced.price, mode: priced.mode });
   });
 
   api.post("/me/orders/:id/receipt", async (c) => {

@@ -24,6 +24,8 @@ export const BTN = {
   partnerPanel: "💼 پنل نماینده / عمده",
   agentPanel: "💼 مشخصات نماینده",
   controlCenter: "🎛 کنترل سنتر ادمین",
+  /** Hide reply keyboard for a fuller chat view */
+  hideKeyboard: "⬇️ تمام‌صفحه",
   /** @deprecated legacy */
   referral: "👥 معرفی به دوستان",
   national: "🇮🇷 کانفیگ نت ملی",
@@ -68,12 +70,23 @@ export function mainMenuReply(opts: MainMenuOpts) {
     kb.text(BTN.configLookup).danger().row();
   }
   kb.text(BTN.dashOtp).row();
+  kb.text(BTN.hideKeyboard).row();
 
   if (opts.isAdmin) {
     kb.text(BTN.controlCenter).danger().row();
   }
 
   return kb.persistent().resized();
+}
+
+/** Remove sticky reply keyboard so chat uses more vertical space. */
+export function removeReplyKeyboard() {
+  return { remove_keyboard: true as const };
+}
+
+/** Inline affordance to restore the main reply keyboard after hide. */
+export function showMenuInlineKeyboard() {
+  return new InlineKeyboard().text("📌 نمایش منوی اصلی", "menu:show").primary();
 }
 
 /** Inline category picker inside buy flow */
@@ -553,6 +566,9 @@ export function controlCenterKeyboard() {
     .success()
     .row()
     .text("📋 سفارش‌های باز", "cc:pending")
+    .primary()
+    .row()
+    .text("📣 پیام همگانی", "cc:broadcast")
     .primary()
     .row()
     .text("💾 پشتیبان دیتابیس", "cc:backup")

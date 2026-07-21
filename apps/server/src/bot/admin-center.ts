@@ -24,19 +24,21 @@ import {
   getMaxPurchaseMonths,
   getNotifConfig,
   getPriceRates,
-  getPricingMode,
+  getPricingModes,
   getSalesCategories,
   getSetting,
   removeExtraAdminId,
   saveChannels,
   saveNotifConfig,
   savePriceRates,
+  savePricingModes,
   saveSalesCategories,
-  setPricingMode,
   setSetting,
   type ChannelConfig,
   type NotifConfig,
   type PriceRates,
+  type RolePricingKey,
+  type RolePricingModes,
   type SalesCategories,
 } from "../services/settings.js";
 import { demoteToUser, listNotifyAdminTelegramIds, partnerSalesReport } from "../services/users.js";
@@ -50,6 +52,11 @@ import {
 } from "../services/admin-reports.js";
 import { formatImportResult, importWorkbook, readWorkbookFromBuffer } from "../services/bulk-import.js";
 import { auditLog, listRecentAudit } from "../services/audit.js";
+import {
+  broadcastCopyToAllUsers,
+  broadcastTextToAllUsers,
+  countBroadcastRecipients,
+} from "../services/broadcast.js";
 import {
   categoryLabelFa,
   createPanelServer,
@@ -71,6 +78,9 @@ import {
   salesCategoriesAdminKeyboard,
   salesCategoriesAdminText,
 } from "./keyboards.js";
+
+/** Prevent overlapping broadcasts */
+let broadcastBusy = false;
 
 /** Waiting text input for control-center forms */
 export const ccWait = new Map<
@@ -97,10 +107,21 @@ export const ccWait = new Map<
   | { kind: "iplimit" }
   | { kind: "backup_time" }
   | { kind: "search" }
+  | { kind: "broadcast" }
+  | {
+      kind: "broadcast_ready";
+      /** Plain text body (when admin sent text) */
+      text?: string;
+      /** copyMessage source (when admin sent media / any message) */
+      fromChatId?: number;
+      messageId?: number;
+      preview: string;
+    }
   | {
       kind: "rate_ask";
-      role: "user" | "partner" | "wholesale";
+      role: RolePricingKey;
       field: "perGb" | "perMonth" | "unlimitedPerMonth";
+      category: string | null;
       partial: PriceRates;
     }
   | {
@@ -232,47 +253,45 @@ async function countByCategory() {
 
 async function showPricingHome(ctx: Context) {
   const counts = await countByCategory();
-  const mode = await getPricingMode();
+  const modes = await getPricingModes();
   const rates = await getPriceRates();
-  const modeLabel =
-    mode === "rate"
-      ? "نرخ هر گیگ + هر ماه"
-      : "قیمت‌گذاری اشتراک‌ها (پلن‌های ثابت)";
+  const dataGb = rates.categories?.data?.user?.perGb ?? rates.user.perGb;
+  const dataMo = rates.categories?.data?.user?.perMonth ?? rates.user.perMonth;
+  const modeLine = (label: string, mode: string) =>
+    `${label}: ${mode === "rate" ? "نرخی (گیگ+ماه)" : "ماتریکس (پلن ثابت)"}`;
   const text = [
     "💰 قیمت‌گذاری اشتراک‌ها",
     "",
-    `📐 نوع محاسبه: ${modeLabel}`,
-    mode === "rate"
-      ? [
-          "",
-          "فرمول: (گیگ × نرخ گیگ) + (ماه × نرخ ماه)",
-          `👤 نمونه مشتری: هر گیگ ${formatToman(rates.user.perGb)} · هر ماه ${formatToman(rates.user.perMonth)}`,
-          `مثال ۵۰ گیگ ۲ ماهه: ${formatToman(50 * rates.user.perGb + 2 * rates.user.perMonth)}`,
-        ].join("\n")
-      : "",
+    "📐 حالت هر نقش:",
+    modeLine("👤 مشتری", modes.user),
+    modeLine("🤝 همکار", modes.partner),
+    modeLine("📦 عمده", modes.wholesale),
+    "",
+    "فرمول نرخی: (گیگ × نرخ گیگ) + (ماه × نرخ ماه)",
+    `نمونه مشتری data ۵۰گیگ ۲ماه: ${formatToman(50 * dataGb + 2 * dataMo)}`,
     "",
     "یکی از دسته‌ها را انتخاب کنید تا پلن‌ها را ببینید یا پلن جدید بسازید.",
-    "",
-    "هر پلن سه قیمت دارد:",
-    "👤 مشتری عادی",
-    "🤝 همکار (نماینده)",
-    "📦 عمده‌فروش",
-  ]
-    .filter((l) => l !== "")
-    .join("\n");
+  ].join("\n");
 
-  const kb = new InlineKeyboard()
-    .text(
-      mode === "matrix" ? "✓ بر اساس پلن‌های ثابت" : "بر اساس پلن‌های ثابت",
-      "cc:pricing:mode:matrix",
-    )
-    .row()
-    .text(
-      mode === "rate" ? "✓ بر اساس نرخ گیگ/ماه" : "بر اساس نرخ گیگ/ماه",
-      "cc:pricing:mode:rate",
-    )
-    .row()
-    .text("✏️ تنظیم نرخ‌ها", "cc:pricing:rates")
+  const rows = new InlineKeyboard();
+  for (const [role, label] of [
+    ["user", "مشتری"],
+    ["partner", "همکار"],
+    ["wholesale", "عمده"],
+  ] as const) {
+    rows
+      .text(
+        modes[role] === "matrix" ? `✓ ${label}: ماتریکس` : `${label}: ماتریکس`,
+        `cc:pricing:mode:${role}:matrix`,
+      )
+      .text(
+        modes[role] === "rate" ? `✓ ${label}: نرخی` : `${label}: نرخی`,
+        `cc:pricing:mode:${role}:rate`,
+      )
+      .row();
+  }
+  rows
+    .text("✏️ تنظیم نرخ گیگ/ماه", "cc:pricing:rates")
     .primary()
     .row()
     .text(`${catEmoji("data")} VIP بین الملل — ${counts.data} پلن`, "cc:pricing:data")
@@ -286,41 +305,47 @@ async function showPricingHome(ctx: Context) {
     .row()
     .text("« کنترل سنتر", "cc:home");
 
-  await ctx.editMessageText(text, { reply_markup: kb });
+  await ctx.editMessageText(text, { reply_markup: rows });
 }
 
 async function showPriceRates(ctx: Context) {
   const rates = await getPriceRates();
-  const mode = await getPricingMode();
-  const line = (label: string, r: PriceRates["user"]) =>
-    [
-      label,
-      `  هر گیگ: ${formatToman(r.perGb)}`,
-      `  هر ماه: ${formatToman(r.perMonth)}`,
-      `  نامحدود/ماه: ${formatToman(r.unlimitedPerMonth)}`,
+  const modes = await getPricingModes();
+  const lineCat = (cat: string, label: string) => {
+    const c = rates.categories?.[cat] ?? {};
+    return [
+      `📁 ${label}`,
+      `  مشتری: گیگ ${formatToman(c.user?.perGb ?? rates.user.perGb)} · ماه ${formatToman(c.user?.perMonth ?? rates.user.perMonth)}`,
+      `  همکار: گیگ ${formatToman(c.partner?.perGb ?? rates.partner.perGb)} · ماه ${formatToman(c.partner?.perMonth ?? rates.partner.perMonth)}`,
+      `  عمده: گیگ ${formatToman(c.wholesale?.perGb ?? rates.wholesale.perGb)} · ماه ${formatToman(c.wholesale?.perMonth ?? rates.wholesale.perMonth)}`,
     ].join("\n");
+  };
 
   const text = [
-    "✏️ نرخ محاسبه قیمت",
+    "✏️ نرخ محاسبه قیمت (گیگ + ماه)",
     "",
-    `حالت فعال: ${mode === "rate" ? "نرخ گیگ/ماه" : "پلن‌های ثابت (این نرخ‌ها فقط در حالت نرخ استفاده می‌شوند)"}`,
+    `حالت‌ها: مشتری ${modes.user === "rate" ? "نرخی" : "ماتریکس"} · همکار ${modes.partner === "rate" ? "نرخی" : "ماتریکس"} · عمده ${modes.wholesale === "rate" ? "نرخی" : "ماتریکس"}`,
     "",
-    line("👤 مشتری عادی", rates.user),
+    lineCat("data", "VIP / data"),
     "",
-    line("🤝 همکار", rates.partner),
+    lineCat("national", "اینترنت ملی"),
     "",
-    line("📦 عمده‌فروش", rates.wholesale),
-    "",
-    "مثال مشتری ۵۰ گیگ ۲ ماهه:",
-    formatToman(50 * rates.user.perGb + 2 * rates.user.perMonth),
+    `♾ نامحدود/ماه — مشتری ${formatToman(rates.user.unlimitedPerMonth)} · همکار ${formatToman(rates.partner.unlimitedPerMonth)} · عمده ${formatToman(rates.wholesale.unlimitedPerMonth)}`,
   ].join("\n");
 
   await ctx.editMessageText(text, {
     reply_markup: new InlineKeyboard()
-      .text("✏️ مشتری", "cc:pricing:rates:edit:user")
-      .text("✏️ همکار", "cc:pricing:rates:edit:partner")
+      .text("✏️ data · مشتری", "cc:pricing:rates:edit:data:user")
+      .text("همکار", "cc:pricing:rates:edit:data:partner")
+      .text("عمده", "cc:pricing:rates:edit:data:wholesale")
       .row()
-      .text("✏️ عمده", "cc:pricing:rates:edit:wholesale")
+      .text("✏️ ملی · مشتری", "cc:pricing:rates:edit:national:user")
+      .text("همکار", "cc:pricing:rates:edit:national:partner")
+      .text("عمده", "cc:pricing:rates:edit:national:wholesale")
+      .row()
+      .text("✏️ نامحدود/ماه مشتری", "cc:pricing:rates:edit:unlimited:user")
+      .text("همکار", "cc:pricing:rates:edit:unlimited:partner")
+      .text("عمده", "cc:pricing:rates:edit:unlimited:wholesale")
       .row()
       .text("« قیمت‌گذاری", "cc:pricing"),
   });
@@ -329,8 +354,9 @@ async function showPriceRates(ctx: Context) {
 async function askRateStep(
   ctx: Context,
   opts: {
-    role: "user" | "partner" | "wholesale";
+    role: RolePricingKey;
     field: "perGb" | "perMonth" | "unlimitedPerMonth";
+    category: string | null;
     partial: PriceRates;
   },
 ) {
@@ -338,18 +364,25 @@ async function askRateStep(
     opts.role === "user" ? "مشتری عادی" : opts.role === "partner" ? "همکار" : "عمده‌فروش";
   const fieldLabel =
     opts.field === "perGb" ? "هر گیگ" : opts.field === "perMonth" ? "هر ماه" : "نامحدود (هر ماه)";
+  const catPart =
+    opts.category === "national"
+      ? " · اینترنت ملی"
+      : opts.category === "data"
+        ? " · VIP/data"
+        : "";
   ccWait.set(ctx.from!.id, {
     kind: "rate_ask",
     role: opts.role,
     field: opts.field,
+    category: opts.category,
     partial: opts.partial,
   });
   await ctx.reply(
     [
-      `نرخ ${fieldLabel} — ${roleLabel}`,
+      `نرخ ${fieldLabel} — ${roleLabel}${catPart}`,
       "",
       "فقط عدد تومان بفرستید.",
-      "مثال: 15000",
+      `مثال: ${opts.field === "unlimitedPerMonth" ? "1500000" : "15000"}`,
       "لغو: /cancel",
     ].join("\n"),
   );
@@ -978,12 +1011,26 @@ export function registerControlCenter(bot: Bot) {
     await showPricingHome(ctx);
   });
 
+  bot.callbackQuery(/^cc:pricing:mode:(user|partner|wholesale):(matrix|rate)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const role = ctx.match![1] as RolePricingKey;
+    const mode = ctx.match![2] as "matrix" | "rate";
+    const current = await getPricingModes();
+    const next: RolePricingModes = { ...current, [role]: mode };
+    await savePricingModes(next);
+    await ctx.answerCallbackQuery({
+      text: mode === "rate" ? "حالت نرخی ذخیره شد" : "حالت ماتریکس ذخیره شد",
+    });
+    await showPricingHome(ctx);
+  });
+
+  // Legacy global mode toggle
   bot.callbackQuery(/^cc:pricing:mode:(matrix|rate)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     const mode = ctx.match![1] as "matrix" | "rate";
-    await setPricingMode(mode);
+    await savePricingModes({ user: mode, partner: mode, wholesale: mode });
     await ctx.answerCallbackQuery({
-      text: mode === "rate" ? "محاسبه بر اساس نرخ گیگ/ماه" : "محاسبه بر اساس پلن‌های ثابت",
+      text: mode === "rate" ? "همه نقش‌ها نرخی" : "همه نقش‌ها ماتریکس",
     });
     await showPricingHome(ctx);
   });
@@ -994,12 +1041,29 @@ export function registerControlCenter(bot: Bot) {
     await showPriceRates(ctx);
   });
 
+  bot.callbackQuery(
+    /^cc:pricing:rates:edit:(data|national|unlimited):(user|partner|wholesale)$/,
+    async (ctx) => {
+      if (!(await isControlAdmin(ctx.from?.id))) return;
+      await ctx.answerCallbackQuery();
+      const category = ctx.match![1];
+      const role = ctx.match![2] as RolePricingKey;
+      const partial = await getPriceRates();
+      if (category === "unlimited") {
+        await askRateStep(ctx, { role, field: "unlimitedPerMonth", category: null, partial });
+      } else {
+        await askRateStep(ctx, { role, field: "perGb", category, partial });
+      }
+    },
+  );
+
+  // Legacy role-only rate edit
   bot.callbackQuery(/^cc:pricing:rates:edit:(user|partner|wholesale)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    const role = ctx.match![1] as "user" | "partner" | "wholesale";
+    const role = ctx.match![1] as RolePricingKey;
     const partial = await getPriceRates();
-    await askRateStep(ctx, { role, field: "perGb", partial });
+    await askRateStep(ctx, { role, field: "perGb", category: "data", partial });
   });
 
   bot.callbackQuery(/^cc:pricing:data:m:(\d+)(?::(\d+))?$/, async (ctx) => {
@@ -1584,6 +1648,115 @@ export function registerControlCenter(bot: Bot) {
     }
   });
 
+  bot.callbackQuery("cc:broadcast", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    if (broadcastBusy) {
+      await ctx.reply("یک ارسال همگانی در حال انجام است. کمی صبر کنید.");
+      return;
+    }
+    const total = await countBroadcastRecipients();
+    ccWait.set(ctx.from!.id, { kind: "broadcast" });
+    await ctx.reply(
+      [
+        "📣 پیام همگانی",
+        "",
+        `گیرندگان: ${total} عضو`,
+        "",
+        "متن پیام را بفرستید (یا عکس/ویدیو/فایل با کپشن).",
+        "بعد از پیش‌نمایش می‌توانید تأیید یا لغو کنید.",
+        "",
+        "لغو: /cancel",
+      ].join("\n"),
+    );
+  });
+
+  bot.callbackQuery("cc:broadcast:cancel", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery({ text: "لغو شد" });
+    ccWait.delete(ctx.from!.id);
+    await ctx.editMessageText("ارسال همگانی لغو شد.", {
+      reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
+    });
+  });
+
+  bot.callbackQuery("cc:broadcast:go", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const tid = ctx.from!.id;
+    const wait = ccWait.get(tid);
+    if (!wait || wait.kind !== "broadcast_ready") {
+      await ctx.answerCallbackQuery({ text: "پیامی برای ارسال نیست", show_alert: true });
+      return;
+    }
+    if (broadcastBusy) {
+      await ctx.answerCallbackQuery({ text: "ارسال دیگری در جریان است", show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    ccWait.delete(tid);
+    broadcastBusy = true;
+
+    const progress = await ctx.reply("⏳ در حال ارسال همگانی… ۰٪");
+    const progressMsgId = progress.message_id;
+    let lastPct = -1;
+
+    try {
+      const onProgress = async (done: number, total: number) => {
+        const pct = total ? Math.floor((done / total) * 100) : 100;
+        if (pct === lastPct && done !== total) return;
+        lastPct = pct;
+        try {
+          await ctx.api.editMessageText(tid, progressMsgId, `⏳ در حال ارسال همگانی… ${done}/${total} (${pct}٪)`);
+        } catch {
+          /* ignore edit races */
+        }
+      };
+
+      const result =
+        wait.fromChatId != null && wait.messageId != null
+          ? await broadcastCopyToAllUsers(ctx.api, wait.fromChatId, wait.messageId, {
+              excludeTelegramId: tid,
+              onProgress,
+            })
+          : await broadcastTextToAllUsers(ctx.api, wait.text ?? "", {
+              excludeTelegramId: tid,
+              onProgress,
+            });
+
+      await auditLog({
+        action: "broadcast",
+        actorTelegramId: tid,
+        detail: `sent:${result.sent} failed:${result.failed} total:${result.total}`,
+      });
+
+      await ctx.api.editMessageText(
+        tid,
+        progressMsgId,
+        [
+          "✅ ارسال همگانی تمام شد",
+          "",
+          `موفق: ${result.sent}`,
+          `ناموفق: ${result.failed}`,
+          `کل: ${result.total}`,
+          "",
+          "(کاربرانی که ربات را بلاک کرده باشند در ناموفق می‌آیند.)",
+        ].join("\n"),
+        {
+          reply_markup: new InlineKeyboard()
+            .text("📣 پیام دیگر", "cc:broadcast")
+            .row()
+            .text("🎛 کنترل سنتر", "cc:home"),
+        },
+      );
+    } catch (err) {
+      await ctx.reply(`خطا در ارسال همگانی:\n${String(err instanceof Error ? err.message : err)}`, {
+        reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
+      });
+    } finally {
+      broadcastBusy = false;
+    }
+  });
+
   bot.callbackQuery("cc:import", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
@@ -1728,6 +1901,82 @@ export function registerControlCenter(bot: Bot) {
   });
 }
 
+async function showBroadcastPreview(
+  ctx: Context,
+  payload: { text?: string; fromChatId?: number; messageId?: number; preview: string },
+) {
+  const tid = ctx.from!.id;
+  const total = await countBroadcastRecipients(tid);
+  ccWait.set(tid, {
+    kind: "broadcast_ready",
+    text: payload.text,
+    fromChatId: payload.fromChatId,
+    messageId: payload.messageId,
+    preview: payload.preview,
+  });
+  await ctx.reply(
+    [
+      "📣 پیش‌نمایش پیام همگانی",
+      "",
+      "────────",
+      payload.preview,
+      "────────",
+      "",
+      `برای ${total} عضو ارسال شود؟`,
+      "(خودتان از لیست گیرندگان حذف می‌شوید.)",
+    ].join("\n"),
+    {
+      reply_markup: new InlineKeyboard()
+        .text("✅ تأیید و ارسال", "cc:broadcast:go")
+        .primary()
+        .row()
+        .text("✖️ لغو", "cc:broadcast:cancel")
+        .danger(),
+    },
+  );
+}
+
+/**
+ * Accept photo/video/document/etc. while waiting for broadcast content.
+ * Returns true if consumed.
+ */
+export async function handleBroadcastMedia(ctx: Context): Promise<boolean> {
+  const tid = ctx.from?.id;
+  if (!tid) return false;
+  const wait = ccWait.get(tid);
+  if (!wait || wait.kind !== "broadcast") return false;
+  if (!(await isControlAdmin(tid))) {
+    ccWait.delete(tid);
+    return false;
+  }
+  const msg = ctx.message;
+  if (!msg) return false;
+
+  const kind = msg.photo
+    ? "عکس"
+    : msg.video
+      ? "ویدیو"
+      : msg.document
+        ? "فایل"
+        : msg.animation
+          ? "گیف"
+          : msg.audio || msg.voice
+            ? "صوت"
+            : msg.sticker
+              ? "استیکر"
+              : null;
+  if (!kind) return false;
+
+  const caption = (msg.caption || "").trim();
+  const preview = caption ? `${kind}\n${caption.slice(0, 400)}` : kind;
+  await showBroadcastPreview(ctx, {
+    fromChatId: msg.chat.id,
+    messageId: msg.message_id,
+    preview,
+  });
+  return true;
+}
+
 /** Handle text replies for control-center wait states. Returns true if consumed. */
 export async function handleControlCenterText(ctx: Context, text: string): Promise<boolean> {
   const tid = ctx.from?.id;
@@ -1737,6 +1986,23 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
   if (!(await isControlAdmin(tid))) {
     ccWait.delete(tid);
     return false;
+  }
+
+  if (wait.kind === "broadcast") {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      await ctx.reply("متن خالی است. دوباره بفرستید یا /cancel");
+      return true;
+    }
+    if (trimmed.length > 4000) {
+      await ctx.reply("متن خیلی بلند است (حداکثر حدود ۴۰۰۰ کاراکتر). کوتاه‌تر بفرستید.");
+      return true;
+    }
+    await showBroadcastPreview(ctx, {
+      text: trimmed,
+      preview: trimmed.length > 500 ? `${trimmed.slice(0, 500)}…` : trimmed,
+    });
+    return true;
   }
 
   if (wait.kind === "search") {
@@ -2027,18 +2293,37 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
       return true;
     }
     const partial = structuredClone(wait.partial);
-    partial[wait.role][wait.field] = amount;
+    const cat = wait.category;
+
+    if (wait.field === "unlimitedPerMonth" || !cat) {
+      partial[wait.role][wait.field] = amount;
+      if (wait.field === "unlimitedPerMonth") {
+        await savePriceRates(partial);
+        ccWait.delete(tid);
+        const roleLabel =
+          wait.role === "user" ? "مشتری" : wait.role === "partner" ? "همکار" : "عمده";
+        await ctx.reply(`✅ نامحدود/ماه ${roleLabel}: ${formatToman(amount)}`, {
+          reply_markup: new InlineKeyboard()
+            .text("✏️ نرخ‌ها", "cc:pricing:rates")
+            .row()
+            .text("💰 قیمت‌گذاری", "cc:pricing"),
+        });
+        return true;
+      }
+    } else {
+      if (!partial.categories) partial.categories = {};
+      if (!partial.categories[cat]) partial.categories[cat] = {};
+      if (!partial.categories[cat][wait.role]) partial.categories[cat][wait.role] = {};
+      partial.categories[cat][wait.role]![wait.field === "perGb" ? "perGb" : "perMonth"] = amount;
+      // keep role defaults in sync as fallback
+      if (wait.field === "perGb" || wait.field === "perMonth") {
+        partial[wait.role][wait.field] = amount;
+      }
+    }
 
     if (wait.field === "perGb") {
-      ccWait.set(tid, { kind: "rate_ask", role: wait.role, field: "perMonth", partial });
+      ccWait.set(tid, { kind: "rate_ask", role: wait.role, field: "perMonth", category: cat, partial });
       await ctx.reply(`✅ هر گیگ: ${formatToman(amount)}\n\nحالا نرخ هر ماه را بفرستید.\nمثال: 30000`);
-      return true;
-    }
-    if (wait.field === "perMonth") {
-      ccWait.set(tid, { kind: "rate_ask", role: wait.role, field: "unlimitedPerMonth", partial });
-      await ctx.reply(
-        `✅ هر ماه: ${formatToman(amount)}\n\nحالا قیمت نامحدود به‌ازای هر ماه را بفرستید.\nمثال: 1500000`,
-      );
       return true;
     }
 
@@ -2046,7 +2331,7 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     ccWait.delete(tid);
     const roleLabel =
       wait.role === "user" ? "مشتری" : wait.role === "partner" ? "همکار" : "عمده";
-    await ctx.reply(`✅ نرخ‌های ${roleLabel} ذخیره شد.`, {
+    await ctx.reply(`✅ نرخ‌های ${roleLabel}${cat ? ` · ${cat}` : ""} ذخیره شد.`, {
       reply_markup: new InlineKeyboard()
         .text("✏️ نرخ‌ها", "cc:pricing:rates")
         .row()

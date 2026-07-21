@@ -1,7 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
 import { clearToken, roleLabel, type Role } from "../lib/api";
 
 export type IconName =
@@ -19,7 +19,9 @@ export type IconName =
   | "file"
   | "orders"
   | "logout"
-  | "shield";
+  | "shield"
+  | "menu"
+  | "close";
 
 export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
   const p = {
@@ -154,10 +156,31 @@ export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
           <path d="M6 12h10" />
         </svg>
       );
+    case "menu":
+      return (
+        <svg {...p}>
+          <path d="M4 7h16" />
+          <path d="M4 12h16" />
+          <path d="M4 17h16" />
+        </svg>
+      );
+    case "close":
+      return (
+        <svg {...p}>
+          <path d="M6 6l12 12" />
+          <path d="M18 6 6 18" />
+        </svg>
+      );
   }
 }
 
-export type ShellTab = { key: string; label: string; icon: IconName };
+export type ShellTab = {
+  key: string;
+  label: string;
+  icon: IconName;
+  /** Keep in mobile bottom bar; remaining tabs go to hamburger */
+  pin?: boolean;
+};
 
 export function DashShell(props: {
   brand: string;
@@ -171,10 +194,49 @@ export function DashShell(props: {
   children: ReactNode;
 }) {
   const router = useRouter();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const { primary, more } = useMemo(() => {
+    const pinned = props.tabs.filter((t) => t.pin);
+    if (pinned.length) {
+      return {
+        primary: pinned,
+        more: props.tabs.filter((t) => !t.pin),
+      };
+    }
+    if (props.tabs.length <= 5) {
+      return { primary: props.tabs, more: [] as ShellTab[] };
+    }
+    return {
+      primary: props.tabs.slice(0, 4),
+      more: props.tabs.slice(4),
+    };
+  }, [props.tabs]);
+
+  const hasMore = more.length > 0;
+  const moreActive = more.some((t) => t.key === props.active);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
 
   function logout() {
     clearToken();
     router.replace("/login");
+  }
+
+  function pickTab(key: string) {
+    setMoreOpen(false);
+    props.onTab(key);
   }
 
   return (
@@ -187,6 +249,17 @@ export function DashShell(props: {
         </div>
         <div className="topbar-side">
           {props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>}
+          {hasMore && (
+            <button
+              type="button"
+              className={`icon-btn${moreOpen || moreActive ? " on" : ""}`}
+              aria-label="منوی بیشتر"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((v) => !v)}
+            >
+              <Icon name={moreOpen ? "close" : "menu"} size={22} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -234,22 +307,62 @@ export function DashShell(props: {
       </div>
 
       <nav className="bottom-nav">
-        {props.tabs.map((t) => (
+        {primary.map((t) => (
           <button
             key={t.key}
             type="button"
             className={props.active === t.key ? "active" : ""}
-            onClick={() => props.onTab(t.key)}
+            onClick={() => pickTab(t.key)}
           >
             <Icon name={t.icon} size={21} />
             {t.label}
           </button>
         ))}
-        <button type="button" onClick={logout}>
-          <Icon name="logout" size={21} />
-          خروج
-        </button>
+        {hasMore ? (
+          <button
+            type="button"
+            className={moreOpen || moreActive ? "active" : ""}
+            aria-expanded={moreOpen}
+            aria-label={moreOpen ? "بستن منوی بیشتر" : "منوی بیشتر"}
+            onClick={() => setMoreOpen((v) => !v)}
+          >
+            <Icon name={moreOpen ? "close" : "menu"} size={21} />
+            {moreOpen ? "بستن" : "بیشتر"}
+          </button>
+        ) : (
+          <button type="button" onClick={logout}>
+            <Icon name="logout" size={21} />
+            خروج
+          </button>
+        )}
       </nav>
+
+      {hasMore && moreOpen && (
+        <div className="more-sheet-root" role="dialog" aria-modal="true" aria-label="منوی بیشتر">
+          <button type="button" className="more-sheet-backdrop" aria-label="بستن" onClick={() => setMoreOpen(false)} />
+          <div className="more-sheet">
+            <div className="more-sheet-handle" />
+            <div className="more-sheet-title">منوی بیشتر</div>
+            <div className="more-sheet-grid">
+              {more.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={`more-sheet-item${props.active === t.key ? " active" : ""}`}
+                  onClick={() => pickTab(t.key)}
+                >
+                  <Icon name={t.icon} size={22} />
+                  <span>{t.label}</span>
+                </button>
+              ))}
+              <button type="button" className="more-sheet-item danger" onClick={logout}>
+                <Icon name="logout" size={22} />
+                <span>خروج</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

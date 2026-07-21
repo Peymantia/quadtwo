@@ -536,6 +536,12 @@ export async function toggleSubscriptionEnabled(subscriptionId: string, userId: 
     email: sub.email,
     enable: newEnable,
   });
+  await prisma.subscription.update({
+    where: { id: sub.id },
+    data: {
+      status: newEnable ? SubscriptionStatus.active : SubscriptionStatus.disabled,
+    },
+  });
   return newEnable;
 }
 

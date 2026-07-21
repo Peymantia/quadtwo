@@ -34,6 +34,27 @@ export function sanitizeClientPayload(client: Record<string, unknown>): Record<s
     if (Number.isFinite(n) && n > 0) out.tgId = n;
     else delete out.tgId;
   }
+  if (typeof out.allowedIPs === "string") {
+    const raw = out.allowedIPs.trim();
+    if (!raw) {
+      out.allowedIPs = [];
+    } else if (raw.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        out.allowedIPs = Array.isArray(parsed) ? parsed.map((x) => String(x).trim()).filter(Boolean) : [];
+      } catch {
+        out.allowedIPs = raw
+          .split(/[,\r\n]+/)
+          .map((x) => x.trim())
+          .filter(Boolean);
+      }
+    } else {
+      out.allowedIPs = raw
+        .split(/[,\r\n]+/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+    }
+  }
   // Panel getClient may attach fields that confuse update body
   delete out.inboundIds;
   delete out.usedTraffic;

@@ -483,7 +483,10 @@ export type ConfigDetail = {
   panelFound: boolean;
   title: string | null;
   note: string | null;
+  comment: string | null;
   trafficGb: number | null;
+  /** bytes used (up+down) from panel */
+  usedTrafficBytes: number;
   expiresAt: string | null;
   limitIp: number;
   enable: boolean;
@@ -521,15 +524,15 @@ export async function getConfigDetail(opts: {
     comment?: string;
   };
 
-  const found: PanelClientBits[] = [];
+  const found: Array<{ client: PanelClientBits; xui: XuiClient }> = [];
 
-  const tryGet = async (xui: {
-    getClient: (e: string) => Promise<{ obj?: { client?: PanelClientBits } }>;
-  }) => {
+  const tryGet = async (xui: XuiClient) => {
     if (found.length) return;
     try {
       const got = await xui.getClient(email);
-      if (got.obj?.client) found.push(got.obj.client);
+      if (got.obj?.client) {
+        found.push({ client: got.obj.client, xui });
+      }
     } catch {
       /* next */
     }
@@ -550,10 +553,27 @@ export async function getConfigDetail(opts: {
     }
   }
 
-  const panelClient = found[0] ?? null;
+  const hit = found[0] ?? null;
+  const panelClient = hit?.client ?? null;
   const bytes = Number(panelClient?.totalGB ?? 0);
-  const panelGb =
+  let panelGb =
     !panelClient || bytes <= 0 ? null : Math.max(1, Math.round(bytes / 1024 ** 3));
+
+  // Get used traffic (up+down bytes) and refine total from traffic API
+  let usedTrafficBytes = 0;
+  if (hit) {
+    try {
+      const t = await hit.xui.getClientTraffic(email);
+      if (t) {
+        usedTrafficBytes = t.used;
+        if (t.total > 0) {
+          panelGb = Math.max(1, Math.round(t.total / 1024 ** 3));
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   const panelExpiry = Number(panelClient?.expiryTime ?? 0);
   let expiresAt: string | null = sub?.expiresAt?.toISOString() ?? null;
@@ -570,7 +590,9 @@ export async function getConfigDetail(opts: {
     panelFound: Boolean(panelClient),
     title: sub?.title ?? null,
     note: sub?.note ?? null,
+    comment: panelClient?.comment ?? null,
     trafficGb: sub?.trafficGb ?? panelGb,
+    usedTrafficBytes,
     expiresAt,
     limitIp: Number(panelClient?.limitIp ?? 0),
     enable: panelClient?.enable !== false && sub?.status !== "disabled",
@@ -987,4 +1009,209 @@ export async function importPanelClientsToBot(emails?: string[]): Promise<Import
   }
 
   return { imported, skipped, failed, ownerLabel };
+}
+
+export type ReconcileResult = {
+  checked: number;
+  updated: number;
+  disabledFromPanel: number;
+  removedFromPanel: number;
+  reactivated: number;
+  errors: number;
+};
+
+/**
+ * Apply panel → bot changes for existing subscriptions:
+ * - deleted in panel → status disabled
+ * - disabled in panel → status disabled
+ * - re-enabled in panel → status active (if not past expiry)
+ * - traffic / expiry / uuid / panelSubId / panelServerId synced when changed
+ *
+ * Does not auto-import panel-only clients (use importPanelClientsToBot).
+ */
+export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult> {
+  const result: ReconcileResult = {
+    checked: 0,
+    updated: 0,
+    disabledFromPanel: 0,
+    removedFromPanel: 0,
+    reactivated: 0,
+    errors: 0,
+  };
+
+  let panelClients: DetailedPanelClient[] = [];
+  try {
+    panelClients = await listDetailedPanelClients();
+  } catch (err) {
+    console.error("reconcile: list panel clients failed", err);
+    result.errors++;
+    return result;
+  }
+
+  // If every panel is unreachable we get [] — do not mass-disable all bot rows.
+  if (!panelClients.length) {
+    const panels = await listPanelServers();
+    const hasConfigured =
+      panels.some((p) => p.active) || Boolean(env.XUI_BASE_URL && env.XUI_API_TOKEN);
+    if (hasConfigured) {
+      console.warn("reconcile: no panel clients returned — skip botOnly disable this tick");
+      return result;
+    }
+  }
+
+  const panelByEmail = new Map(panelClients.map((c) => [c.email.toLowerCase(), c]));
+  const subs = await prisma.subscription.findMany({
+    where: {
+      status: { in: [SubscriptionStatus.active, SubscriptionStatus.disabled] },
+    },
+  });
+
+  const now = Date.now();
+
+  for (const sub of subs) {
+    result.checked++;
+    const key = sub.email.toLowerCase();
+    const panel = panelByEmail.get(key);
+
+    try {
+      if (!panel) {
+        // Confirm missing on the subscription's own panel (avoid false disable if another panel was unreachable).
+        try {
+          const resolved = await resolvePanelForSubscription(sub);
+          const got = await resolved.xui.getClient(sub.email);
+          if (got.obj?.client) {
+            // Present on home panel but missing from aggregate list — sync from getClient
+            const client = got.obj.client;
+            const data: {
+              status?: SubscriptionStatus;
+              trafficGb?: number | null;
+              expiresAt?: Date;
+              activatedAt?: Date | null;
+              startsOnConnect?: boolean;
+              clientUuid?: string | null;
+              panelSubId?: string | null;
+            } = {};
+            if (client.enable === false && sub.status === SubscriptionStatus.active) {
+              data.status = SubscriptionStatus.disabled;
+              result.disabledFromPanel++;
+            } else if (client.enable !== false && sub.status === SubscriptionStatus.disabled && sub.expiresAt.getTime() > now) {
+              data.status = SubscriptionStatus.active;
+              result.reactivated++;
+            }
+            const gb = bytesToGb(client.totalGB);
+            if (gb !== sub.trafficGb) data.trafficGb = gb;
+            const expMs = Number(client.expiryTime ?? 0);
+            if (expMs > 0 && Math.abs(expMs - sub.expiresAt.getTime()) > 60_000) {
+              data.expiresAt = new Date(expMs);
+              data.startsOnConnect = false;
+              data.activatedAt = sub.activatedAt ?? new Date();
+            }
+            if (client.uuid != null || client.id != null) {
+              const uuid = String(client.uuid ?? client.id);
+              if (uuid !== sub.clientUuid) data.clientUuid = uuid;
+            }
+            if (client.subId && client.subId !== sub.panelSubId) data.panelSubId = client.subId;
+            if (Object.keys(data).length) {
+              await prisma.subscription.update({ where: { id: sub.id }, data });
+              result.updated++;
+            }
+            continue;
+          }
+        } catch {
+          // Panel unreachable for this sub — leave row unchanged
+          continue;
+        }
+
+        if (sub.status === SubscriptionStatus.active) {
+          await prisma.subscription.update({
+            where: { id: sub.id },
+            data: { status: SubscriptionStatus.disabled },
+          });
+          result.removedFromPanel++;
+          result.updated++;
+        }
+        continue;
+      }
+
+      const data: {
+        status?: SubscriptionStatus;
+        trafficGb?: number | null;
+        expiresAt?: Date;
+        activatedAt?: Date | null;
+        startsOnConnect?: boolean;
+        clientUuid?: string | null;
+        panelSubId?: string | null;
+        panelServerId?: string | null;
+        title?: string | null;
+      } = {};
+
+      if (!panel.enable) {
+        if (sub.status === SubscriptionStatus.active) {
+          data.status = SubscriptionStatus.disabled;
+          result.disabledFromPanel++;
+        }
+      } else if (sub.status === SubscriptionStatus.disabled) {
+        const stillValid = sub.expiresAt.getTime() > now;
+        if (stillValid) {
+          data.status = SubscriptionStatus.active;
+          result.reactivated++;
+        }
+      }
+
+      if (panel.trafficGb !== sub.trafficGb) {
+        // null = unlimited on both sides
+        data.trafficGb = panel.trafficGb;
+      }
+
+      if (panel.expiryTime > 0) {
+        const expMs = panel.expiryTime;
+        if (Math.abs(expMs - sub.expiresAt.getTime()) > 60_000) {
+          data.expiresAt = new Date(expMs);
+          data.startsOnConnect = false;
+          data.activatedAt = sub.activatedAt ?? new Date();
+        }
+      }
+
+      if (panel.uuid && panel.uuid !== sub.clientUuid) data.clientUuid = panel.uuid;
+      if (panel.panelSubId && panel.panelSubId !== sub.panelSubId) data.panelSubId = panel.panelSubId;
+      if (panel.panelServerId && panel.panelServerId !== sub.panelServerId) {
+        data.panelServerId = panel.panelServerId;
+      }
+      if (panel.comment && !sub.title) data.title = panel.comment.slice(0, 120);
+
+      // Past absolute expiry while still "active" after merges
+      const nextStatus = data.status ?? sub.status;
+      const nextExpiry = data.expiresAt ?? sub.expiresAt;
+      if (nextStatus === SubscriptionStatus.active && nextExpiry.getTime() <= now) {
+        data.status = SubscriptionStatus.expired;
+      }
+
+      if (Object.keys(data).length) {
+        await prisma.subscription.update({ where: { id: sub.id }, data });
+        result.updated++;
+      }
+    } catch (err) {
+      result.errors++;
+      console.warn("reconcile sub failed", sub.email, err);
+    }
+  }
+
+  return result;
+}
+
+export function startPanelReconcileCron(intervalMs = 10 * 60 * 1000) {
+  const tick = async () => {
+    try {
+      const r = await reconcileSubscriptionsFromPanel();
+      if (r.updated > 0 || r.errors > 0) {
+        console.log(
+          `panel reconcile: checked=${r.checked} updated=${r.updated} disabled=${r.disabledFromPanel} removed=${r.removedFromPanel} reactivated=${r.reactivated} errors=${r.errors}`,
+        );
+      }
+    } catch (err) {
+      console.error("panel reconcile error", err);
+    }
+  };
+  setTimeout(tick, 90_000);
+  return setInterval(tick, intervalMs);
 }

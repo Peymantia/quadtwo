@@ -39,8 +39,16 @@ export function ConfirmToast({
   onYes: () => void;
   onNo: () => void;
 }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onNo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onNo]);
+
   return (
-    <div className="toast-wrap toast-wrap-modal" role="alertdialog" aria-modal="true">
+    <div className="toast-wrap toast-wrap-modal" role="alertdialog" aria-modal="true" onClick={onNo}>
       <div className="toast confirm" onClick={(e) => e.stopPropagation()}>
         <p className="toast-confirm-msg">{message}</p>
         <div className="toast-confirm-actions">

@@ -9,12 +9,12 @@ import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
 const TABS: ShellTab[] = [
-  { key: "home", label: "داشبورد", icon: "home" },
-  { key: "orders", label: "سفارش‌ها", icon: "orders" },
-  { key: "users", label: "کاربران", icon: "users" },
+  { key: "home", label: "داشبورد", icon: "home", pin: true },
+  { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true },
+  { key: "users", label: "کاربران", icon: "users", pin: true },
+  { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
-  { key: "configs", label: "اکانت‌ها", icon: "wifi" },
   { key: "panels", label: "پنل‌ها", icon: "server" },
   { key: "settings", label: "تنظیمات", icon: "gear" },
   { key: "reports", label: "گزارش", icon: "chart" },
@@ -269,6 +269,7 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
 function OrdersTab({ flash }: { flash: Flash }) {
   const [orders, setOrders] = useState<PendingOrder[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState<Record<string, string>>({});
 
   const load = useCallback(
     () => api<{ orders: PendingOrder[] }>("/admin/orders/pending").then((r) => setOrders(r.orders)),
@@ -283,9 +284,14 @@ function OrdersTab({ flash }: { flash: Flash }) {
     setBusy(id);
     try {
       if (action === "reject") {
-        const note = prompt("دلیل رد (اختیاری):") ?? "";
+        const note = (rejectNote[id] ?? "").trim();
         await api(`/admin/orders/${id}/reject`, { body: { note } });
         flash("سفارش رد شد");
+        setRejectNote((m) => {
+          const n = { ...m };
+          delete n[id];
+          return n;
+        });
       } else {
         const r = await api<{ code?: string; walletBalance?: number }>(`/admin/orders/${id}/approve`, { body: {} });
         flash(r.walletBalance !== undefined ? "کیف پول کاربر شارژ شد ✅" : `تأیید شد ✅ ${r.code ?? ""}`);
@@ -322,6 +328,14 @@ function OrdersTab({ flash }: { flash: Flash }) {
               <button type="button" className="btn success sm" disabled={busy === o.id} onClick={() => act(o.id, "approve")}>
                 تأیید و ساخت
               </button>
+              <div className="field" style={{ margin: 0, minWidth: 160 }}>
+                <label>دلیل رد (اختیاری)</label>
+                <input
+                  value={rejectNote[o.id] ?? ""}
+                  onChange={(e) => setRejectNote((m) => ({ ...m, [o.id]: e.target.value }))}
+                  placeholder="مثلاً رسید نامعتبر"
+                />
+              </div>
               <button type="button" className="btn danger sm" disabled={busy === o.id} onClick={() => act(o.id, "reject")}>
                 رد
               </button>
@@ -483,6 +497,11 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               ))}
             </tbody>
           </table>
+          {shown.length > 60 && (
+            <p className="muted" style={{ marginTop: 10 }}>
+              نمایش ۶۰ از {shown.length} کاربر — جستجو یا فیلتر نقش را دقیق‌تر کنید.
+            </p>
+          )}
         </div>
         {!shown.length && <p className="muted">کاربری یافت نشد.</p>}
       </div>
@@ -580,6 +599,21 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [bulkMode, setBulkMode] = useState<"percent" | "amount">("percent");
   const [bulkValue, setBulkValue] = useState("");
+  const [modes, setModes] = useState({ user: "matrix", partner: "matrix", wholesale: "matrix" });
+  const [rates, setRates] = useState({
+    user: { perGb: 15000, perMonth: 30000, unlimitedPerMonth: 1500000 },
+    partner: { perGb: 12000, perMonth: 25000, unlimitedPerMonth: 1200000 },
+    wholesale: { perGb: 10000, perMonth: 20000, unlimitedPerMonth: 1000000 },
+    categories: {} as Record<
+      string,
+      {
+        user?: { perGb?: number; perMonth?: number };
+        partner?: { perGb?: number; perMonth?: number };
+        wholesale?: { perGb?: number; perMonth?: number };
+      }
+    >,
+  });
+  const [ratesBusy, setRatesBusy] = useState(false);
   const [newCell, setNewCell] = useState({
     category: "data",
     trafficGb: "",
@@ -590,7 +624,19 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     title: "",
   });
 
-  const load = useCallback(() => api<{ cells: PriceRow[] }>("/admin/prices").then((r) => setCells(r.cells)), []);
+  const load = useCallback(
+    () =>
+      api<{
+        cells: PriceRow[];
+        modes?: typeof modes;
+        rates?: typeof rates;
+      }>("/admin/prices").then((r) => {
+        setCells(r.cells);
+        if (r.modes) setModes(r.modes);
+        if (r.rates) setRates({ ...r.rates, categories: r.rates.categories ?? {} });
+      }),
+    [],
+  );
 
   useEffect(() => {
     void load();
@@ -609,6 +655,51 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   }, []);
 
   const shown = catFilter ? cells.filter((c) => c.category === catFilter) : cells;
+  const rateCategories = categories.filter((c) => c.key !== "unlimited");
+
+  function catUnit(cat: string, role: "user" | "partner" | "wholesale", field: "perGb" | "perMonth") {
+    return Number(rates.categories?.[cat]?.[role]?.[field] ?? rates[role][field] ?? 0);
+  }
+
+  function setCatUnit(cat: string, role: "user" | "partner" | "wholesale", field: "perGb" | "perMonth", value: number) {
+    setRates((s) => ({
+      ...s,
+      categories: {
+        ...s.categories,
+        [cat]: {
+          ...(s.categories[cat] ?? {}),
+          [role]: {
+            ...(s.categories[cat]?.[role] ?? {}),
+            [field]: value,
+          },
+        },
+      },
+    }));
+  }
+
+  async function saveModes(next: typeof modes) {
+    setModes(next);
+    try {
+      await api("/admin/pricing-modes", { method: "PUT", body: next });
+      flash("حالت قیمت‌گذاری نقش‌ها ذخیره شد");
+    } catch (e) {
+      flash(null, errText(e));
+      await load();
+    }
+  }
+
+  async function saveRates() {
+    setRatesBusy(true);
+    try {
+      await api("/admin/price-rates", { method: "PUT", body: rates });
+      flash("نرخ‌های گیگ/ماه ذخیره شد");
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setRatesBusy(false);
+    }
+  }
 
   async function saveRow(c: PriceRow) {
     const e = edits[c.id];
@@ -720,6 +811,109 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
 
   return (
     <>
+      <div className="panel">
+        <h2>حالت قیمت‌گذاری هر نقش</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          ماتریکس = پلن‌های ثابت جدول زیر · نرخی = فرمول (گیگ × قیمت هر گیگ) + (ماه × قیمت هر ماه)
+        </p>
+        <div className="pricing-mode-grid">
+          {(
+            [
+              ["user", "کاربر عادی"],
+              ["partner", "همکار"],
+              ["wholesale", "عمده‌فروش"],
+            ] as const
+          ).map(([key, label]) => (
+            <div key={key} className="field" style={{ margin: 0 }}>
+              <label>{label}</label>
+              <select
+                value={modes[key]}
+                onChange={(e) => void saveModes({ ...modes, [key]: e.target.value as "matrix" | "rate" })}
+              >
+                <option value="matrix">ماتریکس (پلن ثابت)</option>
+                <option value="rate">نرخی (گیگ + ماه)</option>
+              </select>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        <h2>قیمت ثابت هر گیگ / هر ماه</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          برای نقش‌هایی که حالت «نرخی» دارند استفاده می‌شود. هر دسته می‌تواند نرخ جدا داشته باشد.
+        </p>
+        {rateCategories.map((cat) => (
+          <div key={cat.key} className="rate-cat-card">
+            <strong>{cat.label}</strong>
+            <div className="price-plan-fields" style={{ marginTop: 10 }}>
+              {(
+                [
+                  ["user", "کاربر"],
+                  ["partner", "همکار"],
+                  ["wholesale", "عمده"],
+                ] as const
+              ).map(([role, roleLabel]) => (
+                <div key={role} className="field">
+                  <label>{roleLabel} — هر گیگ</label>
+                  <input
+                    className="num"
+                    inputMode="numeric"
+                    dir="ltr"
+                    value={formatPriceInput(catUnit(cat.key, role, "perGb"))}
+                    onChange={(e) => setCatUnit(cat.key, role, "perGb", parsePriceInput(e.target.value))}
+                  />
+                  <label style={{ marginTop: 8 }}>{roleLabel} — هر ماه</label>
+                  <input
+                    className="num"
+                    inputMode="numeric"
+                    dir="ltr"
+                    value={formatPriceInput(catUnit(cat.key, role, "perMonth"))}
+                    onChange={(e) => setCatUnit(cat.key, role, "perMonth", parsePriceInput(e.target.value))}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="rate-cat-card">
+          <strong>نامحدود (قیمت هر ماه)</strong>
+          <div className="price-plan-fields" style={{ marginTop: 10 }}>
+            {(
+              [
+                ["user", "کاربر"],
+                ["partner", "همکار"],
+                ["wholesale", "عمده"],
+              ] as const
+            ).map(([role, roleLabel]) => (
+              <div key={role} className="field">
+                <label>{roleLabel}</label>
+                <input
+                  className="num"
+                  inputMode="numeric"
+                  dir="ltr"
+                  value={formatPriceInput(rates[role].unlimitedPerMonth)}
+                  onChange={(e) =>
+                    setRates((s) => ({
+                      ...s,
+                      [role]: { ...s[role], unlimitedPerMonth: parsePriceInput(e.target.value) },
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button type="button" className="btn primary" disabled={ratesBusy} onClick={() => void saveRates()}>
+            ذخیره نرخ‌ها
+          </button>
+        </div>
+        <p className="hint">
+          مثال: ۵۰ گیگ ۲ ماهه با نرخ کاربر دستهٔ فعلی = (۵۰ × هر گیگ) + (۲ × هر ماه)
+        </p>
+      </div>
+
       <div className="panel">
         <h2>ویرایش گروهی قیمت‌ها</h2>
         <div className="actions" style={{ marginBottom: 12 }}>
@@ -1033,11 +1227,31 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     code: string | null;
     title: string | null;
     note: string | null;
+    comment: string | null;
     trafficGb: number | null;
+    usedTrafficBytes: number;
     expiresAt: string | null;
     limitIp: number;
     enable: boolean;
   } | null>(null);
+  const [detailView, setDetailView] = useState<{
+    email: string;
+    subId: string | null;
+    code: string | null;
+    title: string | null;
+    note: string | null;
+    comment: string | null;
+    trafficGb: number | null;
+    usedTrafficBytes: number;
+    expiresAt: string | null;
+    limitIp: number;
+    enable: boolean;
+    status: string | null;
+    ownerLabel: string;
+    inDb: boolean;
+    panelFound: boolean;
+  } | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
     trafficGb: "",
@@ -1062,11 +1276,20 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   } | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const [selectedImport, setSelectedImport] = useState<Record<string, boolean>>({});
+  const [searchInput, setSearchInput] = useState("");
   const [searchQ, setSearchQ] = useState("");
 
   useEffect(() => {
     void api<{ groups: typeof groups }>("/admin/configs/groups").then((r) => setGroups(r.groups));
   }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchQ(searchInput);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1093,6 +1316,36 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       for (const x of r.panelOnly) sel[x.email] = true;
       setSelectedImport(sel);
       flash(`مقایسه شد: ${r.panelOnly.length} فقط پنل · ${r.matched} مشترک · ${r.botOnly.length} فقط ربات`);
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function runReconcile() {
+    if (
+      !(await askConfirm(
+        "تغییرات پنل (حذف / غیرفعال / حجم / انقضا) روی اکانت‌های ربات اعمال شود؟\nاکانت حذف‌شده از پنل در ربات غیرفعال می‌شود.",
+      ))
+    ) {
+      return;
+    }
+    setSyncBusy(true);
+    try {
+      const r = await api<{
+        checked: number;
+        updated: number;
+        disabledFromPanel: number;
+        removedFromPanel: number;
+        reactivated: number;
+        errors: number;
+      }>("/admin/configs/reconcile", { method: "POST", body: {} });
+      flash(
+        `همگام شد: ${r.updated} به‌روز · ${r.disabledFromPanel} غیرفعال · ${r.removedFromPanel} حذف‌شده از پنل · ${r.reactivated} فعال مجدد`,
+      );
+      await load();
+      if (sync) void runDiff();
     } catch (e) {
       flash(null, errText(e));
     } finally {
@@ -1134,21 +1387,42 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     }
   }
 
+  type ConfigDetailFull = {
+    email: string;
+    subId: string | null;
+    code: string | null;
+    title: string | null;
+    note: string | null;
+    comment: string | null;
+    trafficGb: number | null;
+    usedTrafficBytes: number;
+    expiresAt: string | null;
+    limitIp: number;
+    enable: boolean;
+    status: string | null;
+    ownerLabel: string;
+    inDb: boolean;
+    panelFound: boolean;
+  };
+
+  async function openDetail(email: string, subId: string | null) {
+    setDetailBusy(true);
+    try {
+      const q = `email=${encodeURIComponent(email)}${subId ? `&subId=${encodeURIComponent(subId)}` : ""}`;
+      const d = await api<ConfigDetailFull>(`/admin/configs/detail?${q}`);
+      setDetailView(d);
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
   async function startEdit(email: string, subId: string | null) {
     setEditBusy(true);
     try {
       const q = `email=${encodeURIComponent(email)}${subId ? `&subId=${encodeURIComponent(subId)}` : ""}`;
-      const d = await api<{
-        email: string;
-        subId: string | null;
-        code: string | null;
-        title: string | null;
-        note: string | null;
-        trafficGb: number | null;
-        expiresAt: string | null;
-        limitIp: number;
-        enable: boolean;
-      }>(`/admin/configs/detail?${q}`);
+      const d = await api<ConfigDetailFull>(`/admin/configs/detail?${q}`);
       setEditing(d);
       setEditForm({
         title: d.title ?? "",
@@ -1162,6 +1436,30 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       flash(null, errText(e));
     } finally {
       setEditBusy(false);
+    }
+  }
+
+  function fmtTraffic(bytes: number): string {
+    if (!bytes) return "۰";
+    const gb = bytes / 1024 ** 3;
+    if (gb >= 1) return `${gb.toFixed(1)} GB`;
+    const mb = bytes / 1024 ** 2;
+    if (mb >= 1) return `${mb.toFixed(0)} MB`;
+    return `${(bytes / 1024).toFixed(0)} KB`;
+  }
+
+  function remainDays(isoDate: string | null): number | null {
+    if (!isoDate) return null;
+    const ms = new Date(isoDate).getTime() - Date.now();
+    return Math.ceil(ms / 86400000);
+  }
+
+  function fmtDate(isoDate: string | null): string {
+    if (!isoDate) return "—";
+    try {
+      return new Date(isoDate).toLocaleDateString("fa-IR");
+    } catch {
+      return isoDate;
     }
   }
 
@@ -1212,14 +1510,17 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       <div className="panel">
         <h2>همگام‌سازی پنل ↔ ربات</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          اکانت‌هایی که مستقیم در 3x-ui ساخته شده‌اند و در دیتابیس ربات نیستند را پیدا و با مالکیت ادمین وارد کنید تا در ربات و داشبورد دیده شوند.
+          اگر در پنل 3x-ui اکانت را حذف، غیرفعال یا ویرایش کردید، با «اعمال تغییرات پنل» وضعیت ربات به‌روز می‌شود. همچنین هر ۱۰ دقیقه خودکار همگام می‌شود.
         </p>
         <div className="actions" style={{ marginBottom: 12 }}>
           <button type="button" className="btn primary sm" disabled={syncBusy} onClick={() => void runDiff()}>
             {syncBusy ? "در حال مقایسه…" : "مقایسه با پنل"}
           </button>
+          <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void runReconcile()}>
+            اعمال تغییرات پنل روی ربات
+          </button>
           {sync && sync.panelOnly.length > 0 && (
-            <button type="button" className="btn success sm" disabled={syncBusy || !selectedCount} onClick={() => void doImport()}>
+            <button type="button" className="btn ghost sm" disabled={syncBusy || !selectedCount} onClick={() => void doImport()}>
               وارد کردن انتخاب‌شده ({selectedCount})
             </button>
           )}
@@ -1231,6 +1532,18 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
               onClick={() => void doImport(sync.panelOnly.map((x) => x.email))}
             >
               وارد کردن همهٔ فقط‌پنل
+            </button>
+          )}
+          {sync && (
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => {
+                setSync(null);
+                setSelectedImport({});
+              }}
+            >
+              انصراف
             </button>
           )}
         </div>
@@ -1308,11 +1621,8 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
         <div className="field" style={{ marginBottom: 12 }}>
           <label>جستجو (ایمیل، کد، مالک)</label>
           <input
-            value={searchQ}
-            onChange={(e) => {
-              setSearchQ(e.target.value);
-              setPage(0);
-            }}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="مثلاً email یا کد سرویس"
           />
         </div>
@@ -1324,6 +1634,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                 <strong className="num">{c.code || c.email}</strong>{" "}
                 {!c.inDb && <span className="badge warn">فقط پنل</span>}
                 {c.status === "active" && <span className="badge ok">فعال</span>}
+                {c.status === "disabled" && <span className="badge warn">غیرفعال</span>}
                 <div className="muted num">{c.email}</div>
                 <div className="muted">{c.ownerLabel}</div>
               </div>
@@ -1333,6 +1644,9 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                     وارد کردن
                   </button>
                 )}
+                <button type="button" className="btn ghost sm" disabled={detailBusy} onClick={() => void openDetail(c.email, c.subId)}>
+                  جزئیات
+                </button>
                 <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
                   ویرایش
                 </button>
@@ -1425,6 +1739,102 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
           </div>
         </Modal>
       )}
+
+      {detailView && (() => {
+        const d = detailView;
+        const totalBytes = d.trafficGb != null && d.trafficGb > 0 ? d.trafficGb * 1024 ** 3 : 0;
+        const pct = totalBytes > 0 ? Math.min(100, Math.round((d.usedTrafficBytes / totalBytes) * 100)) : 0;
+        const days = remainDays(d.expiresAt);
+        const daysLabel =
+          days == null ? "—" : days < 0 ? `${Math.abs(days)} روز گذشته` : days === 0 ? "کمتر از یک روز" : `${days} روز`;
+        return (
+          <Modal open title={`جزئیات اکانت — ${d.code || d.email}`} onClose={() => setDetailView(null)} wide>
+            <div className="muted num" style={{ marginBottom: 12 }}>
+              {d.email}
+            </div>
+            {!d.panelFound && (
+              <p className="muted" style={{ marginBottom: 12 }}>
+                این اکانت روی پنل پیدا نشد؛ اطلاعات از دیتابیس ربات است.
+              </p>
+            )}
+            <div className="config-detail-grid">
+              <div className="config-detail-item">
+                <span className="label">نام</span>
+                <strong>{d.title?.trim() || "—"}</strong>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">کامنت پنل</span>
+                <strong>{d.comment?.trim() || "—"}</strong>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">توضیحات / نوت</span>
+                <strong>{d.note?.trim() || "—"}</strong>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">مالک</span>
+                <strong>{d.ownerLabel}</strong>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">وضعیت</span>
+                <strong>
+                  {d.enable === false || d.status === "disabled" ? "غیرفعال" : "فعال"}
+                  {d.inDb ? "" : " · فقط پنل"}
+                </strong>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">لیمیت IP</span>
+                <strong className="num">{d.limitIp <= 0 ? "نامحدود" : d.limitIp}</strong>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">حجم کل</span>
+                <strong className="num">{d.trafficGb == null || d.trafficGb <= 0 ? "نامحدود" : `${d.trafficGb} GB`}</strong>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">حجم مصرف‌شده</span>
+                <strong className="num">{fmtTraffic(d.usedTrafficBytes)}</strong>
+              </div>
+              <div className="config-detail-item span-2">
+                <span className="label">مصرف ترافیک</span>
+                <div className="traffic-progress">
+                  <div className="traffic-progress-track">
+                    <div
+                      className={`traffic-progress-fill${pct >= 90 ? " danger" : pct >= 70 ? " warn" : ""}`}
+                      style={{ width: `${totalBytes > 0 ? pct : 0}%` }}
+                    />
+                  </div>
+                  <div className="traffic-progress-meta num">
+                    {totalBytes > 0 ? `${pct}% · ${fmtTraffic(d.usedTrafficBytes)} از ${d.trafficGb} GB` : `${fmtTraffic(d.usedTrafficBytes)} مصرف‌شده (بدون سقف)`}
+                  </div>
+                </div>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">تاریخ انقضا</span>
+                <strong className="num">{fmtDate(d.expiresAt)}</strong>
+              </div>
+              <div className="config-detail-item">
+                <span className="label">روزهای باقی‌مانده</span>
+                <strong className={days != null && days < 0 ? "bad" : undefined}>{daysLabel}</strong>
+              </div>
+            </div>
+            <div className="actions" style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={editBusy}
+                onClick={() => {
+                  setDetailView(null);
+                  void startEdit(d.email, d.subId);
+                }}
+              >
+                ویرایش
+              </button>
+              <button type="button" className="btn ghost" onClick={() => setDetailView(null)}>
+                بستن
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
     </>
   );
 }
@@ -1436,6 +1846,10 @@ function PanelsTab({ flash }: { flash: Flash }) {
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [form, setForm] = useState({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const [routingBusy, setRoutingBusy] = useState(false);
+  const [routeAllPanelId, setRouteAllPanelId] = useState("");
+  const [dedicatedCategory, setDedicatedCategory] = useState("national");
+  const [dedicatedPanelId, setDedicatedPanelId] = useState("");
   const [editing, setEditing] = useState<PanelRow | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -1454,6 +1868,11 @@ function PanelsTab({ flash }: { flash: Flash }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!routeAllPanelId && panels[0]?.id) setRouteAllPanelId(panels[0].id);
+    if (!dedicatedPanelId && panels[0]?.id) setDedicatedPanelId(panels[0].id);
+  }, [panels, routeAllPanelId, dedicatedPanelId]);
 
   useEffect(() => {
     void api<{ categories: CategoryRow[] }>("/admin/categories")
@@ -1549,6 +1968,49 @@ function PanelsTab({ flash }: { flash: Flash }) {
     });
   }
 
+  async function applyAllCategoriesToPanel() {
+    if (!routeAllPanelId) return;
+    setRoutingBusy(true);
+    try {
+      const allCats = categories.map((c) => c.key);
+      for (const p of panels) {
+        await api(`/admin/panels/${p.id}`, {
+          method: "PUT",
+          body: { categories: p.id === routeAllPanelId ? allCats : [] },
+        });
+      }
+      flash("همه دسته‌ها روی سرور انتخاب‌شده قرار گرفت");
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setRoutingBusy(false);
+    }
+  }
+
+  async function dedicateCategoryToPanel() {
+    if (!dedicatedPanelId || !dedicatedCategory) return;
+    setRoutingBusy(true);
+    try {
+      for (const p of panels) {
+        const next = new Set(parseCats(p.categories));
+        if (p.id === dedicatedPanelId) next.add(dedicatedCategory);
+        else next.delete(dedicatedCategory);
+        await api(`/admin/panels/${p.id}`, {
+          method: "PUT",
+          body: { categories: [...next] },
+        });
+      }
+      const catName = categories.find((c) => c.key === dedicatedCategory)?.label || dedicatedCategory;
+      flash(`دسته «${catName}» فقط روی سرور انتخاب‌شده قرار گرفت`);
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setRoutingBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="panel">
@@ -1558,8 +2020,67 @@ function PanelsTab({ flash }: { flash: Flash }) {
             افزودن پنل جدید
           </button>
         </div>
+        {!!panels.length && (
+          <>
+            <div className="grid" style={{ marginTop: 14, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+              <div className="field">
+                <label>همه دسته‌ها از یک سرور</label>
+                <select value={routeAllPanelId} onChange={(e) => setRouteAllPanelId(e.target.value)}>
+                  {panels.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="actions" style={{ alignItems: "end" }}>
+                <button type="button" className="btn primary sm" disabled={routingBusy || !routeAllPanelId} onClick={() => void applyAllCategoriesToPanel()}>
+                  اعمال این حالت
+                </button>
+              </div>
+            </div>
+            <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+              <div className="field">
+                <label>یک دسته روی سرور خاص</label>
+                <select value={dedicatedCategory} onChange={(e) => setDedicatedCategory(e.target.value)}>
+                  {categories.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>سرور آن دسته</label>
+                <select value={dedicatedPanelId} onChange={(e) => setDedicatedPanelId(e.target.value)}>
+                  {panels.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="actions" style={{ alignItems: "end" }}>
+                <button type="button" className="btn ghost sm" disabled={routingBusy || !dedicatedPanelId} onClick={() => void dedicateCategoryToPanel()}>
+                  اختصاص فقط این دسته
+                </button>
+              </div>
+            </div>
+            <p className="hint" style={{ marginTop: 0 }}>
+              وزن فقط بین سرورهایی اعمال می‌شود که همان دسته را دارند. پس می‌توانید مثلاً «نت ملی» را فقط روی یک سرور بگذارید و
+              دسته‌های دیگر را بین بقیه سرورها لودبالانس کنید.
+            </p>
+          </>
+        )}
         <div className="list" style={{ marginTop: 12 }}>
-          {panels.map((p) => (
+          {panels.map((p) => {
+            const cats = parseCats(p.categories);
+            // routing badge: for each category on this panel, how many other panels share it?
+            const catBadges = cats.map((k) => {
+              const siblings = panels.filter((x) => x.id !== p.id && parseCats(x.categories).includes(k) && x.active && x.sellEnabled);
+              return { key: k, label: catLabel(k, categories), shared: siblings.length > 0 };
+            });
+            return (
             <div key={p.id} className="row-card" style={{ cursor: "pointer" }} onClick={() => openEdit(p)}>
               <div>
                 <strong>{p.name}</strong>
@@ -1573,6 +2094,21 @@ function PanelsTab({ flash }: { flash: Flash }) {
                     </>
                   )}
                 </div>
+                {cats.length > 0 ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                    {catBadges.map(({ key, label, shared }) => (
+                      <span
+                        key={key}
+                        className={`badge ${shared ? "info" : "ok"}`}
+                        title={shared ? "لودبالانس — این دسته روی چند سرور است" : "اختصاصی — فقط این سرور"}
+                      >
+                        {label} {shared ? "⇄" : "⊕"}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="badge bad" style={{ marginTop: 5, display: "inline-block" }}>بدون دسته</span>
+                )}
               </div>
               <div className="actions" style={{ alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
                 <label className="switch" title="فعال">
@@ -1595,7 +2131,8 @@ function PanelsTab({ flash }: { flash: Flash }) {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
           {!panels.length && <p className="muted">پنلی ثبت نشده — از .env استفاده می‌شود.</p>}
         </div>
       </div>
@@ -1899,22 +2436,11 @@ function SettingsTab({
         <div className="setting-row">
           <div>
             <div className="t">حالت قیمت‌گذاری</div>
-            <div className="d">ماتریکس = پلن‌های ثابت · نرخی = فرمول حجم × ماه</div>
+            <div className="d">برای هر نقش جداگانه در تب «قیمت‌ها» تنظیم کنید (ماتریکس یا نرخی).</div>
           </div>
-          <select
-            value={settings.pricing_mode || "matrix"}
-            onChange={(e) => save({ pricing_mode: e.target.value })}
-            style={{
-              border: "1px solid var(--line)",
-              background: "rgba(10,13,35,.6)",
-              color: "var(--text)",
-              borderRadius: 10,
-              padding: "8px 12px",
-            }}
-          >
-            <option value="matrix">ماتریکس</option>
-            <option value="rate">نرخی</option>
-          </select>
+          <span className="muted" style={{ fontSize: "0.85rem" }}>
+            تب قیمت‌ها
+          </span>
         </div>
       </div>
 

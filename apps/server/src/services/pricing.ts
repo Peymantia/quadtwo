@@ -1,7 +1,13 @@
 import type { User, UserRole } from "@prisma/client";
 import { prisma } from "../db.js";
 import { formatToman, formatTraffic } from "../utils/format.js";
-import { getPriceRates, getPricingMode, type RoleRates } from "./settings.js";
+import {
+  getPriceRates,
+  getPricingModeForRole,
+  ratesForRoleCategory,
+  type PriceRates,
+  type RoleRates,
+} from "./settings.js";
 
 const VOLUME_STEPS = [10, 15, 20, 25, 30, 35, 40, 45, 50] as const;
 export const NATIONAL_MAX_GB = 100;
@@ -60,23 +66,27 @@ export function priceFromCell(
   return cell.priceUser;
 }
 
-function ratesForRole(role: UserRole, rates: Awaited<ReturnType<typeof getPriceRates>>): RoleRates {
-  if (role === "wholesale") return rates.wholesale;
-  if (role === "partner" || role === "admin") return rates.partner;
-  return rates.user;
+/** Formula: GB×perGb + months×perMonth (unlimited: months×unlimitedPerMonth) */
+export function calcRatePriceFromRates(
+  trafficGb: number | null,
+  months: number,
+  r: RoleRates,
+): number {
+  const m = clampMonths(months);
+  if (trafficGb === null) return r.unlimitedPerMonth * m;
+  return trafficGb * r.perGb + m * r.perMonth;
 }
 
-/** Formula: GB×perGb + months×perMonth (unlimited: months×unlimitedPerMonth) */
 export function calcRatePrice(
   role: UserRole,
   trafficGb: number | null,
   months: number,
-  rates: Awaited<ReturnType<typeof getPriceRates>>,
+  rates: PriceRates,
+  category: PlanCategory = "data",
 ): number {
-  const r = ratesForRole(role, rates);
-  const m = clampMonths(months);
-  if (trafficGb === null) return r.unlimitedPerMonth * m;
-  return trafficGb * r.perGb + m * r.perMonth;
+  const cat = trafficGb === null ? "unlimited" : category;
+  const r = ratesForRoleCategory(role, cat, rates);
+  return calcRatePriceFromRates(trafficGb, months, r);
 }
 
 export async function resolvePrice(
@@ -85,7 +95,7 @@ export async function resolvePrice(
   months: number,
   category: PlanCategory = "data",
 ) {
-  const mode = await getPricingMode();
+  const mode = await getPricingModeForRole(user.role);
   if (mode === "rate") {
     // Golden/special matrix cells still override when an exact match exists
     const cell = await findPriceCell(trafficGb, months, category);
@@ -93,7 +103,7 @@ export async function resolvePrice(
       return { cell, price: priceFromCell(user.role, cell), mode: "rate" as const };
     }
     const rates = await getPriceRates();
-    const price = calcRatePrice(user.role, trafficGb, months, rates);
+    const price = calcRatePrice(user.role, trafficGb, months, rates, category);
     return { cell: null, price, mode: "rate" as const };
   }
 

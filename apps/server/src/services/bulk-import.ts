@@ -16,7 +16,6 @@ import {
   setPricingMode,
   setSetting,
   type ChannelConfig,
-  type PriceRates,
 } from "./settings.js";
 import type { PlanCategory } from "./pricing.js";
 
@@ -225,12 +224,22 @@ export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {
     const rates = await getPriceRates();
     let touched = false;
     for (const row of rateRows) {
-      const role = cellStr(row, "role", "نقش").toLowerCase() as keyof PriceRates;
+      const role = cellStr(row, "role", "نقش").toLowerCase();
       if (role !== "user" && role !== "partner" && role !== "wholesale") continue;
+      const category = cellStr(row, "category", "دسته").toLowerCase();
       const perGb = cellNum(row, "perGb");
       const perMonth = cellNum(row, "perMonth");
       const unlimitedPerMonth = cellNum(row, "unlimitedPerMonth");
       if (perGb === null && perMonth === null && unlimitedPerMonth === null) continue;
+
+      if (category && category !== "unlimited") {
+        if (!rates.categories[category]) rates.categories[category] = {};
+        rates.categories[category][role] = {
+          ...(rates.categories[category][role] ?? {}),
+          ...(perGb != null ? { perGb } : {}),
+          ...(perMonth != null ? { perMonth } : {}),
+        };
+      }
       rates[role] = {
         perGb: perGb ?? rates[role].perGb,
         perMonth: perMonth ?? rates[role].perMonth,

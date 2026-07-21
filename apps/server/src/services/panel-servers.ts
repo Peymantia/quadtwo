@@ -17,7 +17,7 @@ export function parsePanelCategories(raw: string): PanelCategories {
     for (const c of arr) {
       if (typeof c === "string" && c.trim()) out.push(c.trim());
     }
-    return out.length ? out : ["data", "unlimited"];
+    return out;
   } catch {
     return ["data", "unlimited"];
   }

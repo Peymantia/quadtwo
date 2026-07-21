@@ -79,6 +79,7 @@ export function roleLabel(role: Role): string {
   }
 }
 
-export function formatToman(n: number): string {
+export function formatToman(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
   return `${n.toLocaleString("fa-IR")} تومان`;
 }

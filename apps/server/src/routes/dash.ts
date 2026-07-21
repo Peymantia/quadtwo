@@ -28,29 +28,35 @@ import {
   payOrderWithWallet,
   rejectOrder,
 } from "../services/orders.js";
-import { deactivateCell, listPriceMatrix, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
+import { deactivateCell, listPriceMatrix, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.js";
 import {
   getAllSettings,
   getCategoryLabels,
   getMaxPurchaseMonths,
   getPaymentCard,
+  getPriceRates,
+  getPricingModes,
   getSalesCategories,
   getSetting,
   getWebSessionHours,
   listEnabledSalesCategories,
   saveCategoryLabels,
+  savePriceRates,
+  savePricingModes,
   saveSalesCategories,
   sanitizeCategoryKey,
   BUILTIN_CATEGORY_KEYS,
   setSetting,
+  type PriceRates,
+  type RolePricingModes,
 } from "../services/settings.js";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { approvePartner, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
-import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot } from "../services/admin-configs.js";
+import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel } from "../services/admin-configs.js";
 import {
   createPanelServer,
   getPanelServer,
@@ -349,28 +355,42 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const maxMonths = await getMaxPurchaseMonths();
     const cells = await listPriceMatrix();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+    const priced = await Promise.all(
+      cells
+        .filter((cell) => cell.active && cell.months <= maxMonths)
+        .filter((cell) => cats.includes(cell.category as "data" | "national" | "unlimited"))
+        .map(async (cell) => {
+          const resolved = await resolvePrice(user, cell.trafficGb, cell.months, cell.category);
+          return {
+            id: cell.id,
+            category: cell.category,
+            trafficGb: cell.trafficGb,
+            months: cell.months,
+            title: cell.title,
+            isGolden: cell.isGolden,
+            price: resolved?.price ?? null,
+          };
+        }),
+    );
     return c.json({
       categories: cats,
       categoryLabels: labels,
       maxMonths,
-      cells: cells
-        .filter((cell) => cell.active && cell.months <= maxMonths)
-        .filter((cell) => cats.includes(cell.category as "data" | "national" | "unlimited"))
-        .map((cell) => ({
-          id: cell.id,
-          category: cell.category,
-          trafficGb: cell.trafficGb,
-          months: cell.months,
-          title: cell.title,
-          isGolden: cell.isGolden,
-          price:
-            user.role === "wholesale"
-              ? cell.priceWholesale
-              : user.role === "partner" || user.role === "admin"
-                ? cell.pricePartner
-                : cell.priceUser,
-        })),
+      cells: priced.filter((c) => c.price != null),
     });
+  });
+
+  api.post("/me/quote", async (c) => {
+    const body = await c.req.json<{ trafficGb?: number | null; months?: number; category?: string }>();
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+    const priced = await resolvePrice(
+      user,
+      body.trafficGb ?? null,
+      Math.max(1, Number(body.months) || 1),
+      body.category || "data",
+    );
+    if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
+    return c.json({ price: priced.price, mode: priced.mode });
   });
 
   api.get("/me/orders", async (c) => {
@@ -423,6 +443,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const body = await c.req.json<{
       trafficGb: number | null;
       months: number;
+      category?: string;
       accountName?: string;
       kind?: OrderKind;
       targetSubId?: string;
@@ -433,6 +454,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       userId: c.get("userId"),
       trafficGb: body.trafficGb,
       months: body.months,
+      category: body.category,
       accountName,
       kind: body.kind,
       targetSubId: body.targetSubId,
@@ -559,6 +581,7 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
     const body = await c.req.json<{
       trafficGb: number | null;
       months: number;
+      category?: string;
       accountName?: string;
       payWithWallet?: boolean;
     }>();
@@ -566,6 +589,7 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       userId: c.get("userId"),
       trafficGb: body.trafficGb,
       months: body.months ?? 1,
+      category: body.category,
       accountName: body.accountName?.trim() || `p${Date.now().toString(36)}`,
       kind: OrderKind.new,
     });
@@ -732,7 +756,49 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         priceWholesale: x.priceWholesale,
         isGolden: x.isGolden,
       })),
+      modes: await getPricingModes(),
+      rates: await getPriceRates(),
     });
+  });
+
+  api.get("/admin/pricing-modes", async (c) => c.json({ modes: await getPricingModes() }));
+
+  api.put("/admin/pricing-modes", async (c) => {
+    const body = await c.req.json<Partial<RolePricingModes>>();
+    const current = await getPricingModes();
+    const modes: RolePricingModes = {
+      user: body.user === "rate" || body.user === "matrix" ? body.user : current.user,
+      partner: body.partner === "rate" || body.partner === "matrix" ? body.partner : current.partner,
+      wholesale:
+        body.wholesale === "rate" || body.wholesale === "matrix" ? body.wholesale : current.wholesale,
+    };
+    await savePricingModes(modes);
+    await auditLog({
+      action: "pricing_modes",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      detail: JSON.stringify(modes),
+    });
+    return c.json({ modes });
+  });
+
+  api.get("/admin/price-rates", async (c) => c.json({ rates: await getPriceRates() }));
+
+  api.put("/admin/price-rates", async (c) => {
+    const body = await c.req.json<Partial<PriceRates>>();
+    const current = await getPriceRates();
+    const rates: PriceRates = {
+      user: { ...current.user, ...(body.user ?? {}) },
+      partner: { ...current.partner, ...(body.partner ?? {}) },
+      wholesale: { ...current.wholesale, ...(body.wholesale ?? {}) },
+      categories: body.categories ?? current.categories,
+    };
+    await savePriceRates(rates);
+    await auditLog({
+      action: "price_rates",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      detail: "updated",
+    });
+    return c.json({ rates });
   });
 
   api.post("/admin/prices", async (c) => {
@@ -930,6 +996,20 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     }
   });
 
+  api.post("/admin/configs/reconcile", async (c) => {
+    try {
+      const result = await reconcileSubscriptionsFromPanel();
+      await auditLog({
+        action: "admin_panel_reconcile",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        detail: `updated:${result.updated} disabled:${result.disabledFromPanel} removed:${result.removedFromPanel} reactivated:${result.reactivated}`,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
   api.post("/admin/configs/import", async (c) => {
     const body = await c.req.json<{ emails?: string[] }>().catch(() => ({ emails: undefined as string[] | undefined }));
     try {
@@ -1021,7 +1101,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       apiToken: string;
       inboundIds?: string;
       subBase?: string | null;
-      categories?: ("data" | "national" | "unlimited")[];
+      categories?: string[];
       weight?: number;
     }>();
     const p = await createPanelServer(body);
@@ -1034,7 +1114,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     for (const k of ["name", "baseUrl", "apiToken", "inboundIds", "subBase", "weight", "active", "sellEnabled"] as const) {
       if (body[k] !== undefined) (patch as Record<string, unknown>)[k] = body[k];
     }
-    if (body.categories) patch.categories = body.categories as ("data" | "national" | "unlimited")[];
+    if (body.categories) patch.categories = body.categories as string[];
     await updatePanelServer(c.req.param("id"), patch);
     return c.json({ ok: true });
   });
@@ -1176,6 +1256,36 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.put("/admin/settings", async (c) => {
     const body = await c.req.json<Record<string, string>>();
     for (const [k, v] of Object.entries(body)) {
+      if (k === "pricing_modes_json") {
+        try {
+          const parsed = JSON.parse(String(v)) as Partial<RolePricingModes>;
+          await savePricingModes({
+            user: parsed.user === "rate" ? "rate" : "matrix",
+            partner: parsed.partner === "rate" ? "rate" : "matrix",
+            wholesale: parsed.wholesale === "rate" ? "rate" : "matrix",
+          });
+        } catch {
+          /* ignore bad json */
+        }
+        continue;
+      }
+      if (k === "pricing_mode") {
+        await savePricingModes({
+          user: v === "rate" ? "rate" : "matrix",
+          partner: v === "rate" ? "rate" : "matrix",
+          wholesale: v === "rate" ? "rate" : "matrix",
+        });
+        continue;
+      }
+      if (k === "price_rates_json") {
+        try {
+          const parsed = JSON.parse(String(v)) as PriceRates;
+          await savePriceRates(parsed);
+        } catch {
+          /* ignore */
+        }
+        continue;
+      }
       await setSetting(k, String(v));
     }
     return c.json({ ok: true, settings: await getAllSettings() });

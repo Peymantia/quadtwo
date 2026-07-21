@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /** Centered modal dialog with a small close (X) button. */
 export function Modal({
@@ -16,6 +16,8 @@ export function Modal({
   children: React.ReactNode;
   wide?: boolean;
 }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -24,6 +26,7 @@ export function Modal({
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
+    queueMicrotask(() => closeRef.current?.focus());
     return () => {
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
@@ -43,7 +46,7 @@ export function Modal({
       >
         <div className="modal-head">
           <h2 id="modal-title">{title}</h2>
-          <button type="button" className="modal-x" onClick={onClose} aria-label="بستن">
+          <button ref={closeRef} type="button" className="modal-x" onClick={onClose} aria-label="بستن">
             ×
           </button>
         </div>

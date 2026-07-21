@@ -7,6 +7,8 @@ export async function syncTelegramMenu(api: Api) {
 
   const commands = [
     { command: "start", description: "منوی اصلی" },
+    { command: "update", description: "به‌روزرسانی منو و تغییرات جدید" },
+    { command: "hide", description: "مخفی کردن کیبورد (تمام‌صفحه)" },
     ...(miniapp
       ? [{ command: "app", description: "باز کردن وب‌اپ" }]
       : []),

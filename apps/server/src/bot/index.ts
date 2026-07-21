@@ -57,6 +57,7 @@ import {
 } from "../services/rate-limit.js";
 import {
   ccWait,
+  handleBroadcastMedia,
   handleControlCenterText,
   handleExcelImportDocument,
   isControlAdmin,
@@ -94,8 +95,10 @@ import {
   partnerRequestKeyboard,
   payConfirmKeyboard,
   payMethodKeyboard,
+  removeReplyKeyboard,
   renewPickKeyboard,
   renewWizardKeyboard,
+  showMenuInlineKeyboard,
   walletChargeAmountsKeyboard,
   walletMenuKeyboard,
 } from "./keyboards.js";
@@ -158,6 +161,16 @@ async function replyMainMenu(ctx: Context, preface?: string) {
       isWholesale: user.role === "wholesale",
       miniappUrl: miniapp || undefined,
     }),
+  });
+}
+
+/** Temporarily hide sticky reply keyboard for a fuller chat surface. */
+async function hideMainKeyboard(ctx: Context) {
+  await ctx.reply("⬇️ کیبورد مخفی شد — صفحهٔ چت بازتر است.", {
+    reply_markup: removeReplyKeyboard(),
+  });
+  await ctx.reply("هر وقت خواستید منو برگردد:", {
+    reply_markup: showMenuInlineKeyboard(),
   });
 }
 
@@ -635,6 +648,32 @@ export function createBot() {
     });
   });
 
+  /** Reload slash-command menu + reply keyboard after bot updates */
+  bot.command("update", async (ctx) => {
+    if (ctx.from) clearWaits(ctx.from.id);
+    if (!(await requireChannel(ctx))) return;
+    await syncTelegramMenu(ctx.api).catch(() => undefined);
+    await replyMainMenu(
+      ctx,
+      [
+        "🔄 منوی ربات به‌روز شد",
+        "",
+        "دکمه‌ها و دستورات جدید بارگذاری شدند.",
+        "اگر تغییری نمی‌بینید، یک‌بار چت را ببندید و دوباره باز کنید.",
+      ].join("\n"),
+    );
+  });
+
+  bot.command("hide", async (ctx) => {
+    if (!(await requireChannel(ctx))) return;
+    await hideMainKeyboard(ctx);
+  });
+
+  bot.command("menu", async (ctx) => {
+    if (!(await requireChannel(ctx))) return;
+    await replyMainMenu(ctx, "📌 منوی اصلی");
+  });
+
   bot.callbackQuery("check:channel", async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
@@ -645,6 +684,11 @@ export function createBot() {
     await ctx.answerCallbackQuery();
     await ctx.deleteMessage().catch(() => undefined);
     await replyMainMenu(ctx);
+  });
+
+  bot.callbackQuery("menu:show", async (ctx) => {
+    await ctx.answerCallbackQuery({ text: "منو باز شد" });
+    await replyMainMenu(ctx, "📌 منوی اصلی برگشت.");
   });
 
   bot.callbackQuery("buy:cat:cancel", async (ctx) => {
@@ -1097,8 +1141,14 @@ export function createBot() {
     });
   });
 
-  bot.on(["message:photo", "message:document"], async (ctx) => {
+  bot.on(
+    ["message:photo", "message:document", "message:video", "message:animation", "message:audio", "message:voice", "message:sticker"],
+    async (ctx) => {
+    if (await handleBroadcastMedia(ctx)) return;
     if (await handleExcelImportDocument(ctx)) return;
+
+    // Receipts: photo or image document only
+    if (!ctx.message.photo && !(ctx.message.document?.mime_type?.startsWith("image/"))) return;
 
     if (!(await requireChannel(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
@@ -1605,6 +1655,10 @@ export function createBot() {
   bot.hears(BTN.support, async (ctx) => handleSupport(ctx));
   bot.hears(BTN.dashboard, async (ctx) => handleDashboard(ctx));
   bot.hears(BTN.dashOtp, async (ctx) => handleDashOtp(ctx));
+  bot.hears(BTN.hideKeyboard, async (ctx) => {
+    if (!(await requireChannel(ctx))) return;
+    await hideMainKeyboard(ctx);
+  });
   bot.hears(BTN.configLookup, async (ctx) => handleConfigLookup(ctx));
   bot.hears(BTN.agentPanel, async (ctx) => handlePartnerPanel(ctx));
   bot.hears(BTN.controlCenter, async (ctx) => {

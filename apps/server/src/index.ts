@@ -36,6 +36,10 @@ const { startNotificationCron } = await import("./services/notifications.js");
 startNotificationCron(bot.api);
 console.log("notification cron started (every 20m)");
 
+const { startPanelReconcileCron } = await import("./services/admin-configs.js");
+startPanelReconcileCron();
+console.log("panel reconcile cron started (every 10m)");
+
 const { startBackupCron } = await import("./services/backup.js");
 startBackupCron(bot.api);
 console.log("backup cron started (checks every 1m)");

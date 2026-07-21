@@ -119,7 +119,7 @@ export default function UserAppPage() {
         card?: { number: string; holder: string };
         provisioned?: unknown;
       }>("/me/orders", {
-        body: { trafficGb: cell.trafficGb, months: cell.months, payWithWallet },
+        body: { trafficGb: cell.trafficGb, months: cell.months, category: cell.category, payWithWallet },
       });
       if (r.provisioned) {
         setMsg("سرویس با موفقیت ساخته شد ✅ از تب «اشتراک‌ها» ببینید.");
@@ -293,7 +293,15 @@ export default function UserAppPage() {
                   <div style={{ flex: 1, minWidth: 220 }}>
                     <strong className="num">{s.code}</strong>{" "}
                     <span className={`badge ${expired || s.status !== "active" ? "bad" : "ok"}`}>
-                      {expired ? "منقضی" : s.status === "active" ? "فعال" : s.status}
+                      {expired
+                        ? "منقضی"
+                        : s.status === "active"
+                          ? "فعال"
+                          : s.status === "disabled"
+                            ? "غیرفعال"
+                            : s.status === "expired"
+                              ? "منقضی"
+                              : s.status}
                     </span>
                     {s.isTest && <span className="badge info">تست</span>}
                     <div className="muted" style={{ marginTop: 5 }}>
