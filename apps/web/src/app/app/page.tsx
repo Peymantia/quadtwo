@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
 import { Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
+import { CardPayModal } from "../../components/CardPayModal";
+import { PaymentCardBlock } from "../../components/PaymentCard";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 
@@ -38,6 +40,14 @@ type OrderRow = {
   createdAt: string;
 };
 
+type PayCard = { number: string; holder: string };
+
+type PayModalState = {
+  orderId: string;
+  price: number;
+  card: PayCard;
+} | null;
+
 const TABS: ShellTab[] = [
   { key: "shop", label: "فروشگاه", icon: "shop" },
   { key: "subs", label: "اشتراک‌ها", icon: "wifi" },
@@ -71,7 +81,8 @@ export default function UserAppPage() {
   const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeNote, setChargeNote] = useState("");
-  const [card, setCard] = useState<{ number: string; holder: string } | null>(null);
+  const [payCard, setPayCard] = useState<PayCard | null>(null);
+  const [payModal, setPayModal] = useState<PayModalState>(null);
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -81,6 +92,12 @@ export default function UserAppPage() {
   const clearFlash = useCallback(() => {
     setMsg(null);
     setErr(null);
+  }, []);
+
+  const loadPayCard = useCallback(() => {
+    void api<{ card: PayCard }>("/me/payment-card")
+      .then((r) => setPayCard(r.card))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -96,11 +113,12 @@ export default function UserAppPage() {
     if (tab === "subs") void loadSubs();
     if (tab === "wallet") {
       void api<{ orders: OrderRow[] }>("/me/orders").then((r) => setOrders(r.orders));
+      loadPayCard();
     }
     if (tab === "support") {
       void api<{ guide: Record<string, string> }>("/me/guide").then((r) => setGuide(r.guide));
     }
-  }, [home, tab, loadSubs]);
+  }, [home, tab, loadSubs, loadPayCard]);
 
   const userLabel = useMemo(() => {
     if (!home) return "";
@@ -116,7 +134,7 @@ export default function UserAppPage() {
     try {
       const r = await api<{
         order?: { id: string; price: number };
-        card?: { number: string; holder: string };
+        card?: PayCard;
         provisioned?: unknown;
       }>("/me/orders", {
         body: { trafficGb: cell.trafficGb, months: cell.months, category: cell.category, payWithWallet },
@@ -124,11 +142,9 @@ export default function UserAppPage() {
       if (r.provisioned) {
         setMsg("سرویس با موفقیت ساخته شد ✅ از تب «اشتراک‌ها» ببینید.");
         await reload();
-      } else {
-        setCard(r.card ?? null);
-        setMsg(
-          `سفارش ثبت شد (${formatToman(r.order!.price)}). مبلغ را کارت‌به‌کارت کنید و رسید را در ربات بفرستید؛ یا موجودی کیف پول را شارژ و از آن پرداخت کنید.`,
-        );
+      } else if (r.order && r.card) {
+        setPayCard(r.card);
+        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
       }
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
@@ -161,18 +177,32 @@ export default function UserAppPage() {
     }
     setBusy(true);
     try {
-      const r = await api<{ order: { id: string; price: number }; card: { number: string; holder: string } }>(
-        "/me/wallet/charge",
-        { body: { amount, note: chargeNote || undefined } },
-      );
-      setCard(r.card);
+      const r = await api<{ order: { id: string; price: number }; card: PayCard }>("/me/wallet/charge", {
+        body: { amount, note: chargeNote || undefined },
+      });
+      setPayCard(r.card);
       setMsg(
-        `درخواست شارژ ${formatToman(r.order.price)} ثبت شد. مبلغ را به کارت زیر واریز کنید؛ پس از تأیید ادمین موجودی اضافه می‌شود.`,
+        `درخواست شارژ ${formatToman(r.order.price)} ثبت شد. مبلغ را به کارت اعلام‌شده واریز کنید؛ پس از تأیید ادمین موجودی اضافه می‌شود.`,
       );
       setChargeAmount("");
       setChargeNote("");
       const o = await api<{ orders: OrderRow[] }>("/me/orders");
       setOrders(o.orders);
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitBuyReceipt(receiptText: string) {
+    if (!payModal) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/me/orders/${payModal.orderId}/receipt`, { body: { receiptText } });
+      setMsg("رسید ثبت شد و برای تأیید ادمین ارسال شد ✅");
+      setPayModal(null);
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
@@ -259,24 +289,6 @@ export default function UserAppPage() {
               <p className="muted" style={{ margin: 0 }}>
                 هنوز پلنی برای فروش تنظیم نشده است.
               </p>
-            </div>
-          )}
-          {card && (
-            <div className="panel">
-              <h2>اطلاعات واریز</h2>
-              <p className="muted">
-                شماره کارت: <strong className="num">{card.number}</strong> — {card.holder}
-              </p>
-              <button
-                type="button"
-                className="btn ghost sm"
-                onClick={() => {
-                  void navigator.clipboard.writeText(card.number.replace(/[^\d]/g, ""));
-                  setMsg("شماره کارت کپی شد");
-                }}
-              >
-                کپی شماره کارت
-              </button>
             </div>
           )}
         </>
@@ -382,8 +394,15 @@ export default function UserAppPage() {
           <div className="panel">
             <h2>شارژ با کارت به کارت</h2>
             <p className="muted" style={{ marginTop: 0 }}>
-              مبلغ را وارد و درخواست ثبت کنید؛ سپس به کارت اعلام‌شده واریز کنید. پس از تأیید ادمین موجودی اضافه می‌شود.
+              مبلغ را به کارت زیر واریز کنید، سپس درخواست شارژ را ثبت کنید. پس از تأیید ادمین موجودی اضافه می‌شود.
             </p>
+            {payCard && (
+              <PaymentCardBlock
+                number={payCard.number}
+                holder={payCard.holder}
+                onCopied={() => setMsg("شماره کارت کپی شد")}
+              />
+            )}
             <div className="field">
               <label>مبلغ (تومان)</label>
               <input
@@ -401,11 +420,6 @@ export default function UserAppPage() {
             <button type="button" className="btn success wide" disabled={busy} onClick={requestCharge}>
               ارسال درخواست شارژ
             </button>
-            {card && (
-              <p className="muted" style={{ marginTop: 12 }}>
-                کارت مقصد: <strong className="num">{card.number}</strong> — {card.holder}
-              </p>
-            )}
           </div>
 
           <div className="panel">
@@ -456,9 +470,9 @@ export default function UserAppPage() {
               {(
                 [
                   ["android", "اندروید"],
-                  ["ios", "آیفون"],
+                  ["ios", " آیفون"],
                   ["windows", "ویندوز"],
-                  ["macos", "مک"],
+                  ["macos", " مک"],
                 ] as const
               ).map(([key, label]) => (
                 <button
@@ -488,7 +502,7 @@ export default function UserAppPage() {
               )}
               {guidePlatform === "ios" && guide.guide_ios && (
                 <a className="btn primary sm" href={guide.guide_ios} target="_blank" rel="noreferrer">
-                  دانلود اپ آیفون
+                  دانلود اپ  آیفون
                 </a>
               )}
               {guidePlatform === "windows" && guide.guide_windows && (
@@ -498,7 +512,7 @@ export default function UserAppPage() {
               )}
               {guidePlatform === "macos" && guide.guide_mac && (
                 <a className="btn primary sm" href={guide.guide_mac} target="_blank" rel="noreferrer">
-                  دانلود اپ مک
+                  دانلود اپ  مک
                 </a>
               )}
             </div>
@@ -514,6 +528,20 @@ export default function UserAppPage() {
             setErr(bad ?? null);
           }}
           onSaved={() => void reload()}
+        />
+      )}
+
+      {payModal && (
+        <CardPayModal
+          open
+          title="پرداخت خرید"
+          amount={payModal.price}
+          card={payModal.card}
+          busy={busy}
+          onCopied={() => setMsg("شماره کارت کپی شد")}
+          onPaid={() => void submitBuyReceipt("پرداخت شد — اعلام از داشبورد")}
+          onSendReceipt={(note) => void submitBuyReceipt(note)}
+          onCancel={() => setPayModal(null)}
         />
       )}
     </DashShell>

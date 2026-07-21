@@ -69,7 +69,11 @@ export function mainMenuReply(opts: MainMenuOpts) {
   } else {
     kb.text(BTN.configLookup).danger().row();
   }
-  kb.text(BTN.dashOtp).row();
+  if (opts.miniappUrl) {
+    kb.webApp("🚀 داشبورد وب‌اپ", opts.miniappUrl).row();
+  } else {
+    kb.text(BTN.dashOtp).row();
+  }
   kb.text(BTN.hideKeyboard).row();
 
   if (opts.isAdmin) {
@@ -409,21 +413,25 @@ export function renewWizardKeyboard(opts: {
     .text("❌ انصراف", "buy:cat:cancel");
 }
 
-export function guideKeyboard(urls: {
-  ios?: string;
-  android?: string;
-  windows?: string;
-  macos?: string;
-  extra?: string;
-}) {
+export type GuidePlatform = "android" | "ios" | "windows" | "macos";
+
+/** Step 1: pick OS — then show that platform’s guide text + download button. */
+export function guidePlatformPickerKeyboard() {
+  return new InlineKeyboard()
+    .text("🤖 اندروید", "guide:plat:android")
+    .text(" آیفون", "guide:plat:ios")
+    .row()
+    .text("🪟 ویندوز", "guide:plat:windows")
+    .text(" مک", "guide:plat:macos")
+    .row()
+    .text("« انصراف", "buy:cat:cancel");
+}
+
+/** Step 2: show download for the chosen platform (+ back to picker). */
+export function guideDownloadKeyboard(downloadUrl?: string) {
   const kb = new InlineKeyboard();
-  if (urls.ios) kb.url("🍎 آیفون (iOS)", urls.ios);
-  if (urls.android) kb.url("🤖 اندروید", urls.android);
-  if (urls.ios || urls.android) kb.row();
-  if (urls.windows) kb.url("🪟 ویندوز", urls.windows);
-  if (urls.macos) kb.url("💻 مک", urls.macos);
-  if (urls.windows || urls.macos) kb.row();
-  if (urls.extra) kb.url("📎 لینک آموزش بیشتر", urls.extra).row();
+  if (downloadUrl) kb.url("⬇️ دانلود نرم‌افزار پیشنهادی", downloadUrl).row();
+  kb.text("« انتخاب پلتفرم دیگر", "guide:back").row();
   kb.text("« انصراف", "buy:cat:cancel");
   return kb;
 }

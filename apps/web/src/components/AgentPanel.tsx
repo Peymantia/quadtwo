@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "./DashShell";
 import { Toast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
+import { PaymentCardBlock } from "./PaymentCard";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 
@@ -42,7 +43,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ code?: string; subUrl?: string | null } | null>(null);
   const [chargeAmount, setChargeAmount] = useState("");
-  const [card, setCard] = useState<{ number: string; holder: string } | null>(null);
+  const [payCard, setPayCard] = useState<{ number: string; holder: string } | null>(null);
   const [txs, setTxs] = useState<Array<{ id: string; type: string; amount: number; createdAt: string; note?: string | null }>>([]);
 
   const loadConfigs = useCallback(
@@ -73,6 +74,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     if (tab === "configs") void loadConfigs();
     if (tab === "wallet") {
       void api<{ txs: typeof txs }>("/me/wallet").then((r) => setTxs(r.txs));
+      void api<{ card: { number: string; holder: string } }>("/me/payment-card")
+        .then((r) => setPayCard(r.card))
+        .catch(() => undefined);
     }
   }, [home, tab, loadConfigs]);
 
@@ -125,7 +129,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       const r = await api<{ order: { price: number }; card: { number: string; holder: string } }>("/me/wallet/charge", {
         body: { amount },
       });
-      setCard(r.card);
+      setPayCard(r.card);
       setMsg(`درخواست شارژ ${formatToman(r.order.price)} ثبت شد — پس از واریز و تأیید ادمین اعمال می‌شود.`);
       setChargeAmount("");
     } catch (e) {
@@ -295,6 +299,13 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           </div>
           <div className="panel">
             <h2>شارژ کیف پول</h2>
+            {payCard && (
+              <PaymentCardBlock
+                number={payCard.number}
+                holder={payCard.holder}
+                onCopied={() => setMsg("شماره کارت کپی شد")}
+              />
+            )}
             <div className="field">
               <label>مبلغ (تومان)</label>
               <input
@@ -308,11 +319,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             <button type="button" className="btn success" disabled={busy} onClick={requestCharge}>
               ثبت درخواست شارژ
             </button>
-            {card && (
-              <p className="muted" style={{ marginTop: 12 }}>
-                کارت مقصد: <strong className="num">{card.number}</strong> — {card.holder}
-              </p>
-            )}
           </div>
           <div className="panel">
             <h2>تراکنش‌ها</h2>

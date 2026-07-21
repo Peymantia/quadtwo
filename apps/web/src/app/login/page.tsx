@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Toast } from "../../components/Toast";
 import { api, getToken, homePathForRole, setToken, type Role, type SessionUser } from "../../lib/api";
 import { canUsePasskey, loginWithPasskey, passkeyErrorMessage } from "../../lib/passkey";
+import { isTelegramMiniApp, loginWithTelegramWebApp } from "../../lib/telegram";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [brand, setBrand] = useState("Piing");
   const [passkeyOk, setPasskeyOk] = useState(false);
+  const [tgBooting, setTgBooting] = useState(true);
 
   const clearFlash = useCallback(() => {
     setHint(null);
@@ -25,16 +27,50 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    const t = getToken();
-    if (t) {
-      api<{ user: SessionUser }>("/me/home", { token: t })
-        .then((r) => router.replace(homePathForRole(r.user.role as Role)))
-        .catch(() => undefined);
+    let cancelled = false;
+
+    async function boot() {
+      const t = getToken();
+      if (t) {
+        try {
+          const r = await api<{ user: SessionUser }>("/me/home", { token: t });
+          if (!cancelled) {
+            router.replace(homePathForRole(r.user.role as Role));
+            return;
+          }
+        } catch {
+          /* continue */
+        }
+      }
+
+      try {
+        const tg = await loginWithTelegramWebApp();
+        if (tg && !cancelled) {
+          router.replace(homePathForRole(tg.user.role as Role));
+          return;
+        }
+      } catch (err) {
+        if (!cancelled && isTelegramMiniApp()) {
+          setError(String(err instanceof Error ? err.message : err));
+        }
+      }
+
+      if (!cancelled) setTgBooting(false);
     }
+
+    void boot();
     api<{ brand: string }>("/auth/meta", { token: null })
-      .then((r) => setBrand(r.brand))
+      .then((r) => {
+        if (!cancelled) setBrand(r.brand);
+      })
       .catch(() => undefined);
-    void canUsePasskey().then(setPasskeyOk);
+    void canUsePasskey().then((ok) => {
+      if (!cancelled) setPasskeyOk(ok);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   function finishLogin(r: { token: string; user: SessionUser }) {
@@ -103,6 +139,17 @@ export default function LoginPage() {
     }
   }
 
+  if (tgBooting) {
+    return (
+      <div className="loading-page">
+        <div style={{ textAlign: "center" }}>
+          <div className="spinner" />
+          در حال ورود…
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="login-page">
       <Toast msg={hint} err={error} onClear={clearFlash} />
@@ -116,7 +163,11 @@ export default function LoginPage() {
         <h1 className="login-title">
           ورود به <em>حساب</em>
         </h1>
-        <p className="login-sub">برای ورود یکی از روش‌های زیر را انتخاب کنید</p>
+        <p className="login-sub">
+          {isTelegramMiniApp()
+            ? "ورود خودکار از تلگرام ناموفق بود — از روش‌های زیر استفاده کنید"
+            : "برای ورود یکی از روش‌های زیر را انتخاب کنید"}
+        </p>
 
         <div className="login-card">
           <form onSubmit={verifyOtp}>

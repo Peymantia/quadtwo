@@ -25,10 +25,20 @@ export async function syncTelegramMenu(api: Api) {
     /* older API / ignore */
   }
 
-  // Show command list on the menu button beside the text field
-  await api.setChatMenuButton({
-    menu_button: { type: "commands" },
-  });
+  // Menu button beside the text field: Mini App when configured, else slash commands
+  if (miniapp) {
+    await api.setChatMenuButton({
+      menu_button: {
+        type: "web_app",
+        text: "داشبورد",
+        web_app: { url: miniapp },
+      },
+    });
+  } else {
+    await api.setChatMenuButton({
+      menu_button: { type: "commands" },
+    });
+  }
 }
 
 export async function syncTelegramMenuSafe(bot: Bot) {

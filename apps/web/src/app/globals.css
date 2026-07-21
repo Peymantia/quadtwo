@@ -41,6 +41,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Telegram Mini App shell */
+html.tg-webapp body {
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -535,6 +541,60 @@ h3 {
   border-radius: 999px;
 }
 
+.panel-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.panel-switcher-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--amber);
+  white-space: nowrap;
+}
+
+.panel-switcher-select {
+  appearance: none;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 6px 28px 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23fbbf24' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 8px center;
+  max-width: 130px;
+}
+
+.panel-switcher-select:focus {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.2);
+}
+
+.panel-switcher-select option {
+  background: var(--card-solid);
+  color: var(--text);
+}
+
+.preview-banner {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
 /* Mobile top brand bar */
 .mobile-top {
   display: none;
@@ -573,6 +633,23 @@ h3 {
     align-items: center;
     gap: 9px;
     font-weight: 800;
+    min-width: 0;
+  }
+
+  .mobile-top .brand span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-top .panel-switcher-label {
+    display: none;
+  }
+
+  .mobile-top .panel-switcher-select {
+    max-width: 108px;
+    padding: 5px 24px 5px 8px;
+    font-size: 0.75rem;
   }
 
   .mobile-top .brand img {
@@ -1318,6 +1395,62 @@ h3 {
 .modal-body {
   padding: 14px 18px 18px;
   overflow-y: auto;
+}
+
+/* Card-to-card payment destination */
+.pay-dest-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 18px 16px 16px;
+  margin-bottom: 14px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background:
+    linear-gradient(145deg, rgba(56, 189, 248, 0.14), rgba(129, 140, 248, 0.08)),
+    rgba(15, 19, 44, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.pay-dest-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+
+.pay-dest-number {
+  font-size: clamp(1.25rem, 4.5vw, 1.65rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.35;
+  color: #e0f2fe;
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-dest-holder {
+  margin-top: 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--teal);
+}
+
+.pay-amount-block {
+  text-align: center;
+  padding: 14px 12px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: rgba(15, 19, 44, 0.55);
+}
+
+.pay-amount-value {
+  font-size: clamp(1.2rem, 4vw, 1.45rem);
+  font-weight: 800;
+  color: var(--green);
+  margin-top: 4px;
 }
 
 /* ---- Price plan cards (mobile-friendly) ---- */

@@ -88,7 +88,9 @@ import {
   buyCategoryKeyboard,
   buyDraftText,
   buyWizardKeyboard,
-  guideKeyboard,
+  guidePlatformPickerKeyboard,
+  guideDownloadKeyboard,
+  type GuidePlatform,
   mainMenuReply,
   orderPayText,
   partnerContactKeyboard,
@@ -443,18 +445,60 @@ async function handleTest(ctx: Context) {
   }
 }
 
+async function guideIntroText() {
+  const guide = (await getSetting("guide_text")).trim();
+  return [
+    guide || "📖 آموزش اتصال",
+    "",
+    "سیستم‌عامل خود را انتخاب کنید تا آموزش همان پلتفرم را ببینید:",
+  ].join("\n");
+}
+
 async function handleGuide(ctx: Context) {
-  const guide = await getSetting("guide_text");
-  const urls = {
-    ios: (await getSetting("guide_ios_url")) || undefined,
-    android: (await getSetting("guide_android_url")) || undefined,
-    windows: (await getSetting("guide_windows_url")) || undefined,
-    macos: (await getSetting("guide_macos_url")) || undefined,
-    extra: (await getSetting("guide_url")) || undefined,
-  };
-  await ctx.reply(guide || "آموزش اتصال", {
-    reply_markup: guideKeyboard(urls),
+  await ctx.reply(await guideIntroText(), {
+    reply_markup: guidePlatformPickerKeyboard(),
   });
+}
+
+async function showGuidePlatform(ctx: Context, platform: GuidePlatform) {
+  const textKey =
+    platform === "android"
+      ? "guide_android_text"
+      : platform === "ios"
+        ? "guide_ios_text"
+        : platform === "windows"
+          ? "guide_windows_text"
+          : "guide_macos_text";
+  const urlKey =
+    platform === "android"
+      ? "guide_android_url"
+      : platform === "ios"
+        ? "guide_ios_url"
+        : platform === "windows"
+          ? "guide_windows_url"
+          : "guide_macos_url";
+
+  const platformText = (await getSetting(textKey)).trim();
+  const fallback = (await getSetting("guide_text")).trim();
+  const downloadUrl = (await getSetting(urlKey)).trim();
+  const body = [
+    platformText || fallback || "آموزش اتصال",
+    "",
+    downloadUrl
+      ? "برای نصب نرم‌افزار پیشنهادی روی دکمه زیر بزنید:"
+      : "⚠️ لینک دانلود این پلتفرم هنوز تنظیم نشده — با پشتیبانی تماس بگیرید.",
+  ].join("\n");
+
+  const kb = guideDownloadKeyboard(downloadUrl || undefined);
+  if (ctx.callbackQuery?.message) {
+    try {
+      await ctx.editMessageText(body, { reply_markup: kb });
+      return;
+    } catch {
+      /* message not editable */
+    }
+  }
+  await ctx.reply(body, { reply_markup: kb });
 }
 
 async function handleAccount(ctx: Context) {
@@ -787,6 +831,20 @@ export function createBot() {
   bot.callbackQuery("m:guide", async (ctx) => {
     await ctx.answerCallbackQuery();
     await handleGuide(ctx);
+  });
+  bot.callbackQuery(/^guide:plat:(android|ios|windows|macos)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const platform = ctx.match![1] as GuidePlatform;
+    await showGuidePlatform(ctx, platform);
+  });
+  bot.callbackQuery("guide:back", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const text = await guideIntroText();
+    try {
+      await ctx.editMessageText(text, { reply_markup: guidePlatformPickerKeyboard() });
+    } catch {
+      await ctx.reply(text, { reply_markup: guidePlatformPickerKeyboard() });
+    }
   });
   bot.callbackQuery("m:support", async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -2005,11 +2063,26 @@ export function createBot() {
 
   bot.command("setminiapp", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
-    const url = (ctx.match ?? "").trim();
-    if (!url.startsWith("http")) return ctx.reply("Usage: /setminiapp https://app.example.com");
+    const url = (ctx.match ?? "").trim().replace(/\/$/, "");
+    if (!url.startsWith("https://")) {
+      return ctx.reply("Usage: /setminiapp https://dash.example.com\n(باید HTTPS باشد — الزام BotFather / تلگرام)");
+    }
     await setSetting("miniapp_url", url);
     await syncTelegramMenu(ctx.api).catch(() => undefined);
-    await ctx.reply("آدرس وب‌اپ ذخیره شد و منوی ربات به‌روز شد ✅");
+    await ctx.reply(
+      [
+        "آدرس وب‌اپ ذخیره شد ✅",
+        "دکمه منوی کنار چت روی «داشبورد» (Mini App) تنظیم شد.",
+        "",
+        "در BotFather هم ثبت کنید:",
+        "BotFather → بات شما → Bot Settings → Menu Button",
+        "→ Configure menu button → Web App URL",
+        url,
+        "",
+        "یا: /newapp برای ثبت Mini App جداگانه با همین آدرس.",
+        "کاربران با /app یا دکمه کیبورد وارد می‌شوند.",
+      ].join("\n"),
+    );
   });
 
   bot.catch((err) => {

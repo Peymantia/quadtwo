@@ -1,8 +1,44 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { clearToken, roleLabel, type Role } from "../lib/api";
+
+const PREVIEW_PANELS = [
+  { path: "/admin", label: "ادمین" },
+  { path: "/app", label: "کاربر" },
+  { path: "/partner", label: "همکار" },
+  { path: "/reseller", label: "عمده‌فروش" },
+] as const;
+
+function AdminPanelSwitcher() {
+  const router = useRouter();
+  const pathname = usePathname() || "";
+  const current =
+    PREVIEW_PANELS.find((p) => pathname === p.path || pathname.startsWith(`${p.path}/`))?.path ?? "/admin";
+  const previewing = current !== "/admin";
+
+  return (
+    <label className="panel-switcher" title="سوییچ تست بین پنل‌ها (فقط ادمین)">
+      <span className="panel-switcher-label">{previewing ? "پیش‌نمایش" : "پنل"}</span>
+      <select
+        className="panel-switcher-select"
+        value={current}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next && next !== pathname) router.push(next);
+        }}
+        aria-label="سوییچ پنل داشبورد"
+      >
+        {PREVIEW_PANELS.map((p) => (
+          <option key={p.path} value={p.path}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 export type IconName =
   | "home"
@@ -194,7 +230,11 @@ export function DashShell(props: {
   children: ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname() || "";
   const [moreOpen, setMoreOpen] = useState(false);
+  const isAdmin = props.role === "admin";
+  const isPreviewing =
+    isAdmin && !pathname.startsWith("/admin") && PREVIEW_PANELS.some((p) => pathname === p.path || pathname.startsWith(`${p.path}/`));
 
   const { primary, more } = useMemo(() => {
     const pinned = props.tabs.filter((t) => t.pin);
@@ -248,6 +288,7 @@ export function DashShell(props: {
           <span>{props.brand}</span>
         </div>
         <div className="topbar-side">
+          {isAdmin && <AdminPanelSwitcher />}
           {props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>}
           {hasMore && (
             <button
@@ -298,10 +339,16 @@ export function DashShell(props: {
               {props.userLabel && <p className="sub">{props.userLabel}</p>}
             </div>
             <div className="topbar-side">
+              {isAdmin && <AdminPanelSwitcher />}
               {props.walletLabel && <span className="money-pill num hide-mobile">{props.walletLabel}</span>}
               <span className="role-pill">{roleLabel(props.role)}</span>
             </div>
           </div>
+          {isPreviewing && (
+            <div className="preview-banner" role="status">
+              در حال پیش‌نمایش پنل دیگر هستید — نقش واقعی شما ادمین است. قیمت‌ها و دسترسی‌ها بر اساس نقش ادمین محاسبه می‌شوند.
+            </div>
+          )}
           {props.children}
         </main>
       </div>

@@ -47,4 +47,17 @@ XUI_INBOUND_IDS=1,2,3,4,5,6,7,8,9,10
 
 5. BotFather Mini App URL = `https://app.anthropics.ir`
 
+   - BotFather → your bot → **Bot Settings → Menu Button → Configure menu button**
+   - Set **Web App URL** to the same HTTPS origin
+   - Optional: **/newapp** to register a named Mini App pointing at the same URL
+
+6. After deploy, in the bot (admin):
+
+```text
+/setminiapp https://app.anthropics.ir
+/update
+```
+
+This stores the URL, sets Telegram’s chat menu button to open the Mini App, and adds a keyboard Web App button. Opening the dashboard inside Telegram logs in via `initData` (no OTP). Browser login (OTP / password / passkey) still works.
+
 Keep `piing.ir` hosting untouched.

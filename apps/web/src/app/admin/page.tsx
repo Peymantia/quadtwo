@@ -2275,9 +2275,9 @@ const TEXT_SETTINGS: Array<{ key: string; label: string; ltr?: boolean; multilin
 
 const GUIDE_PLATFORMS = [
   { id: "android", label: "اندروید", textKey: "guide_android_text", urlKey: "guide_android_url" },
-  { id: "ios", label: "آیفون", textKey: "guide_ios_text", urlKey: "guide_ios_url" },
+  { id: "ios", label: " آیفون", textKey: "guide_ios_text", urlKey: "guide_ios_url" },
   { id: "windows", label: "ویندوز", textKey: "guide_windows_text", urlKey: "guide_windows_url" },
-  { id: "macos", label: "مک", textKey: "guide_macos_text", urlKey: "guide_macos_url" },
+  { id: "macos", label: " مک", textKey: "guide_macos_text", urlKey: "guide_macos_url" },
 ] as const;
 
 function SettingsTab({

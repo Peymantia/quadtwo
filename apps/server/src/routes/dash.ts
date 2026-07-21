@@ -272,6 +272,10 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({ balance: wallet.balance, txs });
   });
 
+  api.get("/me/payment-card", async (c) => {
+    return c.json({ card: await getPaymentCard() });
+  });
+
   api.get("/me/subscriptions", async (c) => {
     const subs = await prisma.subscription.findMany({
       where: { userId: c.get("userId") },
