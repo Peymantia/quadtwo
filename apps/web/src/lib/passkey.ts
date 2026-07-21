@@ -48,3 +48,29 @@ type PublicKeyCredentialCreationOptionsJSON = Parameters<
 type PublicKeyCredentialRequestOptionsJSON = Parameters<
   typeof startAuthentication
 >[0]["optionsJSON"];
+
+/** Map WebAuthn / browser errors to Persian for the UI. */
+export function passkeyErrorMessage(err: unknown): string {
+  const name = err instanceof Error ? err.name : "";
+  const msg = String(err instanceof Error ? err.message : err);
+
+  if (/NotAllowedError|not allowed|timed out|timeout|abort|cancel/i.test(msg) || name === "NotAllowedError") {
+    if (/timed out|timeout/i.test(msg)) {
+      return "زمان تأیید بیومتریک تمام شد. دوباره تلاش کنید.";
+    }
+    if (/abort|cancel/i.test(msg)) {
+      return "ورود بیومتریک لغو شد.";
+    }
+    return "تأیید بیومتریک انجام نشد. دوباره تلاش کنید یا از OTP استفاده کنید.";
+  }
+  if (/SecurityError|secure context|insecure/i.test(msg) || name === "SecurityError") {
+    return "ورود بیومتریک فقط روی HTTPS فعال است.";
+  }
+  if (/InvalidStateError|not registered|no credentials/i.test(msg) || name === "InvalidStateError") {
+    return "Passkey ثبت‌شده‌ای پیدا نشد. ابتدا با OTP وارد شوید و در تنظیمات فعال کنید.";
+  }
+  if (/NetworkError|fetch|failed to fetch/i.test(msg)) {
+    return "اتصال به سرور برقرار نشد. اینترنت را بررسی کنید.";
+  }
+  return msg.length > 120 ? "خطا در ورود بیومتریک. دوباره تلاش کنید." : msg;
+}

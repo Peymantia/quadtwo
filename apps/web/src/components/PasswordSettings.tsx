@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { canUsePasskey, registerPasskey } from "../lib/passkey";
+import { canUsePasskey, passkeyErrorMessage, registerPasskey } from "../lib/passkey";
 
 type Props = {
   hasPassword: boolean;
@@ -68,12 +68,7 @@ export function PasswordSettings({ hasPassword, onSaved, onFlash }: Props) {
       loadPasskeys();
       onSaved?.();
     } catch (e) {
-      const msg = String(e instanceof Error ? e.message : e);
-      if (/NotAllowedError|abort|cancel/i.test(msg)) {
-        onFlash?.(null, "ثبت Passkey لغو شد.");
-      } else {
-        onFlash?.(null, msg);
-      }
+      onFlash?.(null, passkeyErrorMessage(e));
     } finally {
       setPassBusy(false);
     }
