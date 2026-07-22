@@ -493,7 +493,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                 </button>
               </div>
               <div className="sort-bar config-page-size">
-                <label htmlFor="partner-config-page-size">تعداد در صفحه</label>
+                <label htmlFor="partner-config-page-size">تعداد نمایش اکانت در هر صفحه</label>
                 <select
                   id="partner-config-page-size"
                   value={configPageSize}

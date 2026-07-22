@@ -1986,7 +1986,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
               </button>
             </div>
             <div className="sort-bar config-page-size">
-              <label htmlFor="admin-config-page-size">تعداد در صفحه</label>
+              <label htmlFor="admin-config-page-size">تعداد نمایش اکانت در هر صفحه</label>
               <select
                 id="admin-config-page-size"
                 value={pageSize}
