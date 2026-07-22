@@ -701,16 +701,9 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                   </td>
                   <td className="num">{formatToman(u.balance)}</td>
                   <td>
-                    <div className="actions" style={{ gap: 6, flexWrap: "wrap" }}>
-                      <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
-                        جزئیات / شارژ
-                      </button>
-                      {(u.role === "partner" || u.role === "wholesale") && (
-                        <button type="button" className="btn danger sm" onClick={() => void removePartner(u)}>
-                          حذف همکار
-                        </button>
-                      )}
-                    </div>
+                    <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
+                      جزئیات / شارژ
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -1757,6 +1750,25 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     }
   }
 
+  async function toggleEnable(email: string, subId: string | null, currentlyActive: boolean) {
+    const next = !currentlyActive;
+    const label = next ? "فعال" : "غیرفعال";
+    if (!(await askConfirm(`اکانت ${email} ${label} شود؟`))) return;
+    setEditBusy(true);
+    try {
+      const r = await api<{ message: string }>("/admin/configs/update", {
+        method: "PUT",
+        body: { email, subId, enable: next },
+      });
+      flash(r.message || `اکانت ${label} شد`);
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   const selectedCount = Object.values(selectedImport).filter(Boolean).length;
 
   return (
@@ -1915,12 +1927,20 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                   </div>
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                 </div>
-                <div className="actions" style={{ marginTop: 10 }}>
+                <div className="actions config-card-actions" style={{ marginTop: 10 }}>
                   {!c.inDb && (
                     <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
                       وارد کردن
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className={`btn sm ${c.status === "active" && !expired ? "ghost" : "success"}`}
+                    disabled={editBusy || expired}
+                    onClick={() => void toggleEnable(c.email, c.subId, c.status === "active")}
+                  >
+                    {c.status === "active" && !expired ? "غیرفعال" : "فعال"}
+                  </button>
                   <button type="button" className="btn primary sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
                     ویرایش
                   </button>

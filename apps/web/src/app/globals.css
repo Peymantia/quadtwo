@@ -1744,6 +1744,43 @@ button.pay-dest-number:active,
   justify-content: center;
 }
 
+/* Account card action row: enable / edit / delete */
+.config-card-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.config-card-actions > .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 14px;
+}
+
+@media (min-width: 901px) {
+  .config-card-actions > .btn {
+    flex: 0 1 auto;
+    min-width: 110px;
+    padding-inline: 18px;
+  }
+}
+
+@media (max-width: 900px) {
+  .config-card-actions {
+    width: 100%;
+  }
+
+  .config-card-actions > .btn,
+  .actions.config-card-actions:not(:has(> :not(.btn):not(a.btn))) > .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    box-sizing: border-box;
+  }
+}
+
 .bulk-price-row {
   display: flex;
   flex-wrap: wrap;
