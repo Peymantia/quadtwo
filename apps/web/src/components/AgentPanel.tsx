@@ -407,14 +407,16 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               return (
                 <div key={c.email} className="row-card" style={{ flexDirection: "column", alignItems: "stretch" }}>
                   <div>
-                    <strong className="num">{c.code || c.email}</strong>{" "}
+                    <strong className="num">{c.email}</strong>{" "}
                     <span className={`badge ${active ? "ok" : "bad"}`}>
                       {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
                     </span>
-                    {c.title && <div className="muted">{c.title}</div>}
-                    <div className="muted num" style={{ marginTop: 4 }}>
-                      {c.email}
-                    </div>
+                    {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
+                    {c.code && (
+                      <div className="muted num" style={{ marginTop: 4 }}>
+                        کد: {c.code}
+                      </div>
+                    )}
                     <div className="muted" style={{ marginTop: 8 }}>
                       حجم کل:{" "}
                       <strong className="num">

@@ -1889,14 +1889,14 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             return (
               <div key={c.email} className="row-card" style={{ flexDirection: "column", alignItems: "stretch" }}>
                 <div>
-                  <strong className="num">{c.code || c.email}</strong>{" "}
+                  <strong className="num">{c.email}</strong>{" "}
                   {!c.inDb && <span className="badge warn">فقط پنل</span>}
                   {c.status === "active" && !expired && <span className="badge ok">فعال</span>}
                   {(c.status === "disabled" || expired) && (
                     <span className="badge warn">{expired ? "منقضی" : "غیرفعال"}</span>
                   )}
-                  {c.title && <div className="muted">{c.title}</div>}
-                  <div className="muted num">{c.email}</div>
+                  {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
+                  {c.code && <div className="muted num">کد: {c.code}</div>}
                   <div className="muted">{c.ownerLabel}</div>
                   <div className="muted" style={{ marginTop: 8 }}>
                     حجم کل:{" "}
@@ -1954,7 +1954,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       </div>
 
       {editing && (
-        <Modal open title={`ویرایش اکانت — ${editing.code || editing.email}`} onClose={() => setEditing(null)} wide>
+        <Modal open title={`ویرایش اکانت — ${editing.email}`} onClose={() => setEditing(null)} wide>
           <div className="muted num" style={{ marginBottom: 12 }}>
             {editing.email}
           </div>

@@ -383,7 +383,7 @@ export default function UserAppPage() {
               return (
                 <div key={s.id} className="row-card" style={{ alignItems: "flex-start", flexDirection: "column" }}>
                   <div style={{ width: "100%" }}>
-                    <strong className="num">{s.code}</strong>{" "}
+                    <strong className="num">{s.email}</strong>{" "}
                     <span className={`badge ${expired || s.status !== "active" ? "bad" : "ok"}`}>
                       {expired
                         ? "منقضی"
@@ -396,6 +396,11 @@ export default function UserAppPage() {
                               : s.status}
                     </span>
                     {s.isTest && <span className="badge info">تست</span>}
+                    {s.code && (
+                      <div className="muted num" style={{ marginTop: 4 }}>
+                        کد: {s.code}
+                      </div>
+                    )}
                     <div className="muted" style={{ marginTop: 8 }}>
                       حجم کل:{" "}
                       <strong className="num">
