@@ -138,7 +138,28 @@ export async function resolvePrice(
   months: number,
   category: PlanCategory = "data",
 ) {
+  const isUnlimited = trafficGb === null || category === "unlimited";
   const mode = await getPricingModeForRole(user.role);
+
+  // Unlimited: prefer monthly rates; fall back to matrix cell so admin matrix prices still work.
+  if (isUnlimited) {
+    const cell = await findPriceCell(null, months, "unlimited");
+    if (cell?.isGolden) {
+      const goldenPrice = priceFromCell(user.role, cell);
+      if (goldenPrice > 0) return { cell, price: goldenPrice, mode: "rate" as const };
+    }
+    const rates = await getPriceRates();
+    const ratePrice = calcRatePrice(user.role, null, months, rates, "unlimited");
+    if (ratePrice > 0) {
+      return { cell: null, price: ratePrice, mode: "rate" as const };
+    }
+    if (cell) {
+      const matrixPrice = priceFromCell(user.role, cell);
+      if (matrixPrice > 0) return { cell, price: matrixPrice, mode: "matrix" as const };
+    }
+    return null;
+  }
+
   if (mode === "rate") {
     // Golden/special matrix cells still override when an exact match exists
     const cell = await findPriceCell(trafficGb, months, category);
@@ -147,6 +168,7 @@ export async function resolvePrice(
     }
     const rates = await getPriceRates();
     const price = calcRatePrice(user.role, trafficGb, months, rates, category);
+    if (!price || price <= 0) return null;
     return { cell: null, price, mode: "rate" as const };
   }
 

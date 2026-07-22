@@ -115,7 +115,7 @@ const defaults: Record<string, string> = {
   sales_categories_json: JSON.stringify({
     data: true,
     national: true,
-    unlimited: false,
+    unlimited: true,
   }),
   /** Max months selectable in buy/renew wizard (1 = disable multi-month for now) */
   max_purchase_months: "1",
@@ -230,11 +230,20 @@ export async function getDefaultLimitIp(): Promise<number> {
   return Math.min(10, Math.floor(raw));
 }
 
+/** Admin / partner / wholesale may change IP limit at purchase; regular users use settings default. */
+export function canEditLimitIp(role: string): boolean {
+  return role === "admin" || role === "partner" || role === "wholesale";
+}
+
 /** Effective IP limit for buy wizard / checkout (unset draft → admin default). */
-export async function resolvePurchaseLimitIp(draft: {
-  limitIp: number;
-  limitIpTouched: boolean;
-}): Promise<number> {
+export async function resolvePurchaseLimitIp(
+  draft: {
+    limitIp: number;
+    limitIpTouched: boolean;
+  },
+  role?: string,
+): Promise<number> {
+  if (role && !canEditLimitIp(role)) return getDefaultLimitIp();
   if (draft.limitIpTouched) return draft.limitIp;
   if (draft.limitIp > 0) return draft.limitIp;
   return getDefaultLimitIp();
@@ -398,7 +407,7 @@ export function ratesForRoleCategory(
   return {
     perGb: Number(cat?.perGb ?? base.perGb) || 0,
     perMonth: Number(cat?.perMonth ?? base.perMonth) || 0,
-    unlimitedPerMonth: base.unlimitedPerMonth,
+    unlimitedPerMonth: Number(base?.unlimitedPerMonth) || 0,
   };
 }
 
@@ -408,7 +417,7 @@ export type SalesCategories = Record<string, boolean>;
 export const BUILTIN_CATEGORY_KEYS = ["data", "national", "unlimited"] as const;
 
 export function defaultSalesCategories(): SalesCategories {
-  return { data: true, national: true, unlimited: false };
+  return { data: true, national: true, unlimited: true };
 }
 
 export async function getSalesCategories(): Promise<SalesCategories> {

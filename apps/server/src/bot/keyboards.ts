@@ -159,6 +159,8 @@ export function buyWizardKeyboard(opts: {
   price: number | null;
   category?: string;
   maxMonths?: number;
+  /** Regular users cannot change IP limit — only admin/partner/wholesale */
+  canEditLimitIp?: boolean;
 }) {
   const vol = opts.unlimited ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
   const unit = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
@@ -170,6 +172,7 @@ export function buyWizardKeyboard(opts: {
     opts.category === "national" ? "🇮🇷 ملی" : opts.category === "unlimited" ? "💎 نامحدود" : "💎 VIP بین الملل";
   const maxMonths = opts.maxMonths ?? 1;
   const showMonthStepper = maxMonths > 1 && opts.category !== "national";
+  const canEditIp = opts.canEditLimitIp === true;
 
   const kb = new InlineKeyboard()
     .text("−", "wiz:vol:-")
@@ -186,15 +189,21 @@ export function buyWizardKeyboard(opts: {
     kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
   }
 
-  return kb
-    .text("−", "wiz:qty:-")
+  kb.text("−", "wiz:qty:-")
     .text(`${opts.quantity} عدد`, "wiz:noop")
     .text("+", "wiz:qty:+")
-    .row()
-    .text("−", "wiz:ip:-")
-    .text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
-    .text("+", "wiz:ip:+")
-    .row()
+    .row();
+
+  if (canEditIp) {
+    kb.text("−", "wiz:ip:-")
+      .text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
+      .text("+", "wiz:ip:+")
+      .row();
+  } else {
+    kb.text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop").row();
+  }
+
+  return kb
     .text(`🏷 ${cat}`, "wiz:noop")
     .row()
     .text(`💰 ${unit}${total}`, "wiz:noop")
@@ -567,7 +576,7 @@ export function controlCenterKeyboard() {
     .row()
     .text("📜 لاگ عملیات", "cc:audit")
     .row()
-    .text("⬇️ تنزل به کاربر عادی", "cc:demote")
+    .text("⬇️ حذف همکار / عمده‌فروش", "cc:demote")
     .danger()
     .row()
     .text("💳 کارت بانکی", "cc:card")

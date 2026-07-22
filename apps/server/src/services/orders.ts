@@ -1,7 +1,7 @@
 import { OrderKind, OrderStatus, PaymentMethod } from "@prisma/client";
 import { prisma } from "../db.js";
 import { resolvePanelForCategory, resolvePanelForSubscription } from "./panel-servers.js";
-import { getDefaultLimitIp } from "./settings.js";
+import { canEditLimitIp, getDefaultLimitIp } from "./settings.js";
 import { clampMonths, normalizePurchaseTraffic, resolvePrice, type PlanCategory } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
@@ -27,8 +27,9 @@ export async function createMatrixOrder(input: {
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
   const quantity = Math.max(1, Math.min(50, input.quantity ?? 1));
   const defaultIp = await getDefaultLimitIp();
-  const limitIp =
-    input.limitIp === undefined
+  const limitIp = !canEditLimitIp(user.role)
+    ? defaultIp
+    : input.limitIp === undefined
       ? defaultIp
       : Math.max(0, Math.min(10, Math.floor(input.limitIp)));
   const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;

@@ -255,6 +255,11 @@ export async function rejectPartner(requestId: string) {
 }
 
 export async function demoteToUser(userId: string) {
+  const before = await prisma.user.findUnique({ where: { id: userId } });
+  if (!before) throw new Error("کاربر یافت نشد");
+  if (before.role !== UserRole.partner && before.role !== UserRole.wholesale) {
+    throw new Error("فقط همکار یا عمده‌فروش قابل حذف از همکاری است");
+  }
   return prisma.user.update({
     where: { id: userId },
     data: { role: UserRole.user, panelGroup: null, agentName: null },

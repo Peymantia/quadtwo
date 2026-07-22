@@ -849,8 +849,8 @@ async function showDemote(ctx: Context) {
   kb.text("« کنترل سنتر", "cc:home");
   await ctx.editMessageText(
     users.length
-      ? "⬇️ کاربر را انتخاب کنید تا به یوزر عادی برگردد:"
-      : "همکار یا عمده‌فروشی برای تنزل نیست.",
+      ? "⬇️ حذف همکار / عمده‌فروش\nبا انتخاب، به مشتری عادی تبدیل می‌شود (نام نماینده و گروه پنل پاک می‌شود):"
+      : "همکار یا عمده‌فروشی برای حذف نیست.",
     { reply_markup: kb },
   );
 }
@@ -1344,9 +1344,24 @@ export function registerControlCenter(bot: Bot) {
 
   bot.callbackQuery(/^cc:demote:do:(.+)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
-    await ctx.answerCallbackQuery({ text: "تنزل شد" });
-    await demoteToUser(ctx.match![1]);
-    await showDemote(ctx);
+    try {
+      const updated = await demoteToUser(ctx.match![1]);
+      await ctx.answerCallbackQuery({ text: "حذف از همکاری ✅" });
+      try {
+        await ctx.api.sendMessage(
+          Number(updated.telegramId),
+          "اطلاع: همکاری شما پایان یافت و حساب به مشتری عادی تبدیل شد.",
+        );
+      } catch {
+        /* ignore notify failure */
+      }
+      await showDemote(ctx);
+    } catch (err) {
+      await ctx.answerCallbackQuery({
+        text: String(err instanceof Error ? err.message : err).slice(0, 180),
+        show_alert: true,
+      });
+    }
   });
 
   bot.callbackQuery("cc:guide", async (ctx) => {

@@ -25,7 +25,7 @@ import {
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
 import { claimTestService } from "../services/test-service.js";
-import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, resolvePurchaseLimitIp, setSetting } from "../services/settings.js";
+import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, canEditLimitIp, resolvePurchaseLimitIp, setSetting } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
@@ -336,7 +336,7 @@ async function showRenewWizard(
 async function showBuyWizard(ctx: Context, edit = false) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
-  const limitIp = await resolvePurchaseLimitIp(draft);
+  const limitIp = await resolvePurchaseLimitIp(draft, user.role);
   const priced = await draftPrice(user, draft);
   const text = buyDraftText({
     trafficGb: draft.unlimited ? null : draft.trafficGb,
@@ -358,6 +358,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     price: priced?.price ?? null,
     category: draft.category,
     maxMonths,
+    canEditLimitIp: canEditLimitIp(user.role),
   });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
@@ -986,11 +987,21 @@ export function createBot() {
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:ip:+", async (ctx) => {
+    const user = await upsertUserFromTelegram(ctx.from!);
+    if (!canEditLimitIp(user.role)) {
+      await ctx.answerCallbackQuery({ text: "محدودیت دستگاه از تنظیمات سیستم اعمال می‌شود", show_alert: true });
+      return;
+    }
     await ctx.answerCallbackQuery();
     await adjustDraftLimitIp(BigInt(ctx.from!.id), 1);
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:ip:-", async (ctx) => {
+    const user = await upsertUserFromTelegram(ctx.from!);
+    if (!canEditLimitIp(user.role)) {
+      await ctx.answerCallbackQuery({ text: "محدودیت دستگاه از تنظیمات سیستم اعمال می‌شود", show_alert: true });
+      return;
+    }
     await ctx.answerCallbackQuery();
     await adjustDraftLimitIp(BigInt(ctx.from!.id), -1);
     await showBuyWizard(ctx, true);
@@ -1070,7 +1081,7 @@ export function createBot() {
           accountName,
           quantity: draft.quantity,
           category: draft.category,
-          limitIp: await resolvePurchaseLimitIp(draft),
+          limitIp: await resolvePurchaseLimitIp(draft, user.role),
         }));
       if (!recent) {
         await auditLog({

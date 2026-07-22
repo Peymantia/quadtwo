@@ -1,5 +1,10 @@
 import { prisma } from "../db.js";
-import { ensureDefaultSettings } from "./settings.js";
+import {
+  ensureDefaultSettings,
+  getPriceRates,
+  getSalesCategories,
+  saveSalesCategories,
+} from "./settings.js";
 
 const month1: Array<{
   trafficGb: number | null;
@@ -38,9 +43,27 @@ export async function cleanupInvalidUnlimitedCells() {
   }
 }
 
+/** Turn on unlimited sales when rates or matrix unlimited plans already exist. */
+export async function ensureUnlimitedSalesEnabled() {
+  const cats = await getSalesCategories();
+  if (cats.unlimited) return;
+  const rates = await getPriceRates();
+  const hasRate =
+    rates.user.unlimitedPerMonth > 0 ||
+    rates.partner.unlimitedPerMonth > 0 ||
+    rates.wholesale.unlimitedPerMonth > 0;
+  const matrixCount = await prisma.priceCell.count({
+    where: { category: "unlimited", active: true },
+  });
+  if (!hasRate && matrixCount === 0) return;
+  await saveSalesCategories({ ...cats, unlimited: true });
+  console.log("enabled unlimited in sales_categories (pricing already configured)");
+}
+
 export async function seedIfNeeded() {
   await ensureDefaultSettings();
   await cleanupInvalidUnlimitedCells();
+  await ensureUnlimitedSalesEnabled();
 
   const count = await prisma.priceCell.count();
   if (count === 0) {

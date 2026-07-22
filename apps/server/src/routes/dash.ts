@@ -61,7 +61,7 @@ import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, type BackupConfi
 import { Bot } from "grammy";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
-import { approvePartner, rejectPartner, submitPartnerRequest } from "../services/users.js";
+import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
 import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel } from "../services/admin-configs.js";
@@ -397,6 +397,27 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           };
         }),
     );
+
+    if (cats.includes("unlimited")) {
+      const haveMonths = new Set(
+        priced.filter((p) => p.category === "unlimited" && p.price != null).map((p) => p.months),
+      );
+      for (let months = 1; months <= maxMonths; months++) {
+        if (haveMonths.has(months)) continue;
+        const resolved = await resolvePrice(user, null, months, "unlimited");
+        if (!resolved) continue;
+        priced.push({
+          id: `rate-unlimited-${months}`,
+          category: "unlimited",
+          trafficGb: null,
+          months,
+          title: null,
+          isGolden: false,
+          price: resolved.price,
+        });
+      }
+    }
+
     return c.json({
       pricingMode,
       categories: cats,
@@ -1416,14 +1437,62 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     }
     const target = await prisma.user.findUnique({ where: { id: c.req.param("id") } });
     if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
-    await prisma.user.update({ where: { id: target.id }, data: { role: body.role } });
+
+    if (
+      body.role === "user" &&
+      (target.role === UserRole.partner || target.role === UserRole.wholesale)
+    ) {
+      await demoteToUser(target.id);
+    } else {
+      await prisma.user.update({ where: { id: target.id }, data: { role: body.role } });
+    }
+
     await auditLog({
       action: "web_role_change",
       actorTelegramId: BigInt(c.get("telegramId")),
       target: target.id,
       detail: `${target.role} -> ${body.role}`,
     });
+
+    if (
+      body.role === "user" &&
+      (target.role === UserRole.partner || target.role === UserRole.wholesale)
+    ) {
+      await notifyTelegram(
+        target.telegramId,
+        "اطلاع: همکاری شما پایان یافت و حساب به مشتری عادی تبدیل شد.",
+      );
+    }
+
     return c.json({ ok: true });
+  });
+
+  /** Explicit demote partner/wholesale → regular user (clears agent name + panel group). */
+  api.post("/admin/users/:id/demote", async (c) => {
+    try {
+      const updated = await demoteToUser(c.req.param("id"));
+      await auditLog({
+        action: "web_partner_demote",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: updated.id,
+        detail: "partner/wholesale -> user",
+      });
+      await notifyTelegram(
+        updated.telegramId,
+        "اطلاع: همکاری شما پایان یافت و حساب به مشتری عادی تبدیل شد.",
+      );
+      return c.json({
+        ok: true,
+        user: {
+          id: updated.id,
+          role: updated.role,
+          agentName: updated.agentName,
+          panelGroup: updated.panelGroup,
+        },
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
   });
 
   /** Manual wallet adjustment: positive = credit, negative = debit. */

@@ -584,6 +584,31 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       await api(`/admin/users/${u.id}/role`, { body: { role } });
       flash("نقش تغییر کرد");
       await load();
+      if (selected?.id === u.id) {
+        setSelected((s) => (s ? { ...s, role, agentName: role === "user" ? null : s.agentName, panelGroup: role === "user" ? null : s.panelGroup } : s));
+      }
+    } catch (e) {
+      flash(null, errText(e));
+    }
+  }
+
+  async function removePartner(u: AdminUser) {
+    const label = u.username ? `@${u.username}` : u.agentName || u.telegramId;
+    const kind = u.role === "wholesale" ? "عمده‌فروش" : "همکار";
+    if (
+      !(await askConfirm(
+        `${kind} «${label}» از همکاری حذف شود و به مشتری عادی تبدیل شود؟\nنام نماینده و گروه پنل پاک می‌شود.`,
+      ))
+    ) {
+      return;
+    }
+    try {
+      await api(`/admin/users/${u.id}/demote`, { body: {} });
+      flash(`${kind} حذف شد — الان مشتری عادی است`);
+      await load();
+      if (selected?.id === u.id) {
+        setSelected((s) => (s ? { ...s, role: "user", agentName: null, panelGroup: null } : s));
+      }
     } catch (e) {
       flash(null, errText(e));
     }
@@ -676,9 +701,16 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                   </td>
                   <td className="num">{formatToman(u.balance)}</td>
                   <td>
-                    <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
-                      جزئیات / شارژ
-                    </button>
+                    <div className="actions" style={{ gap: 6, flexWrap: "wrap" }}>
+                      <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
+                        جزئیات / شارژ
+                      </button>
+                      {(u.role === "partner" || u.role === "wholesale") && (
+                        <button type="button" className="btn danger sm" onClick={() => void removePartner(u)}>
+                          حذف همکار
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -714,6 +746,14 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               </div>
             )}
           </div>
+
+          {(selected.role === "partner" || selected.role === "wholesale") && (
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button type="button" className="btn danger" onClick={() => void removePartner(selected)}>
+                حذف از همکاری — تبدیل به مشتری عادی
+              </button>
+            </div>
+          )}
 
           <h2 style={{ marginTop: 4, fontSize: "1rem" }}>تغییر دستی شارژ حساب</h2>
           <div className="field">
@@ -1082,6 +1122,9 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         ))}
         <div className="rate-cat-card">
           <strong>نامحدود (قیمت هر ماه)</strong>
+          <p className="muted" style={{ marginTop: 6, marginBottom: 0, fontSize: "0.82rem" }}>
+            این نرخ همیشه برای اکانت نامحدود استفاده می‌شود (حتی اگر نقش روی ماتریکس باشد). قیمت N ماهه = N × این عدد.
+          </p>
           <div className="price-plan-fields" style={{ marginTop: 10 }}>
             {(
               [
@@ -1114,7 +1157,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           </button>
         </div>
         <p className="hint">
-          مثال: ۵۰ گیگ ۲ ماهه با نرخ کاربر دستهٔ فعلی = (۵۰ × هر گیگ) + (۲ × هر ماه)
+          حجمی نرخی: ۵۰ گیگ ۲ ماهه = (۵۰ × هر گیگ) + (۲ × هر ماه). نامحدود همیشه از نرخ بالا محاسبه می‌شود و به پلن ماتریکس نیاز ندارد.
         </p>
       </div>
 
@@ -1151,6 +1194,11 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
 
       <div className="panel">
         <h2>پلن‌ها و قیمت‌ها</h2>
+        {catFilter === "unlimited" && (
+          <p className="hint">
+            قیمت نامحدود از «نرخ هر ماه» بالا (و در صورت نبود نرخ، از پلن ماتریکس همین دسته) محاسبه می‌شود. دستهٔ فروش «نامحدود» باید در تنظیمات فروش فعال باشد.
+          </p>
+        )}
         <div className="price-plan-list">
           {shown.map((c) => {
             const e = edits[c.id] ?? {};
