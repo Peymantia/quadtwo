@@ -6,7 +6,7 @@ import { Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { CardPayModal } from "../../components/CardPayModal";
 import { PaymentCardBlock, TrafficProgress } from "../../components/PaymentCard";
-import { SortSelect, remainingRatio, sortByMode, type ListSort } from "../../components/SortSelect";
+import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "../../components/SortSelect";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
@@ -367,11 +367,12 @@ export default function UserAppPage() {
             {sortByMode(subs, subSort, {
               createdAt: (s) => (s.createdAt ? new Date(s.createdAt).getTime() : 0),
               expiresAt: (s) => new Date(s.expiresAt).getTime(),
-              remainingRatio: (s) =>
-                remainingRatio({
+              remainingRatio: () => 1,
+              endingUrgencyDays: (s) =>
+                endingUrgencyDays({
                   expiresAt: s.expiresAt,
                   usedBytes: s.usedTrafficBytes ?? 0,
-                  totalGb: s.trafficGb,
+                  totalGb: s.isTest ? 0.25 : s.trafficGb,
                 }),
             }).map((s) => {
               const expired = new Date(s.expiresAt) < new Date();

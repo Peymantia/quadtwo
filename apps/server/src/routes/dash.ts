@@ -64,7 +64,7 @@ import { claimTestService } from "../services/test-service.js";
 import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
-import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel } from "../services/admin-configs.js";
+import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, endingUrgencyDays } from "../services/admin-configs.js";
 import {
   createPanelServer,
   getPanelServer,
@@ -641,7 +641,7 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
     const groups = await listConfigGroups();
     const mine = groups.find((g) => g.panelGroup === user.panelGroup);
     if (!mine) return c.json({ items: [], total: 0, title: user.panelGroup });
-    const result = await listConfigsForGroup(mine.key, 0, 2000);
+    const result = await listConfigsForGroup(mine.key, 0, 0);
     const items = await Promise.all(
       result.items.map(async (item) => {
         if (!item.subId) return { ...item, usedTrafficBytes: 0, subUrl: null as string | null };
@@ -695,7 +695,7 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
     const groups = await listConfigGroups();
     const mine = groups.find((g) => g.panelGroup === user.panelGroup);
     if (!mine) throw new Error("گروه پنل پیدا نشد");
-    const list = await listConfigsForGroup(mine.key, 0, 5000);
+    const list = await listConfigsForGroup(mine.key, 0, 0);
 
     let match =
       (emailNorm ? list.items.find((i) => i.email.toLowerCase() === emailNorm) : undefined) ??
@@ -1259,37 +1259,74 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/configs/:groupKey", async (c) => {
-    const page = Number(c.req.query("page") ?? 0);
-    const pageSize = Number(c.req.query("pageSize") ?? 30);
+    const page = Math.max(0, Number(c.req.query("page") ?? 0) || 0);
+    const pageSize = Math.max(1, Math.min(100, Number(c.req.query("pageSize") ?? 30) || 30));
     const q = String(c.req.query("q") ?? "");
     const sortRaw = String(c.req.query("sort") ?? "newest");
     const sort =
       sortRaw === "oldest" || sortRaw === "ending" || sortRaw === "newest" ? sortRaw : "newest";
+
+    async function enrich(item: Awaited<ReturnType<typeof listConfigsForGroup>>["items"][number]) {
+      let usedTrafficBytes = 0;
+      let trafficGb = item.trafficGb ?? null;
+      let subUrl: string | null = null;
+      if (item.subId) {
+        const [traf, sub] = await Promise.all([
+          getSubscriptionTrafficBytes(item.subId).catch(() => ({
+            usedBytes: 0,
+            totalBytes: 0,
+            totalGb: item.trafficGb ?? null,
+          })),
+          prisma.subscription.findUnique({
+            where: { id: item.subId },
+            select: { subUrl: true },
+          }),
+        ]);
+        usedTrafficBytes = traf.usedBytes;
+        trafficGb = traf.totalGb ?? trafficGb;
+        subUrl = sub?.subUrl ?? null;
+      }
+      return { ...item, usedTrafficBytes, trafficGb, subUrl };
+    }
+
+    if (sort === "ending") {
+      // Need traffic on every row before sorting, then paginate
+      const all = await listConfigsForGroup(c.req.param("groupKey"), 0, 0, q, "newest");
+      const enriched: Awaited<ReturnType<typeof enrich>>[] = new Array(all.items.length);
+      const concurrency = 8;
+      let next = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, all.items.length || 1) }, async () => {
+          for (;;) {
+            const i = next++;
+            if (i >= all.items.length) return;
+            enriched[i] = await enrich(all.items[i]!);
+          }
+        }),
+      );
+      enriched.sort((a, b) => {
+        const ua = endingUrgencyDays({
+          expiresAt: a.expiresAt,
+          usedBytes: a.usedTrafficBytes,
+          totalGb: a.trafficGb,
+        });
+        const ub = endingUrgencyDays({
+          expiresAt: b.expiresAt,
+          usedBytes: b.usedTrafficBytes,
+          totalGb: b.trafficGb,
+        });
+        if (ua !== ub) return ua - ub;
+        const ea = a.expiresAt ? new Date(a.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+        const eb = b.expiresAt ? new Date(b.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+        return ea - eb || a.email.localeCompare(b.email);
+      });
+      const total = enriched.length;
+      const items = enriched.slice(page * pageSize, page * pageSize + pageSize);
+      return c.json({ title: all.title, total, items, pageSize });
+    }
+
     const result = await listConfigsForGroup(c.req.param("groupKey"), page, pageSize, q, sort);
-    const items = await Promise.all(
-      result.items.map(async (item) => {
-        let usedTrafficBytes = 0;
-        let trafficGb = item.trafficGb ?? null;
-        let subUrl: string | null = null;
-        if (item.subId) {
-          const [traf, sub] = await Promise.all([
-            getSubscriptionTrafficBytes(item.subId).catch(() => ({
-              usedBytes: 0,
-              totalBytes: 0,
-              totalGb: item.trafficGb ?? null,
-            })),
-            prisma.subscription.findUnique({
-              where: { id: item.subId },
-              select: { subUrl: true },
-            }),
-          ]);
-          usedTrafficBytes = traf.usedBytes;
-          trafficGb = traf.totalGb ?? trafficGb;
-          subUrl = sub?.subUrl ?? null;
-        }
-        return { ...item, usedTrafficBytes, trafficGb, subUrl };
-      }),
-    );
+    const items = await Promise.all(result.items.map((item) => enrich(item)));
     return c.json({ ...result, items });
   });
 

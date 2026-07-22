@@ -296,6 +296,34 @@ function filterConfigItems(items: ConfigListItem[], search: string): ConfigListI
 
 export type ConfigListSort = "newest" | "oldest" | "ending";
 
+/** Days until done — lower = more urgent (expired ≤ 0). */
+export function endingUrgencyDays(opts: {
+  expiresAt?: string | null;
+  usedBytes?: number;
+  totalGb?: number | null;
+}): number {
+  const now = Date.now();
+  const expMs = opts.expiresAt ? new Date(opts.expiresAt).getTime() : Number.NaN;
+  const hasExp = Number.isFinite(expMs);
+  const daysLeft = hasExp ? (expMs - now) / 864e5 : Number.POSITIVE_INFINITY;
+
+  const totalBytes = opts.totalGb != null && opts.totalGb > 0 ? opts.totalGb * 1024 ** 3 : 0;
+  const used = Math.max(0, opts.usedBytes ?? 0);
+  let trafficDays = Number.POSITIVE_INFINITY;
+  if (totalBytes > 0) {
+    const leftFrac = Math.max(0, 1 - used / totalBytes);
+    trafficDays = used >= totalBytes ? 0 : leftFrac * 90;
+  }
+
+  if (hasExp && daysLeft <= 0) return daysLeft;
+  if (totalBytes > 0 && used >= totalBytes) return 0;
+
+  return Math.min(
+    Number.isFinite(daysLeft) ? Math.max(0, daysLeft) : Number.POSITIVE_INFINITY,
+    trafficDays,
+  );
+}
+
 function sortConfigItems(items: ConfigListItem[], sort: ConfigListSort): ConfigListItem[] {
   const copy = [...items];
   const created = (x: ConfigListItem) => (x.createdAt ? new Date(x.createdAt).getTime() : 0);
@@ -313,8 +341,12 @@ function sortConfigItems(items: ConfigListItem[], sort: ConfigListSort): ConfigL
       return created(a) - created(b) || a.email.localeCompare(b.email);
     });
   } else {
+    // Ending: by expiry urgency only here (traffic applied after enrich in the route).
+    // Do not prefer inDb — that scrambled date order.
     copy.sort((a, b) => {
-      if (a.inDb !== b.inDb) return a.inDb ? -1 : 1;
+      const ua = endingUrgencyDays({ expiresAt: a.expiresAt, totalGb: a.trafficGb, usedBytes: 0 });
+      const ub = endingUrgencyDays({ expiresAt: b.expiresAt, totalGb: b.trafficGb, usedBytes: 0 });
+      if (ua !== ub) return ua - ub;
       return expires(a) - expires(b) || a.email.localeCompare(b.email);
     });
   }
@@ -331,11 +363,13 @@ function paginateConfigs(
   const filtered = filterConfigItems(items, search);
   const sorted = sortConfigItems(filtered, sort);
   const total = sorted.length;
-  const size = Math.max(1, Math.min(100, pageSize));
+  // pageSize <= 0 → return all (used when enriching before ending sort)
+  const size = pageSize <= 0 ? Math.max(1, total || 1) : Math.max(1, Math.min(100, Math.floor(pageSize) || 30));
   const p = Math.max(0, page);
   return {
     total,
     items: sorted.slice(p * size, p * size + size),
+    pageSize: pageSize <= 0 ? total : size,
   };
 }
 
@@ -350,7 +384,6 @@ export async function listConfigsForGroup(
   const groups = await listConfigGroups();
   const meta = groups.find((g) => g.key === groupKey);
   const title = meta?.label ?? "کانفیگ‌ها";
-  const size = Math.max(1, Math.min(100, Math.floor(pageSize) || 30));
 
   if (groupKey === "all") {
     const [dbSubs, panelEmails] = await Promise.all([
@@ -379,14 +412,14 @@ export async function listConfigsForGroup(
     }
     mergePanelOnly(byEmail, panelEmails);
 
-    const { total, items } = paginateConfigs([...byEmail.values()], page, size, search, sort);
-    return { title: "تمام کانفیگ‌ها", total, items, pageSize: size };
+    const paged = paginateConfigs([...byEmail.values()], page, pageSize, search, sort);
+    return { title: "تمام کانفیگ‌ها", ...paged };
   }
 
   const panelGroup =
     meta?.panelGroup ?? decodePanelGroupKey(groupKey);
   if (!panelGroup) {
-    return { title, total: 0, items: [], pageSize: size };
+    return { title, total: 0, items: [], pageSize: pageSize <= 0 ? 0 : Math.max(1, Math.min(100, Math.floor(pageSize) || 30)) };
   }
 
   const panelEmails = await emailsInPanelGroup(panelGroup);
@@ -432,8 +465,8 @@ export async function listConfigsForGroup(
 
   mergePanelOnly(byEmail, panelEmails);
 
-  const { total, items } = paginateConfigs([...byEmail.values()], page, size, search, sort);
-  return { title: meta?.label ?? panelGroup, total, items, pageSize: size };
+  const paged = paginateConfigs([...byEmail.values()], page, pageSize, search, sort);
+  return { title: meta?.label ?? panelGroup, ...paged };
 }
 
 export type DeleteConfigResult = {

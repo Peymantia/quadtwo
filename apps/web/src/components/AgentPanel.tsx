@@ -5,7 +5,7 @@ import { DashShell, LoadingScreen, type ShellTab } from "./DashShell";
 import { Toast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
 import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
-import { SortSelect, remainingRatio, sortByMode, type ListSort } from "./SortSelect";
+import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "./SortSelect";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "./RateShop";
@@ -121,8 +121,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     return sortByMode(base, configSort, {
       createdAt: (c) => (c.createdAt ? new Date(c.createdAt).getTime() : 0),
       expiresAt: (c) => (c.expiresAt ? new Date(c.expiresAt).getTime() : Number.POSITIVE_INFINITY),
-      remainingRatio: (c) =>
-        remainingRatio({
+      remainingRatio: () => 1,
+      endingUrgencyDays: (c) =>
+        endingUrgencyDays({
           expiresAt: c.expiresAt,
           usedBytes: c.usedTrafficBytes ?? 0,
           totalGb: c.trafficGb,
