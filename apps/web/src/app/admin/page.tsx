@@ -2683,6 +2683,35 @@ function SettingsTab({
       <PasswordSettings hasPassword={hasPassword} onFlash={flash} onSaved={onPasswordSaved} />
 
       <div className="panel">
+        <h2>نمایش ایموجی ربات</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          برای استفاده از ایموجی‌های پریمیوم، تلگرام سازنده ربات باید پریمیوم باشد.
+        </p>
+        <div className="chip-row" style={{ marginTop: 8 }}>
+          <button
+            type="button"
+            className={`chip${(settings.emoji_style || "universal") !== "premium" ? " on" : ""}`}
+            onClick={() => void save({ emoji_style: "universal" })}
+          >
+            Universal
+          </button>
+          <button
+            type="button"
+            className={`chip${settings.emoji_style === "premium" ? " on" : ""}`}
+            onClick={() => void save({ emoji_style: "premium" })}
+          >
+            Premium
+          </button>
+        </div>
+        <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>
+          فعلی:{" "}
+          <strong>{settings.emoji_style === "premium" ? "Premium" : "Universal"}</strong>
+          {" · "}
+          بعد از تغییر، یک‌بار منوی ربات را با /update یا دکمه منو رفرش کنید.
+        </p>
+      </div>
+
+      <div className="panel">
         <h2>کانال‌های ربات</h2>
         <p className="muted" style={{ marginTop: 0 }}>
           کانال‌هایی که کاربر قبل از استفاده از ربات باید عضو شود. عضویت اجباری را می‌توانید کلی یا برای هر کانال جداگانه تنظیم کنید.

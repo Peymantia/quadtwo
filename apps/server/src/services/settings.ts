@@ -127,6 +127,9 @@ const defaults: Record<string, string> = {
   }),
   /** Web dashboard session lifetime after login, in hours */
   web_session_hours: "168",
+  /** Bot emoji display: universal (Unicode) | premium (custom emoji IDs) */
+  emoji_style: "universal",
+
 };
 
 export async function getSetting(key: string): Promise<string> {

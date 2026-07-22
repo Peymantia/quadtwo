@@ -3,8 +3,9 @@ import type { NotifConfig, SalesCategories } from "../services/settings.js";
 import { formatLimitIp } from "../services/panel-groups.js";
 import { formatCardNumberDisplay, formatToman, formatTraffic, ltrIsolate } from "../utils/format.js";
 import type { PlanCategory } from "../services/pricing.js";
+import { UNIVERSAL_BY_LENGTH } from "../services/emoji-pack.js";
 
-/** Reply-keyboard labels — must match bot.hears() exactly */
+/** Reply-keyboard labels — Universal glyph prefix (Premium strips via API transform). */
 export const BTN = {
   buy: "🛒 خرید سرویس جدید",
   renew: "♻️ تمدید سرویس",
@@ -30,6 +31,18 @@ export const BTN = {
   national: "🇮🇷 کانفیگ نت ملی",
   admin: "👑 پنل ادمین",
 } as const;
+
+/** Match both Universal (with glyph) and Premium (bare text after icon strip). */
+export function hearsBtn(label: string): string[] {
+  let bare = label;
+  for (const row of UNIVERSAL_BY_LENGTH) {
+    if (bare.startsWith(row.glyph)) {
+      bare = bare.slice(row.glyph.length).replace(/^\s+/, "");
+      break;
+    }
+  }
+  return bare && bare !== label ? [label, bare] : [label];
+}
 
 export type MainMenuOpts = {
   isAdmin: boolean;

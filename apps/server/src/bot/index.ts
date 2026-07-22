@@ -85,6 +85,7 @@ import {
 import {
   adminOrderKeyboard,
   BTN,
+  hearsBtn,
   buyCategoryKeyboard,
   buyDraftText,
   buyWizardKeyboard,
@@ -106,6 +107,7 @@ import {
 } from "./keyboards.js";
 import { createTelegramBot } from "./telegram.js";
 import { syncTelegramMenu, syncTelegramMenuSafe } from "./menu.js";
+import { installEmojiApiTransform } from "../services/emoji-transform.js";
 
 const waitingName = new Set<number>();
 const waitingPartner = new Map<number, { step: "compose" | "name" | "phone" | "note"; fullName?: string; phone?: string }>();
@@ -703,6 +705,7 @@ function clearWaits(tid: number) {
 
 export function createBot() {
   const bot = createTelegramBot();
+  installEmojiApiTransform(bot.api);
 
   bot.use(async (ctx, next) => {
     if (ctx.from) await upsertUserFromTelegram(ctx.from);
@@ -949,11 +952,11 @@ export function createBot() {
 
   bot.callbackQuery("wiz:noop", async (ctx) => ctx.answerCallbackQuery());
 
-  bot.hears(BTN.buy, async (ctx) => {
+  bot.hears(hearsBtn(BTN.buy), async (ctx) => {
     await startBuyFlow(ctx);
   });
 
-  bot.hears(BTN.national, async (ctx) => {
+  bot.hears(hearsBtn(BTN.national), async (ctx) => {
     await startBuyFlow(ctx);
   });
 
@@ -1741,40 +1744,40 @@ export function createBot() {
     await ctx.editMessageText("درخواست رد شد.");
   });
 
-  bot.hears(BTN.myServices, async (ctx) => handleMyServices(ctx));
-  bot.hears(BTN.renew, async (ctx) => handleRenew(ctx));
-  bot.hears(BTN.account, async (ctx) => handleAccount(ctx));
-  bot.hears(BTN.wallet, async (ctx) => {
+  bot.hears(hearsBtn(BTN.myServices), async (ctx) => handleMyServices(ctx));
+  bot.hears(hearsBtn(BTN.renew), async (ctx) => handleRenew(ctx));
+  bot.hears(hearsBtn(BTN.account), async (ctx) => handleAccount(ctx));
+  bot.hears(hearsBtn(BTN.wallet), async (ctx) => {
     if (!(await requireChannel(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
     const wallet = await getWallet(user.id);
     await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
   });
-  bot.hears(BTN.test, async (ctx) => handleTest(ctx));
-  bot.hears(BTN.guide, async (ctx) => handleGuide(ctx));
-  bot.hears(BTN.partner, async (ctx) => handlePartnerRequest(ctx));
-  bot.hears(BTN.allConfigs, async (ctx) => {
+  bot.hears(hearsBtn(BTN.test), async (ctx) => handleTest(ctx));
+  bot.hears(hearsBtn(BTN.guide), async (ctx) => handleGuide(ctx));
+  bot.hears(hearsBtn(BTN.partner), async (ctx) => handlePartnerRequest(ctx));
+  bot.hears(hearsBtn(BTN.allConfigs), async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) {
       await ctx.reply("فقط ادمین.");
       return;
     }
     await showConfigGroups(ctx);
   });
-  bot.hears(BTN.support, async (ctx) => handleSupport(ctx));
-  bot.hears(BTN.dashboard, async (ctx) => handleDashboard(ctx));
-  bot.hears(BTN.dashOtp, async (ctx) => handleDashOtp(ctx));
-  bot.hears(BTN.hideKeyboard, async (ctx) => {
+  bot.hears(hearsBtn(BTN.support), async (ctx) => handleSupport(ctx));
+  bot.hears(hearsBtn(BTN.dashboard), async (ctx) => handleDashboard(ctx));
+  bot.hears(hearsBtn(BTN.dashOtp), async (ctx) => handleDashOtp(ctx));
+  bot.hears(hearsBtn(BTN.hideKeyboard), async (ctx) => {
     if (!(await requireChannel(ctx))) return;
     await hideMainKeyboard(ctx);
   });
-  bot.hears(BTN.configLookup, async (ctx) => handleConfigLookup(ctx));
-  bot.hears(BTN.agentPanel, async (ctx) => handlePartnerPanel(ctx));
-  bot.hears(BTN.controlCenter, async (ctx) => {
+  bot.hears(hearsBtn(BTN.configLookup), async (ctx) => handleConfigLookup(ctx));
+  bot.hears(hearsBtn(BTN.agentPanel), async (ctx) => handlePartnerPanel(ctx));
+  bot.hears(hearsBtn(BTN.controlCenter), async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await showControlCenter(ctx, false);
   });
-  bot.hears(BTN.partnerPanel, async (ctx) => handlePartnerPanel(ctx));
-  bot.hears(BTN.admin, async (ctx) => {
+  bot.hears(hearsBtn(BTN.partnerPanel), async (ctx) => handlePartnerPanel(ctx));
+  bot.hears(hearsBtn(BTN.admin), async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await showControlCenter(ctx, false);
   });

@@ -78,16 +78,23 @@ import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
 import { importWorkbook, readWorkbookFromBuffer, formatImportResult } from "../services/bulk-import.js";
 import { getSubscriptionTrafficBytes } from "../services/live-status.js";
 import { dashBaseUrl, env } from "../config/env.js";
+import { clearEmojiStyleCache, attachPremiumTextEntities, getEmojiStyle } from "../services/emoji-transform.js";
 
 type Vars = { userId: string; role: string; telegramId: string };
 
 /** Fire-and-forget Telegram notification (plain text). */
 async function notifyTelegram(chatId: bigint, text: string) {
   try {
+    const style = await getEmojiStyle();
+    const body: Record<string, unknown> = { chat_id: String(chatId), text };
+    if (style === "premium") {
+      const entities = attachPremiumTextEntities(text);
+      if (entities.length) body.entities = entities;
+    }
     await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: String(chatId), text }),
+      body: JSON.stringify(body),
     });
   } catch {
     /* best-effort */
@@ -1656,6 +1663,12 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.put("/admin/settings", async (c) => {
     const body = await c.req.json<Record<string, string>>();
     for (const [k, v] of Object.entries(body)) {
+      if (k === "emoji_style") {
+        const style = v === "premium" ? "premium" : "universal";
+        await setSetting("emoji_style", style);
+        clearEmojiStyleCache();
+        continue;
+      }
       if (k === "pricing_modes_json") {
         try {
           const parsed = JSON.parse(String(v)) as Partial<RolePricingModes>;

@@ -330,7 +330,7 @@ async function showPriceRates(ctx: Context) {
     "",
     lineCat("national", "اینترنت ملی"),
     "",
-    `♾ نامحدود/ماه — مشتری ${formatToman(rates.user.unlimitedPerMonth)} · همکار ${formatToman(rates.partner.unlimitedPerMonth)} · عمده ${formatToman(rates.wholesale.unlimitedPerMonth)}`,
+    `♾️ نامحدود/ماه — مشتری ${formatToman(rates.user.unlimitedPerMonth)} · همکار ${formatToman(rates.partner.unlimitedPerMonth)} · عمده ${formatToman(rates.wholesale.unlimitedPerMonth)}`,
   ].join("\n");
 
   await ctx.editMessageText(text, {
