@@ -349,6 +349,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     category: draft.category,
   });
   const maxMonths = await getMaxPurchaseMonths();
+  const isAgent = canEditLimitIp(user.role);
   const kb = buyWizardKeyboard({
     trafficGb: draft.trafficGb,
     months: draft.months,
@@ -358,7 +359,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     price: priced?.price ?? null,
     category: draft.category,
     maxMonths,
-    canEditLimitIp: canEditLimitIp(user.role),
+    canEditAgentOptions: isAgent,
   });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
@@ -977,11 +978,21 @@ export function createBot() {
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:qty:+", async (ctx) => {
+    const user = await upsertUserFromTelegram(ctx.from!);
+    if (!canEditLimitIp(user.role)) {
+      await ctx.answerCallbackQuery({ text: "این گزینه فقط برای همکار / عمده‌فروش است", show_alert: true });
+      return;
+    }
     await ctx.answerCallbackQuery();
     await adjustDraftQty(BigInt(ctx.from!.id), 1);
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:qty:-", async (ctx) => {
+    const user = await upsertUserFromTelegram(ctx.from!);
+    if (!canEditLimitIp(user.role)) {
+      await ctx.answerCallbackQuery({ text: "این گزینه فقط برای همکار / عمده‌فروش است", show_alert: true });
+      return;
+    }
     await ctx.answerCallbackQuery();
     await adjustDraftQty(BigInt(ctx.from!.id), -1);
     await showBuyWizard(ctx, true);

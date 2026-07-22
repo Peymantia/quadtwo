@@ -1260,8 +1260,12 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/admin/configs/:groupKey", async (c) => {
     const page = Number(c.req.query("page") ?? 0);
+    const pageSize = Number(c.req.query("pageSize") ?? 30);
     const q = String(c.req.query("q") ?? "");
-    const result = await listConfigsForGroup(c.req.param("groupKey"), page, 30, q);
+    const sortRaw = String(c.req.query("sort") ?? "newest");
+    const sort =
+      sortRaw === "oldest" || sortRaw === "ending" || sortRaw === "newest" ? sortRaw : "newest";
+    const result = await listConfigsForGroup(c.req.param("groupKey"), page, pageSize, q, sort);
     const items = await Promise.all(
       result.items.map(async (item) => {
         let usedTrafficBytes = 0;

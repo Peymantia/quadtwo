@@ -10,6 +10,7 @@ import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "./RateShop";
 
+const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 type Cell = {
   id: string;
   trafficGb: number | null;
@@ -55,6 +56,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [accountName, setAccountName] = useState("");
   const [filter, setFilter] = useState("");
   const [configSort, setConfigSort] = useState<ListSort>("newest");
+  const [configPage, setConfigPage] = useState(0);
+  const [configPageSize, setConfigPageSize] = useState(30);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -126,6 +129,15 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         }),
     });
   }, [configs, filter, configSort]);
+
+  const pagedConfigs = useMemo(() => {
+    const start = configPage * configPageSize;
+    return filteredSorted.slice(start, start + configPageSize);
+  }, [filteredSorted, configPage, configPageSize]);
+
+  useEffect(() => {
+    setConfigPage(0);
+  }, [filter, configSort, configPageSize]);
 
   if (loading || !home) return <LoadingScreen />;
 
@@ -390,9 +402,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             <label>جستجو</label>
             <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="کد، ایمیل یا عنوان" />
           </div>
-          <SortSelect value={configSort} onChange={setConfigSort} />
+          <SortSelect id="partner-config-sort" value={configSort} onChange={setConfigSort} />
           <div className="list">
-            {filteredSorted.map((c) => {
+            {pagedConfigs.map((c) => {
               const expired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
               const active = c.status === "active" && !expired;
               const remain = c.expiresAt
@@ -455,8 +467,47 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                 </div>
               );
             })}
-            {!filteredSorted.length && <p className="muted">کانفیگی یافت نشد.</p>}
+            {!pagedConfigs.length && <p className="muted">کانفیگی یافت نشد.</p>}
           </div>
+          {filteredSorted.length > 0 && (
+            <div className="config-pager">
+              <div className="actions config-pager-nav">
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  disabled={configPage === 0}
+                  onClick={() => setConfigPage((p) => p - 1)}
+                >
+                  قبلی
+                </button>
+                <span className="muted" style={{ alignSelf: "center" }}>
+                  صفحه {configPage + 1} از {Math.max(1, Math.ceil(filteredSorted.length / configPageSize))}
+                </span>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  disabled={(configPage + 1) * configPageSize >= filteredSorted.length}
+                  onClick={() => setConfigPage((p) => p + 1)}
+                >
+                  بعدی
+                </button>
+              </div>
+              <div className="sort-bar config-page-size">
+                <label htmlFor="partner-config-page-size">تعداد در صفحه</label>
+                <select
+                  id="partner-config-page-size"
+                  value={configPageSize}
+                  onChange={(e) => setConfigPageSize(Number(e.target.value))}
+                >
+                  {CONFIG_PAGE_SIZES.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -9,7 +9,9 @@ import { TrafficProgress } from "../../components/PaymentCard";
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
+import { SortSelect, type ListSort } from "../../components/SortSelect";
 
+const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
   { key: "home", label: "داشبورد", icon: "home", pin: true },
   { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true },
@@ -1493,6 +1495,8 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   >([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(30);
+  const [sort, setSort] = useState<ListSort>("newest");
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<{
     email: string;
@@ -1550,13 +1554,15 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     setLoading(true);
     try {
       const q = searchQ.trim() ? `&q=${encodeURIComponent(searchQ.trim())}` : "";
-      const r = await api<{ items: typeof items; total: number }>(`/admin/configs/${groupKey}?page=${page}${q}`);
+      const r = await api<{ items: typeof items; total: number; pageSize?: number }>(
+        `/admin/configs/${groupKey}?page=${page}&pageSize=${pageSize}&sort=${sort}${q}`,
+      );
       setItems(r.items);
       setTotal(r.total);
     } finally {
       setLoading(false);
     }
-  }, [groupKey, page, searchQ]);
+  }, [groupKey, page, pageSize, sort, searchQ]);
 
   useEffect(() => {
     void load();
@@ -1894,6 +1900,14 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             placeholder="مثلاً email یا کد سرویس"
           />
         </div>
+        <SortSelect
+          id="admin-config-sort"
+          value={sort}
+          onChange={(v) => {
+            setSort(v);
+            setPage(0);
+          }}
+        />
         {loading && <p className="muted">در حال دریافت…</p>}
         <div className="list">
           {items.map((c) => {
@@ -1953,22 +1967,41 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
           })}
           {!items.length && !loading && <p className="muted">اکانتی در این گروه نیست.</p>}
         </div>
-        {total > 30 && (
-          <div className="actions" style={{ marginTop: 13 }}>
-            <button type="button" className="btn ghost sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-              قبلی
-            </button>
-            <span className="muted" style={{ alignSelf: "center" }}>
-              صفحه {page + 1} از {Math.ceil(total / 30)}
-            </span>
-            <button
-              type="button"
-              className="btn ghost sm"
-              disabled={(page + 1) * 30 >= total}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              بعدی
-            </button>
+        {total > 0 && (
+          <div className="config-pager">
+            <div className="actions config-pager-nav">
+              <button type="button" className="btn ghost sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                قبلی
+              </button>
+              <span className="muted" style={{ alignSelf: "center" }}>
+                صفحه {page + 1} از {Math.max(1, Math.ceil(total / pageSize))}
+              </span>
+              <button
+                type="button"
+                className="btn ghost sm"
+                disabled={(page + 1) * pageSize >= total}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                بعدی
+              </button>
+            </div>
+            <div className="sort-bar config-page-size">
+              <label htmlFor="admin-config-page-size">تعداد در صفحه</label>
+              <select
+                id="admin-config-page-size"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(0);
+                }}
+              >
+                {CONFIG_PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </div>

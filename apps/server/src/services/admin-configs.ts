@@ -294,16 +294,63 @@ function filterConfigItems(items: ConfigListItem[], search: string): ConfigListI
   );
 }
 
+export type ConfigListSort = "newest" | "oldest" | "ending";
+
+function sortConfigItems(items: ConfigListItem[], sort: ConfigListSort): ConfigListItem[] {
+  const copy = [...items];
+  const created = (x: ConfigListItem) => (x.createdAt ? new Date(x.createdAt).getTime() : 0);
+  const expires = (x: ConfigListItem) =>
+    x.expiresAt ? new Date(x.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+
+  if (sort === "newest") {
+    copy.sort((a, b) => {
+      if (a.inDb !== b.inDb) return a.inDb ? -1 : 1;
+      return created(b) - created(a) || a.email.localeCompare(b.email);
+    });
+  } else if (sort === "oldest") {
+    copy.sort((a, b) => {
+      if (a.inDb !== b.inDb) return a.inDb ? -1 : 1;
+      return created(a) - created(b) || a.email.localeCompare(b.email);
+    });
+  } else {
+    copy.sort((a, b) => {
+      if (a.inDb !== b.inDb) return a.inDb ? -1 : 1;
+      return expires(a) - expires(b) || a.email.localeCompare(b.email);
+    });
+  }
+  return copy;
+}
+
+function paginateConfigs(
+  items: ConfigListItem[],
+  page: number,
+  pageSize: number,
+  search: string,
+  sort: ConfigListSort,
+) {
+  const filtered = filterConfigItems(items, search);
+  const sorted = sortConfigItems(filtered, sort);
+  const total = sorted.length;
+  const size = Math.max(1, Math.min(100, pageSize));
+  const p = Math.max(0, page);
+  return {
+    total,
+    items: sorted.slice(p * size, p * size + size),
+  };
+}
+
 /** List configs for a group key (`all` | `tg` | `p{userId}` | `xg:…`). */
 export async function listConfigsForGroup(
   groupKey: string,
   page = 0,
-  pageSize = 12,
+  pageSize = 30,
   search = "",
-): Promise<{ items: ConfigListItem[]; total: number; title: string }> {
+  sort: ConfigListSort = "newest",
+): Promise<{ items: ConfigListItem[]; total: number; title: string; pageSize: number }> {
   const groups = await listConfigGroups();
   const meta = groups.find((g) => g.key === groupKey);
   const title = meta?.label ?? "کانفیگ‌ها";
+  const size = Math.max(1, Math.min(100, Math.floor(pageSize) || 30));
 
   if (groupKey === "all") {
     const [dbSubs, panelEmails] = await Promise.all([
@@ -332,20 +379,14 @@ export async function listConfigsForGroup(
     }
     mergePanelOnly(byEmail, panelEmails);
 
-    const sorted = [...byEmail.values()].sort((a, b) => {
-      if (a.inDb !== b.inDb) return a.inDb ? -1 : 1;
-      return a.email.localeCompare(b.email);
-    });
-    const all = filterConfigItems(sorted, search);
-    const total = all.length;
-    const items = all.slice(page * pageSize, page * pageSize + pageSize);
-    return { title: "تمام کانفیگ‌ها", total, items };
+    const { total, items } = paginateConfigs([...byEmail.values()], page, size, search, sort);
+    return { title: "تمام کانفیگ‌ها", total, items, pageSize: size };
   }
 
   const panelGroup =
     meta?.panelGroup ?? decodePanelGroupKey(groupKey);
   if (!panelGroup) {
-    return { title, total: 0, items: [] };
+    return { title, total: 0, items: [], pageSize: size };
   }
 
   const panelEmails = await emailsInPanelGroup(panelGroup);
@@ -391,11 +432,8 @@ export async function listConfigsForGroup(
 
   mergePanelOnly(byEmail, panelEmails);
 
-  const sorted = [...byEmail.values()].sort((a, b) => a.email.localeCompare(b.email));
-  const all = filterConfigItems(sorted, search);
-  const total = all.length;
-  const items = all.slice(page * pageSize, page * pageSize + pageSize);
-  return { title: meta?.label ?? panelGroup, total, items };
+  const { total, items } = paginateConfigs([...byEmail.values()], page, size, search, sort);
+  return { title: meta?.label ?? panelGroup, total, items, pageSize: size };
 }
 
 export type DeleteConfigResult = {

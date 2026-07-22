@@ -5,14 +5,16 @@ export type ListSort = "newest" | "oldest" | "ending";
 export function SortSelect({
   value,
   onChange,
+  id = "list-sort",
 }: {
   value: ListSort;
   onChange: (v: ListSort) => void;
+  id?: string;
 }) {
   return (
     <div className="sort-bar">
-      <label htmlFor="list-sort">مرتب‌سازی</label>
-      <select id="list-sort" value={value} onChange={(e) => onChange(e.target.value as ListSort)}>
+      <label htmlFor={id}>مرتب‌سازی</label>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value as ListSort)}>
         <option value="newest">از جدید به قدیم</option>
         <option value="oldest">از قدیم به جدید</option>
         <option value="ending">اتمام حجم یا تاریخ</option>

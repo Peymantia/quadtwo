@@ -1,5 +1,4 @@
 import { InlineKeyboard, Keyboard } from "grammy";
-import { matrixLine } from "../services/pricing.js";
 import type { NotifConfig, SalesCategories } from "../services/settings.js";
 import { formatLimitIp } from "../services/panel-groups.js";
 import { formatCardNumberDisplay, formatToman, formatTraffic, ltrIsolate } from "../utils/format.js";
@@ -159,8 +158,8 @@ export function buyWizardKeyboard(opts: {
   price: number | null;
   category?: string;
   maxMonths?: number;
-  /** Regular users cannot change IP limit — only admin/partner/wholesale */
-  canEditLimitIp?: boolean;
+  /** Admin / partner / wholesale: quantity + IP limit steppers */
+  canEditAgentOptions?: boolean;
 }) {
   const vol = opts.unlimited ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
   const unit = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
@@ -168,11 +167,9 @@ export function buyWizardKeyboard(opts: {
     opts.price === null || opts.quantity <= 1
       ? ""
       : ` · جمع ${formatToman(opts.price * opts.quantity)}`;
-  const cat =
-    opts.category === "national" ? "🇮🇷 ملی" : opts.category === "unlimited" ? "💎 نامحدود" : "💎 VIP بین الملل";
   const maxMonths = opts.maxMonths ?? 1;
   const showMonthStepper = maxMonths > 1 && opts.category !== "national";
-  const canEditIp = opts.canEditLimitIp === true;
+  const isAgent = opts.canEditAgentOptions === true;
 
   const kb = new InlineKeyboard()
     .text("−", "wiz:vol:-")
@@ -189,23 +186,18 @@ export function buyWizardKeyboard(opts: {
     kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
   }
 
-  kb.text("−", "wiz:qty:-")
-    .text(`${opts.quantity} عدد`, "wiz:noop")
-    .text("+", "wiz:qty:+")
-    .row();
-
-  if (canEditIp) {
-    kb.text("−", "wiz:ip:-")
+  if (isAgent) {
+    kb.text("−", "wiz:qty:-")
+      .text(`${opts.quantity} عدد`, "wiz:noop")
+      .text("+", "wiz:qty:+")
+      .row()
+      .text("−", "wiz:ip:-")
       .text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
       .text("+", "wiz:ip:+")
       .row();
-  } else {
-    kb.text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop").row();
   }
 
   return kb
-    .text(`🏷 ${cat}`, "wiz:noop")
-    .row()
     .text(`💰 ${unit}${total}`, "wiz:noop")
     .row()
     .text("🎲 نام رندوم", "wiz:name:random")
@@ -461,25 +453,27 @@ export function buyDraftText(opts: {
   accountName?: string | null;
   category?: string;
 }) {
-  const qty = opts.quantity ?? 1;
-  const catLabel =
-    opts.category === "national"
-      ? "🇮🇷 کانفیگ نت ملی"
-      : opts.category === "unlimited"
-        ? "💎 نامحدود"
-        : "💎 VIP بین الملل";
+  const qty = Math.max(1, opts.quantity ?? 1);
+  const vol =
+    opts.trafficGb === null || opts.category === "unlimited" ? "نامحدود" : formatTraffic(opts.trafficGb);
+  const dur = opts.months === 1 ? "۱ ماهه" : `${opts.months} ماهه`;
+  const unitPrice = opts.price;
+  const totalPrice = unitPrice === null ? null : unitPrice * qty;
+  const priceLabel = totalPrice === null ? "قیمت‌گذاری نشده" : formatToman(totalPrice);
+  const name =
+    opts.accountMode === "custom" && opts.accountName?.trim()
+      ? opts.accountName.trim()
+      : "رندوم (بعد از تأیید)";
+
   return [
-    qty > 1 ? "🛒 خرید عمده (Bulk)" : "🛒 خرید سرویس",
-    catLabel,
-    opts.category === "national" ? "فقط ۱ ماهه · حجم از ۱ گیگ" : "مدت: ۱ ماهه",
+    qty > 1 ? "🛒 خرید عمده:" : "🛒 خرید سرویس:",
+    `💎 ${vol} ⏳ ${dur}`,
+    `📱 محدودیت: ${formatLimitIp(opts.limitIp)}`,
+    `💰 قیمت: ${priceLabel}`,
+    qty > 1 ? `📦 تعداد: ${qty} عدد` : "",
+    `👤 نام اکانت: ${name}`,
     "",
-    matrixLine(opts.trafficGb, opts.months, opts.price, qty),
-    `📱 محدودیت کاربر: ${formatLimitIp(opts.limitIp)}`,
-    "",
-    `نام پایه اکانت: ${opts.accountMode === "custom" && opts.accountName ? opts.accountName : "رندوم (بعد از تأیید)"}`,
-    qty > 1 ? `⚠️ تعداد ${qty} اکانت در پنل سنایی ساخته می‌شود.` : "",
-    "",
-    "حجم و تنظیمات را انتخاب کنید، سپس «ادامه خرید» را بزنید.",
+    "⚙️ سایر تنظیمات را انتخاب کنید، سپس «ادامه خرید» را بزنید.",
   ]
     .filter(Boolean)
     .join("\n");

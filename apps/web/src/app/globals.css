@@ -491,6 +491,45 @@ h3 {
   color: #eef0ff;
 }
 
+.config-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.config-pager-nav {
+  margin: 0;
+}
+
+.config-page-size {
+  margin-bottom: 0;
+}
+
+.config-page-size select {
+  flex: 0 1 auto;
+  min-width: 88px;
+  max-width: 120px;
+}
+
+@media (max-width: 900px) {
+  .config-pager {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .config-page-size {
+    width: 100%;
+  }
+
+  .config-page-size select {
+    max-width: none;
+    flex: 1;
+  }
+}
+
 .chip-row.full {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
