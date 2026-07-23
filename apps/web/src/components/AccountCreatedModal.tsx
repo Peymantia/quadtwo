@@ -52,10 +52,12 @@ export function AccountCreatedModal({
 
   if (!open || !account) return null;
 
+  const acct = account;
+
   async function copySub() {
-    if (!account.subUrl) return;
+    if (!acct.subUrl) return;
     try {
-      await navigator.clipboard.writeText(account.subUrl);
+      await navigator.clipboard.writeText(acct.subUrl);
       setCopied(true);
       onCopied?.();
       window.setTimeout(() => setCopied(false), 2000);
@@ -70,18 +72,16 @@ export function AccountCreatedModal({
   }
 
   const rows: Array<{ label: string; value: string; ltr?: boolean }> = [
-    { label: "کد", value: account.code, ltr: true },
-    ...(account.email ? [{ label: "ایمیل / نام", value: account.email, ltr: true }] : []),
-    ...(account.title && account.title !== account.email
-      ? [{ label: "عنوان", value: account.title }]
+    { label: "کد", value: acct.code, ltr: true },
+    ...(acct.email ? [{ label: "ایمیل / نام", value: acct.email, ltr: true }] : []),
+    ...(acct.title && acct.title !== acct.email ? [{ label: "عنوان", value: acct.title }] : []),
+    ...(acct.categoryLabel ? [{ label: "دسته", value: acct.categoryLabel }] : []),
+    { label: "حجم", value: trafficLabel(acct.trafficGb) },
+    ...(acct.months != null && acct.months > 0
+      ? [{ label: "مدت", value: `${acct.months.toLocaleString("fa-IR")} ماه` }]
       : []),
-    ...(account.categoryLabel ? [{ label: "دسته", value: account.categoryLabel }] : []),
-    { label: "حجم", value: trafficLabel(account.trafficGb) },
-    ...(account.months != null && account.months > 0
-      ? [{ label: "مدت", value: `${account.months.toLocaleString("fa-IR")} ماه` }]
-      : []),
-    { label: "انقضا", value: fmtExpiry(account.expiresAt), ltr: true },
-    ...(account.note?.trim() ? [{ label: "نوت", value: account.note.trim() }] : []),
+    { label: "انقضا", value: fmtExpiry(acct.expiresAt), ltr: true },
+    ...(acct.note?.trim() ? [{ label: "نوت", value: acct.note.trim() }] : []),
   ];
 
   return (
@@ -99,10 +99,10 @@ export function AccountCreatedModal({
             ))}
           </dl>
 
-          {account.subUrl && (
+          {acct.subUrl && (
             <div className="acct-created-link">
               <div className="muted num url-break" dir="ltr">
-                {account.subUrl}
+                {acct.subUrl}
               </div>
               <div className="acct-created-btns">
                 <button type="button" className="btn primary" onClick={() => void copySub()}>
@@ -123,8 +123,8 @@ export function AccountCreatedModal({
 
       <SubQrModal
         open={qrOpen}
-        title={`QR — ${account.code}`}
-        subUrl={account.subUrl}
+        title={`QR — ${acct.code}`}
+        subUrl={acct.subUrl}
         onClose={() => setQrOpen(false)}
       />
     </>
