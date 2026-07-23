@@ -32,16 +32,26 @@ export const BTN = {
   admin: "👑 پنل ادمین",
 } as const;
 
-/** Match both Universal (with glyph) and Premium (bare text after icon strip). */
+/** Match Universal labels, bare text, and legacy RLM/LRM prefixes from broken premium transforms. */
 export function hearsBtn(label: string): string[] {
-  let bare = label;
+  let bare = label.replace(/^[\u200E\u200F\u2066\u2067\u2068\u2069]+/u, "");
   for (const row of UNIVERSAL_BY_LENGTH) {
     if (bare.startsWith(row.glyph)) {
       bare = bare.slice(row.glyph.length).replace(/^\s+/, "");
       break;
     }
   }
-  return bare && bare !== label ? [label, bare] : [label];
+  bare = bare.replace(/^[\u200E\u200F\u2066\u2067\u2068\u2069]+/u, "").trim();
+  const out = new Set<string>([label]);
+  if (bare) {
+    out.add(bare);
+    out.add(`\u200F${bare}`);
+    out.add(`\u200E${bare}`);
+  }
+  // Original with emoji + direction marks (stuck keyboards after last deploy)
+  out.add(`\u200F${label}`);
+  out.add(`\u200E${label}`);
+  return [...out];
 }
 
 export type MainMenuOpts = {

@@ -708,6 +708,14 @@ export function createBot() {
 
   bot.use(async (ctx, next) => {
     if (ctx.from) await upsertUserFromTelegram(ctx.from);
+    // Normalize legacy premium button texts that prefixed RLM/LRM (broke hears matching)
+    const msg = ctx.message;
+    if (msg && "text" in msg && typeof msg.text === "string") {
+      const cleaned = msg.text.replace(/^[\u200E\u200F\u2066\u2067\u2068\u2069]+/u, "");
+      if (cleaned !== msg.text) {
+        Object.assign(msg, { text: cleaned });
+      }
+    }
     await next();
   });
 
