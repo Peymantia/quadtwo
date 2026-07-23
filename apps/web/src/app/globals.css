@@ -2339,9 +2339,25 @@ button.pay-dest-number:active,
 }
 
 .seek-value {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.3em;
+  direction: ltr;
+  unicode-bidi: isolate;
   font-size: 1.05rem;
   font-weight: 800;
   color: var(--cyan);
+}
+
+.seek-value-num {
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.seek-value-unit {
+  font-weight: 800;
 }
 
 .seek-track-wrap {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, formatToman } from "../lib/api";
 import { Modal } from "./Modal";
 
@@ -76,14 +76,14 @@ function nearestIndex(steps: SeekStep[], value: number): number {
 
 function SeekBar({
   title,
-  valueText,
+  value,
   steps,
   index,
   disabled,
   onChange,
 }: {
   title: string;
-  valueText: string;
+  value: ReactNode;
   steps: SeekStep[];
   index: number;
   disabled?: boolean;
@@ -97,9 +97,7 @@ function SeekBar({
     <div className={`seek-block${disabled ? " is-disabled" : ""}`}>
       <div className="seek-head">
         <span className="seek-title">{title}</span>
-        <strong className="seek-value" dir="ltr">
-          {valueText}
-        </strong>
+        <strong className="seek-value">{value}</strong>
       </div>
       <div className="seek-track-wrap">
         <input
@@ -125,6 +123,16 @@ function SeekBar({
         )}
       </div>
     </div>
+  );
+}
+
+/** Number then unit — flex LTR avoids RTL bidi flipping (e.g. «گیگابایت ۲۵»). */
+function SeekValueLabel({ num, unit }: { num: string; unit: string }) {
+  return (
+    <>
+      <span className="seek-value-num">{num}</span>
+      <span className="seek-value-unit">{unit}</span>
+    </>
   );
 }
 
@@ -219,11 +227,14 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const months = monthSteps[monthIndex]?.value ?? 1;
   const limitIp = ipSteps[ipIndex]?.value ?? catalog.defaultLimitIp ?? 0;
 
-  const volumeValueText = volumeFixed
-    ? "نامحدود"
-    : `${(trafficGb ?? 0).toLocaleString("fa-IR")} گیگابایت`;
-  const monthValueText = `${months.toLocaleString("fa-IR")} ماه`;
-  const ipValueText = limitIp <= 0 ? "نامحدود" : `${limitIp.toLocaleString("fa-IR")} کاربر`;
+  const volumeValue = volumeFixed ? (
+    "نامحدود"
+  ) : (
+    <SeekValueLabel num={(trafficGb ?? 0).toLocaleString("fa-IR")} unit="گیگابایت" />
+  );
+  const monthValue = <SeekValueLabel num={months.toLocaleString("fa-IR")} unit="ماه" />;
+  const ipValue =
+    limitIp <= 0 ? "نامحدود" : <SeekValueLabel num={limitIp.toLocaleString("fa-IR")} unit="کاربر" />;
 
   useEffect(() => {
     let cancelled = false;
@@ -315,7 +326,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
       <SeekBar
         title="حجم"
-        valueText={volumeValueText}
+        value={volumeValue}
         steps={volumeSteps}
         index={gbIndex}
         disabled={busy || volumeFixed || volumeSteps.length <= 1}
@@ -324,7 +335,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
       <SeekBar
         title="مدت"
-        valueText={monthValueText}
+        value={monthValue}
         steps={monthSteps}
         index={monthIndex}
         disabled={busy || monthsLocked || monthSteps.length <= 1}
@@ -333,7 +344,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
       <SeekBar
         title="محدودیت کاربر"
-        valueText={ipValueText}
+        value={ipValue}
         steps={ipSteps}
         index={ipIndex}
         disabled={busy || ipLocked || ipSteps.length <= 1}
