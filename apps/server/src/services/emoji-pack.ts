@@ -226,7 +226,7 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   label_tag: "5456136765607783041",
   dice_random: "5972061723400605896",
   write_custom: "5458382591121964689",
-  ok_check: "5931424340573688741",
+  ok_check: "5206607081334906820",
   cancel_x: "5210952531676504517",
   warning: "5447644880824181073",
   search: "6318752565865482087",
