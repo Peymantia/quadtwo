@@ -53,7 +53,7 @@ function rulesFor(
     const r = info.volumeRules?.national ?? { min: 1, max: 20, step: 1 };
     return { kind: "stepped", ...r };
   }
-  const r = info.volumeRules?.data ?? { min: 10, max: 100, step: 5 };
+  const r = info.volumeRules?.data ?? { min: 10, max: 50, step: 5 };
   return { kind: "stepped", ...r };
 }
 

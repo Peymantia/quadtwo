@@ -161,7 +161,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       const r = catalog.volumeRules?.national ?? { min: 1, max: 20, step: 1 };
       return steppedValues(r.min, r.max, r.step).map((g) => ({ value: g, label: String(g) }));
     }
-    const r = catalog.volumeRules?.data ?? { min: 10, max: 100, step: 5 };
+    const r = catalog.volumeRules?.data ?? { min: 10, max: 50, step: 5 };
     return steppedValues(r.min, r.max, r.step).map((g) => ({ value: g, label: String(g) }));
   }, [category, catalog, volumeFixed]);
 
@@ -318,6 +318,18 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         onChange={setIpIndex}
       />
 
+      <div className="seek-price seek-price-live">
+        <span className="muted">مبلغ</span>
+        <strong className="num">
+          {quoting ? "…" : price != null ? formatToman(price) : quoteErr ? "—" : "…"}
+        </strong>
+      </div>
+      {quoteErr && (
+        <p className="muted" style={{ color: "var(--pink)", margin: 0 }}>
+          {quoteErr}
+        </p>
+      )}
+
       {(variant === "agent" || variant === "admin") && (
         <>
           <div className="field">
@@ -375,17 +387,6 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       )}
 
       <div className="seek-checkout">
-        <div className="seek-price">
-          <span className="muted">مبلغ</span>
-          <strong className="num">
-            {quoting ? "…" : price != null ? formatToman(price) : quoteErr ? "—" : "…"}
-          </strong>
-        </div>
-        {quoteErr && (
-          <p className="muted" style={{ color: "var(--pink)", margin: "0 0 10px" }}>
-            {quoteErr}
-          </p>
-        )}
         <div className="seek-pay-row">
           {variant === "user" && (
             <>

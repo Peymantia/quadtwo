@@ -10,12 +10,12 @@ import {
 } from "./settings.js";
 
 export const DATA_MIN_GB = 10;
-export const DATA_MAX_GB = 100;
+export const DATA_MAX_GB = 50;
 export const DATA_STEP_GB = 5;
 export const NATIONAL_MIN_GB = 1;
 export const NATIONAL_MAX_GB = 20;
 
-/** VIP / custom categories: 10…100 GB in steps of 5 */
+/** VIP / custom categories: 10…50 GB in steps of 5 */
 export const DATA_VOLUME_PRESETS: readonly number[] = Array.from(
   { length: Math.floor((DATA_MAX_GB - DATA_MIN_GB) / DATA_STEP_GB) + 1 },
   (_, i) => DATA_MIN_GB + i * DATA_STEP_GB,
@@ -35,7 +35,7 @@ export function snapNationalGb(raw: number): number {
   return Math.max(NATIONAL_MIN_GB, Math.min(NATIONAL_MAX_GB, n));
 }
 
-/** Normalize traffic for purchase (unlimited → null; national 1–20; else 10–100 ×5). */
+/** Normalize traffic for purchase (unlimited → null; national 1–20; else 10–50 ×5). */
 export function normalizePurchaseTraffic(category: string, trafficGb: number | null): number | null {
   if (category === "unlimited") return null;
   if (trafficGb === null) return category === "unlimited" ? null : snapDataGb(10);

@@ -2380,7 +2380,16 @@ button.pay-dest-number:active,
   margin-bottom: 12px;
 }
 
-.seek-price strong {
+.seek-price-live {
+  margin: 4px 0 2px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.seek-price strong,
+.seek-price-live strong {
   font-size: 1.35rem;
   color: var(--teal);
 }

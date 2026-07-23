@@ -38,8 +38,8 @@ type ConfigItem = {
 const TABS: ShellTab[] = [
   { key: "home", label: "داشبورد", icon: "home" },
   { key: "create", label: "ساخت کانفیگ", shortLabel: "فروش", icon: "shop" },
-  { key: "configs", label: "کانفیگ‌ها", icon: "wifi" },
   { key: "wallet", label: "کیف پول", icon: "wallet" },
+  { key: "configs", label: "کانفیگ‌ها", icon: "wifi" },
   { key: "settings", label: "تنظیمات", icon: "gear" },
 ];
 

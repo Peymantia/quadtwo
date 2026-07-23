@@ -383,7 +383,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       categoryLabel: labels[category] || category,
       maxMonths,
       volumeRules: {
-        data: { min: 10, max: 100, step: 5 },
+        data: { min: 10, max: 50, step: 5 },
         national: { min: 1, max: 20, step: 1 },
         unlimited: null,
       },
@@ -470,7 +470,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       defaultLimitIp,
       canEditLimitIp: canEditLimitIp(user.role),
       volumeRules: {
-        data: { min: 10, max: 100, step: 5 },
+        data: { min: 10, max: 50, step: 5 },
         national: { min: 1, max: 20, step: 1 },
         unlimited: null,
       },
@@ -1353,7 +1353,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       categoryLabel: labels[category] || category,
       maxMonths,
       volumeRules: {
-        data: { min: 10, max: 100, step: 5 },
+        data: { min: 10, max: 50, step: 5 },
         national: { min: 1, max: 20, step: 1 },
         unlimited: null,
       },

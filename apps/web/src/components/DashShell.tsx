@@ -240,9 +240,14 @@ export function DashShell(props: {
   const isPreviewing =
     isAdmin && !pathname.startsWith("/admin") && PREVIEW_PANELS.some((p) => p.path === pathname || pathname.startsWith(`${p.path}/`));
 
-  const navTabs = useMemo(() => props.tabs.filter((t) => t.key !== "settings"), [props.tabs]);
+  const navTabs = useMemo(() => {
+    // Admin: settings stays in top gear / more sheet to keep bottom bar lean
+    if (isAdmin) return props.tabs.filter((t) => t.key !== "settings");
+    // User / partner / wholesale: keep settings in bottom nav (declared order)
+    return props.tabs;
+  }, [props.tabs, isAdmin]);
   const settingsTab = useMemo(() => props.tabs.find((t) => t.key === "settings"), [props.tabs]);
-  const hasSettings = Boolean(settingsTab || props.onSettings);
+  const hasSettings = isAdmin && Boolean(settingsTab || props.onSettings);
 
   const { left, wallet, right, more } = useMemo(() => {
     const walletTab = navTabs.find((t) => t.key === "wallet") ?? null;
