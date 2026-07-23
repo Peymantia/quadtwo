@@ -32,7 +32,7 @@ import {
   rejectOrder,
 } from "../services/orders.js";
 import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
-import { provisionOrder, rotateSubId, rotateUuid } from "../services/provision.js";
+import { provisionOrder, rotateSubId, rotateUuid, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
 import {
   getAllSettings,
   getCategoryLabels,
@@ -85,6 +85,17 @@ import { dashBaseUrl, env } from "../config/env.js";
 import { clearEmojiStyleCache, attachPremiumTextEntities, getEmojiStyle } from "../services/emoji-transform.js";
 
 type Vars = { userId: string; role: string; telegramId: string };
+
+function isWalletCreditResult(
+  r: ProvisionResult | { kind: "wallet_credit"; balance: number },
+): r is { kind: "wallet_credit"; balance: number } {
+  return "kind" in r && r.kind === "wallet_credit";
+}
+
+async function provisionedJson(result: ProvisionResult | { kind: "wallet_credit"; balance: number }) {
+  if (isWalletCreditResult(result)) return result;
+  return serializeProvisionForApi(result);
+}
 
 /** Fire-and-forget Telegram notification (plain text). */
 async function notifyTelegram(chatId: bigint, text: string) {
@@ -586,7 +597,10 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       if (c.get("role") === "admin") {
         try {
           const result = await provisionAdminComplimentary(order.id, c.get("userId"));
-          return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
+          return c.json({
+            order: { id: order.id, price: order.price },
+            provisioned: await provisionedJson(result),
+          });
         } catch (err) {
           return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
         }
@@ -594,7 +608,10 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       if (body.payWithWallet) {
         try {
           const result = await payOrderWithWallet(order.id, c.get("userId"));
-          return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
+          return c.json({
+            order: { id: order.id, price: order.price },
+            provisioned: await provisionedJson(result),
+          });
         } catch (err) {
           return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
         }
@@ -850,7 +867,10 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
     if (c.get("role") === "admin") {
       try {
         const result = await provisionAdminComplimentary(order.id, c.get("userId"));
-        return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
+        return c.json({
+          order: { id: order.id, price: order.price },
+          provisioned: await provisionedJson(result),
+        });
       } catch (err) {
         return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
       }
@@ -858,7 +878,10 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
     if (body.payWithWallet) {
       try {
         const result = await payOrderWithWallet(order.id, c.get("userId"));
-        return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
+        return c.json({
+          order: { id: order.id, price: order.price },
+          provisioned: await provisionedJson(result),
+        });
       } catch (err) {
         return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
       }
@@ -1404,7 +1427,11 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         actorTelegramId: BigInt(c.get("telegramId")),
         target: body.subId,
       });
-      return c.json({ ok: true, order: { id: order.id, price: order.price }, provisioned: result });
+      return c.json({
+        ok: true,
+        order: { id: order.id, price: order.price },
+        provisioned: await provisionedJson(result),
+      });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }

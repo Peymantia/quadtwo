@@ -24,6 +24,51 @@ export type ProvisionResult = {
   qrPng: Buffer;
 };
 
+/** JSON-safe shape for dash/web (QR as data URL, no raw Buffer). */
+export type ProvisionApiResult = {
+  subscriptionId: string;
+  code: string;
+  email: string;
+  subUrl: string;
+  expiresAt: string;
+  qrDataUrl: string;
+  note?: string | null;
+  trafficGb?: number | null;
+  title?: string | null;
+  bulk?: Omit<ProvisionApiResult, "bulk">[];
+};
+
+export async function serializeProvisionForApi(
+  result: ProvisionResult & { bulk?: ProvisionResult[] },
+): Promise<ProvisionApiResult> {
+  const extras = result.bulk?.length ? result.bulk : [];
+  const ids = [result.subscriptionId, ...extras.map((b) => b.subscriptionId)];
+  const subs = await prisma.subscription.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, note: true, trafficGb: true, title: true },
+  });
+  const byId = new Map(subs.map((s) => [s.id, s]));
+
+  const one = (r: ProvisionResult): Omit<ProvisionApiResult, "bulk"> => {
+    const meta = byId.get(r.subscriptionId);
+    return {
+      subscriptionId: r.subscriptionId,
+      code: r.code,
+      email: r.email,
+      subUrl: r.subUrl,
+      expiresAt: r.expiresAt instanceof Date ? r.expiresAt.toISOString() : String(r.expiresAt),
+      qrDataUrl: `data:image/png;base64,${r.qrPng.toString("base64")}`,
+      note: meta?.note ?? null,
+      trafficGb: meta?.trafficGb ?? null,
+      title: meta?.title ?? null,
+    };
+  };
+
+  const first = one(result);
+  if (!extras.length) return first;
+  return { ...first, bulk: extras.map(one) };
+}
+
 async function newClientUuid(xui: XuiClient): Promise<string> {
   try {
     const nu = await xui.getNewUUID();

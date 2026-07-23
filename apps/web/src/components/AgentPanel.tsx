@@ -11,6 +11,7 @@ import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "./Sort
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "./RateShop";
+import { AccountCreatedModal, type CreatedAccount } from "./AccountCreatedModal";
 
 type PayCard = { number: string; holder: string };
 type PayModalState = { orderId: string; price: number; card: PayCard } | null;
@@ -66,7 +67,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ code?: string; subUrl?: string | null } | null>(null);
+  const [result, setResult] = useState<CreatedAccount | null>(null);
   const [chargeAmount, setChargeAmount] = useState("");
   const [payCard, setPayCard] = useState<PayCard | null>(null);
   const [txs, setTxs] = useState<Array<{ id: string; type: string; amount: number; createdAt: string; note?: string | null }>>([]);
@@ -166,7 +167,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     try {
       const name = accountName.trim() || `p${Date.now().toString(36)}`;
       const r = await api<{
-        provisioned?: { code?: string; subUrl?: string | null };
+        provisioned?: CreatedAccount;
         order?: { id: string; price: number };
         card?: PayCard;
         error?: string;
@@ -179,9 +180,13 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           payWithWallet,
         },
       });
-      if (r.provisioned) {
-        setResult(r.provisioned);
-        setMsg("کانفیگ با موفقیت ساخته شد ✅");
+      if (r.provisioned?.code) {
+        setResult({
+          ...r.provisioned,
+          categoryLabel: catLabels[selected.category] || selected.category,
+          months: selected.months,
+          trafficGb: r.provisioned.trafficGb ?? selected.trafficGb,
+        });
         setAccountName("");
         await reload();
       } else if (r.order && r.card) {
@@ -204,7 +209,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     setBusy(true);
     try {
       const r = await api<{
-        provisioned?: { code?: string; subUrl?: string | null };
+        provisioned?: CreatedAccount;
         order?: { id: string; price: number };
         card?: PayCard;
         error?: string;
@@ -219,9 +224,14 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           payWithWallet: payload.payWithWallet,
         },
       });
-      if (r.provisioned) {
-        setResult(r.provisioned);
-        setMsg("کانفیگ با موفقیت ساخته شد ✅");
+      if (r.provisioned?.code) {
+        setResult({
+          ...r.provisioned,
+          categoryLabel: catLabels[payload.category] || payload.category,
+          months: payload.months,
+          trafficGb: r.provisioned.trafficGb ?? payload.trafficGb,
+          note: r.provisioned.note ?? payload.note,
+        });
         await reload();
       } else if (r.order && r.card) {
         setPayCard(r.card);
@@ -443,24 +453,12 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             )}
           </div>
           {result?.code && (
-            <div className="panel">
-              <h2>کانفیگ ساخته شد</h2>
-              <p className="muted">
-                کد: <strong className="num">{result.code}</strong>
-              </p>
-              {result.subUrl && (
-                <button
-                  type="button"
-                  className="btn primary wide"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(result.subUrl!);
-                    setMsg("لینک اشتراک کپی شد");
-                  }}
-                >
-                  کپی لینک اشتراک
-                </button>
-              )}
-            </div>
+            <AccountCreatedModal
+              open
+              account={result}
+              onClose={() => setResult(null)}
+              onCopied={() => setMsg("لینک اشتراک کپی شد")}
+            />
           )}
         </>
       )}
@@ -524,7 +522,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                       </strong>
                     </div>
                   </div>
-                  {c.note && <div className="muted" style={{ marginTop: 6 }}>یادداشت: {c.note}</div>}
+                  {c.note && <div className="muted" style={{ marginTop: 6 }}>نوت: {c.note}</div>}
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                   <div className="config-card-actions" style={{ marginTop: 10 }}>
                     <div className="config-card-actions-row">

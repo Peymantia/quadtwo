@@ -11,6 +11,7 @@ import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
+import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
 
 type Sub = {
   id: string;
@@ -91,6 +92,7 @@ export default function UserAppPage() {
   const [subSort, setSubSort] = useState<ListSort>("newest");
   const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
   const [confirmRotateId, setConfirmRotateId] = useState<string | null>(null);
+  const [created, setCreated] = useState<CreatedAccount | null>(null);
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -160,7 +162,7 @@ export default function UserAppPage() {
       const r = await api<{
         order?: { id: string; price: number };
         card?: PayCard;
-        provisioned?: unknown;
+        provisioned?: CreatedAccount;
       }>("/me/orders", {
         body: {
           trafficGb: payload.trafficGb,
@@ -172,9 +174,16 @@ export default function UserAppPage() {
           payWithWallet: payload.payWithWallet,
         },
       });
-      if (r.provisioned) {
-        setMsg("سرویس با موفقیت ساخته شد ✅ از تب «اشتراک‌ها» ببینید.");
+      if (r.provisioned?.code) {
+        setCreated({
+          ...r.provisioned,
+          categoryLabel: rateCatalog?.categoryLabels?.[payload.category] || payload.category,
+          months: payload.months,
+          trafficGb: r.provisioned.trafficGb ?? payload.trafficGb,
+          note: r.provisioned.note ?? payload.note,
+        });
         await reload();
+        await loadSubs();
       } else if (r.order && r.card) {
         setPayCard(r.card);
         setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
@@ -214,7 +223,7 @@ export default function UserAppPage() {
       const r = await api<{
         order?: { id: string; price: number };
         card?: PayCard;
-        provisioned?: unknown;
+        provisioned?: CreatedAccount;
       }>("/me/orders", {
         body: {
           kind: "renew",
@@ -227,13 +236,21 @@ export default function UserAppPage() {
         },
       });
       setRenewInfo(null);
-      if (r.provisioned) {
-        setMsg("سرویس با موفقیت تمدید شد ✅");
+      if (r.provisioned?.code) {
+        setCreated({
+          ...r.provisioned,
+          categoryLabel: rateCatalog?.categoryLabels?.[payload.category] || payload.category,
+          months: payload.months,
+          trafficGb: r.provisioned.trafficGb ?? payload.trafficGb,
+        });
         await reload();
         await loadSubs();
       } else if (r.order && r.card) {
         setPayCard(r.card);
         setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
+      } else if (r.order) {
+        setMsg(`سفارش تمدید ${formatToman(r.order.price)} ثبت شد`);
+        await reload();
       }
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
@@ -672,6 +689,13 @@ export default function UserAppPage() {
         busy={busy}
         onClose={() => setRenewInfo(null)}
         onSubmit={submitRenew}
+      />
+
+      <AccountCreatedModal
+        open={!!created}
+        account={created}
+        onClose={() => setCreated(null)}
+        onCopied={() => setMsg("لینک اشتراک کپی شد")}
       />
 
       {payModal && (

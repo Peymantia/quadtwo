@@ -11,6 +11,7 @@ import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 import { SortSelect, type ListSort } from "../../components/SortSelect";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
+import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -303,7 +304,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
   const [selected, setSelected] = useState<Cell | null>(null);
   const [accountName, setAccountName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ code?: string; subUrl?: string | null } | null>(null);
+  const [created, setCreated] = useState<CreatedAccount | null>(null);
   const [matrixConfirmOpen, setMatrixConfirmOpen] = useState(false);
 
   useEffect(() => {
@@ -337,10 +338,10 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
     if (!selected) return;
     setMatrixConfirmOpen(false);
     setBusy(true);
-    setResult(null);
+    setCreated(null);
     try {
       const r = await api<{
-        provisioned?: { code?: string; subUrl?: string | null };
+        provisioned?: CreatedAccount;
         error?: string;
       }>("/partner/create", {
         body: {
@@ -351,9 +352,13 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
           payWithWallet: true,
         },
       });
-      if (r.provisioned) {
-        setResult(r.provisioned);
-        flash("اکانت ساخته شد");
+      if (r.provisioned?.code) {
+        setCreated({
+          ...r.provisioned,
+          categoryLabel: catLabels[selected.category] || selected.category,
+          months: selected.months,
+          trafficGb: r.provisioned.trafficGb ?? selected.trafficGb,
+        });
         setAccountName("");
       } else {
         flash(null, "ساخت اکانت انجام نشد");
@@ -367,10 +372,10 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
 
   async function createRate(payload: RateOrderPayload) {
     setBusy(true);
-    setResult(null);
+    setCreated(null);
     try {
       const r = await api<{
-        provisioned?: { code?: string; subUrl?: string | null };
+        provisioned?: CreatedAccount;
         error?: string;
       }>("/partner/create", {
         body: {
@@ -383,9 +388,14 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
           payWithWallet: true,
         },
       });
-      if (r.provisioned) {
-        setResult(r.provisioned);
-        flash("اکانت ساخته شد");
+      if (r.provisioned?.code) {
+        setCreated({
+          ...r.provisioned,
+          categoryLabel: catLabels[payload.category] || payload.category,
+          months: payload.months,
+          trafficGb: r.provisioned.trafficGb ?? payload.trafficGb,
+          note: r.provisioned.note ?? payload.note,
+        });
       } else {
         flash(null, "ساخت اکانت انجام نشد");
       }
@@ -447,26 +457,12 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
           </>
         )}
       </div>
-      {result?.code && (
-        <div className="panel">
-          <h2>اکانت ساخته شد</h2>
-          <p className="muted">
-            کد: <strong className="num">{result.code}</strong>
-          </p>
-          {result.subUrl && (
-            <button
-              type="button"
-              className="btn primary wide"
-              onClick={() => {
-                void navigator.clipboard.writeText(result.subUrl!);
-                flash("لینک اشتراک کپی شد");
-              }}
-            >
-              کپی لینک اشتراک
-            </button>
-          )}
-        </div>
-      )}
+      <AccountCreatedModal
+        open={!!created}
+        account={created}
+        onClose={() => setCreated(null)}
+        onCopied={() => flash("لینک اشتراک کپی شد")}
+      />
       {selected && (
         <Modal open={matrixConfirmOpen} title="تأیید ساخت اکانت" onClose={() => setMatrixConfirmOpen(false)}>
           <p className="order-confirm-summary">
@@ -1533,6 +1529,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       usedTrafficBytes?: number;
       expiresAt?: string | null;
       subUrl?: string | null;
+      note?: string | null;
     }>
   >([]);
   const [total, setTotal] = useState(0);
@@ -2044,6 +2041,11 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                     <span className="badge warn">{expired ? "منقضی" : "غیرفعال"}</span>
                   )}
                   {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
+                  {c.note && (
+                    <div className="muted" style={{ marginTop: 4 }}>
+                      نوت: {c.note}
+                    </div>
+                  )}
                   {c.code && <div className="muted num">کد: {c.code}</div>}
                   <div className="muted">{c.ownerLabel}</div>
                   <div className="muted" style={{ marginTop: 8 }}>
@@ -2664,7 +2666,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
       )}
 
       {showAddPanel && (
-        <Modal open title="افزودن پنل جدید" onClose={() => setShowAddPanel(false)} wide>
+        <Modal open title="افزودن سرور جدید" onClose={() => setShowAddPanel(false)} wide>
           <div className="field">
             <label>نام</label>
             <input value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
@@ -2683,7 +2685,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
           </div>
           <div className="actions">
             <button type="button" className="btn success" disabled={!form.name || !form.baseUrl || !form.apiToken} onClick={() => void add()}>
-              افزودن پنل
+              افزودن سرور
             </button>
             <button type="button" className="btn ghost" onClick={() => setShowAddPanel(false)}>
               لغو
