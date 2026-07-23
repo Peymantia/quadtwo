@@ -20,7 +20,7 @@ function AdminPanelSwitcher() {
   const previewing = current !== "/admin";
 
   return (
-    <label className="panel-switcher" title="سوییچ تست بین پنل‌ها (فقط ادمین)">
+    <label className="panel-switcher" title="سوییچ تست بین سرورها (فقط ادمین)">
       <span className="panel-switcher-label">{previewing ? "پیش‌نمایش" : "پنل"}</span>
       <select
         className="panel-switcher-select"

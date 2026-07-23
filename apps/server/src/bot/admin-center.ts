@@ -765,7 +765,7 @@ async function showSalesCategories(ctx: Context) {
 async function showPanelsList(ctx: Context, edit = true) {
   const panels = await listPanelServers();
   const lines = [
-    "🖥 سرورهای پنل 3x-ui",
+    "🖥 سرورها",
     "",
     "هر سرور نام، API و دسته‌های فروش خودش را دارد.",
     "خرید نت ملی / دیتا بر اساس دسته‌های هر سرور مسیریابی می‌شود.",

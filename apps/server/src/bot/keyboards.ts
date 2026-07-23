@@ -617,7 +617,7 @@ export function controlCenterKeyboard() {
     .text("💳 کارت بانکی", "cc:card")
     .text("📡 Inbounds", "cc:inbounds")
     .row()
-    .text("🖥 سرورهای پنل", "cc:panels")
+    .text("🖥 سرورها", "cc:panels")
     .primary()
     .row()
     .text("📥 ورود از اکسل", "cc:import")

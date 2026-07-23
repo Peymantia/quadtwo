@@ -21,7 +21,7 @@ const TABS: ShellTab[] = [
   { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
-  { key: "panels", label: "پنل‌ها", icon: "server" },
+  { key: "panels", label: "سرورها", icon: "server" },
   { key: "settings", label: "تنظیمات", icon: "gear" },
   { key: "reports", label: "گزارش", icon: "chart" },
   { key: "import", label: "اکسل", icon: "file" },
@@ -2430,9 +2430,9 @@ function PanelsTab({ flash }: { flash: Flash }) {
     <>
       <div className="panel">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>سرورهای پنل</h2>
+          <h2 style={{ margin: 0 }}>سرورها</h2>
           <button type="button" className="btn success sm" onClick={() => setShowAddPanel(true)}>
-            افزودن پنل جدید
+            افزودن سرور جدید
           </button>
         </div>
         {!!panels.length && (
@@ -2517,7 +2517,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
             <div key={p.id} className="row-card" style={{ cursor: "pointer" }} onClick={() => openEdit(p)}>
               <div>
                 <strong>{p.name}</strong>
-                <div className="muted num">{p.baseUrl}</div>
+                <div className="muted num url-break">{p.baseUrl}</div>
                 <div className="muted">
                   اینباند: <span className="num">{p.inboundIds}</span> · توکن {p.hasToken ? "✓" : "✗"}
                   {p.weight != null && (
@@ -2566,12 +2566,12 @@ function PanelsTab({ flash }: { flash: Flash }) {
             </div>
             );
           })}
-          {!panels.length && <p className="muted">پنلی ثبت نشده — از .env استفاده می‌شود.</p>}
+          {!panels.length && <p className="muted">سروری ثبت نشده — از .env استفاده می‌شود.</p>}
         </div>
       </div>
 
       {editing && (
-        <Modal open title={`ویرایش پنل — ${editing.name}`} onClose={() => setEditing(null)} wide>
+        <Modal open title={`ویرایش سرور — ${editing.name}`} onClose={() => setEditing(null)} wide>
           <div className="field">
             <label>نام</label>
             <input value={editForm.name} onChange={(e) => setEditForm((s) => ({ ...s, name: e.target.value }))} />

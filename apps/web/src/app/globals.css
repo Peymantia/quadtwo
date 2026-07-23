@@ -1201,6 +1201,19 @@ h3 {
   gap: 10px;
   align-items: center;
   transition: border-color 0.15s ease;
+  overflow: hidden;
+}
+
+.row-card > :not(.actions) {
+  min-width: 0;
+  flex: 1 1 12rem;
+  max-width: 100%;
+}
+
+.url-break {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  max-width: 100%;
 }
 
 .row-card.selectable {
