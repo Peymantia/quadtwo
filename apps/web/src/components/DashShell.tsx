@@ -237,17 +237,19 @@ export function DashShell(props: {
   const pathname = usePathname() || "";
   const [moreOpen, setMoreOpen] = useState(false);
   const isAdmin = props.role === "admin";
+  /** Only the real /admin shell uses top gear + overflow “more”; preview of user/partner keeps bottom settings */
+  const isAdminPanel = pathname.startsWith("/admin");
   const isPreviewing =
-    isAdmin && !pathname.startsWith("/admin") && PREVIEW_PANELS.some((p) => p.path === pathname || pathname.startsWith(`${p.path}/`));
+    isAdmin && !isAdminPanel && PREVIEW_PANELS.some((p) => p.path === pathname || pathname.startsWith(`${p.path}/`));
 
   const navTabs = useMemo(() => {
-    // Admin: settings stays in top gear / more sheet to keep bottom bar lean
-    if (isAdmin) return props.tabs.filter((t) => t.key !== "settings");
-    // User / partner / wholesale: keep settings in bottom nav (declared order)
+    // Admin panel: settings stays in top gear / more sheet to keep bottom bar lean
+    if (isAdminPanel) return props.tabs.filter((t) => t.key !== "settings");
+    // User / partner / wholesale (and admin preview of those): settings in bottom nav
     return props.tabs;
-  }, [props.tabs, isAdmin]);
+  }, [props.tabs, isAdminPanel]);
   const settingsTab = useMemo(() => props.tabs.find((t) => t.key === "settings"), [props.tabs]);
-  const hasSettings = isAdmin && Boolean(settingsTab || props.onSettings);
+  const hasSettings = isAdminPanel && Boolean(settingsTab || props.onSettings);
 
   const { left, wallet, right, more } = useMemo(() => {
     const walletTab = navTabs.find((t) => t.key === "wallet") ?? null;
@@ -268,10 +270,19 @@ export function DashShell(props: {
       moreTabs = rest.slice(4);
     }
 
+    if (walletTab) {
+      // Keep declared tab order: items before wallet → bubble → items after wallet
+      const order = navTabs.map((t) => t.key);
+      const walletOrder = order.indexOf("wallet");
+      const leftTabs = primaryRest.filter((t) => order.indexOf(t.key) < walletOrder);
+      const rightTabs = primaryRest.filter((t) => order.indexOf(t.key) > walletOrder);
+      return { left: leftTabs, wallet: walletTab, right: rightTabs, more: moreTabs };
+    }
+
     const mid = Math.ceil(primaryRest.length / 2);
     return {
       left: primaryRest.slice(0, mid),
-      wallet: walletTab,
+      wallet: null,
       right: primaryRest.slice(mid),
       more: moreTabs,
     };
@@ -403,53 +414,84 @@ export function DashShell(props: {
         </main>
       </div>
 
-      <nav className={`bottom-nav${wallet ? " has-wallet-bubble" : ""}`}>
-        {left.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={props.active === t.key ? "active" : ""}
-            onClick={() => pickTab(t.key)}
-          >
-            <Icon name={t.icon} size={21} />
-            {t.shortLabel || t.label}
-          </button>
-        ))}
-        {wallet && (
-          <button
-            type="button"
-            className={`nav-wallet-bubble${props.active === "wallet" ? " active" : ""}`}
-            onClick={() => pickTab("wallet")}
-            aria-label={wallet.label}
-          >
-            <span className="nav-wallet-bubble-inner">
-              <Icon name="wallet" size={22} />
-            </span>
-            <span className="nav-wallet-label">{wallet.shortLabel || wallet.label}</span>
-          </button>
-        )}
-        {right.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={props.active === t.key ? "active" : ""}
-            onClick={() => pickTab(t.key)}
-          >
-            <Icon name={t.icon} size={21} />
-            {t.shortLabel || t.label}
-          </button>
-        ))}
-        {hasMore && (
-          <button
-            type="button"
-            className={moreOpen || moreActive ? "active" : ""}
-            aria-expanded={moreOpen}
-            aria-label={moreOpen ? "بستن منوی بیشتر" : "منوی بیشتر"}
-            onClick={() => setMoreOpen((v) => !v)}
-          >
-            <Icon name={moreOpen ? "close" : "menu"} size={21} />
-            {moreOpen ? "بستن" : "بیشتر"}
-          </button>
+      <nav className={`bottom-nav${wallet ? " has-wallet-bubble" : ""}`} dir="rtl">
+        {wallet ? (
+          <>
+            <div className="bottom-nav-side">
+              {left.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={props.active === t.key ? "active" : ""}
+                  onClick={() => pickTab(t.key)}
+                >
+                  <Icon name={t.icon} size={21} />
+                  {t.shortLabel || t.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className={`nav-wallet-bubble${props.active === "wallet" ? " active" : ""}`}
+              onClick={() => pickTab("wallet")}
+              aria-label={wallet.label}
+            >
+              <span className="nav-wallet-bubble-inner">
+                <Icon name="wallet" size={22} />
+              </span>
+              <span className="nav-wallet-label">{wallet.shortLabel || wallet.label}</span>
+            </button>
+            <div className="bottom-nav-side">
+              {right.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={props.active === t.key ? "active" : ""}
+                  onClick={() => pickTab(t.key)}
+                >
+                  <Icon name={t.icon} size={21} />
+                  {t.shortLabel || t.label}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            {left.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className={props.active === t.key ? "active" : ""}
+                onClick={() => pickTab(t.key)}
+              >
+                <Icon name={t.icon} size={21} />
+                {t.shortLabel || t.label}
+              </button>
+            ))}
+            {right.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className={props.active === t.key ? "active" : ""}
+                onClick={() => pickTab(t.key)}
+              >
+                <Icon name={t.icon} size={21} />
+                {t.shortLabel || t.label}
+              </button>
+            ))}
+            {hasMore && (
+              <button
+                type="button"
+                className={moreOpen || moreActive ? "active" : ""}
+                aria-expanded={moreOpen}
+                aria-label={moreOpen ? "بستن منوی بیشتر" : "منوی بیشتر"}
+                onClick={() => setMoreOpen((v) => !v)}
+              >
+                <Icon name={moreOpen ? "close" : "menu"} size={21} />
+                {moreOpen ? "بستن" : "بیشتر"}
+              </button>
+            )}
+          </>
         )}
       </nav>
 
