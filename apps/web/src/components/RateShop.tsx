@@ -126,19 +126,14 @@ function SeekBar({
   );
 }
 
-/** Always render as «N unit» with Latin digits inside an LTR isolate (RTL-safe). */
+/** Visual «N unit» using float:left (physical) so html[dir=rtl] cannot reorder. */
 function SeekValueLabel({ num, unit }: { num: number | string; unit: string }) {
   const n = typeof num === "number" ? String(num) : num;
   return (
-    <bdi
-      className="seek-metric-ltr"
-      dir="ltr"
-      style={{ direction: "ltr", unicodeBidi: "isolate", display: "inline-block" }}
-    >
-      {n}
-      {"\u00A0"}
-      {unit}
-    </bdi>
+    <span className="seek-metric-pair" data-order="num-unit">
+      <span className="seek-metric-num">{n}</span>
+      <span className="seek-metric-unit">{unit}</span>
+    </span>
   );
 }
 
