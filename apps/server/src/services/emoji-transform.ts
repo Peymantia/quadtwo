@@ -54,9 +54,11 @@ function transformButton(btn: Record<string, unknown>): Record<string, unknown> 
   if (btn.icon_custom_emoji_id) return btn;
   const hit = matchLeadingGlyph(btn.text);
   if (!hit) return btn;
+  // Strip unicode glyph and attach premium icon. Prefix RLM (U+200F) so the
+  // button is RTL: "before the text" = reading start (right) = emoji first.
   return {
     ...btn,
-    text: hit.rest,
+    text: `\u200F${hit.rest}`,
     icon_custom_emoji_id: hit.id,
   };
 }

@@ -258,7 +258,7 @@ export function payMethodKeyboard(orderId: string, walletBalance: number) {
     .text("💳 کارت‌به‌کارت", `pay:card:${orderId}`)
     .primary()
     .row()
-    .text(`👛 کیف پول (${walletBalance.toLocaleString("fa-IR")})`, `pay:wallet:${orderId}`)
+    .text(`💰 کیف پول (${walletBalance.toLocaleString("fa-IR")})`, `pay:wallet:${orderId}`)
     .success()
     .row()
     .text("« بازگشت", `pay:back:${orderId}`)
