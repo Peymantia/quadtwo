@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, roleLabel, type Role } from "../lib/api";
+import { lockBodyScroll, unlockBodyScroll } from "../lib/body-scroll-lock";
 import { DemoModeBar } from "./DemoModeBar";
 
 const PREVIEW_PANELS = [
@@ -303,10 +304,10 @@ export function DashShell(props: {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMoreOpen(false);
     };
-    document.body.style.overflow = "hidden";
+    lockBodyScroll();
     window.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = "";
+      unlockBodyScroll();
       window.removeEventListener("keydown", onKey);
     };
   }, [moreOpen]);

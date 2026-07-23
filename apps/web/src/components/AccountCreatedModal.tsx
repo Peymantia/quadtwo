@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
 import { SubQrModal } from "./SubQrModal";
 
@@ -46,10 +46,14 @@ export function AccountCreatedModal({
   const [copied, setCopied] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
 
-  if (!account) return null;
+  useEffect(() => {
+    if (!open) setQrOpen(false);
+  }, [open]);
+
+  if (!open || !account) return null;
 
   async function copySub() {
-    if (!account?.subUrl) return;
+    if (!account.subUrl) return;
     try {
       await navigator.clipboard.writeText(account.subUrl);
       setCopied(true);
@@ -58,6 +62,11 @@ export function AccountCreatedModal({
     } catch {
       /* ignore */
     }
+  }
+
+  function closeAll() {
+    setQrOpen(false);
+    onClose();
   }
 
   const rows: Array<{ label: string; value: string; ltr?: boolean }> = [
@@ -77,15 +86,7 @@ export function AccountCreatedModal({
 
   return (
     <>
-      <Modal
-        open={open}
-        title="اکانت ساخته شد"
-        onClose={() => {
-          setQrOpen(false);
-          onClose();
-        }}
-        wide
-      >
+      <Modal open={open && !qrOpen} title="اکانت ساخته شد" onClose={closeAll} wide>
         <div className="acct-created">
           <p className="acct-created-lead">مشخصات اکانت آماده است — لینک اشتراک را کپی کنید یا QR را باز کنید.</p>
 
@@ -114,14 +115,7 @@ export function AccountCreatedModal({
             </div>
           )}
 
-          <button
-            type="button"
-            className="btn ghost wide"
-            onClick={() => {
-              setQrOpen(false);
-              onClose();
-            }}
-          >
+          <button type="button" className="btn ghost wide" onClick={closeAll}>
             بستن
           </button>
         </div>
