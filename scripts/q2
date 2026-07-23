@@ -10,13 +10,13 @@ SERVICE="${QUADTWO_SERVICE:-quadtwo}"
 WEB_SERVICE="${SERVICE}-web"
 DIR="${QUADTWO_DIR:-/opt/quadtwo}"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+CYAN=$'\033[0;36m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+NC=$'\033[0m'
 
 has_web() { systemctl list-unit-files "${WEB_SERVICE}.service" &>/dev/null; }
 
