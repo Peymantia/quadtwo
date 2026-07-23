@@ -11,16 +11,16 @@ export type ConfigLookupResult = {
   found: boolean;
   message: string;
   /** Telegram MessageEntity list (e.g. code for tap-to-copy). No parse_mode. */
-  entities?: Array<{ type: string; offset: number; length: number }>;
+  entities?: Array<{ type: "code"; offset: number; length: number }>;
 };
 
 type MsgPart = { text: string; code?: boolean };
 
 function buildMessage(lines: Array<MsgPart[] | null>): {
   message: string;
-  entities: Array<{ type: string; offset: number; length: number }>;
+  entities: Array<{ type: "code"; offset: number; length: number }>;
 } {
-  const entities: Array<{ type: string; offset: number; length: number }> = [];
+  const entities: Array<{ type: "code"; offset: number; length: number }> = [];
   const out: string[] = [];
   let offset = 0;
   for (const line of lines) {
@@ -36,7 +36,6 @@ function buildMessage(lines: Array<MsgPart[] | null>): {
     offset += lineText.length + 1; // + newline
   }
   const message = out.join("\n");
-  // last line has no trailing newline counted in offset loop — fine for entities within lines
   return { message, entities };
 }
 
