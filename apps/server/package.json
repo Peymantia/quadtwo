@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "sample:excel": "tsx scripts/generate-import-sample.ts",
-    "set-admin": "tsx scripts/set-admin.ts"
+    "set-admin": "tsx scripts/set-admin.ts",
+    "issue-license": "tsx scripts/issue-license.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",

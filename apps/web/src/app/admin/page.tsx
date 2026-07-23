@@ -181,6 +181,7 @@ export default function AdminPage() {
       walletLabel={formatToman(home.wallet.balance)}
       tabs={TABS}
       active={tab}
+      demoMode={Boolean(home.demoMode)}
       onTab={(k) => {
         setTab(k);
         flash(null, null);

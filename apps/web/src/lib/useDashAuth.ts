@@ -7,7 +7,10 @@ import { api, clearToken, formatToman, getToken, type Role, type SessionUser } f
 export type HomeData = {
   brand: string;
   support: string;
-  user: SessionUser & { testClaimed?: boolean };
+  demoMode?: boolean;
+  demoRole?: Role | null;
+  demoRoleLabel?: string | null;
+  user: SessionUser & { testClaimed?: boolean; dbRole?: Role };
   wallet: { balance: number };
   stats: { subscriptions: number; active: number };
 };
@@ -29,7 +32,6 @@ export function useDashAuth(allowed?: Role[]) {
       const data = await api<HomeData>("/me/home", { token });
       const roles = allowedKey ? (allowedKey.split(",") as Role[]) : null;
       if (roles && !roles.includes(data.user.role as Role)) {
-        // Admins/partners may open /app — only hard-block when role not in list
         router.replace(
           data.user.role === "admin"
             ? "/admin"

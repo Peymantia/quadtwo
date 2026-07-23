@@ -93,6 +93,7 @@ import {
   guideDownloadKeyboard,
   type GuidePlatform,
   mainMenuReply,
+  demoRoleInlineKeyboard,
   orderPayText,
   partnerContactKeyboard,
   partnerRequestKeyboard,
@@ -108,6 +109,8 @@ import {
 import { createTelegramBot } from "./telegram.js";
 import { syncTelegramMenu, syncTelegramMenuSafe } from "./menu.js";
 import { installEmojiApiTransform } from "../services/emoji-transform.js";
+import { isDemoMode } from "../services/license.js";
+import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole, getDemoRole } from "../services/demo-role.js";
 
 const waitingName = new Set<number>();
 const waitingPartner = new Map<number, { step: "compose" | "name" | "phone" | "note"; fullName?: string; phone?: string }>();
@@ -192,12 +195,18 @@ async function requireChannel(ctx: Context) {
 
 async function replyMainMenu(ctx: Context, preface?: string) {
   const user = await upsertUserFromTelegram(ctx.from!);
-  const isAdmin = await isControlAdmin(ctx.from!.id);
-  await ctx.reply(preface?.trim() || "منوی اصلی", {
+  const role = effectiveRole(ctx.from!.id, user.role);
+  const demo = isDemoMode();
+  const lines = [preface?.trim() || "منوی اصلی"];
+  if (demo) {
+    lines.push("", `🎭 نسخه نمایشی — نقش فعلی: ${demoRoleLabel(role)}`);
+  }
+  await ctx.reply(lines.join("\n"), {
     reply_markup: mainMenuReply({
-      isAdmin,
-      isPartner: user.role === "partner",
-      isWholesale: user.role === "wholesale",
+      isAdmin: role === "admin",
+      isPartner: role === "partner",
+      isWholesale: role === "wholesale",
+      demoMode: demo,
     }),
   });
 }
@@ -540,19 +549,13 @@ async function showGuidePlatform(ctx: Context, platform: GuidePlatform) {
 
 async function handleAccount(ctx: Context) {
   const user = await upsertUserFromTelegram(ctx.from!);
-  const roleLabel =
-    user.role === "admin"
-      ? "ادمین"
-      : user.role === "partner"
-        ? "نماینده فروش"
-        : user.role === "wholesale"
-          ? "عمده‌فروش"
-          : "کاربر عادی";
+  const role = effectiveRole(ctx.from!.id, user.role);
+  const roleLabel = demoRoleLabel(role);
   const wallet = await getWallet(user.id);
   await ctx.reply(
     [
       "👤 حساب کاربری",
-      `👑 نقش: ${roleLabel}`,
+      `👑 نقش: ${roleLabel}${isDemoMode() ? " (دمو)" : ""}`,
       `🔎 آی‌دی: ${user.telegramId}`,
       user.panelGroup ? `🏷 گروه پنل: ${user.panelGroup}` : "",
       user.testClaimedAt ? "🧪 تست: دریافت‌شده" : "🧪 تست: هنوز نگرفته",
@@ -665,12 +668,13 @@ async function handlePartnerRequest(ctx: Context) {
 
 async function handlePartnerPanel(ctx: Context) {
   const user = await upsertUserFromTelegram(ctx.from!);
-  if (user.role !== "partner" && user.role !== "wholesale" && user.role !== "admin") return;
+  const role = effectiveRole(ctx.from!.id, user.role);
+  if (role !== "partner" && role !== "wholesale" && role !== "admin") return;
   const ready = assertAgentReadyForPurchase(user);
   await ctx.reply(
     [
       "💼 پنل نماینده / عمده / ادمین",
-      `نقش: ${user.role}`,
+      `نقش: ${demoRoleLabel(role)}${isDemoMode() ? " (دمو)" : ""}`,
       `نام نماینده: ${user.agentName ?? "❌ تعریف نشده"}`,
       `گروه پنل: ${user.panelGroup ?? "—"}`,
       "",
@@ -726,14 +730,23 @@ export function createBot() {
     if (!(await requireChannel(ctx))) return;
     const welcome = await getSetting("welcome_text");
     const user = await upsertUserFromTelegram(ctx.from!);
-    const isAdmin = await isControlAdmin(ctx.from!.id);
+    const role = effectiveRole(ctx.from!.id, user.role);
+    const demo = isDemoMode();
     const displayName = ctx.from?.first_name?.trim() || "دوست";
-    const text = [`سلام ${displayName} 🧡`, "", welcome].join("\n");
+    const text = [
+      `سلام ${displayName} 🧡`,
+      "",
+      welcome,
+      ...(demo
+        ? ["", "🎭 این نسخهٔ نمایشی است. از دکمه «تغییر نقش دمو» ادمین / همکار / کاربر را امتحان کنید."]
+        : []),
+    ].join("\n");
     await ctx.reply(text, {
       reply_markup: mainMenuReply({
-        isAdmin,
-        isPartner: user.role === "partner",
-        isWholesale: user.role === "wholesale",
+        isAdmin: role === "admin",
+        isPartner: role === "partner",
+        isWholesale: role === "wholesale",
+        demoMode: demo,
       }),
     });
   });
@@ -1772,6 +1785,38 @@ export function createBot() {
   bot.hears(hearsBtn(BTN.support), async (ctx) => handleSupport(ctx));
   bot.hears(hearsBtn(BTN.dashboard), async (ctx) => handleDashboard(ctx));
   bot.hears(hearsBtn(BTN.dashOtp), async (ctx) => handleDashOtp(ctx));
+  bot.hears(hearsBtn(BTN.demoRole), async (ctx) => {
+    if (!isDemoMode()) {
+      await ctx.reply("نسخه نمایشی فعال نیست.");
+      return;
+    }
+    const current = getDemoRole(ctx.from!.id) ?? "user";
+    await ctx.reply(
+      [
+        "🎭 انتخاب نقش نمایشی",
+        "",
+        "منوی ربات و داشبورد بر اساس نقش انتخابی نشان داده می‌شود.",
+        "دادهٔ واقعی دیتابیس عوض نمی‌شود.",
+        "",
+        `نقش فعلی: ${demoRoleLabel(current)}`,
+      ].join("\n"),
+      { reply_markup: demoRoleInlineKeyboard(current) },
+    );
+  });
+  bot.callbackQuery(/^demo:role:(admin|partner|wholesale|user)$/, async (ctx) => {
+    if (!isDemoMode()) {
+      await ctx.answerCallbackQuery({ text: "Demo off", show_alert: true });
+      return;
+    }
+    const role = parseDemoRole(ctx.match![1]);
+    if (!role) {
+      await ctx.answerCallbackQuery({ text: "invalid", show_alert: true });
+      return;
+    }
+    setDemoRole(ctx.from!.id, role);
+    await ctx.answerCallbackQuery({ text: `نقش: ${demoRoleLabel(role)}` });
+    await replyMainMenu(ctx, `🎭 نقش دمو روی «${demoRoleLabel(role)}» تنظیم شد`);
+  });
   bot.hears(hearsBtn(BTN.hideKeyboard), async (ctx) => {
     if (!(await requireChannel(ctx))) return;
     await hideMainKeyboard(ctx);

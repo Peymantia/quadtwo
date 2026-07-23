@@ -337,6 +337,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       tabs={TABS}
       active={tab}
       onTab={setTab}
+      demoMode={Boolean(home.demoMode)}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
       {confirmRotate && (

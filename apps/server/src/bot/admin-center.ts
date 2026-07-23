@@ -187,6 +187,20 @@ export async function handleExcelImportDocument(ctx: Context): Promise<boolean> 
 
 export async function isControlAdmin(telegramId: number | undefined): Promise<boolean> {
   if (telegramId === undefined) return false;
+
+  const { isDemoMode, getLicenseStatus, isLicensedAdminTelegramId } = await import("../services/license.js");
+  const { getDemoRole } = await import("../services/demo-role.js");
+
+  if (isDemoMode()) {
+    const demo = getDemoRole(telegramId);
+    if (demo) return demo === "admin";
+  }
+
+  const lic = getLicenseStatus();
+  if (lic.enforced && lic.ok && lic.adminIds.length) {
+    if (!isLicensedAdminTelegramId(telegramId)) return false;
+  }
+
   if (isAdminTelegramId(telegramId)) return true;
   const extra = await getExtraAdminIds();
   if (extra.includes(BigInt(telegramId))) return true;

@@ -182,6 +182,107 @@ do_set_admin() {
   echo "Old Telegram accounts are no longer control admins."
 }
 
+do_license_status() {
+  echo -e "${BOLD}License status${NC}"
+  echo "  DEMO_MODE:          $(env_get DEMO_MODE 2>/dev/null || echo '(empty)')"
+  echo "  LICENSE_REQUIRE:    $(env_get LICENSE_REQUIRE 2>/dev/null || echo '(empty)')"
+  echo "  LICENSE_KEY:        $( [[ -n "$(env_get LICENSE_KEY 2>/dev/null || true)" ]] && echo '(set)' || echo '(empty)' )"
+  echo "  LICENSE_ADMIN_IDS:  $(env_get LICENSE_ADMIN_IDS 2>/dev/null || echo '(empty)')"
+  echo "  LICENSE_DASH_HOST:  $(env_get LICENSE_DASH_HOST 2>/dev/null || echo '(empty)')"
+  echo "  ADMIN_TELEGRAM_IDS: $(env_get ADMIN_TELEGRAM_IDS 2>/dev/null || echo '(empty)')"
+  echo "  DASH_DOMAIN:        $(env_get DASH_DOMAIN 2>/dev/null || echo '(empty)')"
+  if [[ -x "$DIR/node_modules/.bin/tsx" ]] || command -v npx >/dev/null 2>&1; then
+    (
+      cd "$DIR"
+      set -a
+      # shellcheck disable=SC1091
+      source "$(env_file)" 2>/dev/null || true
+      set +a
+      if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
+        "$DIR/node_modules/.bin/tsx" -e "import { getLicenseStatus } from './apps/server/src/services/license.ts'; const s=getLicenseStatus(); console.log('  verify:', JSON.stringify(s));"
+      else
+        npx --yes tsx -e "import { getLicenseStatus } from './apps/server/src/services/license.ts'; const s=getLicenseStatus(); console.log('  verify:', JSON.stringify(s));"
+      fi
+    ) 2>/dev/null || echo "  (runtime verify skipped — start the server to validate)"
+  fi
+}
+
+do_activate() {
+  local KEY="${1:-}" ENV_FILE HOST ADMINS PARSED
+  ENV_FILE="$(env_file)"
+  [[ -f "$ENV_FILE" ]] || { echo "No .env at $ENV_FILE"; exit 1; }
+  if [[ -z "$KEY" ]]; then
+    echo "Paste the license key from the seller (Q2.1.…):"
+    read -r KEY
+  fi
+  KEY="$(echo "$KEY" | tr -d '[:space:]')"
+  [[ -n "$KEY" ]] || { echo "LICENSE_KEY is required."; exit 1; }
+  if [[ ! "$KEY" =~ ^Q2\.1\. ]]; then
+    echo "Key format looks invalid (expected Q2.1.…)."
+    exit 1
+  fi
+
+  echo "Validating license…"
+  PARSED="$(
+    cd "$DIR"
+    set -a
+    # shellcheck disable=SC1091
+    source "$ENV_FILE" 2>/dev/null || true
+    set +a
+    if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
+      "$DIR/node_modules/.bin/tsx" -e "
+        import { parseLicenseKey } from './apps/server/src/services/license.ts';
+        const r = parseLicenseKey(process.argv[1]);
+        if (!r.ok) { console.error(r.reason); process.exit(2); }
+        console.log(r.payload.admins + '|' + r.payload.host);
+      " "$KEY"
+    else
+      npx --yes tsx -e "
+        import { parseLicenseKey } from './apps/server/src/services/license.ts';
+        const r = parseLicenseKey(process.argv[1]);
+        if (!r.ok) { console.error(r.reason); process.exit(2); }
+        console.log(r.payload.admins + '|' + r.payload.host);
+      " "$KEY"
+    fi
+  )" || {
+    echo "License validation failed."
+    exit 1
+  }
+  ADMINS="${PARSED%%|*}"
+  HOST="${PARSED#*|}"
+  [[ -n "$ADMINS" && -n "$HOST" ]] || { echo "Could not decode license payload."; exit 1; }
+
+  set_env_key LICENSE_KEY "$KEY"
+  set_env_key LICENSE_ADMIN_IDS "$ADMINS"
+  set_env_key LICENSE_DASH_HOST "$HOST"
+  set_env_key LICENSE_REQUIRE "1"
+  set_env_key ADMIN_TELEGRAM_IDS "$ADMINS"
+  # Align dashboard domain if empty
+  if [[ -z "$(env_get DASH_DOMAIN 2>/dev/null || true)" ]]; then
+    set_env_key DASH_DOMAIN "$HOST"
+  fi
+  echo "License bound:"
+  echo "  admins: $ADMINS"
+  echo "  host:   $HOST"
+  echo "Syncing DB admin roles…"
+  (
+    cd "$DIR"
+    set -a
+    # shellcheck disable=SC1091
+    source "$ENV_FILE"
+    set +a
+    if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
+      "$DIR/node_modules/.bin/tsx" apps/server/scripts/set-admin.ts "$ADMINS"
+    else
+      npx --yes tsx apps/server/scripts/set-admin.ts "$ADMINS"
+    fi
+  ) || echo "Warning: DB sync failed — .env was still updated."
+  echo "Restarting…"
+  svc_restart
+  sleep 1
+  echo "Done. Licensed admin(s) should /start the bot."
+}
+
 print_usage() {
   cat <<EOF
 ${BOLD}QuadTwo (Q2)${NC} — manage bot & dashboard
@@ -197,6 +298,8 @@ Usage:
   q2 env             Edit .env
   q2 set-token [TOKEN]
   q2 set-admin [ID,...]
+  q2 activate [KEY]  Bind license (Telegram admin + dash host)
+  q2 license         Show license status
 
 Also available as: ${CYAN}quadtwo${NC}
 EOF
@@ -215,6 +318,8 @@ run_cmd() {
     env) do_env ;;
     set-token|settoken) do_set_token "${1:-}" ;;
     set-admin|setadmin) do_set_admin "${1:-}" ;;
+    activate) do_activate "${1:-}" ;;
+    license|lic) do_license_status ;;
     help|-h|--help) print_usage ;;
     "") return 1 ;;
     *)
@@ -247,10 +352,12 @@ ${DIM}dir: ${DIR}${NC}
   ${GREEN}7${NC}) env
   ${GREEN}8${NC}) set-token  ${DIM}[TOKEN]${NC}
   ${GREEN}9${NC}) set-admin  ${DIM}[ID,...]${NC}
+  ${GREEN}a${NC}) activate   ${DIM}[license key]${NC}
+  ${GREEN}l${NC}) license status
   ${YELLOW}0${NC}) exit
 
 EOF
-  read -r -p "Select [0-9]: " choice || true
+  read -r -p "Select [0-9/a/l]: " choice || true
   case "${choice:-}" in
     1) run_cmd start; pause ;;
     2) run_cmd stop; pause ;;
@@ -273,6 +380,12 @@ EOF
       run_cmd set-admin "${ids:-}"
       pause
       ;;
+    a|A)
+      read -r -p "License key (Enter to paste next): " key || true
+      run_cmd activate "${key:-}"
+      pause
+      ;;
+    l|L) run_cmd license; pause ;;
     0|q|Q|exit) echo "Bye."; exit 0 ;;
     *)
       echo "Invalid option."

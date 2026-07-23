@@ -30,6 +30,8 @@ export const BTN = {
   referral: "👥 معرفی به دوستان",
   national: "🇮🇷 کانفیگ نت ملی",
   admin: "👑 پنل ادمین",
+  /** Demo role switcher (DEMO_MODE only) */
+  demoRole: "🎭 تغییر نقش دمو",
 } as const;
 
 /** Match Universal labels, bare text, and legacy RLM/LRM prefixes from broken premium transforms. */
@@ -58,6 +60,7 @@ export type MainMenuOpts = {
   isAdmin: boolean;
   isPartner: boolean;
   isWholesale?: boolean;
+  demoMode?: boolean;
 };
 
 /**
@@ -107,7 +110,22 @@ export function mainMenuReply(opts: MainMenuOpts) {
   // Always OTP credentials first — do not open Mini App directly (no password on screen).
   kb.text(BTN.dashOtp).danger().row();
 
+  if (opts.demoMode) {
+    kb.text(BTN.demoRole).row();
+  }
+
   return kb.persistent().resized();
+}
+
+/** Inline role picker for DEMO_MODE */
+export function demoRoleInlineKeyboard(current?: string) {
+  const mark = (role: string, label: string) => (current === role ? `✓ ${label}` : label);
+  return new InlineKeyboard()
+    .text(mark("admin", "ادمین"), "demo:role:admin")
+    .text(mark("partner", "همکار"), "demo:role:partner")
+    .row()
+    .text(mark("wholesale", "عمده"), "demo:role:wholesale")
+    .text(mark("user", "کاربر"), "demo:role:user");
 }
 
 /** Remove sticky reply keyboard so chat uses more vertical space. */

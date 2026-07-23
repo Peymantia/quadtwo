@@ -16,6 +16,7 @@ export type SessionUser = {
 };
 
 const TOKEN_KEY = "piing_dash_token";
+const DEMO_ROLE_KEY = "piing_demo_role";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -30,6 +31,19 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+export function getDemoRole(): Role | null {
+  if (typeof window === "undefined") return null;
+  const r = localStorage.getItem(DEMO_ROLE_KEY);
+  if (r === "user" || r === "partner" || r === "wholesale" || r === "admin") return r;
+  return null;
+}
+
+export function setDemoRoleLocal(role: Role | null) {
+  if (typeof window === "undefined") return;
+  if (!role) localStorage.removeItem(DEMO_ROLE_KEY);
+  else localStorage.setItem(DEMO_ROLE_KEY, role);
+}
+
 export async function api<T>(
   path: string,
   opts?: { method?: string; body?: unknown; token?: string | null; rawBody?: BodyInit; headers?: Record<string, string> },
@@ -37,6 +51,8 @@ export async function api<T>(
   const token = opts?.token === undefined ? getToken() : opts.token;
   const headers: Record<string, string> = { ...(opts?.headers ?? {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
+  const demoRole = getDemoRole();
+  if (demoRole) headers["X-Demo-Role"] = demoRole;
   if (opts?.body !== undefined && !opts.rawBody) {
     headers["Content-Type"] = "application/json";
   }

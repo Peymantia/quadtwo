@@ -8,6 +8,16 @@ const schema = z.object({
   BOT_MODE: z.enum(["webhook", "polling"]).default("polling"),
   TELEGRAM_WEBHOOK_PATH: z.string().default("/telegram/webhook"),
   ADMIN_TELEGRAM_IDS: z.string().default(""),
+  /** Demo install: anyone can switch admin/partner/user UX without changing DB role */
+  DEMO_MODE: z.string().optional(),
+  /** Signed license key from seller (Q2.1.…); required in production unless DEMO_MODE */
+  LICENSE_KEY: z.string().optional(),
+  /** Bound buyer admin Telegram IDs (usually decoded from LICENSE_KEY) */
+  LICENSE_ADMIN_IDS: z.string().optional(),
+  /** Bound dashboard hostname, e.g. dash.buyer.com */
+  LICENSE_DASH_HOST: z.string().optional(),
+  /** When "1"/"true", production-like installs must have a valid LICENSE_KEY */
+  LICENSE_REQUIRE: z.string().optional(),
   XUI_BASE_URL: z.string().optional(),
   XUI_API_TOKEN: z.string().optional(),
   XUI_INBOUND_ID: z.coerce.number().default(1),

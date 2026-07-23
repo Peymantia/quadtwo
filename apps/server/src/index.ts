@@ -18,6 +18,9 @@ const { seedIfNeeded } = await import("./services/seed.js");
 
 await seedIfNeeded();
 
+const { assertLicenseAtStartup } = await import("./services/license.js");
+assertLicenseAtStartup();
+
 const app = new Hono();
 const bot = createBot();
 

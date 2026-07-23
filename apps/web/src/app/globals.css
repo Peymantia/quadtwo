@@ -788,6 +788,40 @@ h3 {
   line-height: 1.55;
 }
 
+.demo-mode-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.18), rgba(56, 189, 248, 0.12));
+  border-bottom: 1px solid rgba(251, 191, 36, 0.35);
+  position: sticky;
+  top: 0;
+  z-index: 35;
+}
+
+.demo-mode-bar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--mute);
+}
+
+.demo-mode-bar-text strong {
+  color: var(--amber);
+  font-size: 0.9rem;
+}
+
+.demo-mode-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* Mobile top brand bar */
 .mobile-top {
   display: none;

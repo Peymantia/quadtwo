@@ -134,10 +134,12 @@ quadtwo
   7) env
   8) set-token  [TOKEN]
   9) set-admin  [ID,...]
+  a) activate   [license]
+  l) license status
   0) exit
 ```
 
-دستور مستقیم:
+فروش لایسنس و دمو: [docs/SELLING.md](docs/SELLING.md)
 
 ```bash
 q2 status          # وضعیت سرویس‌ها

@@ -8,6 +8,8 @@ import { provisionOrder } from "../services/provision.js";
 import { getAllSettings, getSetting } from "../services/settings.js";
 import { upsertUserFromTelegram } from "../services/users.js";
 import { corsOrigins } from "../config/env.js";
+import { isDemoMode, verifyRequestHost, getLicenseStatus } from "../services/license.js";
+import { effectiveRole, parseDemoRole, setDemoRole, getDemoRole } from "../services/demo-role.js";
 import {
   registerDashAuthRoutes,
   registerDashMeRoutes,
@@ -30,11 +32,29 @@ export function createApiApp() {
         if (origins.length === 0) return origin;
         return origins[0]!;
       },
-      allowHeaders: ["Content-Type", "Authorization"],
+      allowHeaders: ["Content-Type", "Authorization", "X-Demo-Role"],
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       credentials: true,
+      exposeHeaders: ["X-Demo-Mode"],
     }),
   );
+
+  api.use("*", async (c, next) => {
+    const path = c.req.path;
+    if (path.endsWith("/health") || path.includes("/auth/meta")) {
+      await next();
+      return;
+    }
+    const st = getLicenseStatus();
+    if (st.enforced && !st.ok) {
+      return c.json({ error: st.reason || "License required", code: "LICENSE_REQUIRED" }, 403);
+    }
+    const host = c.req.header("x-forwarded-host") || c.req.header("host");
+    if (!verifyRequestHost(host)) {
+      return c.json({ error: "این دامنه با لایسنس هم‌خوان نیست", code: "LICENSE_HOST" }, 403);
+    }
+    await next();
+  });
 
   registerDashAuthRoutes(api);
 
@@ -48,26 +68,33 @@ export function createApiApp() {
       first_name: tg.first_name,
       last_name: tg.last_name,
     });
+    const role = effectiveRole(user.telegramId, user.role);
     const token = await signSession({
       userId: user.id,
       telegramId: String(user.telegramId),
-      role: user.role,
+      role,
     });
     return c.json({
       token,
       user: {
         id: user.id,
-        role: user.role,
+        role,
         firstName: user.firstName,
         username: user.username,
         panelGroup: user.panelGroup,
         hasPassword: Boolean(user.passwordHash),
       },
+      demoMode: isDemoMode(),
     });
   });
 
   const authBearer = async (
-    c: { req: { header: (n: string) => string | undefined }; set: (k: keyof Vars, v: string) => void; json: (b: unknown, s?: number) => Response },
+    c: {
+      req: { header: (n: string) => string | undefined };
+      set: (k: keyof Vars, v: string) => void;
+      json: (b: unknown, s?: number) => Response;
+      header: (n: string, v: string) => void;
+    },
     next: () => Promise<void>,
     requireAdmin = false,
   ) => {
@@ -77,9 +104,22 @@ export function createApiApp() {
       const payload = await verifySession(header.slice(7));
       const fresh = await prisma.user.findUnique({ where: { id: payload.userId } });
       if (!fresh) return c.json({ error: "Unauthorized" }, 401);
-      if (requireAdmin && fresh.role !== "admin") return c.json({ error: "Forbidden" }, 403);
+
+      let role = fresh.role as string;
+      if (isDemoMode()) {
+        const fromHeader = parseDemoRole(c.req.header("X-Demo-Role"));
+        if (fromHeader) {
+          setDemoRole(fresh.telegramId, fromHeader);
+          role = fromHeader;
+        } else {
+          role = getDemoRole(fresh.telegramId) ?? fresh.role;
+        }
+        c.header("X-Demo-Mode", "1");
+      }
+
+      if (requireAdmin && role !== "admin") return c.json({ error: "Forbidden" }, 403);
       c.set("userId", fresh.id);
-      c.set("role", fresh.role);
+      c.set("role", role);
       c.set("telegramId", String(fresh.telegramId));
       await next();
     } catch {

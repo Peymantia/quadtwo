@@ -319,6 +319,7 @@ export default function UserAppPage() {
       tabs={TABS}
       active={tab}
       onTab={setTab}
+      demoMode={Boolean(home.demoMode)}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
       {confirmRotateId && (

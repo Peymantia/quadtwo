@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, roleLabel, type Role } from "../lib/api";
+import { DemoModeBar } from "./DemoModeBar";
 
 const PREVIEW_PANELS = [
   { path: "/admin", label: "ادمین" },
@@ -231,6 +232,8 @@ export function DashShell(props: {
   onTab: (key: string) => void;
   /** Open settings from top gear (settings tab removed from bottom nav) */
   onSettings?: () => void;
+  /** Server DEMO_MODE — show role switcher banner */
+  demoMode?: boolean;
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -323,6 +326,7 @@ export function DashShell(props: {
 
   return (
     <div>
+      {props.demoMode && <DemoModeBar activeRole={props.role} />}
       <div className="mobile-top">
         <div className="brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { OrderKind, UserRole } from "@prisma/client";
 import { signSession } from "../auth/telegram.js";
+import { isDemoMode } from "../services/license.js";
+import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole } from "../services/demo-role.js";
 import { prisma } from "../db.js";
 import {
   issueOtpForUser,
@@ -105,20 +107,22 @@ async function notifyTelegram(chatId: bigint, text: string) {
 
 async function sessionForUser(userId: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  const role = effectiveRole(user.telegramId, user.role);
   const sessionHours = await getWebSessionHours();
   const token = await signSession(
     {
       userId: user.id,
       telegramId: String(user.telegramId),
-      role: user.role,
+      role,
     },
     `${sessionHours}h`,
   );
   return {
     token,
+    demoMode: isDemoMode(),
     user: {
       id: user.id,
-      role: user.role,
+      role,
       firstName: user.firstName,
       username: user.username,
       telegramId: String(user.telegramId),
@@ -137,6 +141,7 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
       dashUrl: dashBaseUrl(),
       authModes: ["password", "otp", "passkey"],
       passkeyHint: "ورود با Face ID / اثرانگشت (Passkey)",
+      demoMode: isDemoMode(),
     });
   });
 
@@ -200,12 +205,17 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const brand = await getSetting("brand_name");
     const support = await getSetting("support_username");
     const passkeyCount = await userPasskeyCount(userId);
+    const role = c.get("role") || effectiveRole(user.telegramId, user.role);
     return c.json({
       brand: brand || "پیـنگ",
       support,
+      demoMode: isDemoMode(),
+      demoRole: isDemoMode() ? role : null,
+      demoRoleLabel: isDemoMode() ? demoRoleLabel(role) : null,
       user: {
         id: user.id,
-        role: user.role,
+        role,
+        dbRole: user.role,
         firstName: user.firstName,
         username: user.username,
         telegramId: String(user.telegramId),
@@ -219,6 +229,15 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       wallet: { balance: wallet.balance },
       stats: { subscriptions: subs, active },
     });
+  });
+
+  api.post("/me/demo-role", async (c) => {
+    if (!isDemoMode()) return c.json({ error: "Demo mode is off" }, 400);
+    const body = await c.req.json<{ role?: string }>();
+    const role = parseDemoRole(body.role);
+    if (!role) return c.json({ error: "role must be user|partner|wholesale|admin" }, 400);
+    setDemoRole(c.get("telegramId"), role);
+    return c.json({ ok: true, role, label: demoRoleLabel(role) });
   });
 
   api.get("/me/passkeys", async (c) => {
