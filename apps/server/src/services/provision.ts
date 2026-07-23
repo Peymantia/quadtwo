@@ -408,25 +408,9 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
   if (!client) throw new Error("کلاینت در پنل پیدا نشد");
 
   const months = order.months || 1;
-  const addMs = monthsToMs(months);
-  const panelExpiry = Number(client.expiryTime ?? 0);
-  let expiryTime: number;
-  let expiresAt: Date;
-  let startsOnConnect = sub.startsOnConnect;
-  let activatedAt = sub.activatedAt;
-
-  if (panelExpiry < 0) {
-    expiryTime = panelExpiry - addMs;
-    expiresAt = new Date(Date.now() + Math.abs(expiryTime));
-    startsOnConnect = true;
-    activatedAt = null;
-  } else {
-    const base = Math.max(Date.now(), sub.expiresAt.getTime(), panelExpiry);
-    expiresAt = new Date(base + addMs);
-    expiryTime = expiresAt.getTime();
-    if (!activatedAt && panelExpiry > 0) activatedAt = new Date();
-  }
-
+  // Fresh package: start after first use, duration = months × 31 days (panel Duration Days).
+  const expiryTime = firstConnectExpiryMs(months);
+  const expiresAt = new Date(Date.now() + monthsToMs(months));
   const totalGB = order.trafficGb === null ? 0 : gbToBytes(order.trafficGb);
 
   await resolved.xui.updateClient(sub.email, {
@@ -435,11 +419,17 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
     expiryTime,
     totalGB,
     enable: true,
-    // Reset usage so the renewed package starts fresh
     up: 0,
     down: 0,
     ...(typeof order.limitIp === "number" && order.limitIp >= 0 ? { limitIp: order.limitIp } : {}),
   });
+
+  // Dedicated reset — updateClient often does not clear panel traffic counters.
+  try {
+    await resolved.xui.resetClientTraffic(sub.email);
+  } catch (err) {
+    console.warn("renew: resetClientTraffic failed", sub.email, err);
+  }
 
   const panelSubId = client.subId ?? sub.panelSubId ?? randomSubId();
   const subUrl = await resolveSubUrl(panelSubId, resolved.xui, resolved.subBase);
@@ -452,8 +442,8 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
       trafficGb: order.trafficGb ?? sub.trafficGb,
       subUrl,
       panelSubId,
-      startsOnConnect,
-      activatedAt,
+      startsOnConnect: true,
+      activatedAt: null,
       status: SubscriptionStatus.active,
       ...(resolved.panel && !sub.panelServerId ? { panelServerId: resolved.panel.id } : {}),
     },

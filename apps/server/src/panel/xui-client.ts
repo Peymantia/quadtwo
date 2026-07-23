@@ -142,6 +142,32 @@ export class XuiClient {
     });
   }
 
+  /**
+   * Zero up/down usage for a client. UpdateClient alone often ignores traffic counters;
+   * 3x-ui exposes dedicated reset / updateTraffic endpoints.
+   */
+  async resetClientTraffic(email: string): Promise<void> {
+    const enc = encodeURIComponent(email);
+    const attempts: Array<{ path: string; body?: string }> = [
+      { path: `panel/api/clients/resetTraffic/${enc}`, body: JSON.stringify({}) },
+      { path: `panel/api/inbounds/resetTraffic/${enc}`, body: JSON.stringify({}) },
+      {
+        path: `panel/api/clients/updateTraffic/${enc}`,
+        body: JSON.stringify({ upload: 0, download: 0 }),
+      },
+    ];
+    let lastErr: unknown;
+    for (const a of attempts) {
+      try {
+        await this.request(a.path, { method: "POST", body: a.body });
+        return;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "reset traffic failed"));
+  }
+
   getClient(email: string) {
     return this.request<{
       client: {

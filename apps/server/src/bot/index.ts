@@ -391,9 +391,7 @@ async function deliverResult(
       `کد: <code>${one.code}</code>`,
       `اکانت: <code>${one.email}</code>`,
       `حجم: ${formatTraffic(trafficGb)}`,
-      mode === "renew"
-        ? `انقضا: ${one.expiresAt.toLocaleDateString("fa-IR")}`
-        : "⏱ اعتبار: از اولین اتصال شروع می‌شود",
+      "⏱ اعتبار: از اولین اتصال شروع می‌شود",
       "",
       "🔗 لینک اشتراک:",
       `<code>${one.subUrl}</code>`,
