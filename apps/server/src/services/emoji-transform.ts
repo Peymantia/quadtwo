@@ -49,41 +49,33 @@ function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: str
   return null;
 }
 
-function isInlineKeyboardButton(btn: Record<string, unknown>): boolean {
-  return (
-    "callback_data" in btn ||
-    "url" in btn ||
-    "web_app" in btn ||
-    "login_url" in btn ||
-    "switch_inline_query" in btn ||
-    "switch_inline_query_current_chat" in btn ||
-    "switch_inline_query_chosen_chat" in btn ||
-    "copy_text" in btn ||
-    "callback_game" in btn ||
-    "pay" in btn
-  );
-}
-
 function transformButton(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
   if (btn.icon_custom_emoji_id) return btn;
-  // Reply-keyboard presses send `text` verbatim — never rewrite it (breaks bot.hears)
-  // and never use icon_custom_emoji_id there (RTL puts icon at the label end on mobile).
-  if (!isInlineKeyboardButton(btn)) return btn;
-
   const hit = matchLeadingGlyph(btn.text);
   if (!hit) return btn;
-  // Inline only: keep leading unicode (RTL-correct start) — do not strip / replace with icon.
-  // Premium custom icons on inline buttons are inconsistent across mobile vs desktop RTL.
-  return btn;
+  // Premium icon on the button; bare label text (no RLM) so reply-keyboard hears still match.
+  return {
+    ...btn,
+    text: hit.rest,
+    icon_custom_emoji_id: hit.id,
+  };
 }
 
 function transformReplyMarkup(markup: unknown): unknown {
   if (!markup || typeof markup !== "object") return markup;
   const m = markup as Record<string, unknown>;
 
-  // Sticky reply keyboard: leave labels untouched so presses match hearsBtn / BTN.
-  if (Array.isArray(m.keyboard)) return markup;
+  if (Array.isArray(m.keyboard)) {
+    return {
+      ...m,
+      keyboard: (m.keyboard as unknown[][]).map((row) =>
+        Array.isArray(row)
+          ? row.map((b) => (b && typeof b === "object" ? transformButton(b as Record<string, unknown>) : b))
+          : row,
+      ),
+    };
+  }
 
   if (Array.isArray(m.inline_keyboard)) {
     return {
