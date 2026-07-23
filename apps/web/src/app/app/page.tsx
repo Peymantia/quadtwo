@@ -10,6 +10,7 @@ import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "../../
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
+import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 
 type Sub = {
   id: string;
@@ -91,6 +92,7 @@ export default function UserAppPage() {
   const [payCard, setPayCard] = useState<PayCard | null>(null);
   const [payModal, setPayModal] = useState<PayModalState>(null);
   const [subSort, setSubSort] = useState<ListSort>("newest");
+  const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -198,6 +200,62 @@ export default function UserAppPage() {
       if (r.provisioned) {
         setMsg("سرویس با موفقیت ساخته شد ✅ از تب «اشتراک‌ها» ببینید.");
         await reload();
+      } else if (r.order && r.card) {
+        setPayCard(r.card);
+        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
+      }
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openRenew(subId: string) {
+    setErr(null);
+    setMsg(null);
+    setBusy(true);
+    try {
+      const info = await api<RenewInfo>(`/me/subscriptions/${subId}/renew`);
+      setRenewInfo(info);
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitRenew(payload: {
+    trafficGb: number | null;
+    months: number;
+    category: string;
+    payWithWallet: boolean;
+  }) {
+    if (!renewInfo) return;
+    setErr(null);
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await api<{
+        order?: { id: string; price: number };
+        card?: PayCard;
+        provisioned?: unknown;
+      }>("/me/orders", {
+        body: {
+          kind: "renew",
+          targetSubId: renewInfo.subscription.id,
+          trafficGb: payload.trafficGb,
+          months: payload.months,
+          category: payload.category,
+          accountName: renewInfo.subscription.email,
+          payWithWallet: payload.payWithWallet,
+        },
+      });
+      setRenewInfo(null);
+      if (r.provisioned) {
+        setMsg("سرویس با موفقیت تمدید شد ✅");
+        await reload();
+        await loadSubs();
       } else if (r.order && r.card) {
         setPayCard(r.card);
         setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
@@ -447,6 +505,16 @@ export default function UserAppPage() {
                     </div>
                   </div>
                   <div className="actions" style={{ width: "100%", marginTop: 10 }}>
+                    {!s.isTest && (
+                      <button
+                        type="button"
+                        className="btn success sm"
+                        disabled={busy}
+                        onClick={() => void openRenew(s.id)}
+                      >
+                        تمدید
+                      </button>
+                    )}
                     {s.subUrl && (
                       <button
                         type="button"
@@ -641,10 +709,18 @@ export default function UserAppPage() {
         />
       )}
 
+      <RenewModal
+        open={Boolean(renewInfo)}
+        info={renewInfo}
+        busy={busy}
+        onClose={() => setRenewInfo(null)}
+        onSubmit={submitRenew}
+      />
+
       {payModal && (
         <CardPayModal
           open
-          title="پرداخت خرید"
+          title="پرداخت سفارش"
           amount={payModal.price}
           card={payModal.card}
           busy={busy}

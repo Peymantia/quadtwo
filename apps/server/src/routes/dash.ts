@@ -77,6 +77,7 @@ import { listRecentAudit, auditLog } from "../services/audit.js";
 import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
 import { importWorkbook, readWorkbookFromBuffer, formatImportResult } from "../services/bulk-import.js";
 import { getSubscriptionTrafficBytes } from "../services/live-status.js";
+import { checkRenewEligibility, inferRenewCategory } from "../services/renew-eligibility.js";
 import { dashBaseUrl, env } from "../config/env.js";
 import { clearEmojiStyleCache, attachPremiumTextEntities, getEmojiStyle } from "../services/emoji-transform.js";
 
@@ -353,6 +354,41 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({ code: result.code, subUrl: result.subUrl, expiresAt: result.expiresAt.toISOString() });
   });
 
+  api.get("/me/subscriptions/:id/renew", async (c) => {
+    const sub = await prisma.subscription.findFirst({
+      where: { id: c.req.param("id"), userId: c.get("userId") },
+    });
+    if (!sub) return c.json({ error: "Not found" }, 404);
+    const eligibility = await checkRenewEligibility(sub.id);
+    if (!eligibility.ok) {
+      return c.json({ ok: false, message: eligibility.message }, 400);
+    }
+    const category = await inferRenewCategory(sub);
+    const labels = await getCategoryLabels();
+    const maxMonths = await getMaxPurchaseMonths();
+    return c.json({
+      ok: true,
+      message: eligibility.message,
+      reason: eligibility.reason,
+      subscription: {
+        id: sub.id,
+        code: sub.code,
+        email: sub.email,
+        trafficGb: sub.trafficGb,
+        trafficLabel: formatTraffic(sub.trafficGb),
+        expiresAt: sub.expiresAt.toISOString(),
+      },
+      category,
+      categoryLabel: labels[category] || category,
+      maxMonths,
+      volumeRules: {
+        data: { min: 10, max: 100, step: 5 },
+        national: { min: 1, max: 20, step: 1 },
+        unlimited: null,
+      },
+    });
+  });
+
   api.post("/me/orders/:id/pay-wallet", async (c) => {
     try {
       const result = await payOrderWithWallet(c.req.param("id"), c.get("userId"));
@@ -513,45 +549,49 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       limitIp?: number;
       note?: string | null;
     }>();
-    const accountName = body.accountName?.trim() || `u${Date.now().toString(36)}`;
-    const order = await createMatrixOrder({
-      userId: c.get("userId"),
-      trafficGb: body.trafficGb,
-      months: body.months,
-      category: body.category,
-      accountName,
-      kind: body.kind,
-      targetSubId: body.targetSubId,
-      limitIp: body.limitIp,
-      note: body.note,
-    });
-    if (c.get("role") === "admin") {
-      try {
-        const result = await provisionAdminComplimentary(order.id, c.get("userId"));
-        return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
-      } catch (err) {
-        return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+    try {
+      const accountName = body.accountName?.trim() || `u${Date.now().toString(36)}`;
+      const order = await createMatrixOrder({
+        userId: c.get("userId"),
+        trafficGb: body.trafficGb,
+        months: body.months,
+        category: body.category,
+        accountName,
+        kind: body.kind,
+        targetSubId: body.targetSubId,
+        limitIp: body.limitIp,
+        note: body.note,
+      });
+      if (c.get("role") === "admin") {
+        try {
+          const result = await provisionAdminComplimentary(order.id, c.get("userId"));
+          return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
+        } catch (err) {
+          return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+        }
       }
-    }
-    if (body.payWithWallet) {
-      try {
-        const result = await payOrderWithWallet(order.id, c.get("userId"));
-        return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
-      } catch (err) {
-        return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+      if (body.payWithWallet) {
+        try {
+          const result = await payOrderWithWallet(order.id, c.get("userId"));
+          return c.json({ order: { id: order.id, price: order.price }, provisioned: result });
+        } catch (err) {
+          return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+        }
       }
+      const card = await getPaymentCard();
+      return c.json({
+        order: {
+          id: order.id,
+          price: order.price,
+          summary: orderSummaryText(order),
+          trafficGb: order.trafficGb,
+          months: order.months,
+        },
+        card,
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }
-    const card = await getPaymentCard();
-    return c.json({
-      order: {
-        id: order.id,
-        price: order.price,
-        summary: orderSummaryText(order),
-        trafficGb: order.trafficGb,
-        months: order.months,
-      },
-      card,
-    });
   });
 
   api.post("/me/partner-request", async (c) => {

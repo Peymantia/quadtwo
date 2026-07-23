@@ -1,6 +1,7 @@
 import { OrderKind, OrderStatus, PaymentMethod } from "@prisma/client";
 import { prisma } from "../db.js";
 import { resolvePanelForCategory, resolvePanelForSubscription } from "./panel-servers.js";
+import { checkRenewEligibility, inferRenewCategory } from "./renew-eligibility.js";
 import { canEditLimitIp, getDefaultLimitIp } from "./settings.js";
 import { clampMonths, normalizePurchaseTraffic, resolvePrice, type PlanCategory } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
@@ -20,12 +21,38 @@ export async function createMatrixOrder(input: {
   note?: string | null;
 }) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
-  const category = (input.category as PlanCategory) || "data";
+  const kind = input.kind ?? OrderKind.new;
+
+  let category = (input.category as PlanCategory) || "data";
+  let panelServerId: string | null = null;
+  let accountName = input.accountName;
+
+  if (kind === OrderKind.renew) {
+    if (!input.targetSubId) throw new Error("سرویس هدف برای تمدید مشخص نشده است");
+    const target = await prisma.subscription.findFirst({
+      where: { id: input.targetSubId, userId: input.userId },
+    });
+    if (!target) throw new Error("سرویس برای تمدید پیدا نشد");
+    const eligibility = await checkRenewEligibility(target.id);
+    if (!eligibility.ok) throw new Error(eligibility.message);
+    category = await inferRenewCategory(target);
+    accountName = target.email;
+    if (target.panelServerId) {
+      panelServerId = target.panelServerId;
+    } else {
+      const resolved = await resolvePanelForSubscription(target);
+      panelServerId = resolved.panel?.id ?? null;
+    }
+  } else {
+    const resolved = await resolvePanelForCategory(category);
+    panelServerId = resolved.panel?.id ?? null;
+  }
+
   const trafficGb = normalizePurchaseTraffic(category, input.trafficGb);
   const months = clampMonths(input.months);
   const priced = await resolvePrice(user, trafficGb, months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
-  const quantity = Math.max(1, Math.min(50, input.quantity ?? 1));
+  const quantity = kind === OrderKind.renew ? 1 : Math.max(1, Math.min(50, input.quantity ?? 1));
   const defaultIp = await getDefaultLimitIp();
   const limitIp = !canEditLimitIp(user.role)
     ? defaultIp
@@ -33,22 +60,6 @@ export async function createMatrixOrder(input: {
       ? defaultIp
       : Math.max(0, Math.min(10, Math.floor(input.limitIp)));
   const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;
-
-  const kind = input.kind ?? OrderKind.new;
-  let panelServerId: string | null = null;
-
-  if (kind === OrderKind.renew && input.targetSubId) {
-    const target = await prisma.subscription.findUnique({ where: { id: input.targetSubId } });
-    if (target?.panelServerId) {
-      panelServerId = target.panelServerId;
-    } else if (target) {
-      const resolved = await resolvePanelForSubscription(target);
-      panelServerId = resolved.panel?.id ?? null;
-    }
-  } else if (kind === OrderKind.new || !input.targetSubId) {
-    const resolved = await resolvePanelForCategory(category);
-    panelServerId = resolved.panel?.id ?? null;
-  }
 
   return prisma.order.create({
     data: {
@@ -61,8 +72,8 @@ export async function createMatrixOrder(input: {
       note,
       panelServerId,
       price: priced.price * quantity,
-      accountName: input.accountName,
-      customName: input.accountName,
+      accountName,
+      customName: accountName,
       targetSubId: input.targetSubId,
       status: OrderStatus.pending_payment,
       paymentMethod: input.paymentMethod ?? PaymentMethod.card_to_card,
