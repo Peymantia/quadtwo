@@ -149,6 +149,8 @@ q2 env             # ویرایش .env
 q2 update          # به‌روزرسانی از GitHub
 q2 set-token       # عوض کردن ربات / rebrand
 q2 set-admin       # عوض کردن ادمین تلگرام
+q2 activate        # فعال‌سازی لایسنس خریدار
+q2 license         # وضعیت لایسنس
 ```
 
 `quadtwo` همان `q2` است (symlink).
