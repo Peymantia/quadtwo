@@ -303,6 +303,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
   const [accountName, setAccountName] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ code?: string; subUrl?: string | null } | null>(null);
+  const [matrixConfirmOpen, setMatrixConfirmOpen] = useState(false);
 
   useEffect(() => {
     void api<{
@@ -333,6 +334,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
 
   async function create() {
     if (!selected) return;
+    setMatrixConfirmOpen(false);
     setBusy(true);
     setResult(null);
     try {
@@ -437,7 +439,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
               className="btn success wide"
               style={{ marginTop: 14 }}
               disabled={!selected || busy}
-              onClick={() => void create()}
+              onClick={() => setMatrixConfirmOpen(true)}
             >
               {busy ? "در حال ساخت…" : "ساخت اکانت"}
             </button>
@@ -463,6 +465,30 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
             </button>
           )}
         </div>
+      )}
+      {selected && (
+        <Modal open={matrixConfirmOpen} title="تأیید ساخت اکانت" onClose={() => setMatrixConfirmOpen(false)}>
+          <p className="order-confirm-summary">
+            {[
+              `اکانت «${accountName.trim() || "رندوم"}»`,
+              `نوع: ${catLabels[selected.category] || selected.category}`,
+              `حجم: ${selected.trafficGb == null ? "نامحدود" : `${selected.trafficGb.toLocaleString("fa-IR")} گیگابایت`}`,
+              `مدت: ${selected.months.toLocaleString("fa-IR")} ماه`,
+              `مبلغ: ${formatToman(selected.price)}`,
+            ].join("\n")}
+          </p>
+          <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
+            ساخت رایگان توسط ادمین — بدون کسر از کیف پول.
+          </p>
+          <div className="actions order-confirm-actions">
+            <button type="button" className="btn success" disabled={busy} onClick={() => void create()}>
+              تأیید و ساخت
+            </button>
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => setMatrixConfirmOpen(false)}>
+              انصراف
+            </button>
+          </div>
+        </Modal>
       )}
     </>
   );

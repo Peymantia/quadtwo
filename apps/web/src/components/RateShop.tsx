@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api, formatToman } from "../lib/api";
+import { Modal } from "./Modal";
 
 export type RateShopCatalog = {
   categories: string[];
@@ -142,6 +143,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const [price, setPrice] = useState<number | null>(null);
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
   const [quoting, setQuoting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingName, setPendingName] = useState("");
 
   const volumeFixed = category === "unlimited";
   const monthsLocked = category === "national" || Math.max(1, catalog.maxMonths || 1) <= 1;
@@ -252,24 +255,41 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     };
   }, [category, trafficGb, months, volumeFixed]);
 
-  async function submit(payWithWallet: boolean) {
+  function resolveAccountName() {
+    if (nameMode === "custom") return customName.trim();
+    return randomName(variant === "agent" || variant === "admin" ? "p" : "u");
+  }
+
+  function openConfirm() {
     if (nameMode === "custom" && !customName.trim()) return;
-    const accountName =
-      nameMode === "custom"
-        ? customName.trim()
-        : randomName(variant === "agent" || variant === "admin" ? "p" : "u");
+    setPendingName(resolveAccountName());
+    setConfirmOpen(true);
+  }
+
+  async function confirmPay(payWithWallet: boolean) {
+    setConfirmOpen(false);
     await onSubmit({
       category,
       trafficGb: volumeFixed ? null : trafficGb,
       months: category === "national" ? 1 : months,
       limitIp,
-      accountName,
+      accountName: pendingName,
       note: note.trim() || null,
       payWithWallet,
     });
   }
 
   const canSubmit = !busy && !quoting && price != null && (nameMode === "random" || Boolean(customName.trim()));
+  const catLabel = catalog.categoryLabels[category] || category;
+  const confirmLines = [
+    `اکانت «${pendingName}»`,
+    `نوع: ${catLabel}`,
+    `حجم: ${volumeFixed ? "نامحدود" : `${(trafficGb ?? 0).toLocaleString("fa-IR")} گیگابایت`}`,
+    `مدت: ${(category === "national" ? 1 : months).toLocaleString("fa-IR")} ماه`,
+    `محدودیت کاربر: ${limitIp <= 0 ? "نامحدود" : `${limitIp.toLocaleString("fa-IR")} کاربر`}`,
+    `مبلغ: ${price != null ? formatToman(price) : "—"}`,
+  ];
+  if (note.trim()) confirmLines.push(`توضیحات: ${note.trim()}`);
 
   if (!cats.length) {
     return <p className="muted" style={{ margin: 0 }}>هنوز دسته‌ای برای فروش فعال نشده است.</p>;
@@ -390,28 +410,50 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
       <div className="seek-checkout">
         <div className="seek-pay-row">
-          {variant === "user" && (
+          <button type="button" className="btn seek-pay-card wide" disabled={!canSubmit} onClick={openConfirm}>
+            {variant === "admin" ? "ساخت کانفیگ" : "بررسی و پرداخت"}
+          </button>
+        </div>
+      </div>
+
+      <Modal open={confirmOpen} title="تأیید ساخت اکانت" onClose={() => setConfirmOpen(false)}>
+        <p className="order-confirm-summary">{confirmLines.join("\n")}</p>
+        {variant === "admin" && (
+          <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
+            ساخت رایگان توسط ادمین — بدون کسر از کیف پول.
+          </p>
+        )}
+        <div className="actions order-confirm-actions">
+          {variant !== "admin" && (
             <>
-              <button type="button" className="btn seek-pay-wallet" disabled={!canSubmit} onClick={() => void submit(true)}>
-                پرداخت از کیف پول
+              <button
+                type="button"
+                className="btn seek-pay-wallet"
+                disabled={busy}
+                onClick={() => void confirmPay(true)}
+              >
+                تأیید و پرداخت از کیف پول
               </button>
-              <button type="button" className="btn seek-pay-card" disabled={!canSubmit} onClick={() => void submit(false)}>
-                کارت به کارت
+              <button
+                type="button"
+                className="btn seek-pay-card"
+                disabled={busy}
+                onClick={() => void confirmPay(false)}
+              >
+                تأیید و پرداخت کارت به کارت
               </button>
             </>
           )}
-          {variant === "agent" && (
-            <button type="button" className="btn seek-pay-card wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-              پرداخت از کیف پول و ساخت
-            </button>
-          )}
           {variant === "admin" && (
-            <button type="button" className="btn seek-pay-card wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-              ساخت کانفیگ
+            <button type="button" className="btn success" disabled={busy} onClick={() => void confirmPay(true)}>
+              تأیید و ساخت
             </button>
           )}
+          <button type="button" className="btn ghost" disabled={busy} onClick={() => setConfirmOpen(false)}>
+            انصراف
+          </button>
         </div>
-      </div>
+      </Modal>
     </div>
   );
 }

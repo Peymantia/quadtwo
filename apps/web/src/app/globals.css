@@ -2457,6 +2457,30 @@ button.pay-dest-number:active,
   grid-column: 1 / -1;
 }
 
+.order-confirm-summary {
+  margin: 0 0 14px;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.order-confirm-actions {
+  flex-direction: column;
+}
+
+.order-confirm-actions > .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .order-confirm-actions > .btn {
+    flex: 1 1 100%;
+    min-width: 100%;
+  }
+}
+
 .btn.seek-pay-wallet {
   background: transparent;
   border: 1.5px solid #f59e0b;

@@ -5,10 +5,15 @@ import { DashShell, LoadingScreen, type ShellTab } from "./DashShell";
 import { Toast, ConfirmToast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
 import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
+import { CardPayModal } from "./CardPayModal";
+import { Modal } from "./Modal";
 import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "./SortSelect";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "./RateShop";
+
+type PayCard = { number: string; holder: string };
+type PayModalState = { orderId: string; price: number; card: PayCard } | null;
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 type Cell = {
@@ -63,9 +68,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ code?: string; subUrl?: string | null } | null>(null);
   const [chargeAmount, setChargeAmount] = useState("");
-  const [payCard, setPayCard] = useState<{ number: string; holder: string } | null>(null);
+  const [payCard, setPayCard] = useState<PayCard | null>(null);
   const [txs, setTxs] = useState<Array<{ id: string; type: string; amount: number; createdAt: string; note?: string | null }>>([]);
   const [confirmRotate, setConfirmRotate] = useState<ConfigItem | null>(null);
+  const [matrixConfirmOpen, setMatrixConfirmOpen] = useState(false);
+  const [payModal, setPayModal] = useState<PayModalState>(null);
 
   const loadConfigs = useCallback(
     () => api<{ items: ConfigItem[] }>("/partner/configs").then((r) => setConfigs(r.items ?? [])),
@@ -149,24 +156,27 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
 
   if (loading || !home) return <LoadingScreen />;
 
-  async function create() {
+  async function create(payWithWallet: boolean) {
     if (!selected) return;
+    setMatrixConfirmOpen(false);
     setErr(null);
     setMsg(null);
     setResult(null);
     setBusy(true);
     try {
+      const name = accountName.trim() || `p${Date.now().toString(36)}`;
       const r = await api<{
         provisioned?: { code?: string; subUrl?: string | null };
-        order?: { price: number };
+        order?: { id: string; price: number };
+        card?: PayCard;
         error?: string;
       }>("/partner/create", {
         body: {
           trafficGb: selected.trafficGb,
           months: selected.months,
           category: selected.category,
-          accountName: accountName.trim() || undefined,
-          payWithWallet: true,
+          accountName: name,
+          payWithWallet,
         },
       });
       if (r.provisioned) {
@@ -174,6 +184,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         setMsg("کانفیگ با موفقیت ساخته شد ✅");
         setAccountName("");
         await reload();
+      } else if (r.order && r.card) {
+        setPayCard(r.card);
+        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
       } else {
         setMsg(`سفارش ${formatToman(r.order!.price)} ثبت شد`);
       }
@@ -192,7 +205,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     try {
       const r = await api<{
         provisioned?: { code?: string; subUrl?: string | null };
-        order?: { price: number };
+        order?: { id: string; price: number };
+        card?: PayCard;
         error?: string;
       }>("/partner/create", {
         body: {
@@ -202,16 +216,51 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           accountName: payload.accountName,
           limitIp: payload.limitIp,
           note: payload.note,
-          payWithWallet: true,
+          payWithWallet: payload.payWithWallet,
         },
       });
       if (r.provisioned) {
         setResult(r.provisioned);
         setMsg("کانفیگ با موفقیت ساخته شد ✅");
         await reload();
+      } else if (r.order && r.card) {
+        setPayCard(r.card);
+        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
       } else {
         setMsg(`سفارش ${formatToman(r.order!.price)} ثبت شد`);
       }
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markOrderPaid() {
+    if (!payModal) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/me/orders/${payModal.orderId}/receipt`, {
+        body: { receiptText: "پرداخت کارت‌به‌کارت از داشبورد (همکار)" },
+      });
+      setMsg("رسید ثبت شد و برای تأیید ادمین ارسال شد ✅");
+      setPayModal(null);
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitOrderReceipt(receiptText: string) {
+    if (!payModal) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/me/orders/${payModal.orderId}/receipt`, { body: { receiptText } });
+      setMsg("رسید ثبت شد و برای تأیید ادمین ارسال شد ✅");
+      setPayModal(null);
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
@@ -385,9 +434,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   className="btn success wide"
                   style={{ marginTop: 14 }}
                   disabled={!selected || busy}
-                  onClick={create}
+                  onClick={() => setMatrixConfirmOpen(true)}
                 >
-                  ساخت و تحویل فوری
+                  بررسی و پرداخت
                 </button>
               </>
             )}
@@ -593,6 +642,44 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             setErr(bad ?? null);
           }}
           onSaved={() => void reload()}
+        />
+      )}
+
+      {selected && (
+        <Modal open={matrixConfirmOpen} title="تأیید ساخت اکانت" onClose={() => setMatrixConfirmOpen(false)}>
+          <p className="order-confirm-summary">
+            {[
+              `اکانت «${accountName.trim() || "رندوم"}»`,
+              `نوع: ${catLabels[selected.category] || selected.category}`,
+              `حجم: ${selected.trafficGb == null ? "نامحدود" : `${selected.trafficGb.toLocaleString("fa-IR")} گیگابایت`}`,
+              `مدت: ${selected.months.toLocaleString("fa-IR")} ماه`,
+              `مبلغ: ${formatToman(selected.price)}`,
+            ].join("\n")}
+          </p>
+          <div className="actions order-confirm-actions">
+            <button type="button" className="btn seek-pay-wallet" disabled={busy} onClick={() => void create(true)}>
+              تأیید و پرداخت از کیف پول
+            </button>
+            <button type="button" className="btn seek-pay-card" disabled={busy} onClick={() => void create(false)}>
+              تأیید و پرداخت کارت به کارت
+            </button>
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => setMatrixConfirmOpen(false)}>
+              انصراف
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {payModal && (
+        <CardPayModal
+          open
+          amount={payModal.price}
+          card={payModal.card}
+          busy={busy}
+          onPaid={markOrderPaid}
+          onSendReceipt={submitOrderReceipt}
+          onCancel={() => setPayModal(null)}
+          onCopied={() => setMsg("شماره کارت کپی شد")}
         />
       )}
     </DashShell>
