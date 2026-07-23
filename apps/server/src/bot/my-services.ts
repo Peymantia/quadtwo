@@ -20,9 +20,9 @@ export const waitingServiceNote = new Map<number, string>();
 /** Button label: Sanaei panel name only (email/title), no QT-code prefix. */
 function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest" | "note">) {
   const name = (sub.email || sub.title || "").trim() || (sub.code || "").trim() || "سرویس";
-  let label = name;
+  // Always lead with note glyph so Premium/Universal icon shows (imported accounts may have empty note).
+  let label = `📝 ${name}`;
   if (sub.isTest) label = `🧪 ${label}`;
-  if (sub.note?.trim()) label = `📝 ${label}`;
   return label.length > 30 ? `${label.slice(0, 29)}…` : label;
 }
 
