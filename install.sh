@@ -251,6 +251,8 @@ do_install() {
   echo "  Config:   q2 env"
   echo "  New bot:  q2 set-token   # after BotFather token change / rebrand"
   echo "  New admin: q2 set-admin  # replace ADMIN_TELEGRAM_IDS + demote old admins"
+  echo "  Demo:     q2 demo        # DEMO_MODE on/off / status (showcase bot)"
+  echo "  License:  q2 activate | q2 license"
   echo "  Dashboard: https://${DASH_DOMAIN:-dash.anthropics.ir}"
   echo "  Nginx sample: deploy/nginx-dash.anthropics.ir.conf"
   echo "  In bot:  /setcard CARD_NUMBER|CARD_HOLDER_NAME"

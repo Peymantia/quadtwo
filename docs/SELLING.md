@@ -4,20 +4,58 @@
 
 ## دمو (پیش‌نمایش یک‌رباته)
 
-سه ربات جدا لازم نیست. یک نصب با `DEMO_MODE=true`:
+سه ربات جدا لازم نیست. **یک نصب** QuadTwo با فلگ `DEMO_MODE=true`:
 
-```env
-DEMO_MODE=true
-BOT_TOKEN=...          # ربات دمو
-ADMIN_TELEGRAM_IDS=... # اختیاری
-```
-
+- همان `BOT_TOKEN` همان ربات BotFather است
 - در تلگرام دکمه **تغییر نقش دمو** → ادمین / همکار / عمده / کاربر
 - در داشبورد وب نوار زرد بالای صفحه همان سوییچ را دارد
 - نقش فقط در سشن دمو عوض می‌شود؛ نقش واقعی دیتابیس ثابت می‌ماند
-- این نصب را از فروش مشتری جدا نگه دارید (sandbox / پنل تست)
+- لایسنس در دمو چک نمی‌شود
+- این نصب را از فروش مشتری جدا نگه دارید (VPS / دامنه / پنل تست جدا)
 
-لایسنس در دمو چک نمی‌شود.
+### نوشتن `.env` برای دمو
+
+حداقل:
+
+```env
+DEMO_MODE=true
+BOT_TOKEN=123456789:AAH...          # توکن ربات دمو از BotFather
+ADMIN_TELEGRAM_IDS=111111111        # تلگرام آیدی شما (عددی)
+DASH_DOMAIN=dash.your-demo.com
+PUBLIC_DOMAIN=dash.your-demo.com
+NEXT_PUBLIC_API_URL=https://dash.your-demo.com
+NEXT_PUBLIC_APP_URL=https://dash.your-demo.com
+CORS_ORIGINS=https://dash.your-demo.com
+
+# پنل تست 3x-ui
+XUI_BASE_URL=http://127.0.0.1:2053/
+XUI_API_TOKEN=...
+XUI_INBOUND_IDS=1,2,3
+```
+
+`DEMO_MODE` مقادیر `true` / `1` / `yes` را می‌پذیرد. برای خاموش کردن: `DEMO_MODE=false` یا حذف خط.
+
+روی نصب مشتری پولی **فعال نکنید**.
+
+### مدیریت از CLI (پیشنهادی)
+
+بعد از `install.sh` روی سرور دمو:
+
+```bash
+q2                  # منو → d) demo bot
+q2 demo             # همان منوی Demo Bot
+q2 demo status      # وضعیت DEMO_MODE + ربات
+q2 demo enable      # ویزارد: توکن / ادمین اختیاری + DEMO_MODE=true + ری‌استارت
+q2 demo disable     # DEMO_MODE=false + ری‌استارت
+```
+
+منوی Demo Bot:
+
+1. status  
+2. enable  
+3. disable  
+4. set-token  
+5. set-admin  
 
 ---
 

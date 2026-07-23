@@ -207,6 +207,221 @@ do_license_status() {
   fi
 }
 
+demo_mode_on() {
+  local v
+  v="$(env_get DEMO_MODE 2>/dev/null || true)"
+  v="$(echo "$v" | tr '[:upper:]' '[:lower:]')"
+  [[ "$v" == "1" || "$v" == "true" || "$v" == "yes" ]]
+}
+
+do_demo_status() {
+  local token me bot_user bot_name
+  echo -e "${BOLD}Demo Bot status${NC}"
+  echo
+  if demo_mode_on; then
+    echo -e "  Mode:   ${GREEN}ON${NC}  (DEMO_MODE=true)"
+  else
+    echo -e "  Mode:   ${DIM}OFF${NC}  (DEMO_MODE=$(env_get DEMO_MODE 2>/dev/null || echo empty))"
+  fi
+  echo "  Admins: $(env_get ADMIN_TELEGRAM_IDS 2>/dev/null || echo '(empty)')"
+  echo "  Dash:   $(env_get DASH_DOMAIN 2>/dev/null || echo '(empty)')"
+  token="$(env_get BOT_TOKEN 2>/dev/null || true)"
+  if [[ -n "$token" ]]; then
+    echo -n "  Bot:    "
+    me="$(telegram_get_me "$token" 2>/dev/null || true)"
+    if [[ -n "$me" ]]; then
+      bot_user="$(echo "$me" | grep -o '"username":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+      bot_name="$(echo "$me" | grep -o '"first_name":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+      if [[ -n "$bot_user" ]]; then
+        echo "@${bot_user}${bot_name:+ ($bot_name)}"
+      else
+        echo "(token set — could not parse getMe)"
+      fi
+    else
+      echo "(token set — Telegram unreachable / invalid)"
+    fi
+  else
+    echo "  Bot:    (no BOT_TOKEN)"
+  fi
+  echo
+  if demo_mode_on; then
+    echo -e "${DIM}In Telegram: «تغییر نقش دمو» — switch admin / partner / wholesale / user.${NC}"
+    echo -e "${DIM}In web dash: yellow bar at top — same role switch.${NC}"
+    echo -e "${DIM}License checks are skipped while DEMO_MODE is on.${NC}"
+  else
+    echo -e "${DIM}Enable with: q2 demo enable${NC}"
+  fi
+}
+
+do_demo_enable() {
+  local TOKEN="${1:-}" IDS="${2:-}" ENV_FILE ans
+  ENV_FILE="$(env_file)"
+  [[ -f "$ENV_FILE" ]] || { echo "No .env at $ENV_FILE"; exit 1; }
+
+  echo -e "${BOLD}Enable Demo Bot${NC}"
+  echo
+  echo "One install = one bot. Demo is the same QuadTwo with DEMO_MODE=true"
+  echo "(role switcher in bot + web; license skipped). Use a separate VPS"
+  echo "or BotFather bot for demos — do not enable on a paid customer install."
+  echo
+  do_demo_status
+  echo
+
+  if [[ -z "$TOKEN" ]]; then
+    read -r -p "BOT_TOKEN for demo (Enter = keep current): " TOKEN || true
+  fi
+  TOKEN="$(echo "${TOKEN:-}" | tr -d '[:space:]')"
+  if [[ -n "$TOKEN" ]]; then
+    if [[ ! "$TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
+      echo "Token format looks invalid (expected 123456789:ABC...)."
+      exit 1
+    fi
+    echo "Validating token with Telegram..."
+    telegram_get_me "$TOKEN" >/dev/null || {
+      echo "Telegram rejected this token (network or invalid token)."
+      exit 1
+    }
+    set_env_key BOT_TOKEN "$TOKEN"
+    echo "BOT_TOKEN updated."
+  fi
+
+  if [[ -z "$IDS" ]]; then
+    echo "Current ADMIN_TELEGRAM_IDS: $(env_get ADMIN_TELEGRAM_IDS || echo '(empty)')"
+    read -r -p "Demo admin Telegram ID(s), comma-separated (Enter = keep): " IDS || true
+  fi
+  IDS="$(echo "${IDS:-}" | tr -d '[:space:]' | tr -d '@')"
+  if [[ -n "$IDS" ]]; then
+    if [[ ! "$IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+      echo "Invalid ID list (expected numeric IDs like 123456789)."
+      exit 1
+    fi
+    set_env_key ADMIN_TELEGRAM_IDS "$IDS"
+    echo "ADMIN_TELEGRAM_IDS → $IDS"
+    (
+      cd "$DIR"
+      set -a
+      # shellcheck disable=SC1091
+      source "$ENV_FILE"
+      set +a
+      if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
+        "$DIR/node_modules/.bin/tsx" apps/server/scripts/set-admin.ts "$IDS"
+      elif command -v npx >/dev/null 2>&1; then
+        npx --yes tsx apps/server/scripts/set-admin.ts "$IDS"
+      fi
+    ) || echo "Warning: DB admin sync failed — .env was still updated."
+  fi
+
+  set_env_key DEMO_MODE "true"
+  echo -e "DEMO_MODE → ${GREEN}true${NC}"
+  echo "Restarting services..."
+  svc_restart
+  sleep 1
+  echo
+  do_demo_status
+  echo
+  echo "Done. Open the bot and send /start — use «تغییر نقش دمو»."
+}
+
+do_demo_disable() {
+  local ENV_FILE ans
+  ENV_FILE="$(env_file)"
+  [[ -f "$ENV_FILE" ]] || { echo "No .env at $ENV_FILE"; exit 1; }
+  if ! demo_mode_on; then
+    echo "Demo mode is already off."
+    return 0
+  fi
+  echo "This turns off the role switcher (bot + web). License rules apply again if configured."
+  read -r -p "Disable DEMO_MODE? [y/N]: " ans || true
+  case "${ans:-}" in
+    y|Y|yes|YES) ;;
+    *) echo "Cancelled."; return 0 ;;
+  esac
+  set_env_key DEMO_MODE "false"
+  echo -e "DEMO_MODE → ${YELLOW}false${NC}"
+  echo "Restarting services..."
+  svc_restart
+  sleep 1
+  echo "Done. Demo role switcher is off."
+}
+
+demo_menu() {
+  local choice tok ids
+  while true; do
+    clear 2>/dev/null || true
+    cat <<EOF
+${BOLD}${CYAN}╔══════════════════════════╗
+║   Demo Bot               ║
+╚══════════════════════════╝${NC}
+${DIM}Same install · DEMO_MODE flag · role switcher${NC}
+
+EOF
+    do_demo_status
+    cat <<EOF
+
+  ${GREEN}1${NC}) status
+  ${GREEN}2${NC}) enable   ${DIM}(DEMO_MODE=true + optional token/admin)${NC}
+  ${GREEN}3${NC}) disable  ${DIM}(DEMO_MODE=false)${NC}
+  ${GREEN}4${NC}) set-token ${DIM}(demo bot from BotFather)${NC}
+  ${GREEN}5${NC}) set-admin ${DIM}(who can open control)${NC}
+  ${YELLOW}0${NC}) back
+
+EOF
+    read -r -p "Select [0-5]: " choice || true
+    case "${choice:-}" in
+      1) do_demo_status; pause ;;
+      2) do_demo_enable; pause ;;
+      3) do_demo_disable; pause ;;
+      4)
+        read -r -p "BOT_TOKEN (Enter to prompt): " tok || true
+        do_set_token "${tok:-}"
+        pause
+        ;;
+      5)
+        read -r -p "Admin ID(s) (Enter to prompt): " ids || true
+        do_set_admin "${ids:-}"
+        pause
+        ;;
+      0|b|B|back) return 0 ;;
+      *)
+        echo "Invalid option."
+        pause
+        ;;
+    esac
+  done
+}
+
+do_demo() {
+  local sub="${1:-}"
+  shift || true
+  case "${sub}" in
+    ""|menu) demo_menu ;;
+    status|st) do_demo_status ;;
+    enable|on|true) do_demo_enable "${1:-}" "${2:-}" ;;
+    disable|off|false) do_demo_disable ;;
+    help|-h|--help)
+      cat <<EOF
+${BOLD}q2 demo${NC} — manage DEMO_MODE showcase bot
+
+  q2 demo              Interactive Demo Bot menu
+  q2 demo status       Show DEMO_MODE + bot
+  q2 demo enable       Turn on DEMO_MODE (optional token / admin)
+  q2 demo disable      Turn off DEMO_MODE
+
+.env essentials:
+  DEMO_MODE=true
+  BOT_TOKEN=123456:ABC...     # BotFather token for the demo bot
+  ADMIN_TELEGRAM_IDS=111,222  # who controls / can switch roles
+  DASH_DOMAIN=dash.example.com
+EOF
+      ;;
+    *)
+      echo "Unknown demo subcommand: $sub"
+      echo "Try: q2 demo help"
+      exit 1
+      ;;
+  esac
+}
+
 do_activate() {
   local KEY="${1:-}" ENV_FILE HOST ADMINS PARSED
   ENV_FILE="$(env_file)"
@@ -300,6 +515,8 @@ Usage:
   q2 set-admin [ID,...]
   q2 activate [KEY]  Bind license (Telegram admin + dash host)
   q2 license         Show license status
+  q2 demo            Demo Bot menu (DEMO_MODE on/off / status)
+  q2 demo status|enable|disable
 
 Also available as: ${CYAN}quadtwo${NC}
 EOF
@@ -320,6 +537,7 @@ run_cmd() {
     set-admin|setadmin) do_set_admin "${1:-}" ;;
     activate) do_activate "${1:-}" ;;
     license|lic) do_license_status ;;
+    demo) do_demo "$@" ;;
     help|-h|--help) print_usage ;;
     "") return 1 ;;
     *)
@@ -354,10 +572,11 @@ ${DIM}dir: ${DIR}${NC}
   ${GREEN}9${NC}) set-admin  ${DIM}[ID,...]${NC}
   ${GREEN}a${NC}) activate   ${DIM}[license key]${NC}
   ${GREEN}l${NC}) license status
+  ${GREEN}d${NC}) demo bot   ${DIM}(DEMO_MODE)${NC}
   ${YELLOW}0${NC}) exit
 
 EOF
-  read -r -p "Select [0-9/a/l]: " choice || true
+  read -r -p "Select [0-9/a/l/d]: " choice || true
   case "${choice:-}" in
     1) run_cmd start; pause ;;
     2) run_cmd stop; pause ;;
@@ -386,6 +605,7 @@ EOF
       pause
       ;;
     l|L) run_cmd license; pause ;;
+    d|D) run_cmd demo ;;
     0|q|Q|exit) echo "Bye."; exit 0 ;;
     *)
       echo "Invalid option."
