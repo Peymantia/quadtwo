@@ -142,7 +142,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
   return (
     <Modal open={open && Boolean(info)} title="تمدید سرویس" onClose={onClose}>
       {info && rules && (
-        <div className="rate-shop">
+        <div className="rate-shop renew-shop">
           <p className="muted" style={{ marginTop: 0 }}>
             سرویس: <strong className="num">{info.subscription.code}</strong>
             {" · "}

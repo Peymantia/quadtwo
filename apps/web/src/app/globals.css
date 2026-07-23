@@ -2224,14 +2224,14 @@ button.pay-dest-number:active,
 }
 
 @media (min-width: 720px) {
-  .rate-shop:not(.seek-shop) {
+  .rate-shop:not(.seek-shop):not(.renew-shop) {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 14px 18px;
     align-items: start;
   }
 
-  .rate-shop:not(.seek-shop) > .field:first-child,
+  .rate-shop:not(.seek-shop):not(.renew-shop) > .field:first-child,
   .rate-shop-price,
   .rate-shop-actions {
     grid-column: 1 / -1;
@@ -2240,6 +2240,24 @@ button.pay-dest-number:active,
   .rate-stepper {
     max-width: none;
   }
+}
+
+.renew-shop {
+  display: flex !important;
+  flex-direction: column;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.renew-shop > .rate-shop-card,
+.renew-shop > .rate-shop-price,
+.renew-shop > .rate-shop-actions,
+.renew-shop > p {
+  width: 100%;
+}
+
+.renew-shop .rate-stepper {
+  max-width: 280px;
 }
 
 @media (max-width: 420px) {
