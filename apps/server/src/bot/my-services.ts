@@ -17,15 +17,10 @@ export const waitingMyServicesSearch = new Set<number>();
 /** telegramId → subscriptionId waiting for note text */
 export const waitingServiceNote = new Map<number, string>();
 
+/** Button label: Sanaei panel name only (email/title), no QT-code prefix. */
 function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest" | "note">) {
-  const name = (sub.email || sub.title || "").trim();
-  const id = (sub.code || "").trim();
-  let label: string;
-  if (name && id && name.toLowerCase() !== id.toLowerCase()) {
-    label = name.length <= 16 ? `${id} · ${name}` : name;
-  } else {
-    label = name || id || "سرویس";
-  }
+  const name = (sub.email || sub.title || "").trim() || (sub.code || "").trim() || "سرویس";
+  let label = name;
   if (sub.isTest) label = `🧪 ${label}`;
   if (sub.note?.trim()) label = `📝 ${label}`;
   return label.length > 30 ? `${label.slice(0, 29)}…` : label;
