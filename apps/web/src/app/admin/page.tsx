@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
+import { DashShell, LoadingScreen, Icon, type ShellTab } from "../../components/DashShell";
 import { Modal } from "../../components/Modal";
 import { ConfirmToast, Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
@@ -265,33 +265,42 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
       <div className="panel">
         <h2>دسترسی سریع</h2>
         <div className="quick-actions">
-          <button type="button" className="btn success wide" onClick={() => onGo("create")}>
+          <button type="button" className="btn success wide quick-action-btn" onClick={() => onGo("create")}>
+            <Icon name="shop" size={18} />
             ساخت اکانت
           </button>
-          <button type="button" className="btn primary wide" onClick={() => onGo("orders")}>
+          <button type="button" className="btn primary wide quick-action-btn" onClick={() => onGo("orders")}>
+            <Icon name="orders" size={18} />
             بررسی سفارش‌ها
           </button>
-          <button type="button" className="btn light wide" onClick={() => onGo("users")}>
+          <button type="button" className="btn light wide quick-action-btn" onClick={() => onGo("users")}>
+            <Icon name="users" size={18} />
             مدیریت کاربران
           </button>
-          <button type="button" className="btn ghost wide" onClick={() => onGo("prices")}>
+          <button type="button" className="btn ghost wide quick-action-btn" onClick={() => onGo("prices")}>
+            <Icon name="tag" size={18} />
             قیمت‌گذاری
           </button>
-          <button type="button" className="btn ghost wide" onClick={() => onGo("settings")}>
+          <button type="button" className="btn ghost wide quick-action-btn" onClick={() => onGo("settings")}>
+            <Icon name="gear" size={18} />
             تنظیمات
           </button>
         </div>
         <div className="quick-actions-more">
-          <button type="button" className="btn ghost sm" onClick={() => onGo("categories")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("categories")}>
+            <Icon name="layers" size={15} />
             دسته‌ها
           </button>
-          <button type="button" className="btn ghost sm" onClick={() => onGo("panels")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("panels")}>
+            <Icon name="server" size={15} />
             سرورها
           </button>
-          <button type="button" className="btn ghost sm" onClick={() => onGo("reports")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("reports")}>
+            <Icon name="chart" size={15} />
             گزارش
           </button>
-          <button type="button" className="btn ghost sm" onClick={() => onGo("import")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("import")}>
+            <Icon name="file" size={15} />
             اکسل
           </button>
         </div>

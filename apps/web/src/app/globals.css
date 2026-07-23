@@ -427,6 +427,24 @@ h3 {
   gap: 10px;
 }
 
+.quick-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.quick-action-btn svg {
+  flex-shrink: 0;
+  opacity: 0.92;
+}
+
+.quick-actions-more > .quick-action-btn {
+  flex-direction: column;
+  gap: 4px;
+  padding-block: 10px;
+}
+
 .quick-actions-more {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
