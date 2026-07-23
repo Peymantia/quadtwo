@@ -351,7 +351,7 @@ export function myServicesListKeyboard(opts: {
   if (opts.pages > 1) {
     if (opts.page > 0) kb.text("◀️ قبلی", `mysvc:page:${opts.page - 1}`);
     kb.text(`${opts.page + 1}/${opts.pages}`, "wiz:noop");
-    if (opts.page < opts.pages - 1) kb.text("بعدی ▶️", `mysvc:page:${opts.page + 1}`);
+    if (opts.page < opts.pages - 1) kb.text("▶️ بعدی", `mysvc:page:${opts.page + 1}`);
     kb.row();
   }
   kb.text("« بستن", "buy:cat:cancel");

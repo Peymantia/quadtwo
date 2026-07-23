@@ -322,6 +322,13 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
     if (after.includes("سرور") || after.includes("پنل")) return PREMIUM_IDS.panels;
     return PREMIUM_IDS.desktop_server;
   }
+  if (glyph === "▶️") {
+    if (after.includes("بعدی")) return PREMIUM_IDS.next_page;
+    return PREMIUM_IDS.play;
+  }
+  if (glyph === "◀️") {
+    return PREMIUM_IDS.prev_page;
+  }
   const row = UNIVERSAL_BY_LENGTH.find((r) => r.glyph === glyph);
   return row?.id;
 }
