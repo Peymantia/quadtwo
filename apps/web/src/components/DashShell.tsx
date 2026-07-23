@@ -217,8 +217,10 @@ export type ShellTab = {
   /** Shorter label for mobile bottom bar (avoids wrapping) */
   shortLabel?: string;
   icon: IconName;
-  /** Keep in mobile bottom bar; remaining tabs go to hamburger */
+  /** Keep in mobile bottom bar; remaining tabs go to top overflow menu */
   pin?: boolean;
+  /** Raised center bubble in bottom nav (e.g. wallet / فروش) */
+  bubble?: boolean;
 };
 
 export function DashShell(props: {
@@ -254,9 +256,9 @@ export function DashShell(props: {
   const settingsTab = useMemo(() => props.tabs.find((t) => t.key === "settings"), [props.tabs]);
   const hasSettings = isAdminPanel && Boolean(settingsTab || props.onSettings);
 
-  const { left, wallet, right, more } = useMemo(() => {
-    const walletTab = navTabs.find((t) => t.key === "wallet") ?? null;
-    const rest = navTabs.filter((t) => t.key !== "wallet");
+  const { left, bubble, right, more } = useMemo(() => {
+    const bubbleTab = navTabs.find((t) => t.bubble || t.key === "wallet") ?? null;
+    const rest = navTabs.filter((t) => t.key !== bubbleTab?.key);
     const pinned = rest.filter((t) => t.pin);
     const unpinned = rest.filter((t) => !t.pin);
 
@@ -273,19 +275,19 @@ export function DashShell(props: {
       moreTabs = rest.slice(4);
     }
 
-    if (walletTab) {
-      // Keep declared tab order: items before wallet → bubble → items after wallet
+    if (bubbleTab) {
+      // Keep declared tab order: items before bubble → bubble → items after
       const order = navTabs.map((t) => t.key);
-      const walletOrder = order.indexOf("wallet");
-      const leftTabs = primaryRest.filter((t) => order.indexOf(t.key) < walletOrder);
-      const rightTabs = primaryRest.filter((t) => order.indexOf(t.key) > walletOrder);
-      return { left: leftTabs, wallet: walletTab, right: rightTabs, more: moreTabs };
+      const bubbleOrder = order.indexOf(bubbleTab.key);
+      const leftTabs = primaryRest.filter((t) => order.indexOf(t.key) < bubbleOrder);
+      const rightTabs = primaryRest.filter((t) => order.indexOf(t.key) > bubbleOrder);
+      return { left: leftTabs, bubble: bubbleTab, right: rightTabs, more: moreTabs };
     }
 
     const mid = Math.ceil(primaryRest.length / 2);
     return {
       left: primaryRest.slice(0, mid),
-      wallet: null,
+      bubble: null as ShellTab | null,
       right: primaryRest.slice(mid),
       more: moreTabs,
     };
@@ -294,6 +296,7 @@ export function DashShell(props: {
   const hasMore = more.length > 0;
   const moreActive = more.some((t) => t.key === props.active);
   const settingsActive = props.active === "settings";
+  const bubbleActive = Boolean(bubble && props.active === bubble.key);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -418,8 +421,8 @@ export function DashShell(props: {
         </main>
       </div>
 
-      <nav className={`bottom-nav${wallet ? " has-wallet-bubble" : ""}`} dir="rtl">
-        {wallet ? (
+      <nav className={`bottom-nav${bubble ? " has-wallet-bubble" : ""}`} dir="rtl">
+        {bubble ? (
           <>
             <div className="bottom-nav-side">
               {left.map((t) => (
@@ -436,14 +439,14 @@ export function DashShell(props: {
             </div>
             <button
               type="button"
-              className={`nav-wallet-bubble${props.active === "wallet" ? " active" : ""}`}
-              onClick={() => pickTab("wallet")}
-              aria-label={wallet.label}
+              className={`nav-wallet-bubble${bubbleActive ? " active" : ""}`}
+              onClick={() => pickTab(bubble.key)}
+              aria-label={bubble.label}
             >
               <span className="nav-wallet-bubble-inner">
-                <Icon name="wallet" size={22} />
+                <Icon name={bubble.icon} size={22} />
               </span>
-              <span className="nav-wallet-label">{wallet.shortLabel || wallet.label}</span>
+              <span className="nav-wallet-label">{bubble.shortLabel || bubble.label}</span>
             </button>
             <div className="bottom-nav-side">
               {right.map((t) => (
@@ -483,18 +486,6 @@ export function DashShell(props: {
                 {t.shortLabel || t.label}
               </button>
             ))}
-            {hasMore && (
-              <button
-                type="button"
-                className={moreOpen || moreActive ? "active" : ""}
-                aria-expanded={moreOpen}
-                aria-label={moreOpen ? "بستن منوی بیشتر" : "منوی بیشتر"}
-                onClick={() => setMoreOpen((v) => !v)}
-              >
-                <Icon name={moreOpen ? "close" : "menu"} size={21} />
-                {moreOpen ? "بستن" : "بیشتر"}
-              </button>
-            )}
           </>
         )}
       </nav>

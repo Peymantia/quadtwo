@@ -57,7 +57,7 @@ type PayModalState = {
 } | null;
 
 const TABS: ShellTab[] = [
-  { key: "shop", label: "فروشگاه", icon: "shop" },
+  { key: "shop", label: "خرید", icon: "shop" },
   { key: "subs", label: "اشتراک‌ها", icon: "wifi" },
   { key: "wallet", label: "کیف پول", icon: "wallet" },
   { key: "support", label: "پشتیبانی", icon: "chat" },
@@ -323,7 +323,7 @@ export default function UserAppPage() {
       brand={home.brand}
       title={
         tab === "shop"
-          ? "فروشگاه"
+          ? "خرید"
           : tab === "subs"
             ? "اشتراک‌های من"
             : tab === "wallet"
@@ -538,7 +538,7 @@ export default function UserAppPage() {
                 </div>
               );
             })}
-            {!subs.length && <p className="muted">هنوز سرویسی ندارید — از فروشگاه شروع کنید.</p>}
+            {!subs.length && <p className="muted">هنوز سرویسی ندارید — از «خرید» شروع کنید.</p>}
           </div>
         </div>
       )}

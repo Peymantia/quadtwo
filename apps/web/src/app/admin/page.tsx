@@ -17,10 +17,10 @@ import { SubQrModal } from "../../components/SubQrModal";
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
   { key: "home", label: "داشبورد", icon: "home", pin: true },
-  { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true },
+  { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true },
+  { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true, bubble: true },
   { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true },
   { key: "users", label: "کاربران", icon: "users", pin: true },
-  { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server" },
