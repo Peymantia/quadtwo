@@ -47,15 +47,27 @@ export async function setUserPassword(userId: string, password: string) {
   });
 }
 
-async function sendTelegramText(chatId: bigint, text: string, parseMode?: "HTML") {
+async function sendTelegramText(
+  chatId: bigint,
+  text: string,
+  opts?: { parseMode?: "HTML"; entities?: Array<Record<string, unknown>> },
+) {
   const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`;
+  let entities = opts?.entities;
+  if (!opts?.parseMode) {
+    const { getEmojiStyle, attachPremiumTextEntities } = await import("./emoji-transform.js");
+    if ((await getEmojiStyle()) === "premium") {
+      entities = attachPremiumTextEntities(text, entities as never);
+    }
+  }
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: String(chatId),
       text,
-      ...(parseMode ? { parse_mode: parseMode } : {}),
+      ...(opts?.parseMode ? { parse_mode: opts.parseMode } : {}),
+      ...(entities?.length ? { entities } : {}),
     }),
   });
   if (!res.ok) {
@@ -64,29 +76,32 @@ async function sendTelegramText(chatId: bigint, text: string, parseMode?: "HTML"
   }
 }
 
-function escapeTelegramHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/** OTP login message; <code> values copy to clipboard when tapped in Telegram mobile. */
+/** OTP login message; code entities copy on tap (no HTML parse_mode so Premium emojis work). */
 export function buildDashboardOtpTelegramMessage(loginUrl: string, login: string, code: string) {
-  const loginSafe = escapeTelegramHtml(login);
-  const codeSafe = escapeTelegramHtml(String(code));
-  return {
-    text: [
-      "لینک داشبورد:",
-      loginUrl,
-      "",
-      "👤 شناسه ورود:",
-      `<code>${loginSafe}</code>`,
-      "",
-      "🔐 رمز ورود:",
-      `<code>${codeSafe}</code>`,
-      "",
-      "اعتبار: ۵ دقیقه",
-    ].join("\n"),
-    parse_mode: "HTML" as const,
-  };
+  const lines = [
+    "🔗 لینک داشبورد:",
+    loginUrl,
+    "",
+    "👤 شناسه ورود:",
+    login,
+    "",
+    "🔐 رمز ورود:",
+    String(code),
+    "",
+    "⏳ اعتبار: ۵ دقیقه",
+  ];
+  const text = lines.join("\n");
+  const entities: Array<{ type: string; offset: number; length: number }> = [];
+  // Mark login + code lines as copyable code
+  let offset = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (i === 4 || i === 7) {
+      entities.push({ type: "code", offset, length: line.length });
+    }
+    offset += line.length + (i < lines.length - 1 ? 1 : 0);
+  }
+  return { text, entities };
 }
 
 /** Create OTP and deliver via Telegram. Returns masked destination. */
@@ -115,7 +130,7 @@ export async function requestLoginOtp(login: string): Promise<{ ok: true; hint: 
   const loginId = user.username ? `@${user.username}` : String(user.telegramId);
   try {
     const msg = buildDashboardOtpTelegramMessage(loginUrl, loginId, code);
-    await sendTelegramText(user.telegramId, msg.text, msg.parse_mode);
+    await sendTelegramText(user.telegramId, msg.text, { entities: msg.entities });
   } catch (err) {
     return { ok: false, error: String(err instanceof Error ? err.message : err) };
   }

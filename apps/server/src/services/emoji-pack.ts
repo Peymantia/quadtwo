@@ -92,7 +92,8 @@ export type EmojiKey =
   | "panels"
   | "import_excel"
   | "agent_name"
-  | "dash_web";
+  | "dash_web"
+  | "login_id";
 
 /** Current bot Unicode glyphs (Universal style). */
 export const UNIVERSAL: Record<EmojiKey, string> = {
@@ -186,6 +187,7 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   import_excel: "📥",
   agent_name: "🏷",
   dash_web: "🌐",
+  login_id: "👤",
 };
 
 /**
@@ -195,18 +197,18 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
 export const PREMIUM_IDS: Record<EmojiKey, string> = {
   buy: "5406683434124859552",
   renew: "5391079723449209646",
-  my_services: "5812268311261484198",
+  my_services: "6008334538986492961",
   wallet: "5409048419211682843",
-  account: "5987557724886405444",
+  account: "5334756265358798915",
   guide: "5422439311196834318",
   support: "5238025132177369293",
   test: "5337080053119336309",
   web_dashboard: "5447410659077661506",
-  dash_otp: "5296369303661067030",
+  dash_otp: "5303479226882603449",
   config_lookup: "6318752565865482087",
   partner_request: "5352795355635276043",
-  all_configs: "6323602795123443087",
-  agent_panel: "5339247212012528642",
+  all_configs: "5386367538735104399",
+  agent_panel: "5231012545799666522",
   control_center: "5361741454685256344",
   hide_keyboard: "5193202823411546657",
   referral: "5256143829672672750",
@@ -234,8 +236,8 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   plus_add: "5397916757333654639",
   refresh: "5375338737028841420",
   link: "5271604874419647061",
-  key: "6114136544312824398",
-  card: "5445353829304387411",
+  key: "5460731873808362174",
+  card: "5789532541102855208",
   bell_notif: "5458603043203327669",
   chart_report: "5435958519624916850",
   scroll_log: "6323602795123443087",
@@ -244,7 +246,7 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   speaker_channel: "5458603043203327669",
   inbox_import: "5253742260054409879",
   outbox_send: "5253742260054409879",
-  floppy_backup: "4947513368182260483",
+  floppy_backup: "5890849007139296140",
   desktop_server: "5193177581888755275",
   antenna_inbounds: "5764775314521593432",
   plug_test: "5384503132086625813",
@@ -283,13 +285,53 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   import_excel: "5321221045292638119",
   agent_name: "5461117441612462242",
   dash_web: "5447410659077661506",
+  /** OTP message: login id line (shares 👤 with account; matched by label) */
+  login_id: "5987557724886405444",
 };
+
+/** When several keys share a glyph, pick ID from surrounding label text. */
+export function resolvePremiumId(glyph: string, afterText: string): string | undefined {
+  const after = afterText.slice(0, 48);
+  if (glyph === "👤") {
+    if (after.includes("شناسه")) return PREMIUM_IDS.login_id;
+    return PREMIUM_IDS.account;
+  }
+  if (glyph === "🔐") {
+    if (after.includes("رمز")) return PREMIUM_IDS.key;
+    return PREMIUM_IDS.dash_otp;
+  }
+  if (glyph === "📌") {
+    if (after.includes("نمایش منو")) return PREMIUM_IDS.show_menu;
+    return PREMIUM_IDS.pin;
+  }
+  if (glyph === "⬇️") {
+    if (after.includes("تمام")) return PREMIUM_IDS.hide_keyboard;
+    if (after.includes("دانلود")) return PREMIUM_IDS.download;
+    return PREMIUM_IDS.download;
+  }
+  if (glyph === "📱") {
+    if (/^\s*QR/i.test(after)) return PREMIUM_IDS.qr_code;
+    if (after.includes("آیفون") || after.includes("iOS") || after.includes("iPhone")) return PREMIUM_IDS.iphone;
+    return PREMIUM_IDS.phone_device;
+  }
+  if (glyph === "📥") {
+    if (after.includes("اکسل")) return PREMIUM_IDS.import_excel;
+    return PREMIUM_IDS.inbox_import;
+  }
+  if (glyph === "🖥") {
+    if (after.includes("سرور") || after.includes("پنل")) return PREMIUM_IDS.panels;
+    return PREMIUM_IDS.desktop_server;
+  }
+  const row = UNIVERSAL_BY_LENGTH.find((r) => r.glyph === glyph);
+  return row?.id;
+}
 
 /** Prefer longer glyphs first so flags / ZWJ sequences match before shorter parts. */
 export const UNIVERSAL_BY_LENGTH: Array<{ key: EmojiKey; glyph: string; id: string }> = (
   Object.keys(UNIVERSAL) as EmojiKey[]
 )
   .map((key) => ({ key, glyph: UNIVERSAL[key], id: PREMIUM_IDS[key] }))
+  .filter((row, i, arr) => arr.findIndex((x) => x.glyph === row.glyph) === i) // unique glyphs for scanning
   .sort((a, b) => b.glyph.length - a.glyph.length);
 
 export function isEmojiStyle(v: unknown): v is EmojiStyle {

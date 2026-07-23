@@ -553,15 +553,14 @@ async function handleAccount(ctx: Context) {
   await ctx.reply(
     [
       "👤 حساب کاربری",
-      `نقش: ${roleLabel}`,
-      `آی‌دی: \`${user.telegramId}\``,
-      user.panelGroup ? `گروه پنل: ${user.panelGroup}` : "",
+      `👑 نقش: ${roleLabel}`,
+      `🔎 آی‌دی: ${user.telegramId}`,
+      user.panelGroup ? `🏷 گروه پنل: ${user.panelGroup}` : "",
       user.testClaimedAt ? "🧪 تست: دریافت‌شده" : "🧪 تست: هنوز نگرفته",
-      `موجودی: ${formatToman(wallet.balance)}`,
+      `💰 موجودی: ${formatToman(wallet.balance)}`,
     ]
       .filter(Boolean)
       .join("\n"),
-    { parse_mode: "Markdown" },
   );
 }
 
@@ -576,17 +575,16 @@ async function handleDashboard(ctx: Context) {
   const url = dashBaseUrl();
   await ctx.reply(
     [
-      "🌐 *داشبورد وب Piing*",
+      "🌐 داشبورد وب Piing",
       "",
-      `آدرس: ${url}`,
+      `🔗 آدرس: ${url}`,
       "",
       "ورود با رمز عبور یا کد یکبار مصرف از تلگرام.",
       "برای دریافت کد، دکمه «ورود به داشبورد وب اپ» را بزنید.",
     ].join("\n"),
     {
-      parse_mode: "Markdown",
       reply_markup: new InlineKeyboard()
-        .url("باز کردن داشبورد", url)
+        .url("🌐 باز کردن داشبورد", url)
         .row()
         .text("🔐 دریافت کد OTP", "dash:otp"),
     },
@@ -603,8 +601,8 @@ async function handleDashOtp(ctx: Context) {
     const loginUrl = `${dashBaseUrl().replace(/\/$/, "")}/login`;
     const msg = buildDashboardOtpTelegramMessage(loginUrl, login, String(code));
     await ctx.reply(msg.text, {
-      parse_mode: msg.parse_mode,
-      reply_markup: new InlineKeyboard().url("🚀 ورود به داشبورد", loginUrl),
+      ...(msg.entities?.length ? { entities: msg.entities as never } : {}),
+      reply_markup: new InlineKeyboard().url("🔐 ورود به داشبورد", loginUrl),
     });
   } catch (err) {
     await ctx.reply(friendlyBotError(err));
@@ -620,16 +618,17 @@ async function handleSupport(ctx: Context) {
   else if (supportId) contact = /^\d+$/.test(supportId) ? supportId : `@${supportId.replace(/^@/, "")}`;
 
   if (!contact) {
-    await ctx.reply("پشتیبانی هنوز تنظیم نشده است.");
+    await ctx.reply("🆘 پشتیبانی هنوز تنظیم نشده است.");
     return;
   }
 
   await ctx.reply(
     [
-      "درود بر تو ای عزیز ✨ خوبی شما؟",
+      "🆘 پشتیبانی",
+      "",
+      "درود بر تو ای عزیز ❤️ خوبی شما؟",
       "اگر مشکلی وجود داشت حتما به پشتیبانی پیام بده.",
-      "🕵️‍♂️",
-      contact,
+      `☎️ ${contact}`,
     ].join("\n"),
   );
 }

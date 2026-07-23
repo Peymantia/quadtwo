@@ -4,6 +4,7 @@ import {
   PREMIUM_IDS,
   UNIVERSAL_BY_LENGTH,
   isEmojiStyle,
+  resolvePremiumId,
   type EmojiStyle,
 } from "./emoji-pack.js";
 
@@ -41,7 +42,8 @@ function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: str
     if (text.startsWith(row.glyph)) {
       const rest = text.slice(row.glyph.length).replace(/^\s+/, "");
       if (!rest) return null;
-      return { glyph: row.glyph, id: row.id, rest };
+      const id = resolvePremiumId(row.glyph, rest) || row.id;
+      return { glyph: row.glyph, id, rest };
     }
   }
   return null;
@@ -97,13 +99,17 @@ export function attachPremiumTextEntities(text: string, existing?: TgEntity[]): 
   }
 
   for (const row of UNIVERSAL_BY_LENGTH) {
-    const id = PREMIUM_IDS[row.key] || row.id;
-    if (!id) continue;
     let from = 0;
     while (from < text.length) {
       const idx = text.indexOf(row.glyph, from);
       if (idx < 0) break;
       const len = row.glyph.length;
+      const after = text.slice(idx + len);
+      const id = resolvePremiumId(row.glyph, after) || PREMIUM_IDS[row.key] || row.id;
+      if (!id) {
+        from = idx + len;
+        continue;
+      }
       let free = true;
       for (let i = idx; i < idx + len; i++) {
         if (occupied.has(i)) {

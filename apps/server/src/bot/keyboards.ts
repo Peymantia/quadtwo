@@ -186,7 +186,7 @@ export function buyWizardKeyboard(opts: {
 
   const kb = new InlineKeyboard()
     .text("−", "wiz:vol:-")
-    .text(`📦 ${vol}`, "wiz:noop")
+    .text(`📏 ${vol}`, "wiz:noop")
     .text("+", "wiz:vol:+")
     .row();
 
@@ -406,10 +406,10 @@ export function renewWizardKeyboard(opts: {
   const kb = new InlineKeyboard();
 
   if (opts.category === "unlimited") {
-    kb.text(`📦 ${vol}`, "wiz:noop").row();
+    kb.text(`💎 ${vol}`, "wiz:noop").row();
   } else {
     kb.text("−", `renew:vol:${opts.subId}:-`)
-      .text(`📦 ${vol}`, "wiz:noop")
+      .text(`📏 ${vol}`, "wiz:noop")
       .text("+", `renew:vol:${opts.subId}:+`)
       .row();
   }
@@ -583,7 +583,7 @@ export function controlCenterKeyboard() {
     .row()
     .text("📜 لاگ عملیات", "cc:audit")
     .row()
-    .text("⬇️ حذف همکار / عمده‌فروش", "cc:demote")
+    .text("✖️ حذف همکار / عمده‌فروش", "cc:demote")
     .danger()
     .row()
     .text("💳 کارت بانکی", "cc:card")
