@@ -97,7 +97,9 @@ function SeekBar({
     <div className={`seek-block${disabled ? " is-disabled" : ""}`}>
       <div className="seek-head">
         <span className="seek-title">{title}</span>
-        <strong className="seek-metric">{value}</strong>
+        <strong className="seek-metric" dir="ltr">
+          {value}
+        </strong>
       </div>
       <div className="seek-track-wrap">
         <input
@@ -126,13 +128,42 @@ function SeekBar({
   );
 }
 
-/** Visual «N unit» using float:left (physical) so html[dir=rtl] cannot reorder. */
+/** «۳۰ گیگابایت» — Persian digits, physical LTR via inline-table (survives html[dir=rtl] + stale CSS). */
+function faNum(n: number | string): string {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return String(n);
+  return v.toLocaleString("fa-IR");
+}
+
 function SeekValueLabel({ num, unit }: { num: number | string; unit: string }) {
-  const n = typeof num === "number" ? String(num) : num;
   return (
-    <span className="seek-metric-pair" data-order="num-unit">
-      <span className="seek-metric-num">{n}</span>
-      <span className="seek-metric-unit">{unit}</span>
+    <span
+      className="seek-metric-pair"
+      dir="ltr"
+      style={{
+        display: "inline-table",
+        direction: "ltr",
+        unicodeBidi: "isolate",
+        borderCollapse: "collapse",
+        lineHeight: 1.2,
+      }}
+    >
+      <span
+        className="seek-metric-num"
+        style={{
+          display: "table-cell",
+          direction: "ltr",
+          unicodeBidi: "isolate",
+          paddingInlineEnd: "0.35em",
+          whiteSpace: "nowrap",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {faNum(num)}
+      </span>
+      <span className="seek-metric-unit" style={{ display: "table-cell", whiteSpace: "nowrap" }}>
+        {unit}
+      </span>
     </span>
   );
 }
