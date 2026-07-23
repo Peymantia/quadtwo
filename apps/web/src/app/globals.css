@@ -1204,9 +1204,29 @@ h3 {
   overflow: hidden;
 }
 
-.row-card > :not(.actions) {
+.row-card > :not(.actions):not(.config-card-actions) {
   min-width: 0;
   flex: 1 1 12rem;
+  max-width: 100%;
+}
+
+.row-card > .config-card-actions {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-top: 2px;
+}
+
+/* Stacked account cards — no flex-grow empty space */
+.row-card.row-card--stack {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  padding-bottom: 12px;
+}
+
+.row-card.row-card--stack > :not(.actions):not(.config-card-actions) {
+  flex: 0 0 auto;
+  width: 100%;
   max-width: 100%;
 }
 
@@ -1921,45 +1941,52 @@ button.pay-dest-number:active,
   justify-content: center;
 }
 
-/* Account card actions: row 1 = manage · row 2 = sub link */
+/* Account card actions: even grid, full width, no dead space */
 .config-card-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 100%;
+  flex: 0 0 auto;
 }
 
 .config-card-actions-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
 }
 
 .config-card-actions-row > .btn {
-  flex: 1 1 calc(50% - 4px);
+  width: 100%;
   min-width: 0;
   justify-content: center;
-  padding-inline: 12px;
+  box-sizing: border-box;
 }
 
-@media (min-width: 901px) {
-  .config-card-actions-row > .btn {
-    flex: 0 1 auto;
-    min-width: 120px;
-    padding-inline: 18px;
+.config-card-actions-row > .btn.btn-icon {
+  padding-inline: 10px;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+@media (min-width: 720px) {
+  .config-card-actions-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .config-card-actions-row.sub-links {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 900px) {
-  .config-card-actions-row > .btn {
-    flex: 1 1 calc(50% - 4px);
-    max-width: none;
-    box-sizing: border-box;
+@media (max-width: 719px) {
+  .config-card-actions-row.sub-links {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .config-card-actions-row > .btn:only-child {
-    flex-basis: 100%;
+  .config-card-actions-row.sub-links > .btn:not(.btn-icon) {
+    grid-column: span 1;
   }
 }
 
@@ -2593,26 +2620,34 @@ button.pay-dest-number:active,
   overflow: auto;
 }
 
-.acct-created-qr {
+.acct-created-btns {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.acct-created-btns > .btn {
+  justify-content: center;
+}
+
+.sub-qr-modal {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 16px 12px;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: #fff;
+  gap: 12px;
 }
 
-.acct-created-qr img {
+.sub-qr-img {
   display: block;
-  width: min(220px, 70vw);
+  width: min(280px, 78vw);
   height: auto;
-  border-radius: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #12162e;
 }
 
-.acct-created-qr .muted {
-  color: #475569;
+.sub-qr-hint {
+  margin: 0;
   font-size: 0.85rem;
 }
 

@@ -12,6 +12,7 @@ import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "./RateShop";
 import { AccountCreatedModal, type CreatedAccount } from "./AccountCreatedModal";
+import { SubQrModal } from "./SubQrModal";
 
 type PayCard = { number: string; holder: string };
 type PayModalState = { orderId: string; price: number; card: PayCard } | null;
@@ -74,6 +75,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [confirmRotate, setConfirmRotate] = useState<ConfigItem | null>(null);
   const [matrixConfirmOpen, setMatrixConfirmOpen] = useState(false);
   const [payModal, setPayModal] = useState<PayModalState>(null);
+  const [qrSub, setQrSub] = useState<{ url: string; title: string } | null>(null);
 
   const loadConfigs = useCallback(
     () => api<{ items: ConfigItem[] }>("/partner/configs").then((r) => setConfigs(r.items ?? [])),
@@ -485,7 +487,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                     ? `${((c.usedTrafficBytes ?? 0) / 1024 ** 3).toFixed(2)} GB`
                     : `${Math.round((c.usedTrafficBytes ?? 0) / 1024 ** 2)} MB`;
               return (
-                <div key={c.email} className="row-card" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                <div key={c.email} className="row-card row-card--stack">
                   <div>
                     <strong className="num">{c.email}</strong>{" "}
                     <span className={`badge ${active ? "ok" : "bad"}`}>
@@ -524,13 +526,23 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   </div>
                   {c.note && <div className="muted" style={{ marginTop: 6 }}>نوت: {c.note}</div>}
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
-                  <div className="config-card-actions" style={{ marginTop: 10 }}>
-                    <div className="config-card-actions-row">
+                  <div className="config-card-actions">
+                    <div className="config-card-actions-row sub-links">
                       <button type="button" className="btn primary sm" disabled={busy || !c.subUrl} onClick={() => void copySubLink(c)}>
-                        کپی لینک اشتراک
+                        کپی لینک
                       </button>
                       <button type="button" className="btn ghost sm" disabled={busy || !c.subId} onClick={() => setConfirmRotate(c)}>
-                        تغییر لینک ساب
+                        لینک جدید
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost sm btn-icon"
+                        disabled={busy || !c.subUrl}
+                        title="نمایش QR"
+                        aria-label="نمایش QR"
+                        onClick={() => c.subUrl && setQrSub({ url: c.subUrl, title: c.email })}
+                      >
+                        📷
                       </button>
                     </div>
                   </div>
@@ -681,6 +693,13 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           onCopied={() => setMsg("شماره کارت کپی شد")}
         />
       )}
+
+      <SubQrModal
+        open={Boolean(qrSub)}
+        title={qrSub ? `QR — ${qrSub.title}` : "QR اشتراک"}
+        subUrl={qrSub?.url}
+        onClose={() => setQrSub(null)}
+      />
     </DashShell>
   );
 }

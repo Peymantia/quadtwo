@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Modal } from "./Modal";
+import { SubQrModal } from "./SubQrModal";
 
 export type CreatedAccount = {
   code: string;
@@ -30,7 +31,7 @@ function trafficLabel(gb?: number | null) {
   return `${gb.toLocaleString("fa-IR")} گیگابایت`;
 }
 
-/** Success dialog after account provision — details, copy sub link, QR. */
+/** Success dialog after account provision — details, copy sub link, optional QR. */
 export function AccountCreatedModal({
   open,
   account,
@@ -43,6 +44,7 @@ export function AccountCreatedModal({
   onCopied?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   if (!account) return null;
 
@@ -74,42 +76,63 @@ export function AccountCreatedModal({
   ];
 
   return (
-    <Modal open={open} title="اکانت ساخته شد" onClose={onClose} wide>
-      <div className="acct-created">
-        <p className="acct-created-lead">مشخصات اکانت آماده است — لینک اشتراک را کپی کنید یا QR را اسکن کنید.</p>
+    <>
+      <Modal
+        open={open}
+        title="اکانت ساخته شد"
+        onClose={() => {
+          setQrOpen(false);
+          onClose();
+        }}
+        wide
+      >
+        <div className="acct-created">
+          <p className="acct-created-lead">مشخصات اکانت آماده است — لینک اشتراک را کپی کنید یا QR را باز کنید.</p>
 
-        <dl className="acct-created-meta">
-          {rows.map((r) => (
-            <div key={r.label} className="acct-created-row">
-              <dt>{r.label}</dt>
-              <dd className={r.ltr ? "num url-break" : undefined}>{r.value}</dd>
+          <dl className="acct-created-meta">
+            {rows.map((r) => (
+              <div key={r.label} className="acct-created-row">
+                <dt>{r.label}</dt>
+                <dd className={r.ltr ? "num url-break" : undefined}>{r.value}</dd>
+              </div>
+            ))}
+          </dl>
+
+          {account.subUrl && (
+            <div className="acct-created-link">
+              <div className="muted num url-break" dir="ltr">
+                {account.subUrl}
+              </div>
+              <div className="acct-created-btns">
+                <button type="button" className="btn primary" onClick={() => void copySub()}>
+                  {copied ? "کپی شد ✓" : "کپی لینک ساب"}
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setQrOpen(true)}>
+                  📷 QR
+                </button>
+              </div>
             </div>
-          ))}
-        </dl>
+          )}
 
-        {account.subUrl && (
-          <div className="acct-created-link">
-            <div className="muted num url-break" dir="ltr">
-              {account.subUrl}
-            </div>
-            <button type="button" className="btn primary wide" onClick={() => void copySub()}>
-              {copied ? "کپی شد ✓" : "کپی لینک ساب"}
-            </button>
-          </div>
-        )}
+          <button
+            type="button"
+            className="btn ghost wide"
+            onClick={() => {
+              setQrOpen(false);
+              onClose();
+            }}
+          >
+            بستن
+          </button>
+        </div>
+      </Modal>
 
-        {account.qrDataUrl && (
-          <div className="acct-created-qr">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={account.qrDataUrl} alt="QR کد اشتراک" width={220} height={220} />
-            <span className="muted">اسکن برای افزودن اشتراک</span>
-          </div>
-        )}
-
-        <button type="button" className="btn ghost wide" onClick={onClose}>
-          بستن
-        </button>
-      </div>
-    </Modal>
+      <SubQrModal
+        open={qrOpen}
+        title={`QR — ${account.code}`}
+        subUrl={account.subUrl}
+        onClose={() => setQrOpen(false)}
+      />
+    </>
   );
 }

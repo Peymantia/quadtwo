@@ -12,6 +12,7 @@ import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../com
 import { SortSelect, type ListSort } from "../../components/SortSelect";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
+import { SubQrModal } from "../../components/SubQrModal";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -1577,6 +1578,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   const [searchInput, setSearchInput] = useState("");
   const [searchQ, setSearchQ] = useState("");
   const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
+  const [qrSub, setQrSub] = useState<{ url: string; title: string } | null>(null);
 
   useEffect(() => {
     void api<{ groups: typeof groups }>("/admin/configs/groups").then((r) => setGroups(r.groups));
@@ -2032,7 +2034,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
           {items.map((c) => {
             const expired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
             return (
-              <div key={c.email} className="row-card" style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div key={c.email} className="row-card row-card--stack">
                 <div>
                   <strong className="num">{c.email}</strong>{" "}
                   {!c.inDb && <span className="badge warn">فقط پنل</span>}
@@ -2065,7 +2067,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                   </div>
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                 </div>
-                <div className="config-card-actions" style={{ marginTop: 10 }}>
+                <div className="config-card-actions">
                   <div className="config-card-actions-row">
                     {!c.inDb && (
                       <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
@@ -2093,12 +2095,22 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                     </button>
                   </div>
                   {c.inDb && c.subId && (
-                    <div className="config-card-actions-row">
+                    <div className="config-card-actions-row sub-links">
                       <button type="button" className="btn primary sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
-                        کپی لینک اشتراک
+                        کپی لینک
                       </button>
                       <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
-                        تغییر لینک ساب
+                        لینک جدید
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost sm btn-icon"
+                        disabled={editBusy || !c.subUrl}
+                        title="نمایش QR"
+                        aria-label="نمایش QR"
+                        onClick={() => c.subUrl && setQrSub({ url: c.subUrl, title: c.email })}
+                      >
+                        📷
                       </button>
                     </div>
                   )}
@@ -2251,6 +2263,13 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
         variant="admin"
         onClose={() => setRenewInfo(null)}
         onSubmit={submitAdminRenew}
+      />
+
+      <SubQrModal
+        open={Boolean(qrSub)}
+        title={qrSub ? `QR — ${qrSub.title}` : "QR اشتراک"}
+        subUrl={qrSub?.url}
+        onClose={() => setQrSub(null)}
       />
     </>
   );

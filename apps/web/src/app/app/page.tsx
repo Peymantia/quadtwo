@@ -12,6 +12,7 @@ import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
+import { SubQrModal } from "../../components/SubQrModal";
 
 type Sub = {
   id: string;
@@ -93,6 +94,7 @@ export default function UserAppPage() {
   const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
   const [confirmRotateId, setConfirmRotateId] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedAccount | null>(null);
+  const [qrSub, setQrSub] = useState<{ url: string; title: string } | null>(null);
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -422,7 +424,7 @@ export default function UserAppPage() {
               const usedLabel =
                 used <= 0 ? "۰" : used >= 1024 ** 3 ? `${(used / 1024 ** 3).toFixed(2)} GB` : `${Math.round(used / 1024 ** 2)} MB`;
               return (
-                <div key={s.id} className="row-card" style={{ alignItems: "flex-start", flexDirection: "column" }}>
+                <div key={s.id} className="row-card row-card--stack">
                   <div style={{ width: "100%" }}>
                     <strong className="num">{s.email}</strong>{" "}
                     <span className={`badge ${expired || s.status !== "active" ? "bad" : "ok"}`}>
@@ -486,7 +488,7 @@ export default function UserAppPage() {
                       </button>
                     </div>
                   </div>
-                  <div className="config-card-actions" style={{ width: "100%", marginTop: 10 }}>
+                  <div className="config-card-actions">
                     {!s.isTest && (
                       <div className="config-card-actions-row">
                         <button
@@ -499,7 +501,7 @@ export default function UserAppPage() {
                         </button>
                       </div>
                     )}
-                    <div className="config-card-actions-row">
+                    <div className="config-card-actions-row sub-links">
                       {s.subUrl && (
                         <button
                           type="button"
@@ -509,7 +511,7 @@ export default function UserAppPage() {
                             setMsg("لینک اشتراک کپی شد");
                           }}
                         >
-                          کپی لینک اشتراک
+                          کپی لینک
                         </button>
                       )}
                       <button
@@ -518,8 +520,19 @@ export default function UserAppPage() {
                         disabled={busy}
                         onClick={() => setConfirmRotateId(s.id)}
                       >
-                        تغییر لینک ساب
+                        لینک جدید
                       </button>
+                      {s.subUrl && (
+                        <button
+                          type="button"
+                          className="btn ghost sm btn-icon"
+                          title="نمایش QR"
+                          aria-label="نمایش QR"
+                          onClick={() => setQrSub({ url: s.subUrl!, title: s.email })}
+                        >
+                          📷
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -696,6 +709,13 @@ export default function UserAppPage() {
         account={created}
         onClose={() => setCreated(null)}
         onCopied={() => setMsg("لینک اشتراک کپی شد")}
+      />
+
+      <SubQrModal
+        open={Boolean(qrSub)}
+        title={qrSub ? `QR — ${qrSub.title}` : "QR اشتراک"}
+        subUrl={qrSub?.url}
+        onClose={() => setQrSub(null)}
       />
 
       {payModal && (
