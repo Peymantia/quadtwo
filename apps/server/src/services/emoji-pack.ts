@@ -294,6 +294,7 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
   const after = afterText.slice(0, 48);
   if (glyph === "👤") {
     if (after.includes("شناسه")) return PREMIUM_IDS.login_id;
+    if (after.includes("مالک")) return PREMIUM_IDS.referral;
     return PREMIUM_IDS.account;
   }
   if (glyph === "🔐") {

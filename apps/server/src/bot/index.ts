@@ -1364,7 +1364,7 @@ export function createBot() {
         await ctx.reply("⏳ در حال بررسی…");
         try {
           const result = await lookupConfigByLinkOrUuid(text);
-          await ctx.reply(result.message);
+          await ctx.reply(result.message, result.entities?.length ? { entities: result.entities } : undefined);
         } catch (err) {
           await ctx.reply(friendlyBotError(err));
         }
