@@ -281,6 +281,20 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
             تنظیمات
           </button>
         </div>
+        <div className="quick-actions-more">
+          <button type="button" className="btn ghost sm" onClick={() => onGo("categories")}>
+            دسته‌ها
+          </button>
+          <button type="button" className="btn ghost sm" onClick={() => onGo("panels")}>
+            سرورها
+          </button>
+          <button type="button" className="btn ghost sm" onClick={() => onGo("reports")}>
+            گزارش
+          </button>
+          <button type="button" className="btn ghost sm" onClick={() => onGo("import")}>
+            اکسل
+          </button>
+        </div>
       </div>
     </>
   );
