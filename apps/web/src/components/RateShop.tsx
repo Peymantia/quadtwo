@@ -97,7 +97,7 @@ function SeekBar({
     <div className={`seek-block${disabled ? " is-disabled" : ""}`}>
       <div className="seek-head">
         <span className="seek-title">{title}</span>
-        <strong className="seek-value">{value}</strong>
+        <strong className="seek-metric">{value}</strong>
       </div>
       <div className="seek-track-wrap">
         <input
@@ -126,13 +126,19 @@ function SeekBar({
   );
 }
 
-/** Number then unit — flex LTR avoids RTL bidi flipping (e.g. «گیگابایت ۲۵»). */
-function SeekValueLabel({ num, unit }: { num: string; unit: string }) {
+/** Always render as «N unit» with Latin digits inside an LTR isolate (RTL-safe). */
+function SeekValueLabel({ num, unit }: { num: number | string; unit: string }) {
+  const n = typeof num === "number" ? String(num) : num;
   return (
-    <>
-      <span className="seek-value-num">{num}</span>
-      <span className="seek-value-unit">{unit}</span>
-    </>
+    <bdi
+      className="seek-metric-ltr"
+      dir="ltr"
+      style={{ direction: "ltr", unicodeBidi: "isolate", display: "inline-block" }}
+    >
+      {n}
+      {"\u00A0"}
+      {unit}
+    </bdi>
   );
 }
 
@@ -230,11 +236,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const volumeValue = volumeFixed ? (
     "نامحدود"
   ) : (
-    <SeekValueLabel num={(trafficGb ?? 0).toLocaleString("fa-IR")} unit="گیگابایت" />
+    <SeekValueLabel num={trafficGb ?? 0} unit="گیگابایت" />
   );
-  const monthValue = <SeekValueLabel num={months.toLocaleString("fa-IR")} unit="ماه" />;
-  const ipValue =
-    limitIp <= 0 ? "نامحدود" : <SeekValueLabel num={limitIp.toLocaleString("fa-IR")} unit="کاربر" />;
+  const monthValue = <SeekValueLabel num={months} unit="ماه" />;
+  const ipValue = limitIp <= 0 ? "نامحدود" : <SeekValueLabel num={limitIp} unit="کاربر" />;
 
   useEffect(() => {
     let cancelled = false;
