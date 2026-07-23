@@ -96,7 +96,9 @@ function SeekBar({
     <div className={`seek-block${disabled ? " is-disabled" : ""}`}>
       <div className="seek-head">
         <span className="seek-title">{title}</span>
-        <strong className="seek-value num">{valueText}</strong>
+        <strong className="seek-value" dir="ltr">
+          {valueText}
+        </strong>
       </div>
       <div className="seek-track-wrap">
         <input
