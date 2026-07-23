@@ -113,22 +113,50 @@ bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install
 
 ## 🛠 مدیریت سرور
 
+منوی تعاملی (پیشنهادی):
+
 ```bash
-quadtwo status          # وضعیت سرویس
-quadtwo logs            # لاگ زنده
-quadtwo restart         # ری‌استارت
-quadtwo env             # ویرایش .env
-quadtwo update          # به‌روزرسانی از GitHub
-quadtwo set-token       # عوض کردن ربات / rebrand
-quadtwo set-admin       # عوض کردن ادمین تلگرام
+q2
+# یا
+quadtwo
 ```
+
+```text
+╔══════════════════════════╗
+║   QuadTwo  ·  Q2         ║
+╚══════════════════════════╝
+  1) start
+  2) stop
+  3) restart
+  4) update
+  5) status
+  6) logs
+  7) env
+  8) set-token  [TOKEN]
+  9) set-admin  [ID,...]
+  0) exit
+```
+
+دستور مستقیم:
+
+```bash
+q2 status          # وضعیت سرویس‌ها
+q2 logs            # لاگ زنده
+q2 restart         # ری‌استارت
+q2 env             # ویرایش .env
+q2 update          # به‌روزرسانی از GitHub
+q2 set-token       # عوض کردن ربات / rebrand
+q2 set-admin       # عوض کردن ادمین تلگرام
+```
+
+`quadtwo` همان `q2` است (symlink).
 
 ### 🔁 عوض کردن توکن ربات (rebrand)
 
 ```bash
-quadtwo set-token
+q2 set-token
 # یا
-quadtwo set-token 123456789:AAH...new-token
+q2 set-token 123456789:AAH...new-token
 ```
 
 توکن اعتبارسنجی می‌شود، `.env` به‌روز و سرویس ری‌استارت می‌شود. **دیتابیس حفظ می‌ماند** — کاربران فقط باید به ربات جدید `/start` بزنند.
@@ -136,11 +164,11 @@ quadtwo set-token 123456789:AAH...new-token
 ### 👑 عوض کردن ادمین
 
 ```bash
-quadtwo set-admin
+q2 set-admin
 # یا
-quadtwo set-admin 123456789
+q2 set-admin 123456789
 # چند ادمین:
-quadtwo set-admin 111111111,222222222
+q2 set-admin 111111111,222222222
 ```
 
 `ADMIN_TELEGRAM_IDS` در `.env` عوض می‌شود، ادمین‌های قدیمی دیتابیس به کاربر عادی تنزل می‌یابند، و `extra_admin_ids` پاک می‌شود. از اکانت جدید `/start` بزنید.

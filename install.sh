@@ -204,147 +204,18 @@ EOF
 }
 
 write_helper() {
-  cat > /usr/local/bin/quadtwo <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-SERVICE=quadtwo
-DIR=/opt/quadtwo
-
-env_file() { echo "$DIR/.env"; }
-
-env_get() {
-  local key="$1" file
-  file="$(env_file)"
-  [[ -f "$file" ]] || return 1
-  grep -E "^${key}=" "$file" | tail -n1 | cut -d= -f2- | tr -d '\r'
-}
-
-set_env_key() {
-  local key="$1" value="$2" file tmp
-  file="$(env_file)"
-  [[ -f "$file" ]] || { echo "No .env at $file"; exit 1; }
-  tmp="$(mktemp)"
-  grep -v -E "^${key}=" "$file" > "$tmp" || true
-  printf '%s=%s\n' "$key" "$value" >> "$tmp"
-  mv "$tmp" "$file"
-  chmod 600 "$file"
-}
-
-telegram_get_me() {
-  local token="$1" proxy args=(-fsS --max-time 15)
-  proxy="$(env_get TELEGRAM_PROXY 2>/dev/null || true)"
-  [[ -n "$proxy" ]] && args+=(-x "$proxy")
-  curl "${args[@]}" "https://api.telegram.org/bot${token}/getMe"
-}
-
-case "${1:-}" in
-  start) systemctl start "$SERVICE" ;;
-  stop) systemctl stop "$SERVICE" ;;
-  restart) systemctl restart "$SERVICE" ;;
-  status) systemctl status "$SERVICE" --no-pager ;;
-  logs) journalctl -u "$SERVICE" -f -n 100 ;;
-  update)
-    bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install.sh) --update
-    ;;
-  set-token|settoken)
-    ENV_FILE="$(env_file)"
-    [[ -f "$ENV_FILE" ]] || { echo "No .env at $ENV_FILE"; exit 1; }
-    TOKEN="${2:-}"
-    if [[ -z "$TOKEN" ]]; then
-      read -r -p "New BOT_TOKEN from BotFather: " TOKEN
-    fi
-    TOKEN="$(echo "$TOKEN" | tr -d '[:space:]')"
-    [[ -n "$TOKEN" ]] || { echo "BOT_TOKEN is required."; exit 1; }
-    if [[ ! "$TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
-      echo "Token format looks invalid (expected 123456789:ABC...)."
-      exit 1
-    fi
-    echo "Validating token with Telegram..."
-    ME_JSON="$(telegram_get_me "$TOKEN")" || {
-      echo "Telegram rejected this token (network or invalid token)."
-      exit 1
-    }
-    BOT_USER="$(echo "$ME_JSON" | grep -o '"username":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
-    BOT_NAME="$(echo "$ME_JSON" | grep -o '"first_name":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
-    set_env_key BOT_TOKEN "$TOKEN"
-    echo "BOT_TOKEN updated in $ENV_FILE"
-    if [[ "$(env_get BOT_MODE)" == "webhook" ]]; then
-      DOMAIN="$(env_get PUBLIC_DOMAIN)"
-      PATH_HOOK="$(env_get TELEGRAM_WEBHOOK_PATH)"
-      PATH_HOOK="${PATH_HOOK:-/telegram/webhook}"
-      if [[ -n "$DOMAIN" ]]; then
-        WEBHOOK_URL="https://${DOMAIN}${PATH_HOOK}"
-        echo "Setting webhook: $WEBHOOK_URL"
-        curl -fsS --max-time 15 \
-          "https://api.telegram.org/bot${TOKEN}/setWebhook" \
-          -d "url=${WEBHOOK_URL}" >/dev/null \
-          || echo "Warning: setWebhook failed — check PUBLIC_DOMAIN and HTTPS."
-      else
-        echo "Warning: BOT_MODE=webhook but PUBLIC_DOMAIN is empty."
-      fi
-    fi
-    echo "Restarting $SERVICE..."
-    systemctl restart "$SERVICE"
-    sleep 1
-    if [[ -n "$BOT_USER" ]]; then
-      echo "Done. New bot: @${BOT_USER}${BOT_NAME:+ ($BOT_NAME)}"
-    else
-      echo "Done. Service restarted."
-    fi
-    echo "Users must open the new bot and send /start."
-    ;;
-  set-admin|setadmin)
-    ENV_FILE="$(env_file)"
-    [[ -f "$ENV_FILE" ]] || { echo "No .env at $ENV_FILE"; exit 1; }
-    IDS="${2:-}"
-    if [[ -z "$IDS" ]]; then
-      echo "Current ADMIN_TELEGRAM_IDS: $(env_get ADMIN_TELEGRAM_IDS || echo '(empty)')"
-      read -r -p "New admin Telegram numeric ID(s), comma-separated: " IDS
-    fi
-    IDS="$(echo "$IDS" | tr -d '[:space:]' | tr -d '@')"
-    [[ -n "$IDS" ]] || { echo "Admin Telegram ID is required."; exit 1; }
-    if [[ ! "$IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
-      echo "Invalid ID list (expected numeric IDs like 123456789 or 111,222)."
-      exit 1
-    fi
-    OLD_IDS="$(env_get ADMIN_TELEGRAM_IDS || true)"
-    set_env_key ADMIN_TELEGRAM_IDS "$IDS"
-    echo "ADMIN_TELEGRAM_IDS: ${OLD_IDS:-'(empty)'} → $IDS"
-    echo "Syncing database roles..."
-    (
-      cd "$DIR"
-      set -a
-      # shellcheck disable=SC1091
-      source "$ENV_FILE"
-      set +a
-      if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
-        "$DIR/node_modules/.bin/tsx" apps/server/scripts/set-admin.ts "$IDS"
-      elif command -v npx >/dev/null 2>&1; then
-        npx --yes tsx apps/server/scripts/set-admin.ts "$IDS"
-      else
-        echo "Warning: tsx not found — .env updated but DB roles were not synced."
-        echo "Run manually: cd $DIR && npx tsx apps/server/scripts/set-admin.ts $IDS"
-      fi
-    ) || {
-      echo "Warning: DB sync failed — .env was still updated."
-      echo "Fix DB with: cd $DIR && npx tsx apps/server/scripts/set-admin.ts $IDS"
-    }
-    echo "Restarting $SERVICE..."
-    systemctl restart "$SERVICE"
-    sleep 1
-    echo "Done. New admin(s): $IDS"
-    echo "Open the bot from the new Telegram account and send /start."
-    echo "Old Telegram accounts are no longer control admins."
-    ;;
-  env) ${EDITOR:-nano} "$(env_file)" ;;
-  *)
-    echo "Usage: quadtwo {start|stop|restart|status|logs|update|env|set-token [TOKEN]|set-admin [ID,...]}"
+  local src="${INSTALL_DIR}/scripts/q2"
+  if [[ ! -f "${src}" ]]; then
+    err "Missing ${src} — cannot install Q2 CLI."
     exit 1
-    ;;
-esac
-EOF
-  sed -i "s|^DIR=.*|DIR=${INSTALL_DIR}|" /usr/local/bin/quadtwo
-  chmod +x /usr/local/bin/quadtwo
+  fi
+  install -m 755 "${src}" /usr/local/bin/q2
+  # Allow override of install dir without editing the script body
+  if [[ "${INSTALL_DIR}" != "/opt/quadtwo" ]]; then
+    sed -i "s|^DIR=\"\${QUADTWO_DIR:-/opt/quadtwo}\"|DIR=\"\${QUADTWO_DIR:-${INSTALL_DIR}}\"|" /usr/local/bin/q2
+  fi
+  ln -sfn /usr/local/bin/q2 /usr/local/bin/quadtwo
+  log "CLI installed: q2  (alias: quadtwo) — run with no args for menu"
 }
 
 do_install() {
@@ -372,10 +243,11 @@ do_install() {
 
   echo
   log "Install complete."
-  echo "  Manage:  quadtwo status | quadtwo logs | quadtwo restart"
-  echo "  Config:  quadtwo env"
-  echo "  New bot:   quadtwo set-token   # after BotFather token change / rebrand"
-  echo "  New admin: quadtwo set-admin   # replace ADMIN_TELEGRAM_IDS + demote old admins"
+  echo "  Menu:     q2   or   quadtwo          # numbered CLI"
+  echo "  Manage:   q2 status | q2 logs | q2 restart"
+  echo "  Config:   q2 env"
+  echo "  New bot:  q2 set-token   # after BotFather token change / rebrand"
+  echo "  New admin: q2 set-admin  # replace ADMIN_TELEGRAM_IDS + demote old admins"
   echo "  Dashboard: https://${DASH_DOMAIN:-dash.anthropics.ir}"
   echo "  Nginx sample: deploy/nginx-dash.anthropics.ir.conf"
   echo "  In bot:  /setcard CARD_NUMBER|CARD_HOLDER_NAME"
@@ -404,7 +276,7 @@ do_uninstall() {
   rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
   rm -f "/etc/systemd/system/${SERVICE_NAME}-web.service"
   systemctl daemon-reload
-  rm -f /usr/local/bin/quadtwo
+  rm -f /usr/local/bin/q2 /usr/local/bin/quadtwo
   read -r -p "Also delete ${INSTALL_DIR}? [y/N]: " ans || true
   if [[ "${ans:-}" =~ ^[Yy]$ ]]; then
     rm -rf "${INSTALL_DIR}"
