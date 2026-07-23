@@ -135,7 +135,33 @@ grep -R "listen 443" /etc/nginx/sites-enabled/ || true
 | **404 nginx/Ubuntu** | سایت `default` فعال است یا کانفیگ dash لود نشده — دستورات زیر |
 | 502 | `systemctl status quadtwo-web` و `curl -sI http://127.0.0.1:3000/login` |
 | صفحه سفید / API خطا | `NEXT_PUBLIC_API_URL` و بیلد دوباره وب |
+| **Application error / chunk 404** | HTML قدیمی + بیلد جدید — دستورات «رفع chunk 404» زیر |
 | OTP نمی‌رسد | ربات آنلاین؛ کاربر `/start` زده باشد |
+
+### رفع chunk 404 (`/_next/static/chunks/…` Not Found)
+
+بعد از آپدیت، اگر مرورگر/Cloudflare HTML قدیمی نگه دارد، به فایل‌های hashشدهٔ قبلی درخواست می‌زند و اپ می‌ترکد.
+
+```bash
+cd /opt/quadtwo
+git pull
+rm -rf apps/web/.next
+# دامنه داشبورد را از .env بخوانید
+set -a; source .env; set +a
+NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN:-dash.anthropics.ir}" npm run build -w @quadtwo/web
+systemctl restart quadtwo-web
+
+# nginx: کش HTML خاموش
+cp deploy/nginx-dash.anthropics.ir.conf /etc/nginx/sites-available/dash.anthropics.ir
+nginx -t && systemctl reload nginx
+
+# چک محلی
+curl -sI http://127.0.0.1:3000/login | head
+ls apps/web/.next/static/chunks | head
+```
+
+در Cloudflare: **Caching → Configuration → Purge Everything** (یا فقط `dash.anthropics.ir`).
+سپس در مرورگر hard refresh / کش مینی‌اپ را پاک کنید.
 
 ### رفع 404 از nginx (نه از Next)
 

@@ -151,6 +151,8 @@ build_app() {
   DATABASE_URL="file:${INSTALL_DIR}/data/quadtwo.db" npm run db:push -w @quadtwo/server
   npm run build -w @quadtwo/server
   log "Building web dashboard..."
+  # Clean stale chunks so HTML never references deleted hashed files
+  rm -rf "${INSTALL_DIR}/apps/web/.next"
   NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN:-dash.anthropics.ir}" npm run build -w @quadtwo/web
 }
 
@@ -189,7 +191,8 @@ Type=simple
 WorkingDirectory=${INSTALL_DIR}/apps/web
 EnvironmentFile=${INSTALL_DIR}/.env
 Environment=PORT=3000
-ExecStart=/usr/bin/npx next start -p 3000
+Environment=NODE_ENV=production
+ExecStart=${INSTALL_DIR}/node_modules/.bin/next start -p 3000
 Restart=always
 RestartSec=5
 User=root
