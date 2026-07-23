@@ -328,6 +328,7 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
     return PREMIUM_IDS.play;
   }
   if (glyph === "◀️") {
+    if (after.includes("قبلی") || after.includes("بازگشت")) return PREMIUM_IDS.prev_page;
     return PREMIUM_IDS.prev_page;
   }
   const row = UNIVERSAL_BY_LENGTH.find((r) => r.glyph === glyph);

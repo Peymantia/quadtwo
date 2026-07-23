@@ -49,10 +49,23 @@ function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: str
   return null;
 }
 
+/** Emoji after label (e.g. «قبلی ◀️» / «بعدی ▶️») — still maps to Premium button icon. */
+function matchTrailingGlyph(text: string): { glyph: string; id: string; rest: string } | null {
+  for (const row of UNIVERSAL_BY_LENGTH) {
+    if (text.endsWith(row.glyph)) {
+      const rest = text.slice(0, -row.glyph.length).replace(/\s+$/, "");
+      if (!rest) return null;
+      const id = resolvePremiumId(row.glyph, rest) || row.id;
+      return { glyph: row.glyph, id, rest };
+    }
+  }
+  return null;
+}
+
 function transformButton(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
   if (btn.icon_custom_emoji_id) return btn;
-  const hit = matchLeadingGlyph(btn.text);
+  const hit = matchLeadingGlyph(btn.text) || matchTrailingGlyph(btn.text);
   if (!hit) return btn;
   // Premium icon on the button; bare label text (no RLM) so reply-keyboard hears still match.
   return {
