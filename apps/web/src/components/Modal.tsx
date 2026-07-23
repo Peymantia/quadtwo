@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
-/** Centered modal dialog with a small close (X) button. */
+/** Centered modal dialog with a small close (X) button. Portaled to body so fixed centering works in Mini App. */
 export function Modal({
   open,
   title,
@@ -34,8 +35,9 @@ export function Modal({
   }, [open, onClose]);
 
   if (!open) return null;
+  if (typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose} role="presentation">
       <div
         className={`modal-card${wide ? " wide" : ""}`}
@@ -52,6 +54,7 @@ export function Modal({
         </div>
         <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
