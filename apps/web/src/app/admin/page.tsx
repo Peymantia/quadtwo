@@ -106,6 +106,14 @@ function toLocalInput(iso: string | null) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Quick expiry from now → datetime-local value. */
+function expiryFromNow(opts: { weeks?: number; months?: number }): string {
+  const d = new Date();
+  if (opts.weeks) d.setDate(d.getDate() + opts.weeks * 7);
+  if (opts.months) d.setMonth(d.getMonth() + opts.months);
+  return toLocalInput(d.toISOString());
+}
+
 function fromLocalInput(v: string) {
   if (!v) return null;
   const d = new Date(v);
@@ -2130,12 +2138,47 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
           </div>
           <div className="field">
             <label>انقضا</label>
-            <input
-              type="datetime-local"
-              dir="ltr"
-              value={editForm.expiresAt}
-              onChange={(e) => setEditForm((s) => ({ ...s, expiresAt: e.target.value }))}
-            />
+            <div className="expiry-quick-row">
+              <input
+                type="datetime-local"
+                dir="ltr"
+                value={editForm.expiresAt}
+                onChange={(e) => setEditForm((s) => ({ ...s, expiresAt: e.target.value }))}
+              />
+              <div className="chip-row expiry-quick-chips">
+                <button
+                  type="button"
+                  className="chip chip-sm"
+                  onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ weeks: 1 }) }))}
+                >
+                  ۱ هفته
+                </button>
+                <button
+                  type="button"
+                  className="chip chip-sm"
+                  onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 1 }) }))}
+                >
+                  ۱ ماه
+                </button>
+                <button
+                  type="button"
+                  className="chip chip-sm"
+                  onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 2 }) }))}
+                >
+                  ۲ ماه
+                </button>
+                <button
+                  type="button"
+                  className="chip chip-sm"
+                  onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 3 }) }))}
+                >
+                  ۳ ماه
+                </button>
+              </div>
+            </div>
+            <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.78rem" }}>
+              انتخاب سریع از تاریخ امروز
+            </p>
           </div>
           <div className="field">
             <label>لیمیت IP (۰ = نامحدود)</label>
