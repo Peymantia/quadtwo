@@ -1836,40 +1836,45 @@ button.pay-dest-number:active,
   justify-content: center;
 }
 
-/* Account card action row: enable / edit / delete */
+/* Account card actions: row 1 = manage · row 2 = sub link */
 .config-card-actions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-direction: column;
   gap: 8px;
   width: 100%;
 }
 
-.config-card-actions > .btn {
-  flex: 1 1 0;
+.config-card-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.config-card-actions-row > .btn {
+  flex: 1 1 calc(50% - 4px);
   min-width: 0;
   justify-content: center;
-  padding-inline: 14px;
+  padding-inline: 12px;
 }
 
 @media (min-width: 901px) {
-  .config-card-actions > .btn {
+  .config-card-actions-row > .btn {
     flex: 0 1 auto;
-    min-width: 110px;
+    min-width: 120px;
     padding-inline: 18px;
   }
 }
 
 @media (max-width: 900px) {
-  .config-card-actions {
-    width: 100%;
-  }
-
-  .config-card-actions > .btn,
-  .actions.config-card-actions:not(:has(> :not(.btn):not(a.btn))) > .btn {
-    flex: 1 1 0;
-    min-width: 0;
+  .config-card-actions-row > .btn {
+    flex: 1 1 calc(50% - 4px);
     max-width: none;
     box-sizing: border-box;
+  }
+
+  .config-card-actions-row > .btn:only-child {
+    flex-basis: 100%;
   }
 }
 

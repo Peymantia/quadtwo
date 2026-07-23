@@ -2028,39 +2028,43 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                   </div>
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                 </div>
-                <div className="actions config-card-actions" style={{ marginTop: 10 }}>
-                  {!c.inDb && (
-                    <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
-                      وارد کردن
-                    </button>
-                  )}
-                  {c.inDb && c.subId && (
-                    <>
+                <div className="config-card-actions" style={{ marginTop: 10 }}>
+                  <div className="config-card-actions-row">
+                    {!c.inDb && (
+                      <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
+                        وارد کردن
+                      </button>
+                    )}
+                    {c.inDb && c.subId && (
                       <button type="button" className="btn success sm" disabled={editBusy} onClick={() => void openRenew(c.subId)}>
                         تمدید
                       </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`btn sm ${c.status === "active" && !expired ? "ghost" : "success"}`}
+                      disabled={editBusy || expired}
+                      onClick={() => void toggleEnable(c.email, c.subId, c.status === "active")}
+                    >
+                      {c.status === "active" && !expired ? "غیرفعال" : "فعال"}
+                    </button>
+                    <button type="button" className="btn primary sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
+                      ویرایش
+                    </button>
+                    <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
+                      حذف
+                    </button>
+                  </div>
+                  {c.inDb && c.subId && (
+                    <div className="config-card-actions-row">
                       <button type="button" className="btn primary sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
                         کپی لینک اشتراک
                       </button>
                       <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
                         تغییر لینک ساب
                       </button>
-                    </>
+                    </div>
                   )}
-                  <button
-                    type="button"
-                    className={`btn sm ${c.status === "active" && !expired ? "ghost" : "success"}`}
-                    disabled={editBusy || expired}
-                    onClick={() => void toggleEnable(c.email, c.subId, c.status === "active")}
-                  >
-                    {c.status === "active" && !expired ? "غیرفعال" : "فعال"}
-                  </button>
-                  <button type="button" className="btn primary sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
-                    ویرایش
-                  </button>
-                  <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
-                    حذف
-                  </button>
                 </div>
               </div>
             );

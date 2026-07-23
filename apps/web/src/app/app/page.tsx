@@ -468,37 +468,41 @@ export default function UserAppPage() {
                       </button>
                     </div>
                   </div>
-                  <div className="actions" style={{ width: "100%", marginTop: 10 }}>
+                  <div className="config-card-actions" style={{ width: "100%", marginTop: 10 }}>
                     {!s.isTest && (
+                      <div className="config-card-actions-row">
+                        <button
+                          type="button"
+                          className="btn success sm"
+                          disabled={busy}
+                          onClick={() => void openRenew(s.id)}
+                        >
+                          تمدید
+                        </button>
+                      </div>
+                    )}
+                    <div className="config-card-actions-row">
+                      {s.subUrl && (
+                        <button
+                          type="button"
+                          className="btn primary sm"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(s.subUrl!);
+                            setMsg("لینک اشتراک کپی شد");
+                          }}
+                        >
+                          کپی لینک اشتراک
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className="btn success sm"
+                        className="btn ghost sm"
                         disabled={busy}
-                        onClick={() => void openRenew(s.id)}
+                        onClick={() => setConfirmRotateId(s.id)}
                       >
-                        تمدید
+                        تغییر لینک ساب
                       </button>
-                    )}
-                    {s.subUrl && (
-                      <button
-                        type="button"
-                        className="btn primary sm"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(s.subUrl!);
-                          setMsg("لینک اشتراک کپی شد");
-                        }}
-                      >
-                        کپی لینک اشتراک
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="btn ghost sm"
-                      disabled={busy}
-                      onClick={() => setConfirmRotateId(s.id)}
-                    >
-                      تغییر لینک ساب
-                    </button>
+                    </div>
                   </div>
                 </div>
               );

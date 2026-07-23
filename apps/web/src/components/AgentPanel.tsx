@@ -476,13 +476,15 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   </div>
                   {c.note && <div className="muted" style={{ marginTop: 6 }}>یادداشت: {c.note}</div>}
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
-                  <div className="actions" style={{ marginTop: 10 }}>
-                    <button type="button" className="btn primary sm" disabled={busy || !c.subUrl} onClick={() => void copySubLink(c)}>
-                      کپی لینک اشتراک
-                    </button>
-                    <button type="button" className="btn ghost sm" disabled={busy || !c.subId} onClick={() => setConfirmRotate(c)}>
-                      تغییر لینک ساب
-                    </button>
+                  <div className="config-card-actions" style={{ marginTop: 10 }}>
+                    <div className="config-card-actions-row">
+                      <button type="button" className="btn primary sm" disabled={busy || !c.subUrl} onClick={() => void copySubLink(c)}>
+                        کپی لینک اشتراک
+                      </button>
+                      <button type="button" className="btn ghost sm" disabled={busy || !c.subId} onClick={() => setConfirmRotate(c)}>
+                        تغییر لینک ساب
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
