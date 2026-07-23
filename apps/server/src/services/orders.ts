@@ -19,6 +19,8 @@ export async function createMatrixOrder(input: {
   category?: string;
   limitIp?: number;
   note?: string | null;
+  /** Admin renew of any account — skip ownership/eligibility checks */
+  forceRenew?: boolean;
 }) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
   const kind = input.kind ?? OrderKind.new;
@@ -26,17 +28,23 @@ export async function createMatrixOrder(input: {
   let category = (input.category as PlanCategory) || "data";
   let panelServerId: string | null = null;
   let accountName = input.accountName;
+  let orderUserId = user.id;
 
   if (kind === OrderKind.renew) {
     if (!input.targetSubId) throw new Error("سرویس هدف برای تمدید مشخص نشده است");
     const target = await prisma.subscription.findFirst({
-      where: { id: input.targetSubId, userId: input.userId },
+      where: input.forceRenew
+        ? { id: input.targetSubId }
+        : { id: input.targetSubId, userId: input.userId },
     });
     if (!target) throw new Error("سرویس برای تمدید پیدا نشد");
-    const eligibility = await checkRenewEligibility(target.id);
-    if (!eligibility.ok) throw new Error(eligibility.message);
+    if (!input.forceRenew) {
+      const eligibility = await checkRenewEligibility(target.id);
+      if (!eligibility.ok) throw new Error(eligibility.message);
+    }
     category = await inferRenewCategory(target);
     accountName = target.email;
+    orderUserId = target.userId;
     if (target.panelServerId) {
       panelServerId = target.panelServerId;
     } else {
@@ -63,7 +71,7 @@ export async function createMatrixOrder(input: {
 
   return prisma.order.create({
     data: {
-      userId: user.id,
+      userId: orderUserId,
       kind,
       trafficGb,
       months,
@@ -121,9 +129,9 @@ export async function payOrderWithWallet(orderId: string, userId: string) {
 }
 
 /** Admin complimentary create: mark paid without debit, then provision. */
-export async function provisionAdminComplimentary(orderId: string, adminUserId: string) {
+export async function provisionAdminComplimentary(orderId: string, _adminUserId?: string) {
   const order = await prisma.order.findFirst({
-    where: { id: orderId, userId: adminUserId, status: OrderStatus.pending_payment },
+    where: { id: orderId, status: OrderStatus.pending_payment },
   });
   if (!order) throw new Error("سفارش پیدا نشد");
   if (order.kind === OrderKind.wallet_charge) {
@@ -134,7 +142,7 @@ export async function provisionAdminComplimentary(orderId: string, adminUserId: 
     data: {
       paymentMethod: PaymentMethod.wallet,
       status: OrderStatus.paid,
-      adminNote: "ساخت رایگان توسط ادمین",
+      adminNote: order.kind === OrderKind.renew ? "تمدید رایگان توسط ادمین" : "ساخت رایگان توسط ادمین",
     },
   });
   return provisionOrder(order.id);

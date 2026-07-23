@@ -10,6 +10,7 @@ import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 import { SortSelect, type ListSort } from "../../components/SortSelect";
+import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -1537,6 +1538,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   const [selectedImport, setSelectedImport] = useState<Record<string, boolean>>({});
   const [searchInput, setSearchInput] = useState("");
   const [searchQ, setSearchQ] = useState("");
+  const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
 
   useEffect(() => {
     void api<{ groups: typeof groups }>("/admin/configs/groups").then((r) => setGroups(r.groups));
@@ -1775,6 +1777,85 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     }
   }
 
+  async function copySubLink(c: { subUrl?: string | null; email: string }) {
+    if (!c.subUrl) {
+      flash(null, "لینک اشتراک موجود نیست");
+      return;
+    }
+    await navigator.clipboard.writeText(c.subUrl);
+    flash("لینک اشتراک کپی شد");
+  }
+
+  async function rotateSubLink(email: string, subId: string | null) {
+    if (!subId) {
+      flash(null, "این اکانت در دیتابیس ربات نیست");
+      return;
+    }
+    if (!(await askConfirm("با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟"))) return;
+    setEditBusy(true);
+    try {
+      const r = await api<{ subUrl?: string | null }>("/admin/configs/rotate-sub", {
+        method: "POST",
+        body: { email, subId },
+      });
+      if (r.subUrl) {
+        await navigator.clipboard.writeText(r.subUrl);
+        flash("لینک ساب جدید ساخته و کپی شد");
+      } else {
+        flash("لینک ساب جدید ساخته شد");
+      }
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  async function openRenew(subId: string | null) {
+    if (!subId) {
+      flash(null, "این اکانت در دیتابیس ربات نیست");
+      return;
+    }
+    setEditBusy(true);
+    try {
+      const info = await api<RenewInfo>(`/admin/configs/renew?subId=${encodeURIComponent(subId)}`);
+      setRenewInfo(info);
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  async function submitAdminRenew(payload: {
+    trafficGb: number | null;
+    months: number;
+    category: string;
+    payWithWallet: boolean;
+  }) {
+    if (!renewInfo) return;
+    setEditBusy(true);
+    try {
+      await api("/admin/configs/renew", {
+        method: "POST",
+        body: {
+          subId: renewInfo.subscription.id,
+          trafficGb: payload.trafficGb,
+          months: payload.months,
+          category: payload.category,
+        },
+      });
+      setRenewInfo(null);
+      flash("سرویس تمدید شد ✅");
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   const selectedCount = Object.values(selectedImport).filter(Boolean).length;
 
   return (
@@ -1947,6 +2028,19 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       وارد کردن
                     </button>
                   )}
+                  {c.inDb && c.subId && (
+                    <>
+                      <button type="button" className="btn success sm" disabled={editBusy} onClick={() => void openRenew(c.subId)}>
+                        تمدید
+                      </button>
+                      <button type="button" className="btn primary sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
+                        کپی لینک اشتراک
+                      </button>
+                      <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
+                        تغییر لینک ساب
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     className={`btn sm ${c.status === "active" && !expired ? "ghost" : "success"}`}
@@ -2067,6 +2161,15 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
           </div>
         </Modal>
       )}
+
+      <RenewModal
+        open={Boolean(renewInfo)}
+        info={renewInfo}
+        busy={editBusy}
+        variant="admin"
+        onClose={() => setRenewInfo(null)}
+        onSubmit={submitAdminRenew}
+      />
     </>
   );
 }

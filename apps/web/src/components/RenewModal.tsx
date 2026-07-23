@@ -28,6 +28,8 @@ type Props = {
   open: boolean;
   info: RenewInfo | null;
   busy?: boolean;
+  /** user: wallet + card · admin: complimentary renew */
+  variant?: "user" | "admin";
   onClose: () => void;
   onSubmit: (payload: {
     trafficGb: number | null;
@@ -55,7 +57,7 @@ function rulesFor(
   return { kind: "stepped", ...r };
 }
 
-export function RenewModal({ open, info, busy, onClose, onSubmit }: Props) {
+export function RenewModal({ open, info, busy, variant = "user", onClose, onSubmit }: Props) {
   const [gbInput, setGbInput] = useState("10");
   const [months, setMonths] = useState(1);
   const [price, setPrice] = useState<number | null>(null);
@@ -222,12 +224,20 @@ export function RenewModal({ open, info, busy, onClose, onSubmit }: Props) {
           )}
 
           <div className="actions stack rate-shop-actions">
-            <button type="button" className="btn light wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-              پرداخت با کیف پول و تمدید
-            </button>
-            <button type="button" className="btn success wide" disabled={!canSubmit} onClick={() => void submit(false)}>
-              کارت‌به‌کارت و تمدید
-            </button>
+            {variant === "admin" ? (
+              <button type="button" className="btn success wide" disabled={!canSubmit} onClick={() => void submit(true)}>
+                تمدید سرویس
+              </button>
+            ) : (
+              <>
+                <button type="button" className="btn light wide" disabled={!canSubmit} onClick={() => void submit(true)}>
+                  پرداخت با کیف پول و تمدید
+                </button>
+                <button type="button" className="btn success wide" disabled={!canSubmit} onClick={() => void submit(false)}>
+                  کارت‌به‌کارت و تمدید
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

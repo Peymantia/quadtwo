@@ -1305,6 +1305,90 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     }
   });
 
+  api.post("/admin/configs/rotate-sub", async (c) => {
+    const body = await c.req.json<{ email?: string; subId?: string | null }>();
+    const sub =
+      (body.subId
+        ? await prisma.subscription.findUnique({ where: { id: body.subId } })
+        : null) ||
+      (body.email
+        ? await prisma.subscription.findFirst({ where: { email: body.email.trim() } })
+        : null);
+    if (!sub) return c.json({ error: "اکانت در دیتابیس ربات پیدا نشد" }, 404);
+    try {
+      const result = await rotateSubId(sub.id);
+      await auditLog({
+        action: "admin_rotate_sub",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: sub.email,
+      });
+      return c.json({ code: result.code, subUrl: result.subUrl, expiresAt: result.expiresAt.toISOString() });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.get("/admin/configs/renew", async (c) => {
+    const subId = c.req.query("subId") || "";
+    const sub = await prisma.subscription.findUnique({ where: { id: subId } });
+    if (!sub) return c.json({ error: "سرویس پیدا نشد" }, 404);
+    if (sub.isTest) return c.json({ error: "سرویس تست قابل تمدید نیست" }, 400);
+    const category = await inferRenewCategory(sub);
+    const labels = await getCategoryLabels();
+    const maxMonths = await getMaxPurchaseMonths();
+    return c.json({
+      ok: true,
+      message: "تمدید ادمین (بدون محدودیت اتمام)",
+      subscription: {
+        id: sub.id,
+        code: sub.code,
+        email: sub.email,
+        trafficGb: sub.trafficGb,
+        trafficLabel: formatTraffic(sub.trafficGb),
+        expiresAt: sub.expiresAt.toISOString(),
+      },
+      category,
+      categoryLabel: labels[category] || category,
+      maxMonths,
+      volumeRules: {
+        data: { min: 10, max: 100, step: 5 },
+        national: { min: 1, max: 20, step: 1 },
+        unlimited: null,
+      },
+    });
+  });
+
+  api.post("/admin/configs/renew", async (c) => {
+    const body = await c.req.json<{
+      subId?: string;
+      trafficGb?: number | null;
+      months?: number;
+      category?: string;
+    }>();
+    if (!body.subId) return c.json({ error: "subId لازم است" }, 400);
+    try {
+      const order = await createMatrixOrder({
+        userId: c.get("userId"),
+        trafficGb: body.trafficGb ?? null,
+        months: Math.max(1, Number(body.months) || 1),
+        category: body.category,
+        accountName: "renew",
+        kind: OrderKind.renew,
+        targetSubId: body.subId,
+        forceRenew: true,
+      });
+      const result = await provisionAdminComplimentary(order.id, c.get("userId"));
+      await auditLog({
+        action: "admin_renew",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: body.subId,
+      });
+      return c.json({ ok: true, order: { id: order.id, price: order.price }, provisioned: result });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
   api.get("/admin/configs/:groupKey", async (c) => {
     const page = Math.max(0, Number(c.req.query("page") ?? 0) || 0);
     const pageSize = Math.max(1, Math.min(100, Number(c.req.query("pageSize") ?? 30) || 30));

@@ -53,8 +53,14 @@ export async function api<T>(
     data = { error: text };
   }
   if (!res.ok) {
-    const err = (data as { error?: string })?.error || text || res.statusText;
-    throw new Error(typeof err === "string" ? err : JSON.stringify(err));
+    const obj = data as { error?: string; message?: string } | null;
+    const err =
+      (typeof obj?.error === "string" && obj.error) ||
+      (typeof obj?.message === "string" && obj.message) ||
+      (typeof text === "string" && text && !text.startsWith("{") ? text : null) ||
+      res.statusText ||
+      "خطا";
+    throw new Error(err);
   }
   return data as T;
 }

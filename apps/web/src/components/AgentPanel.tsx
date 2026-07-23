@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "./DashShell";
-import { Toast } from "./Toast";
+import { Toast, ConfirmToast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
 import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
 import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "./SortSelect";
@@ -65,6 +65,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [chargeAmount, setChargeAmount] = useState("");
   const [payCard, setPayCard] = useState<{ number: string; holder: string } | null>(null);
   const [txs, setTxs] = useState<Array<{ id: string; type: string; amount: number; createdAt: string; note?: string | null }>>([]);
+  const [confirmRotate, setConfirmRotate] = useState<ConfigItem | null>(null);
 
   const loadConfigs = useCallback(
     () => api<{ items: ConfigItem[] }>("/partner/configs").then((r) => setConfigs(r.items ?? [])),
@@ -252,6 +253,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     setErr(null);
     try {
       const r = await api<{ subUrl?: string | null }>("/partner/configs/rotate-sub", {
+        method: "POST",
         body: { email: c.email, subId: c.subId },
       });
       if (r.subUrl) {
@@ -282,6 +284,17 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       onTab={setTab}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
+      {confirmRotate && (
+        <ConfirmToast
+          message="با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟"
+          onYes={() => {
+            const c = confirmRotate;
+            setConfirmRotate(null);
+            void rotateSubLink(c);
+          }}
+          onNo={() => setConfirmRotate(null)}
+        />
+      )}
 
       {tab === "home" && (
         <>
@@ -461,7 +474,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                     <button type="button" className="btn primary sm" disabled={busy || !c.subUrl} onClick={() => void copySubLink(c)}>
                       کپی لینک اشتراک
                     </button>
-                    <button type="button" className="btn ghost sm" disabled={busy || !c.subId} onClick={() => void rotateSubLink(c)}>
+                    <button type="button" className="btn ghost sm" disabled={busy || !c.subId} onClick={() => setConfirmRotate(c)}>
                       تغییر لینک ساب
                     </button>
                   </div>

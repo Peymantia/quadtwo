@@ -229,6 +229,8 @@ export function DashShell(props: {
   tabs: ShellTab[];
   active: string;
   onTab: (key: string) => void;
+  /** Open settings from top gear (settings tab removed from bottom nav) */
+  onSettings?: () => void;
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -236,27 +238,43 @@ export function DashShell(props: {
   const [moreOpen, setMoreOpen] = useState(false);
   const isAdmin = props.role === "admin";
   const isPreviewing =
-    isAdmin && !pathname.startsWith("/admin") && PREVIEW_PANELS.some((p) => pathname === p.path || pathname.startsWith(`${p.path}/`));
+    isAdmin && !pathname.startsWith("/admin") && PREVIEW_PANELS.some((p) => p.path === pathname || pathname.startsWith(`${p.path}/`));
 
-  const { primary, more } = useMemo(() => {
-    const pinned = props.tabs.filter((t) => t.pin);
+  const navTabs = useMemo(() => props.tabs.filter((t) => t.key !== "settings"), [props.tabs]);
+  const settingsTab = useMemo(() => props.tabs.find((t) => t.key === "settings"), [props.tabs]);
+  const hasSettings = Boolean(settingsTab || props.onSettings);
+
+  const { left, wallet, right, more } = useMemo(() => {
+    const walletTab = navTabs.find((t) => t.key === "wallet") ?? null;
+    const rest = navTabs.filter((t) => t.key !== "wallet");
+    const pinned = rest.filter((t) => t.pin);
+    const unpinned = rest.filter((t) => !t.pin);
+
+    let primaryRest: ShellTab[];
+    let moreTabs: ShellTab[];
     if (pinned.length) {
-      return {
-        primary: pinned,
-        more: props.tabs.filter((t) => !t.pin),
-      };
+      primaryRest = pinned;
+      moreTabs = unpinned;
+    } else if (rest.length <= 4) {
+      primaryRest = rest;
+      moreTabs = [];
+    } else {
+      primaryRest = rest.slice(0, 4);
+      moreTabs = rest.slice(4);
     }
-    if (props.tabs.length <= 5) {
-      return { primary: props.tabs, more: [] as ShellTab[] };
-    }
+
+    const mid = Math.ceil(primaryRest.length / 2);
     return {
-      primary: props.tabs.slice(0, 4),
-      more: props.tabs.slice(4),
+      left: primaryRest.slice(0, mid),
+      wallet: walletTab,
+      right: primaryRest.slice(mid),
+      more: moreTabs,
     };
-  }, [props.tabs]);
+  }, [navTabs]);
 
   const hasMore = more.length > 0;
   const moreActive = more.some((t) => t.key === props.active);
+  const settingsActive = props.active === "settings";
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -281,6 +299,12 @@ export function DashShell(props: {
     props.onTab(key);
   }
 
+  function openSettings() {
+    setMoreOpen(false);
+    if (props.onSettings) props.onSettings();
+    else props.onTab("settings");
+  }
+
   return (
     <div>
       <div className="mobile-top">
@@ -291,6 +315,16 @@ export function DashShell(props: {
         </div>
         <div className="topbar-side">
           {props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>}
+          {hasSettings && (
+            <button
+              type="button"
+              className={`icon-btn settings-gear${settingsActive ? " on" : ""}`}
+              aria-label="تنظیمات"
+              onClick={openSettings}
+            >
+              <span aria-hidden="true">⚙️</span>
+            </button>
+          )}
           {hasMore && (
             <button
               type="button"
@@ -342,6 +376,16 @@ export function DashShell(props: {
             <div className="topbar-side">
               {isAdmin && <AdminPanelSwitcher />}
               {props.walletLabel && <span className="money-pill num hide-mobile">{props.walletLabel}</span>}
+              {hasSettings && (
+                <button
+                  type="button"
+                  className={`icon-btn settings-gear hide-mobile${settingsActive ? " on" : ""}`}
+                  aria-label="تنظیمات"
+                  onClick={openSettings}
+                >
+                  <span aria-hidden="true">⚙️</span>
+                </button>
+              )}
               <span className="role-pill">{roleLabel(props.role)}</span>
             </div>
           </div>
@@ -354,8 +398,8 @@ export function DashShell(props: {
         </main>
       </div>
 
-      <nav className="bottom-nav">
-        {primary.map((t) => (
+      <nav className={`bottom-nav${wallet ? " has-wallet-bubble" : ""}`}>
+        {left.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -366,7 +410,31 @@ export function DashShell(props: {
             {t.shortLabel || t.label}
           </button>
         ))}
-        {hasMore ? (
+        {wallet && (
+          <button
+            type="button"
+            className={`nav-wallet-bubble${props.active === "wallet" ? " active" : ""}`}
+            onClick={() => pickTab("wallet")}
+            aria-label={wallet.label}
+          >
+            <span className="nav-wallet-bubble-inner">
+              <Icon name="wallet" size={22} />
+            </span>
+            <span className="nav-wallet-label">{wallet.shortLabel || wallet.label}</span>
+          </button>
+        )}
+        {right.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={props.active === t.key ? "active" : ""}
+            onClick={() => pickTab(t.key)}
+          >
+            <Icon name={t.icon} size={21} />
+            {t.shortLabel || t.label}
+          </button>
+        ))}
+        {hasMore && (
           <button
             type="button"
             className={moreOpen || moreActive ? "active" : ""}
@@ -376,11 +444,6 @@ export function DashShell(props: {
           >
             <Icon name={moreOpen ? "close" : "menu"} size={21} />
             {moreOpen ? "بستن" : "بیشتر"}
-          </button>
-        ) : (
-          <button type="button" onClick={logout}>
-            <Icon name="logout" size={21} />
-            خروج
           </button>
         )}
       </nav>
@@ -403,10 +466,6 @@ export function DashShell(props: {
                   <span>{t.label}</span>
                 </button>
               ))}
-              <button type="button" className="more-sheet-item danger" onClick={logout}>
-                <Icon name="logout" size={22} />
-                <span>خروج</span>
-              </button>
             </div>
           </div>
         </div>

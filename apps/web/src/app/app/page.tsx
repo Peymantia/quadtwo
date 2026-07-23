@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
-import { Toast } from "../../components/Toast";
+import { Toast, ConfirmToast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { CardPayModal } from "../../components/CardPayModal";
 import { PaymentCardBlock, TrafficProgress } from "../../components/PaymentCard";
@@ -93,6 +93,7 @@ export default function UserAppPage() {
   const [payModal, setPayModal] = useState<PayModalState>(null);
   const [subSort, setSubSort] = useState<ListSort>("newest");
   const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
+  const [confirmRotateId, setConfirmRotateId] = useState<string | null>(null);
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -351,6 +352,36 @@ export default function UserAppPage() {
       onTab={setTab}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
+      {confirmRotateId && (
+        <ConfirmToast
+          message="با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟"
+          onYes={() => {
+            const id = confirmRotateId;
+            setConfirmRotateId(null);
+            void (async () => {
+              setBusy(true);
+              setErr(null);
+              try {
+                const r = await api<{ subUrl?: string | null }>(`/me/subscriptions/${id}/rotate-sub`, {
+                  method: "POST",
+                });
+                if (r.subUrl) {
+                  await navigator.clipboard.writeText(r.subUrl);
+                  setMsg("لینک ساب جدید ساخته و کپی شد");
+                } else {
+                  setMsg("لینک اشتراک جدید ساخته شد");
+                }
+                await loadSubs();
+              } catch (e) {
+                setErr(String(e instanceof Error ? e.message : e));
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+          onNo={() => setConfirmRotateId(null)}
+        />
+      )}
 
       {tab === "shop" && (
         <>
@@ -530,20 +561,8 @@ export default function UserAppPage() {
                     <button
                       type="button"
                       className="btn ghost sm"
-                      onClick={async () => {
-                        try {
-                          const r = await api<{ subUrl?: string | null }>(`/me/subscriptions/${s.id}/rotate-sub`);
-                          if (r.subUrl) {
-                            await navigator.clipboard.writeText(r.subUrl);
-                            setMsg("لینک ساب جدید ساخته و کپی شد");
-                          } else {
-                            setMsg("لینک اشتراک جدید ساخته شد");
-                          }
-                          await loadSubs();
-                        } catch (e) {
-                          setErr(String(e instanceof Error ? e.message : e));
-                        }
-                      }}
+                      disabled={busy}
+                      onClick={() => setConfirmRotateId(s.id)}
                     >
                       تغییر لینک ساب
                     </button>

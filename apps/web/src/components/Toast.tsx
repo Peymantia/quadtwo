@@ -14,7 +14,7 @@ export function Toast({
 }) {
   useEffect(() => {
     if (!msg && !err) return;
-    const t = setTimeout(onClear, err ? 5000 : 2800);
+    const t = setTimeout(onClear, err ? 8000 : 2800);
     return () => clearTimeout(t);
   }, [msg, err, onClear]);
 
@@ -53,10 +53,10 @@ export function ConfirmToast({
         <p className="toast-confirm-msg">{message}</p>
         <div className="toast-confirm-actions">
           <button type="button" className="btn success sm" onClick={onYes}>
-            بله
+            تأیید
           </button>
           <button type="button" className="btn ghost sm" onClick={onNo}>
-            خیر
+            لغو
           </button>
         </div>
       </div>
