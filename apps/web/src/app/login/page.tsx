@@ -17,7 +17,7 @@ export default function LoginPage() {
   const [hint, setHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [brand, setBrand] = useState("Piing");
+  const [brand, setBrand] = useState("پیـنگ");
   const [passkeyOk, setPasskeyOk] = useState(false);
   const [tgBooting, setTgBooting] = useState(true);
 

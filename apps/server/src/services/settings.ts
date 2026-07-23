@@ -25,7 +25,7 @@ export const defaultNotifConfig = (): NotifConfig => ({
 export type ChannelConfig = { username: string; required: boolean };
 
 const defaults: Record<string, string> = {
-  brand_name: "Piing",
+  brand_name: "پیـنگ",
   channel_username: "",
   channel_required: "false",
   channels_json: "[]",
@@ -166,6 +166,11 @@ export async function ensureDefaultSettings() {
     if (!existing) {
       await prisma.setting.create({ data: { key, value } });
     }
+  }
+  // Rename legacy English brand to Persian display name
+  const brand = await prisma.setting.findUnique({ where: { key: "brand_name" } });
+  if (brand && /^piing$/i.test(brand.value.trim())) {
+    await prisma.setting.update({ where: { key: "brand_name" }, data: { value: defaults.brand_name } });
   }
 }
 

@@ -45,7 +45,7 @@ function rpFromDash() {
     /* keep localhost */
   }
   // WebAuthn rpID must not include port; localhost is fine for local HTTPS/HTTP in some browsers
-  return { rpID: hostname, origin, rpName: "Piing Dashboard" };
+  return { rpID: hostname, origin, rpName: "داشبورد پیـنگ" };
 }
 
 function parseTransports(raw: string | null | undefined): AuthenticatorTransportFuture[] | undefined {

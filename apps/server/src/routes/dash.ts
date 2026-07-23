@@ -133,7 +133,7 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/auth/meta", async (c) => {
     const brand = await getSetting("brand_name");
     return c.json({
-      brand: brand || "Piing",
+      brand: brand || "پیـنگ",
       dashUrl: dashBaseUrl(),
       authModes: ["password", "otp", "passkey"],
       passkeyHint: "ورود با Face ID / اثرانگشت (Passkey)",
@@ -201,7 +201,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const support = await getSetting("support_username");
     const passkeyCount = await userPasskeyCount(userId);
     return c.json({
-      brand: brand || "Piing",
+      brand: brand || "پیـنگ",
       support,
       user: {
         id: user.id,
