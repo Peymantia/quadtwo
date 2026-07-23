@@ -418,10 +418,11 @@ async function notifyAllAdmins(api: Context["api"], send: (adminId: number) => P
 async function startCardPayment(ctx: Context, orderId: string, summary: string) {
   const card = await getPaymentCard();
   const text = orderPayText(summary, card, orderId);
+  // No parse_mode — so Premium custom_emoji entities can be applied by the API transform.
   if (ctx.callbackQuery?.message) {
-    await ctx.editMessageText(text, { parse_mode: "Markdown", reply_markup: payConfirmKeyboard(orderId) });
+    await ctx.editMessageText(text, { reply_markup: payConfirmKeyboard(orderId) });
   } else {
-    await ctx.reply(text, { parse_mode: "Markdown", reply_markup: payConfirmKeyboard(orderId) });
+    await ctx.reply(text, { reply_markup: payConfirmKeyboard(orderId) });
   }
 }
 

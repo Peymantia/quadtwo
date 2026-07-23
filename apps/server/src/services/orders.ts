@@ -196,7 +196,7 @@ export function orderSummaryText(order: {
   limitIp?: number;
 }) {
   if (order.kind === OrderKind.wallet_charge) {
-    return [`نوع: شارژ کیف پول`, `مبلغ: ${order.price.toLocaleString("fa-IR")} تومان`].join("\n");
+    return [`نوع: ➕ شارژ کیف پول`, `مبلغ: ${order.price.toLocaleString("fa-IR")} تومان`].join("\n");
   }
   const qty = order.quantity ?? 1;
   const vol = order.trafficGb === null ? "نامحدود" : `${order.trafficGb} گیگ`;
