@@ -7,11 +7,20 @@ export type RateShopCatalog = {
   categories: string[];
   categoryLabels: Record<string, string>;
   maxMonths: number;
+  pricingMode?: "matrix" | "rate";
+  defaultLimitIp?: number;
+  canEditLimitIp?: boolean;
   volumeRules?: {
     data: { min: number; max: number; step: number };
     national: { min: number; max: number; step: number };
     unlimited: null;
   };
+  /** For matrix mode — snap volume/months to priced cells */
+  cells?: Array<{
+    category: string;
+    trafficGb: number | null;
+    months: number;
+  }>;
 };
 
 export type RateOrderPayload = {
@@ -32,39 +41,99 @@ type Props = {
   onSubmit: (payload: RateOrderPayload) => void | Promise<void>;
 };
 
-function snap(value: number, min: number, max: number, step: number) {
-  const n = Math.round(value / step) * step;
-  return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min));
-}
-
-function rulesFor(
-  category: string,
-  catalog: RateShopCatalog,
-): { kind: "unlimited" | "stepped"; min: number; max: number; step: number } | { kind: "unlimited" } {
-  if (category === "unlimited") return { kind: "unlimited" };
-  if (category === "national") {
-    const r = catalog.volumeRules?.national ?? { min: 1, max: 20, step: 1 };
-    return { kind: "stepped", ...r };
-  }
-  const r = catalog.volumeRules?.data ?? { min: 10, max: 100, step: 5 };
-  return { kind: "stepped", ...r };
-}
-
-function randomName(prefix: string) {
-  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-}
+type SeekStep = { value: number; label: string };
 
 function sortCategories(cats: string[]): string[] {
   const rank = (k: string) => (k === "data" ? 0 : k === "national" ? 1 : k === "unlimited" ? 2 : 10);
   return [...cats].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
+function randomName(prefix: string) {
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+}
+
+function steppedValues(min: number, max: number, step: number): number[] {
+  const out: number[] = [];
+  for (let v = min; v <= max + 1e-9; v += step) out.push(Number(v.toFixed(6)));
+  if (!out.length || out[out.length - 1]! < max) out.push(max);
+  return [...new Set(out)];
+}
+
+function nearestIndex(steps: SeekStep[], value: number): number {
+  if (!steps.length) return 0;
+  let best = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < steps.length; i++) {
+    const d = Math.abs(steps[i]!.value - value);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function SeekBar({
+  title,
+  valueText,
+  steps,
+  index,
+  disabled,
+  onChange,
+}: {
+  title: string;
+  valueText: string;
+  steps: SeekStep[];
+  index: number;
+  disabled?: boolean;
+  onChange: (index: number) => void;
+}) {
+  const max = Math.max(0, steps.length - 1);
+  const pct = max <= 0 ? 0 : (Math.min(max, Math.max(0, index)) / max) * 100;
+  const markEvery = steps.length > 14 ? 2 : 1;
+
+  return (
+    <div className={`seek-block${disabled ? " is-disabled" : ""}`}>
+      <div className="seek-head">
+        <span className="seek-title">{title}</span>
+        <strong className="seek-value num">{valueText}</strong>
+      </div>
+      <div className="seek-track-wrap">
+        <input
+          type="range"
+          className="seek-range"
+          min={0}
+          max={max}
+          step={1}
+          value={Math.min(max, Math.max(0, index))}
+          disabled={disabled || max <= 0}
+          aria-label={title}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{ ["--seek-pct" as string]: `${pct}%` }}
+        />
+      </div>
+      <div className="seek-marks" aria-hidden="true">
+        {steps.map((s, i) =>
+          i % markEvery === 0 || i === steps.length - 1 ? (
+            <span key={`${s.value}-${i}`} className="seek-mark num" style={{ ["--i" as string]: i, ["--n" as string]: max || 1 }}>
+              {s.label}
+            </span>
+          ) : null,
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const cats = sortCategories(catalog.categories.length ? catalog.categories : []);
+  const allowIpEdit =
+    variant === "admin" || variant === "agent" ? true : Boolean(catalog.canEditLimitIp);
+
   const [category, setCategory] = useState(cats[0] || "data");
-  const [gbInput, setGbInput] = useState("10");
-  const [months, setMonths] = useState(1);
-  const [limitIp, setLimitIp] = useState(0);
+  const [gbIndex, setGbIndex] = useState(0);
+  const [monthIndex, setMonthIndex] = useState(0);
+  const [ipIndex, setIpIndex] = useState(0);
   const [nameMode, setNameMode] = useState<"random" | "custom">("random");
   const [customName, setCustomName] = useState("");
   const [note, setNote] = useState("");
@@ -72,33 +141,84 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
   const [quoting, setQuoting] = useState(false);
 
-  const rules = useMemo(() => rulesFor(category, catalog), [category, catalog]);
-  const monthOptions = useMemo(() => {
-    const max = Math.max(1, Math.min(3, catalog.maxMonths || 1));
-    return Array.from({ length: max }, (_, i) => i + 1);
-  }, [catalog.maxMonths]);
+  const volumeFixed = category === "unlimited";
+  const monthsLocked = category === "national" || Math.max(1, catalog.maxMonths || 1) <= 1;
+  const ipLocked = !allowIpEdit;
 
-  // Reset volume defaults when category changes
+  const volumeSteps = useMemo((): SeekStep[] => {
+    if (volumeFixed) return [{ value: 0, label: "∞" }];
+    if (catalog.pricingMode === "matrix" && catalog.cells?.length) {
+      const gbs = [
+        ...new Set(
+          catalog.cells
+            .filter((c) => c.category === category && c.trafficGb != null && c.trafficGb > 0)
+            .map((c) => c.trafficGb as number),
+        ),
+      ].sort((a, b) => a - b);
+      if (gbs.length) return gbs.map((g) => ({ value: g, label: String(g) }));
+    }
+    if (category === "national") {
+      const r = catalog.volumeRules?.national ?? { min: 1, max: 20, step: 1 };
+      return steppedValues(r.min, r.max, r.step).map((g) => ({ value: g, label: String(g) }));
+    }
+    const r = catalog.volumeRules?.data ?? { min: 10, max: 100, step: 5 };
+    return steppedValues(r.min, r.max, r.step).map((g) => ({ value: g, label: String(g) }));
+  }, [category, catalog, volumeFixed]);
+
+  const monthSteps = useMemo((): SeekStep[] => {
+    if (category === "national") return [{ value: 1, label: "۱" }];
+    if (catalog.pricingMode === "matrix" && catalog.cells?.length) {
+      const ms = [
+        ...new Set(
+          catalog.cells.filter((c) => c.category === category).map((c) => c.months).filter((m) => m >= 1),
+        ),
+      ].sort((a, b) => a - b);
+      if (ms.length) return ms.map((m) => ({ value: m, label: String(m) }));
+    }
+    const max = Math.max(1, Math.min(12, catalog.maxMonths || 1));
+    return Array.from({ length: max }, (_, i) => ({ value: i + 1, label: String(i + 1) }));
+  }, [category, catalog]);
+
+  const ipSteps = useMemo((): SeekStep[] => {
+    const def = Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0));
+    if (ipLocked) {
+      return [{ value: def, label: def <= 0 ? "∞" : String(def) }];
+    }
+    return Array.from({ length: 11 }, (_, i) => ({
+      value: i,
+      label: i === 0 ? "∞" : String(i),
+    }));
+  }, [catalog.defaultLimitIp, ipLocked]);
+
   useEffect(() => {
     if (!cats.includes(category)) setCategory(cats[0] || "data");
   }, [cats, category]);
 
   useEffect(() => {
-    const r = rulesFor(category, catalog);
-    if (r.kind === "unlimited") {
-      setGbInput("");
-    } else {
-      setGbInput(String(category === "national" ? r.min : r.min));
-    }
-    setMonths(1);
-  }, [category, catalog]);
+    setGbIndex(0);
+    setMonthIndex(0);
+    if (ipLocked) setIpIndex(0);
+    else setIpIndex(nearestIndex(ipSteps, catalog.defaultLimitIp ?? 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on category change
+  }, [category]);
 
-  const trafficGb = useMemo(() => {
-    if (rules.kind === "unlimited") return null;
-    const raw = Number(gbInput.replace(/[^\d]/g, ""));
-    if (!Number.isFinite(raw) || gbInput.trim() === "") return rules.min;
-    return snap(raw, rules.min, rules.max, rules.step);
-  }, [gbInput, rules]);
+  useEffect(() => {
+    setGbIndex((i) => Math.min(i, Math.max(0, volumeSteps.length - 1)));
+  }, [volumeSteps]);
+
+  useEffect(() => {
+    setMonthIndex((i) => Math.min(i, Math.max(0, monthSteps.length - 1)));
+  }, [monthSteps]);
+
+  const trafficGb = volumeFixed ? null : volumeSteps[gbIndex]?.value ?? volumeSteps[0]?.value ?? 10;
+  const months = monthSteps[monthIndex]?.value ?? 1;
+  const limitIp = ipSteps[ipIndex]?.value ?? catalog.defaultLimitIp ?? 0;
+
+  const volumeValueText = volumeFixed
+    ? "نامحدود"
+    : `${(trafficGb ?? 0).toLocaleString("fa-IR")} گیگابایت`;
+  const monthValueText = `${months.toLocaleString("fa-IR")} ماه`;
+  const ipValueText = limitIp <= 0 ? "نامحدود" : `${limitIp.toLocaleString("fa-IR")} کاربر`;
 
   useEffect(() => {
     let cancelled = false;
@@ -108,13 +228,12 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       void api<{ price: number }>("/me/quote", {
         body: {
           category,
-          trafficGb: rules.kind === "unlimited" ? null : trafficGb,
-          months,
+          trafficGb: volumeFixed ? null : trafficGb,
+          months: category === "national" ? 1 : months,
         },
       })
         .then((r) => {
-          if (cancelled) return;
-          setPrice(r.price);
+          if (!cancelled) setPrice(r.price);
         })
         .catch((e) => {
           if (cancelled) return;
@@ -124,27 +243,12 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         .finally(() => {
           if (!cancelled) setQuoting(false);
         });
-    }, 220);
+    }, 180);
     return () => {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [category, trafficGb, months, rules.kind]);
-
-  function bumpGb(dir: 1 | -1) {
-    if (rules.kind !== "stepped") return;
-    const cur = trafficGb ?? rules.min;
-    setGbInput(String(snap(cur + dir * rules.step, rules.min, rules.max, rules.step)));
-  }
-
-  function onGbBlur() {
-    if (rules.kind !== "stepped") return;
-    setGbInput(String(trafficGb ?? rules.min));
-  }
-
-  function bumpIp(dir: 1 | -1) {
-    setLimitIp((v) => Math.max(0, Math.min(10, v + dir)));
-  }
+  }, [category, trafficGb, months, volumeFixed]);
 
   async function submit(payWithWallet: boolean) {
     if (nameMode === "custom" && !customName.trim()) return;
@@ -154,7 +258,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         : randomName(variant === "agent" || variant === "admin" ? "p" : "u");
     await onSubmit({
       category,
-      trafficGb: rules.kind === "unlimited" ? null : trafficGb,
+      trafficGb: volumeFixed ? null : trafficGb,
       months: category === "national" ? 1 : months,
       limitIp,
       accountName,
@@ -170,9 +274,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   }
 
   return (
-    <div className="rate-shop">
+    <div className="rate-shop seek-shop">
       <div className="field">
-        <label>نوع کانفیگ</label>
+        <label>نوع اشتراک</label>
         <div className="chip-row rate-shop-cats">
           {cats.map((cat) => (
             <button
@@ -187,132 +291,123 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         </div>
       </div>
 
-      {rules.kind === "unlimited" ? (
-        <div className="rate-shop-card">
-          <div className="rate-shop-card-label">حجم</div>
-          <div className="rate-shop-unlimited">نامحدود</div>
-        </div>
-      ) : (
-        <div className="rate-shop-card">
-          <div className="rate-shop-card-label">حجم (گیگابایت)</div>
-          <div className="rate-stepper">
-            <button type="button" className="rate-step-btn" disabled={busy} onClick={() => bumpGb(-1)} aria-label="کاهش حجم">
-              −
-            </button>
-            <input
-              className="rate-step-input num"
-              inputMode="numeric"
-              value={gbInput}
+      <SeekBar
+        title="حجم"
+        valueText={volumeValueText}
+        steps={volumeSteps}
+        index={gbIndex}
+        disabled={busy || volumeFixed || volumeSteps.length <= 1}
+        onChange={setGbIndex}
+      />
+
+      <SeekBar
+        title="مدت"
+        valueText={monthValueText}
+        steps={monthSteps}
+        index={monthIndex}
+        disabled={busy || monthsLocked || monthSteps.length <= 1}
+        onChange={setMonthIndex}
+      />
+
+      <SeekBar
+        title="محدودیت کاربر"
+        valueText={ipValueText}
+        steps={ipSteps}
+        index={ipIndex}
+        disabled={busy || ipLocked || ipSteps.length <= 1}
+        onChange={setIpIndex}
+      />
+
+      {(variant === "agent" || variant === "admin") && (
+        <>
+          <div className="field">
+            <label>نام کاربر</label>
+            <div className="chip-row" style={{ marginBottom: 10 }}>
+              <button type="button" className={`chip${nameMode === "random" ? " on" : ""}`} onClick={() => setNameMode("random")}>
+                رندوم
+              </button>
+              <button type="button" className={`chip${nameMode === "custom" ? " on" : ""}`} onClick={() => setNameMode("custom")}>
+                شخصی
+              </button>
+            </div>
+            {nameMode === "custom" && (
+              <input
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder="مثلاً ali-mobile"
+                disabled={busy}
+              />
+            )}
+          </div>
+          <div className="field">
+            <label>توضیحات (اختیاری)</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value.slice(0, 500))}
+              placeholder="یادداشت برای این کانفیگ"
+              rows={2}
               disabled={busy}
-              onChange={(e) => setGbInput(e.target.value.replace(/[^\d]/g, ""))}
-              onBlur={onGbBlur}
-              aria-label="حجم گیگابایت"
             />
-            <button type="button" className="rate-step-btn" disabled={busy} onClick={() => bumpGb(1)} aria-label="افزایش حجم">
-              +
+          </div>
+        </>
+      )}
+
+      {variant === "user" && (
+        <div className="field">
+          <label>نام اکانت (اختیاری)</label>
+          <div className="chip-row" style={{ marginBottom: 10 }}>
+            <button type="button" className={`chip${nameMode === "random" ? " on" : ""}`} onClick={() => setNameMode("random")}>
+              رندوم
+            </button>
+            <button type="button" className={`chip${nameMode === "custom" ? " on" : ""}`} onClick={() => setNameMode("custom")}>
+              شخصی
             </button>
           </div>
-          <p className="muted rate-shop-hint">
-            {rules.min} تا {rules.max} گیگ
-            {rules.step > 1 ? ` · مضرب ${rules.step}` : ""}
-          </p>
+          {nameMode === "custom" && (
+            <input
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder="مثلاً ali-mobile"
+              disabled={busy}
+            />
+          )}
         </div>
       )}
 
-      <div className="rate-shop-card">
-        <div className="rate-shop-card-label">مدت</div>
-        {category === "national" || monthOptions.length <= 1 ? (
-          <div className="rate-shop-fixed">۱ ماه</div>
-        ) : (
-          <div className="chip-row">
-            {monthOptions.map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={`chip${months === m ? " on" : ""}`}
-                onClick={() => setMonths(m)}
-              >
-                {m === 1 ? "۱ ماه" : `${m} ماه`}
+      <div className="seek-checkout">
+        <div className="seek-price">
+          <span className="muted">مبلغ</span>
+          <strong className="num">
+            {quoting ? "…" : price != null ? formatToman(price) : quoteErr ? "—" : "…"}
+          </strong>
+        </div>
+        {quoteErr && (
+          <p className="muted" style={{ color: "var(--pink)", margin: "0 0 10px" }}>
+            {quoteErr}
+          </p>
+        )}
+        <div className="seek-pay-row">
+          {variant === "user" && (
+            <>
+              <button type="button" className="btn seek-pay-wallet" disabled={!canSubmit} onClick={() => void submit(true)}>
+                پرداخت از کیف پول
               </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="rate-shop-card">
-        <div className="rate-shop-card-label">محدودیت کاربر</div>
-        <div className="rate-stepper">
-          <button type="button" className="rate-step-btn" disabled={busy || limitIp <= 0} onClick={() => bumpIp(-1)} aria-label="کاهش محدودیت">
-            −
-          </button>
-          <div className="rate-step-value num">{limitIp <= 0 ? "نامحدود" : limitIp}</div>
-          <button type="button" className="rate-step-btn" disabled={busy || limitIp >= 10} onClick={() => bumpIp(1)} aria-label="افزایش محدودیت">
-            +
-          </button>
-        </div>
-        <p className="muted rate-shop-hint">پیش‌فرض نامحدود · حداکثر ۱۰</p>
-      </div>
-
-      <div className="field">
-        <label>نام کاربر</label>
-        <div className="chip-row" style={{ marginBottom: 10 }}>
-          <button type="button" className={`chip${nameMode === "random" ? " on" : ""}`} onClick={() => setNameMode("random")}>
-            رندوم
-          </button>
-          <button type="button" className={`chip${nameMode === "custom" ? " on" : ""}`} onClick={() => setNameMode("custom")}>
-            شخصی
-          </button>
-        </div>
-        {nameMode === "custom" && (
-          <input
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-            placeholder="مثلاً ali-mobile"
-            disabled={busy}
-          />
-        )}
-      </div>
-
-      <div className="field">
-        <label>توضیحات (اختیاری)</label>
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value.slice(0, 500))}
-          placeholder="یادداشت برای این کانفیگ"
-          rows={2}
-          disabled={busy}
-        />
-      </div>
-
-      <div className="rate-shop-price">
-        <span className="muted">قیمت</span>
-        <strong className="num">
-          {quoting ? "…" : price != null ? formatToman(price) : quoteErr ? "—" : "…"}
-        </strong>
-      </div>
-      {quoteErr && <p className="muted" style={{ color: "var(--pink)", marginTop: 0 }}>{quoteErr}</p>}
-
-      <div className="actions stack rate-shop-actions">
-        {variant === "user" && (
-          <>
-            <button type="button" className="btn light wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-              پرداخت با کیف پول و ساخت
+              <button type="button" className="btn seek-pay-card" disabled={!canSubmit} onClick={() => void submit(false)}>
+                کارت به کارت
+              </button>
+            </>
+          )}
+          {variant === "agent" && (
+            <button type="button" className="btn seek-pay-card wide" disabled={!canSubmit} onClick={() => void submit(true)}>
+              پرداخت از کیف پول و ساخت
             </button>
-            <button type="button" className="btn success wide" disabled={!canSubmit} onClick={() => void submit(false)}>
-              کارت‌به‌کارت و ساخت کانفیگ
+          )}
+          {variant === "admin" && (
+            <button type="button" className="btn seek-pay-card wide" disabled={!canSubmit} onClick={() => void submit(true)}>
+              ساخت کانفیگ
             </button>
-          </>
-        )}
-        {variant === "agent" && (
-          <button type="button" className="btn success wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-            پرداخت و ساخت کانفیگ
-          </button>
-        )}
-        {variant === "admin" && (
-          <button type="button" className="btn success wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-            ساخت کانفیگ
-          </button>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

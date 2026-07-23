@@ -44,6 +44,7 @@ import {
   getSetting,
   getWebSessionHours,
   getDefaultLimitIp,
+  canEditLimitIp,
   listEnabledSalesCategories,
   saveCategoryLabels,
   saveChannels,
@@ -467,6 +468,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       categoryLabels: labels,
       maxMonths,
       defaultLimitIp,
+      canEditLimitIp: canEditLimitIp(user.role),
       volumeRules: {
         data: { min: 10, max: 100, step: 5 },
         national: { min: 1, max: 20, step: 1 },

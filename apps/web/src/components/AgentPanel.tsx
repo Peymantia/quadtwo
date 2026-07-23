@@ -93,6 +93,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         categories?: string[];
         maxMonths?: number;
         pricingMode?: "matrix" | "rate";
+        defaultLimitIp?: number;
+        canEditLimitIp?: boolean;
         volumeRules?: RateShopCatalog["volumeRules"];
       }>("/me/catalog").then((r) => {
         setCells(r.cells);
@@ -102,7 +104,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           categories: r.categories ?? [],
           categoryLabels: r.categoryLabels ?? {},
           maxMonths: r.maxMonths ?? 1,
+          pricingMode: r.pricingMode === "rate" ? "rate" : "matrix",
+          defaultLimitIp: r.defaultLimitIp,
+          canEditLimitIp: true,
           volumeRules: r.volumeRules,
+          cells: r.cells,
         });
       });
     }
