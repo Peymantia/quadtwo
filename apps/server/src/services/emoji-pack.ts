@@ -93,7 +93,8 @@ export type EmojiKey =
   | "import_excel"
   | "agent_name"
   | "dash_web"
-  | "login_id";
+  | "login_id"
+  | "demo_role";
 
 /** Current bot Unicode glyphs (Universal style). */
 export const UNIVERSAL: Record<EmojiKey, string> = {
@@ -188,6 +189,7 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   agent_name: "🏷",
   dash_web: "🌐",
   login_id: "👤",
+  demo_role: "🎭",
 };
 
 /**
@@ -287,6 +289,8 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   dash_web: "5447410659077661506",
   /** OTP message: login id line (shares 👤 with account; matched by label) */
   login_id: "5987557724886405444",
+  /** Demo role picker / «تغییر نقش دمو» */
+  demo_role: "5318990544221775177",
 };
 
 /** When several keys share a glyph, pick ID from surrounding label text. */
