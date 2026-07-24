@@ -1553,7 +1553,7 @@ const SYNC_OPTION_DEFS: Array<{ key: string; label: string; hint?: string }> = [
   { key: "expiry", label: "تاریخ انقضا" },
   { key: "inbounds", label: "اینباندها", hint: "فقط هنگام ساخت اکانت جدید در پنل" },
   { key: "limitIp", label: "محدودیت کاربر" },
-  { key: "comment", label: "کامنت" },
+  { key: "comment", label: "کامنت", hint: "کامنت پنل → نوت ربات (یا title | note)" },
   { key: "note", label: "نوت" },
 ];
 

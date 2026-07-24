@@ -98,6 +98,7 @@ async function clientsFromOnePanel(xui: XuiClient): Promise<RawPanelClient[]> {
           expiryTime: c.expiryTime,
           enable: c.enable,
           limitIp: c.limitIp,
+          comment: typeof c.comment === "string" ? c.comment : undefined,
         });
       }
     }
@@ -1913,22 +1914,52 @@ async function applyPanelFieldsToBot(
   const data: Record<string, unknown> = {};
   const before: Partial<BotSnap> = {};
 
-  if (hasOpt(optSet, "traffic") && panel.trafficGb !== sub.trafficGb) {
-    before.trafficGb = sub.trafficGb;
-    data.trafficGb = panel.trafficGb;
+  // List APIs often omit comment / stale fields — refresh when text/limit sync is requested.
+  let trafficGb = panel.trafficGb;
+  let expiryTime = panel.expiryTime;
+  let limitIp = panel.limitIp;
+  let panelComment = (panel.comment || "").trim();
+  const needsFresh =
+    hasOpt(optSet, "comment") ||
+    hasOpt(optSet, "note") ||
+    hasOpt(optSet, "name") ||
+    hasOpt(optSet, "limitIp") ||
+    hasOpt(optSet, "traffic") ||
+    hasOpt(optSet, "expiry");
+
+  if (needsFresh) {
+    try {
+      const got = await panel.xui.getClient(sub.email);
+      const client = got.obj?.client;
+      if (client) {
+        trafficGb = bytesToGb(client.totalGB) ?? trafficGb;
+        expiryTime = Number(client.expiryTime ?? expiryTime);
+        limitIp = Number(client.limitIp ?? limitIp);
+        if (typeof client.comment === "string") {
+          panelComment = client.comment.trim();
+        }
+      }
+    } catch {
+      /* use list snapshot */
+    }
   }
 
-  if (hasOpt(optSet, "expiry") && panel.expiryTime > 0) {
-    if (Math.abs(panel.expiryTime - sub.expiresAt.getTime()) > 60_000) {
+  if (hasOpt(optSet, "traffic") && trafficGb !== sub.trafficGb) {
+    before.trafficGb = sub.trafficGb;
+    data.trafficGb = trafficGb;
+  }
+
+  if (hasOpt(optSet, "expiry") && expiryTime > 0) {
+    if (Math.abs(expiryTime - sub.expiresAt.getTime()) > 60_000) {
       before.expiresAt = sub.expiresAt.toISOString();
       before.startsOnConnect = sub.startsOnConnect;
       before.activatedAt = sub.activatedAt?.toISOString() ?? null;
-      data.expiresAt = new Date(panel.expiryTime);
+      data.expiresAt = new Date(expiryTime);
       data.startsOnConnect = false;
       data.activatedAt = sub.activatedAt ?? new Date();
     }
-  } else if (hasOpt(optSet, "expiry") && panel.expiryTime < 0 && !sub.startsOnConnect) {
-    const exp = expiryFromPanel(panel.expiryTime);
+  } else if (hasOpt(optSet, "expiry") && expiryTime < 0 && !sub.startsOnConnect) {
+    const exp = expiryFromPanel(expiryTime);
     before.expiresAt = sub.expiresAt.toISOString();
     before.startsOnConnect = sub.startsOnConnect;
     before.activatedAt = sub.activatedAt?.toISOString() ?? null;
@@ -1937,17 +1968,17 @@ async function applyPanelFieldsToBot(
     data.expiresAt = exp.expiresAt;
   }
 
-  if (hasOpt(optSet, "limitIp") && panel.limitIp !== (sub.limitIp ?? 0)) {
+  if (hasOpt(optSet, "limitIp") && limitIp !== (sub.limitIp ?? 0)) {
     before.limitIp = sub.limitIp ?? 0;
-    data.limitIp = panel.limitIp;
+    data.limitIp = limitIp;
   }
 
-  const panelComment = (panel.comment || "").trim();
   const parsed = parsePanelComment(panelComment);
+  const composed = composePanelComment(sub.title, sub.note);
 
-  if (hasOpt(optSet, "comment") && panelComment) {
-    const composed = composePanelComment(sub.title, sub.note);
-    if (panelComment !== composed) {
+  if (hasOpt(optSet, "comment") && panelComment && panelComment !== composed) {
+    // `title | note` → split; otherwise treat whole panel comment as bot note (visible memo).
+    if (panelComment.includes("|")) {
       if (parsed.title !== sub.title) {
         before.title = sub.title;
         data.title = parsed.title;
@@ -1956,23 +1987,31 @@ async function applyPanelFieldsToBot(
         before.note = sub.note;
         data.note = parsed.note;
       }
+    } else if (panelComment !== (sub.note ?? "").trim()) {
+      before.note = sub.note;
+      data.note = panelComment.slice(0, 500);
     }
-  } else {
+  }
+
+  if (!hasOpt(optSet, "comment")) {
     if (hasOpt(optSet, "name") && parsed.title && parsed.title !== sub.title) {
       before.title = sub.title;
       data.title = parsed.title;
     }
     if (hasOpt(optSet, "note") && panelComment) {
-      // note from second segment, or whole comment if name not selected
       const noteVal = hasOpt(optSet, "name")
         ? parsed.note
-        : parsed.note ?? (parsed.title !== sub.email ? panelComment : null);
-      if (noteVal !== sub.note && (parsed.note != null || !hasOpt(optSet, "name"))) {
-        if (noteVal !== sub.note) {
-          before.note = sub.note;
-          data.note = noteVal;
-        }
+        : (parsed.note ?? (panelComment.includes("|") ? null : panelComment));
+      if (noteVal != null && noteVal !== sub.note) {
+        before.note = sub.note;
+        data.note = noteVal;
       }
+    }
+  } else {
+    // comment already applied; still allow explicit name override from first segment
+    if (hasOpt(optSet, "name") && parsed.title && parsed.title !== (data.title ?? sub.title)) {
+      if (!("title" in before)) before.title = sub.title;
+      data.title = parsed.title;
     }
   }
 

@@ -318,6 +318,7 @@ export class XuiClient {
         expiryTime?: number;
         enable?: boolean;
         limitIp?: number;
+        comment?: string;
         inboundIds?: number[];
       }>
     >("panel/api/clients/list");

@@ -2103,14 +2103,29 @@ button.pay-dest-number:active,
 
 .sync-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
 .sync-actions .btn {
   width: 100%;
   justify-content: center;
+  min-height: 44px;
+  padding-inline: 14px;
+  white-space: nowrap;
+}
+
+@media (min-width: 720px) {
+  .sync-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .sync-actions .btn {
+    min-height: 0;
+    padding-inline: 10px;
+  }
 }
 
 .sync-options {
