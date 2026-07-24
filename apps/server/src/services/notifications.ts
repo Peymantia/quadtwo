@@ -1,4 +1,5 @@
 import type { Api } from "grammy";
+import { InlineKeyboard } from "grammy";
 import { SubscriptionStatus } from "@prisma/client";
 import { prisma } from "../db.js";
 import { formatTraffic } from "../utils/format.js";
@@ -28,9 +29,18 @@ async function markSent(subscriptionId: string, kind: string, bucket: string) {
     .catch(() => undefined);
 }
 
-async function sendUser(api: Api, telegramId: bigint, text: string) {
+function renewKeyboard(subId: string) {
+  return new InlineKeyboard().text("♻️ تمدید سرویس", `sub:renew:${subId}`).success();
+}
+
+async function sendUser(
+  api: Api,
+  telegramId: bigint,
+  text: string,
+  replyMarkup?: InlineKeyboard,
+) {
   try {
-    await api.sendMessage(Number(telegramId), text);
+    await api.sendMessage(Number(telegramId), text, replyMarkup ? { reply_markup: replyMarkup } : undefined);
     return true;
   } catch (err) {
     console.warn("notif send failed", String(telegramId), err);
@@ -71,6 +81,7 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
     }
 
     const clockStarted = !sub.startsOnConnect || Boolean(sub.activatedAt);
+    const canOfferRenew = !sub.isTest;
 
     if (cfg.expiryDays.enabled && clockStarted) {
       const msLeft = sub.expiresAt.getTime() - now;
@@ -89,8 +100,9 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
               `انقضا: ${sub.expiresAt.toLocaleString("fa-IR")}`,
               `حدود ${Math.max(1, Math.round(hoursLeft))} ساعت تا پایان اعتبار باقی مانده.`,
               "",
-              "برای تمدید از منوی ربات «تمدید سرویس» را بزنید.",
+              canOfferRenew ? "برای تمدید، دکمه زیر را بزنید." : "سرویس تست قابل تمدید نیست — سرویس اصلی بخرید.",
             ].join("\n"),
+            canOfferRenew ? renewKeyboard(sub.id) : undefined,
           );
           if (ok) {
             await markSent(sub.id, "expiryDays", bucket);
@@ -119,7 +131,10 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
               `سرویس: ${sub.code} (${sub.email})`,
               `حدود ${cfg.preDelete.hours} ساعت تا حذف خودکار از پنل باقی مانده (یا اخیراً منقضی شده).`,
               "اگر تمدید نکنید، سرویس از پنل پاک می‌شود.",
+              "",
+              canOfferRenew ? "برای تمدید، دکمه زیر را بزنید." : "سرویس تست قابل تمدید نیست — سرویس اصلی بخرید.",
             ].join("\n"),
+            canOfferRenew ? renewKeyboard(sub.id) : undefined,
           );
           if (ok) {
             await markSent(sub.id, "preDelete", bucket);
@@ -157,8 +172,9 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
                   `باقی‌مانده تقریبی: ${Math.round(remMb)} مگابایت`,
                   `آستانه هشدار: ${cfg.traffic.megabytes} مگابایت`,
                   "",
-                  "برای تمدید یا خرید حجم جدید از منوی ربات استفاده کنید.",
+                  canOfferRenew ? "برای تمدید، دکمه زیر را بزنید." : "سرویس تست قابل تمدید نیست — سرویس اصلی بخرید.",
                 ].join("\n"),
+                canOfferRenew ? renewKeyboard(sub.id) : undefined,
               );
               if (ok) {
                 await markSent(sub.id, "traffic", bucket);
