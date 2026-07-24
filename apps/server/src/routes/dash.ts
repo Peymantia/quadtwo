@@ -47,6 +47,9 @@ import {
   getWebSessionHours,
   getDefaultLimitIp,
   canEditLimitIp,
+  getNotifConfig,
+  saveNotifConfig,
+  defaultNotifConfig,
   listEnabledSalesCategories,
   saveCategoryLabels,
   saveChannels,
@@ -57,6 +60,7 @@ import {
   BUILTIN_CATEGORY_KEYS,
   setSetting,
   type ChannelConfig,
+  type NotifConfig,
   type PriceRates,
   type RolePricingModes,
 } from "../services/settings.js";
@@ -1744,6 +1748,49 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/settings", async (c) => c.json({ settings: await getAllSettings() }));
+
+  api.get("/admin/notifications", async (c) => {
+    const cfg = await getNotifConfig();
+    const base = defaultNotifConfig();
+    return c.json({
+      config: {
+        expiryDays: { ...base.expiryDays, ...cfg.expiryDays },
+        traffic: { ...base.traffic, ...cfg.traffic },
+        preDelete: { ...base.preDelete, ...cfg.preDelete },
+        deleted: { ...base.deleted, ...cfg.deleted },
+      } satisfies NotifConfig,
+    });
+  });
+
+  api.put("/admin/notifications", async (c) => {
+    const body = await c.req.json<Partial<NotifConfig>>();
+    const base = defaultNotifConfig();
+    const cur = await getNotifConfig();
+    const next: NotifConfig = {
+      expiryDays: {
+        enabled: typeof body.expiryDays?.enabled === "boolean" ? body.expiryDays.enabled : (cur.expiryDays?.enabled ?? base.expiryDays.enabled),
+        hours: Math.max(1, Math.min(720, Number(body.expiryDays?.hours ?? cur.expiryDays?.hours ?? base.expiryDays.hours) || base.expiryDays.hours)),
+      },
+      traffic: {
+        enabled: typeof body.traffic?.enabled === "boolean" ? body.traffic.enabled : (cur.traffic?.enabled ?? base.traffic.enabled),
+        megabytes: Math.max(1, Math.min(50_000, Number(body.traffic?.megabytes ?? cur.traffic?.megabytes ?? base.traffic.megabytes) || base.traffic.megabytes)),
+      },
+      preDelete: {
+        enabled: typeof body.preDelete?.enabled === "boolean" ? body.preDelete.enabled : (cur.preDelete?.enabled ?? base.preDelete.enabled),
+        hours: Math.max(1, Math.min(720, Number(body.preDelete?.hours ?? cur.preDelete?.hours ?? base.preDelete.hours) || base.preDelete.hours)),
+      },
+      deleted: {
+        enabled: typeof body.deleted?.enabled === "boolean" ? body.deleted.enabled : (cur.deleted?.enabled ?? base.deleted.enabled),
+      },
+    };
+    await saveNotifConfig(next);
+    await auditLog({
+      action: "setting_changed",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      detail: "notif_config",
+    });
+    return c.json({ ok: true, config: next });
+  });
 
   api.get("/admin/channels", async (c) => {
     const channels = await getChannels();

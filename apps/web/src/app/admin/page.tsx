@@ -2782,6 +2782,13 @@ function SettingsTab({
     lastStatus: string;
   } | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [notif, setNotif] = useState<{
+    expiryDays: { enabled: boolean; hours: number };
+    traffic: { enabled: boolean; megabytes: number };
+    preDelete: { enabled: boolean; hours: number };
+    deleted: { enabled: boolean };
+  } | null>(null);
+  const [notifBusy, setNotifBusy] = useState(false);
 
   useEffect(() => {
     void api<{ settings: Record<string, string> }>("/admin/settings").then((r) => {
@@ -2797,6 +2804,7 @@ function SettingsTab({
     void api<{
       config: { enabled: boolean; hour: number; minute: number; lastAt: string; lastStatus: string };
     }>("/admin/backup").then((r) => setBackup(r.config));
+    void api<{ config: NonNullable<typeof notif> }>("/admin/notifications").then((r) => setNotif(r.config));
   }, []);
 
   function openGuideEdit(platform: (typeof GUIDE_PLATFORMS)[number]) {
@@ -2880,6 +2888,29 @@ function SettingsTab({
     }
   }
 
+  async function saveNotif(patch: Partial<NonNullable<typeof notif>>) {
+    if (!notif) return;
+    setNotifBusy(true);
+    try {
+      const body = {
+        expiryDays: { ...notif.expiryDays, ...patch.expiryDays },
+        traffic: { ...notif.traffic, ...patch.traffic },
+        preDelete: { ...notif.preDelete, ...patch.preDelete },
+        deleted: { ...notif.deleted, ...patch.deleted },
+      };
+      const r = await api<{ config: NonNullable<typeof notif> }>("/admin/notifications", {
+        method: "PUT",
+        body,
+      });
+      setNotif(r.config);
+      flash("تنظیمات اعلان‌ها ذخیره شد");
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setNotifBusy(false);
+    }
+  }
+
   async function sendBackupNow() {
     setBackupBusy(true);
     try {
@@ -2936,6 +2967,142 @@ function SettingsTab({
           {" · "}
           بعد از تغییر، یک‌بار منوی ربات را با /update یا دکمه منو رفرش کنید.
         </p>
+      </div>
+
+      <div className="panel">
+        <h2>اعلان‌های ربات</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          همان گزینه‌های کنترل‌سنتر تلگرام — هشدار اتمام روز/حجم، قبل از حذف، و حذف نهایی.
+        </p>
+        {notif ? (
+          <>
+            <div className="setting-row">
+              <div>
+                <div className="t">📅 اتمام روز</div>
+                <div className="d">هشدار قبل از انقضای تاریخ سرویس</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={notif.expiryDays.enabled}
+                  disabled={notifBusy}
+                  onChange={(e) => void saveNotif({ expiryDays: { ...notif.expiryDays, enabled: e.target.checked } })}
+                />
+                <span className="track" />
+              </label>
+            </div>
+            {notif.expiryDays.enabled && (
+              <div className="field">
+                <label>آستانه (ساعت قبل از انقضا)</label>
+                <input
+                  className="num"
+                  dir="ltr"
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={notif.expiryDays.hours}
+                  disabled={notifBusy}
+                  onChange={(e) =>
+                    setNotif((n) =>
+                      n ? { ...n, expiryDays: { ...n.expiryDays, hours: Number(e.target.value) || 1 } } : n,
+                    )
+                  }
+                  onBlur={() => void saveNotif({ expiryDays: notif.expiryDays })}
+                />
+              </div>
+            )}
+
+            <div className="setting-row">
+              <div>
+                <div className="t">📦 اتمام حجم</div>
+                <div className="d">هشدار وقتی حجم باقی‌مانده کم شود</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={notif.traffic.enabled}
+                  disabled={notifBusy}
+                  onChange={(e) => void saveNotif({ traffic: { ...notif.traffic, enabled: e.target.checked } })}
+                />
+                <span className="track" />
+              </label>
+            </div>
+            {notif.traffic.enabled && (
+              <div className="field">
+                <label>آستانه (مگابایت باقی‌مانده)</label>
+                <input
+                  className="num"
+                  dir="ltr"
+                  type="number"
+                  min={1}
+                  max={50000}
+                  value={notif.traffic.megabytes}
+                  disabled={notifBusy}
+                  onChange={(e) =>
+                    setNotif((n) =>
+                      n ? { ...n, traffic: { ...n.traffic, megabytes: Number(e.target.value) || 1 } } : n,
+                    )
+                  }
+                  onBlur={() => void saveNotif({ traffic: notif.traffic })}
+                />
+              </div>
+            )}
+
+            <div className="setting-row">
+              <div>
+                <div className="t">⚠️ هشدار قبل از حذف</div>
+                <div className="d">حدود چند ساعت قبل از حذف خودکار از پنل</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={notif.preDelete.enabled}
+                  disabled={notifBusy}
+                  onChange={(e) => void saveNotif({ preDelete: { ...notif.preDelete, enabled: e.target.checked } })}
+                />
+                <span className="track" />
+              </label>
+            </div>
+            {notif.preDelete.enabled && (
+              <div className="field">
+                <label>پنجره هشدار (ساعت)</label>
+                <input
+                  className="num"
+                  dir="ltr"
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={notif.preDelete.hours}
+                  disabled={notifBusy}
+                  onChange={(e) =>
+                    setNotif((n) =>
+                      n ? { ...n, preDelete: { ...n.preDelete, hours: Number(e.target.value) || 1 } } : n,
+                    )
+                  }
+                  onBlur={() => void saveNotif({ preDelete: notif.preDelete })}
+                />
+              </div>
+            )}
+
+            <div className="setting-row">
+              <div>
+                <div className="t">🗑 حذف نهایی سرویس</div>
+                <div className="d">اعلان وقتی سرویس واقعاً از پنل پاک/غیرفعال شد</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={notif.deleted.enabled}
+                  disabled={notifBusy}
+                  onChange={(e) => void saveNotif({ deleted: { enabled: e.target.checked } })}
+                />
+                <span className="track" />
+              </label>
+            </div>
+          </>
+        ) : (
+          <p className="muted">در حال دریافت تنظیمات اعلان…</p>
+        )}
       </div>
 
       <div className="panel">
