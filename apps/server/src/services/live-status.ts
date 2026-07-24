@@ -2,6 +2,8 @@ import { prisma } from "../db.js";
 import { formatExpiryLabel, formatTraffic } from "../utils/format.js";
 import { resolvePanelForSubscription } from "./panel-servers.js";
 import { syncSubscriptionExpiryFromPanel, refreshSubscriptionSubUrl } from "./provision.js";
+import { isDemoMode } from "./license.js";
+import { DEMO_SAMPLE_MARKER } from "./demo-samples.js";
 
 const TEST_BYTES = 250 * 1024 * 1024;
 
@@ -30,10 +32,66 @@ function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1024)} کیلوبایت`;
 }
 
+function isLocalDemoSub(sub: {
+  subUrl: string | null;
+  note: string | null;
+  panelServerId: string | null;
+}): boolean {
+  if (isDemoMode()) return true;
+  if (sub.subUrl?.includes("demo.invalid")) return true;
+  if (sub.note?.includes(DEMO_SAMPLE_MARKER)) return true;
+  return false;
+}
+
+function localDemoStatus(sub: {
+  code: string;
+  email: string;
+  status: string;
+  isTest: boolean;
+  trafficGb: number | null;
+  expiresAt: Date;
+  startsOnConnect: boolean;
+  activatedAt: Date | null;
+  createdAt: Date;
+  subUrl: string | null;
+  limitIp: number;
+}): LiveSubStatus {
+  const total = sub.isTest ? TEST_BYTES : sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
+  const lip = sub.limitIp ?? 0;
+  return {
+    code: sub.code,
+    email: sub.email,
+    status: sub.status,
+    isTest: sub.isTest,
+    trafficLabel: sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb),
+    usedLabel: "۰",
+    remainingLabel: sub.isTest
+      ? formatBytes(TEST_BYTES)
+      : total <= 0
+        ? "نامحدود / نامشخص"
+        : formatBytes(total),
+    expiryLabel: formatExpiryLabel({
+      expiresAt: sub.expiresAt,
+      startsOnConnect: sub.startsOnConnect,
+      activatedAt: sub.activatedAt,
+      createdAt: sub.createdAt,
+    }),
+    onlineHint: "🎭 نمایشی — به پنل واقعی وصل نیست",
+    limitIpLabel: lip <= 0 ? "نامحدود" : `${lip} دستگاه`,
+    subUrl: sub.subUrl,
+    panelEnabled: null,
+    panelName: "دیتابیس نمایشی",
+  };
+}
+
 /** Fetch live traffic/expiry from the subscription's 3x-ui panel. */
 export async function getLiveSubscriptionStatus(subscriptionId: string): Promise<LiveSubStatus | null> {
   const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
   if (!sub) return null;
+
+  if (isLocalDemoSub(sub)) {
+    return localDemoStatus(sub);
+  }
 
   await syncSubscriptionExpiryFromPanel(sub.id);
   const subUrl = await refreshSubscriptionSubUrl(sub.id);
@@ -148,6 +206,11 @@ export async function getSubscriptionTrafficBytes(
 ): Promise<{ usedBytes: number; totalBytes: number; totalGb: number | null }> {
   const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
   if (!sub) return { usedBytes: 0, totalBytes: 0, totalGb: null };
+  if (isLocalDemoSub(sub)) {
+    if (sub.isTest) return { usedBytes: 0, totalBytes: TEST_BYTES, totalGb: 0.25 };
+    const totalBytes = sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
+    return { usedBytes: 0, totalBytes, totalGb: sub.trafficGb };
+  }
   let usedBytes = 0;
   let totalBytes = sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
   let totalGb = sub.trafficGb;

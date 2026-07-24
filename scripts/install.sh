@@ -267,6 +267,11 @@ do_update() {
   build_app
   write_systemd
   write_helper
+  # Keep isolated demo stack on updated code if previously set up
+  if systemctl list-unit-files quadtwo-demo.service &>/dev/null; then
+    systemctl restart quadtwo-demo quadtwo-demo-web 2>/dev/null || true
+    log "Restarted demo showcase services (quadtwo-demo)."
+  fi
   log "Update complete."
 }
 

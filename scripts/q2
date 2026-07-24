@@ -8,6 +8,8 @@ set -euo pipefail
 
 SERVICE="${QUADTWO_SERVICE:-quadtwo}"
 WEB_SERVICE="${SERVICE}-web"
+DEMO_SERVICE="${QUADTWO_DEMO_SERVICE:-quadtwo-demo}"
+DEMO_WEB_SERVICE="${DEMO_SERVICE}-web"
 DIR="${QUADTWO_DIR:-/opt/quadtwo}"
 
 RED=$'\033[0;31m'
@@ -55,23 +57,40 @@ svc_logs() {
 }
 
 env_file() { echo "$DIR/.env"; }
+demo_env_file() { echo "$DIR/.env.demo"; }
 
-env_get() {
-  local key="$1" file
-  file="$(env_file)"
+env_get_from() {
+  local file="$1" key="$2"
   [[ -f "$file" ]] || return 1
   grep -E "^${key}=" "$file" | tail -n1 | cut -d= -f2- | tr -d '\r'
 }
 
-set_env_key() {
-  local key="$1" value="$2" file tmp
-  file="$(env_file)"
-  [[ -f "$file" ]] || { echo "No .env at $file"; exit 1; }
+env_get() {
+  local key="$1"
+  env_get_from "$(env_file)" "$key"
+}
+
+demo_env_get() {
+  local key="$1"
+  env_get_from "$(demo_env_file)" "$key"
+}
+
+set_env_key_in() {
+  local file="$1" key="$2" value="$3" tmp
+  [[ -f "$file" ]] || { echo "No env file at $file"; exit 1; }
   tmp="$(mktemp)"
   grep -v -E "^${key}=" "$file" > "$tmp" || true
   printf '%s=%s\n' "$key" "$value" >> "$tmp"
   mv "$tmp" "$file"
   chmod 600 "$file"
+}
+
+set_env_key() {
+  set_env_key_in "$(env_file)" "$1" "$2"
+}
+
+set_demo_env_key() {
+  set_env_key_in "$(demo_env_file)" "$1" "$2"
 }
 
 telegram_get_me() {
@@ -207,180 +226,457 @@ do_license_status() {
   fi
 }
 
-demo_mode_on() {
-  local v
-  v="$(env_get DEMO_MODE 2>/dev/null || true)"
+demo_mode_on_file() {
+  local file="$1" v
+  v="$(env_get_from "$file" DEMO_MODE 2>/dev/null || true)"
   v="$(echo "$v" | tr '[:upper:]' '[:lower:]')"
   [[ "$v" == "1" || "$v" == "true" || "$v" == "yes" ]]
 }
 
-do_demo_status() {
-  local token me bot_user bot_name
-  echo -e "${BOLD}Demo Bot status${NC}"
-  echo
-  if demo_mode_on; then
-    echo -e "  Mode:   ${GREEN}ON${NC}  (DEMO_MODE=true)"
-  else
-    echo -e "  Mode:   ${DIM}OFF${NC}  (DEMO_MODE=$(env_get DEMO_MODE 2>/dev/null || echo empty))"
+demo_mode_on() { demo_mode_on_file "$(env_file)"; }
+demo_sidecar_on() { demo_mode_on_file "$(demo_env_file)"; }
+
+has_demo_svc() { systemctl list-unit-files "${DEMO_SERVICE}.service" &>/dev/null; }
+
+demo_svc_start() {
+  systemctl start "$DEMO_SERVICE" 2>/dev/null || true
+  systemctl start "$DEMO_WEB_SERVICE" 2>/dev/null || true
+  echo -e "${GREEN}Started${NC} ${DEMO_SERVICE} + ${DEMO_WEB_SERVICE}"
+}
+
+demo_svc_stop() {
+  systemctl stop "$DEMO_WEB_SERVICE" 2>/dev/null || true
+  systemctl stop "$DEMO_SERVICE" 2>/dev/null || true
+  echo -e "${YELLOW}Stopped${NC} ${DEMO_SERVICE} + ${DEMO_WEB_SERVICE}"
+}
+
+demo_svc_restart() {
+  systemctl restart "$DEMO_SERVICE" 2>/dev/null || true
+  systemctl restart "$DEMO_WEB_SERVICE" 2>/dev/null || true
+  echo -e "${GREEN}Restarted${NC} ${DEMO_SERVICE} + ${DEMO_WEB_SERVICE}"
+}
+
+_print_bot_line() {
+  local token="$1" me bot_user bot_name
+  if [[ -z "$token" ]]; then
+    echo "(no BOT_TOKEN)"
+    return
   fi
-  echo "  Admins: $(env_get ADMIN_TELEGRAM_IDS 2>/dev/null || echo '(empty)')"
-  echo "  Dash:   $(env_get DASH_DOMAIN 2>/dev/null || echo '(empty)')"
-  token="$(env_get BOT_TOKEN 2>/dev/null || true)"
-  if [[ -n "$token" ]]; then
-    echo -n "  Bot:    "
-    me="$(telegram_get_me "$token" 2>/dev/null || true)"
-    if [[ -n "$me" ]]; then
-      bot_user="$(echo "$me" | grep -o '"username":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
-      bot_name="$(echo "$me" | grep -o '"first_name":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
-      if [[ -n "$bot_user" ]]; then
-        echo "@${bot_user}${bot_name:+ ($bot_name)}"
-      else
-        echo "(token set — could not parse getMe)"
-      fi
+  me="$(telegram_get_me "$token" 2>/dev/null || true)"
+  if [[ -n "$me" ]]; then
+    bot_user="$(echo "$me" | grep -o '"username":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+    bot_name="$(echo "$me" | grep -o '"first_name":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+    if [[ -n "$bot_user" ]]; then
+      echo "@${bot_user}${bot_name:+ ($bot_name)}"
     else
-      echo "(token set — Telegram unreachable / invalid)"
+      echo "(token set — could not parse getMe)"
     fi
   else
-    echo "  Bot:    (no BOT_TOKEN)"
+    echo "(token set — Telegram unreachable / invalid)"
   fi
+}
+
+do_demo_status() {
+  local main_demo demo_file
+  demo_file="$(demo_env_file)"
+  echo -e "${BOLD}Demo showcase status${NC}"
   echo
+  echo -e "${CYAN}── Production (.env) ──${NC}"
+  main_demo=0
   if demo_mode_on; then
-    echo -e "${DIM}In Telegram: «تغییر نقش دمو» — switch admin / partner / wholesale / user.${NC}"
-    echo -e "${DIM}In web dash: yellow bar at top — same role switch.${NC}"
-    echo -e "${DIM}License checks are skipped while DEMO_MODE is on.${NC}"
+    main_demo=1
+    echo -e "  DEMO_MODE: ${RED}ON — DANGER${NC}  (turn off with: q2 demo fix-main)"
   else
-    echo -e "${DIM}Enable with: q2 demo enable${NC}"
+    echo -e "  DEMO_MODE: ${GREEN}off${NC}  (good)"
+  fi
+  echo "  Dash:      $(env_get DASH_DOMAIN 2>/dev/null || echo '(empty)')"
+  echo "  Bot:       $(_print_bot_line "$(env_get BOT_TOKEN 2>/dev/null || true)")"
+  echo
+  echo -e "${CYAN}── Demo sidecar (.env.demo) ──${NC}"
+  if [[ -f "$demo_file" ]]; then
+    if demo_sidecar_on; then
+      echo -e "  DEMO_MODE: ${GREEN}ON${NC}"
+    else
+      echo -e "  DEMO_MODE: ${YELLOW}off${NC} in .env.demo"
+    fi
+    echo "  Dash:      $(demo_env_get DASH_DOMAIN 2>/dev/null || echo '(empty)')"
+    echo "  API port:  $(demo_env_get PORT 2>/dev/null || echo '(empty)')"
+    echo "  Web port:  $(demo_env_get DEMO_WEB_PORT 2>/dev/null || echo '(empty)')"
+    echo "  Database:  $(demo_env_get DATABASE_URL 2>/dev/null || echo '(empty)')"
+    echo "  XUI_*:     $( [[ -n "$(demo_env_get XUI_BASE_URL 2>/dev/null || true)" ]] && echo "${RED}SET — should be empty${NC}" || echo "${GREEN}unset (isolated)${NC}" )"
+    echo "  Bot:       $(_print_bot_line "$(demo_env_get BOT_TOKEN 2>/dev/null || true)")"
+    echo "  Admins:    $(demo_env_get ADMIN_TELEGRAM_IDS 2>/dev/null || echo '(empty)')"
+    if has_demo_svc; then
+      echo -n "  Services:  "
+      systemctl is-active --quiet "$DEMO_SERVICE" && echo -n "${GREEN}${DEMO_SERVICE} active${NC}" || echo -n "${YELLOW}${DEMO_SERVICE} inactive${NC}"
+      echo -n " · "
+      systemctl is-active --quiet "$DEMO_WEB_SERVICE" && echo -e "${GREEN}${DEMO_WEB_SERVICE} active${NC}" || echo -e "${YELLOW}${DEMO_WEB_SERVICE} inactive${NC}"
+    else
+      echo "  Services:  (not installed — run q2 demo setup)"
+    fi
+  else
+    echo -e "  ${DIM}Not set up yet. Run: q2 demo setup${NC}"
+  fi
+  echo
+  if [[ "$main_demo" -eq 1 ]]; then
+    echo -e "${RED}Production has DEMO_MODE=true — this merges demo into the live shop.${NC}"
+    echo -e "${RED}Run: q2 demo fix-main${NC}"
   fi
 }
 
-do_demo_enable() {
-  local TOKEN="${1:-}" IDS="${2:-}" ENV_FILE ans
-  ENV_FILE="$(env_file)"
-  [[ -f "$ENV_FILE" ]] || { echo "No .env at $ENV_FILE"; exit 1; }
-
-  echo -e "${BOLD}Enable Demo Bot${NC}"
-  echo
-  echo "One install = one bot. Demo is the same QuadTwo with DEMO_MODE=true"
-  echo "(role switcher in bot + web; license skipped). Use a separate VPS"
-  echo "or BotFather bot for demos — do not enable on a paid customer install."
-  echo
-  do_demo_status
-  echo
-
-  if [[ -z "$TOKEN" ]]; then
-    read -r -p "BOT_TOKEN for demo (Enter = keep current): " TOKEN || true
-  fi
-  TOKEN="$(echo "${TOKEN:-}" | tr -d '[:space:]')"
-  if [[ -n "$TOKEN" ]]; then
-    if [[ ! "$TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
-      echo "Token format looks invalid (expected 123456789:ABC...)."
-      exit 1
-    fi
-    echo "Validating token with Telegram..."
-    telegram_get_me "$TOKEN" >/dev/null || {
-      echo "Telegram rejected this token (network or invalid token)."
-      exit 1
-    }
-    set_env_key BOT_TOKEN "$TOKEN"
-    echo "BOT_TOKEN updated."
-  fi
-
-  if [[ -z "$IDS" ]]; then
-    echo "Current ADMIN_TELEGRAM_IDS: $(env_get ADMIN_TELEGRAM_IDS || echo '(empty)')"
-    read -r -p "Demo admin Telegram ID(s), comma-separated (Enter = keep): " IDS || true
-  fi
-  IDS="$(echo "${IDS:-}" | tr -d '[:space:]' | tr -d '@')"
-  if [[ -n "$IDS" ]]; then
-    if [[ ! "$IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
-      echo "Invalid ID list (expected numeric IDs like 123456789)."
-      exit 1
-    fi
-    set_env_key ADMIN_TELEGRAM_IDS "$IDS"
-    echo "ADMIN_TELEGRAM_IDS → $IDS"
-    (
-      cd "$DIR"
-      set -a
-      # shellcheck disable=SC1091
-      source "$ENV_FILE"
-      set +a
-      if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
-        "$DIR/node_modules/.bin/tsx" apps/server/scripts/set-admin.ts "$IDS"
-      elif command -v npx >/dev/null 2>&1; then
-        npx --yes tsx apps/server/scripts/set-admin.ts "$IDS"
-      fi
-    ) || echo "Warning: DB admin sync failed — .env was still updated."
-  fi
-
-  set_env_key DEMO_MODE "true"
-  echo -e "DEMO_MODE → ${GREEN}true${NC}"
-  echo "Restarting services..."
-  svc_restart
-  sleep 1
-  echo
-  do_demo_status
-  echo
-  echo "Done. Open the bot and send /start — use «تغییر نقش دمو»."
-}
-
-do_demo_disable() {
-  local ENV_FILE ans
+do_demo_fix_main() {
+  local ENV_FILE
   ENV_FILE="$(env_file)"
   [[ -f "$ENV_FILE" ]] || { echo "No .env at $ENV_FILE"; exit 1; }
   if ! demo_mode_on; then
-    echo "Demo mode is already off."
+    echo "Production DEMO_MODE is already off."
     return 0
   fi
-  echo "This turns off the role switcher (bot + web). License rules apply again if configured."
-  read -r -p "Disable DEMO_MODE? [y/N]: " ans || true
-  case "${ans:-}" in
-    y|Y|yes|YES) ;;
-    *) echo "Cancelled."; return 0 ;;
-  esac
   set_env_key DEMO_MODE "false"
-  echo -e "DEMO_MODE → ${YELLOW}false${NC}"
-  echo "Restarting services..."
+  echo -e "Production DEMO_MODE → ${GREEN}false${NC}"
+  echo "Restarting production services..."
   svc_restart
   sleep 1
-  echo "Done. Demo role switcher is off."
+  echo "Done. Live shop is no longer in demo mode."
+}
+
+write_demo_systemd() {
+  local api_port="$1" web_port="$2"
+  cat > "/etc/systemd/system/${DEMO_SERVICE}.service" <<EOF
+[Unit]
+Description=Quadtwo Demo Bot (isolated showcase)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${DIR}
+EnvironmentFile=${DIR}/.env.demo
+ExecStart=/usr/bin/node ${DIR}/apps/server/dist/index.js
+Restart=always
+RestartSec=5
+User=root
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat > "/etc/systemd/system/${DEMO_WEB_SERVICE}.service" <<EOF
+[Unit]
+Description=Quadtwo Demo Web Dashboard
+After=network.target ${DEMO_SERVICE}.service
+
+[Service]
+Type=simple
+WorkingDirectory=${DIR}/apps/web
+EnvironmentFile=${DIR}/.env.demo
+Environment=PORT=${web_port}
+Environment=NODE_ENV=production
+ExecStart=${DIR}/node_modules/.bin/next start -p ${web_port}
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable "$DEMO_SERVICE" "$DEMO_WEB_SERVICE"
+}
+
+write_demo_nginx() {
+  local host="$1" api_port="$2" web_port="$3" conf
+  conf="/etc/nginx/sites-available/${host}"
+  if ! command -v nginx >/dev/null 2>&1; then
+    echo -e "${YELLOW}nginx not found — skip site config. Point ${host} to :${web_port} yourself.${NC}"
+    return 0
+  fi
+  cat > "$conf" <<EOF
+# QuadTwo demo showcase — isolated from production
+upstream quadtwo_demo_api {
+    server 127.0.0.1:${api_port};
+}
+upstream quadtwo_demo_web {
+    server 127.0.0.1:${web_port};
+}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${host};
+
+    client_max_body_size 20m;
+
+    location /api/ {
+        proxy_pass http://quadtwo_demo_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    location /health {
+        proxy_pass http://quadtwo_demo_api;
+        proxy_set_header Host \$host;
+    }
+    location /telegram/ {
+        proxy_pass http://quadtwo_demo_api;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    location /_next/static/ {
+        proxy_pass http://quadtwo_demo_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+    location / {
+        proxy_pass http://quadtwo_demo_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+}
+EOF
+  ln -sfn "$conf" "/etc/nginx/sites-enabled/${host}"
+  if nginx -t; then
+    systemctl reload nginx
+    echo -e "Nginx site → ${GREEN}${host}${NC}"
+  else
+    echo -e "${RED}nginx -t failed — fix ${conf}${NC}"
+  fi
+}
+
+do_demo_setup() {
+  local ENV_MAIN DEMO_FILE HOST TOKEN IDS API_PORT WEB_PORT DB_PATH ans prod_dash suggest
+  ENV_MAIN="$(env_file)"
+  DEMO_FILE="$(demo_env_file)"
+  [[ -f "$ENV_MAIN" ]] || { echo "No production .env at $ENV_MAIN — install QuadTwo first."; exit 1; }
+
+  echo -e "${BOLD}Demo showcase setup (same VPS, isolated stack)${NC}"
+  echo
+  echo "This creates a SECOND stack beside production:"
+  echo "  · .env.demo + data/demo.db  (fake DB — no 3x-ui credentials)"
+  echo "  · systemd ${DEMO_SERVICE} / ${DEMO_WEB_SERVICE}"
+  echo "  · nginx for your demo subdomain"
+  echo "  · production DEMO_MODE forced OFF"
+  echo
+
+  if demo_mode_on; then
+    echo -e "${YELLOW}Production currently has DEMO_MODE=true — will turn it OFF.${NC}"
+  fi
+
+  prod_dash="$(env_get DASH_DOMAIN 2>/dev/null || true)"
+  prod_dash="${prod_dash:-dash.example.com}"
+  # Suggest demo.<apex> if prod is dash.x.com
+  suggest="demo.${prod_dash#*.}"
+  if [[ "$prod_dash" != *.* ]]; then suggest="demo.example.com"; fi
+
+  read -r -p "Demo subdomain [${suggest}]: " HOST || true
+  HOST="$(echo "${HOST:-$suggest}" | tr -d '[:space:]' | sed 's|^https\?://||;s|/$||')"
+  [[ -n "$HOST" ]] || { echo "Subdomain required."; exit 1; }
+
+  read -r -p "Demo BOT_TOKEN (BotFather — separate bot): " TOKEN || true
+  TOKEN="$(echo "${TOKEN:-}" | tr -d '[:space:]')"
+  [[ -n "$TOKEN" ]] || { echo "BOT_TOKEN required."; exit 1; }
+  if [[ ! "$TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
+    echo "Token format looks invalid."; exit 1
+  fi
+  echo "Validating token..."
+  telegram_get_me "$TOKEN" >/dev/null || { echo "Telegram rejected this token."; exit 1; }
+
+  local def_admin
+  def_admin="$(env_get ADMIN_TELEGRAM_IDS 2>/dev/null || true)"
+  read -r -p "Demo admin Telegram ID(s) [${def_admin:-required}]: " IDS || true
+  IDS="$(echo "${IDS:-$def_admin}" | tr -d '[:space:]' | tr -d '@')"
+  [[ -n "$IDS" ]] || { echo "Admin ID required."; exit 1; }
+  if [[ ! "$IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+    echo "Invalid ID list."; exit 1
+  fi
+
+  read -r -p "Demo API port [4010]: " API_PORT || true
+  API_PORT="${API_PORT:-4010}"
+  read -r -p "Demo web port [3010]: " WEB_PORT || true
+  WEB_PORT="${WEB_PORT:-3010}"
+  if [[ ! "$API_PORT" =~ ^[0-9]+$ ]] || [[ ! "$WEB_PORT" =~ ^[0-9]+$ ]]; then
+    echo "Ports must be numeric."; exit 1
+  fi
+
+  echo
+  echo "Summary:"
+  echo "  Host:     https://${HOST}"
+  echo "  API:      127.0.0.1:${API_PORT}"
+  echo "  Web:      127.0.0.1:${WEB_PORT}"
+  echo "  DB:       ${DIR}/data/demo.db"
+  echo "  Panel:    NONE (isolated)"
+  read -r -p "Apply? [y/N]: " ans || true
+  case "${ans:-}" in y|Y|yes|YES) ;; *) echo "Cancelled."; return 0 ;; esac
+
+  mkdir -p "${DIR}/data"
+  DB_PATH="file:${DIR}/data/demo.db"
+
+  cat > "$DEMO_FILE" <<EOF
+NODE_ENV=production
+PORT=${API_PORT}
+DEMO_WEB_PORT=${WEB_PORT}
+DATABASE_URL=${DB_PATH}
+
+DEMO_MODE=true
+BOT_TOKEN=${TOKEN}
+BOT_MODE=polling
+TELEGRAM_WEBHOOK_PATH=/telegram/webhook
+ADMIN_TELEGRAM_IDS=${IDS}
+
+# Intentionally empty — demo must never talk to 3x-ui
+# XUI_BASE_URL=
+# XUI_API_TOKEN=
+
+PUBLIC_DOMAIN=${HOST}
+DASH_DOMAIN=${HOST}
+NEXT_PUBLIC_API_URL=https://${HOST}
+NEXT_PUBLIC_APP_URL=https://${HOST}
+CORS_ORIGINS=https://${HOST}
+EOF
+  chmod 600 "$DEMO_FILE"
+  echo "Wrote $DEMO_FILE"
+
+  # Keep production clean
+  if demo_mode_on; then
+    set_env_key DEMO_MODE "false"
+    echo -e "Production DEMO_MODE → ${GREEN}false${NC}"
+    svc_restart
+  fi
+
+  echo "Preparing fake demo database..."
+  (
+    cd "$DIR"
+    set -a
+    # shellcheck disable=SC1091
+    source "$DEMO_FILE"
+    set +a
+    DATABASE_URL="$DB_PATH" npm run db:push -w @quadtwo/server
+  ) || {
+    echo "db:push failed — check prisma."
+    exit 1
+  }
+
+  # Seed prices into demo DB by briefly starting seed via node
+  (
+    cd "$DIR"
+    set -a
+    # shellcheck disable=SC1091
+    source "$DEMO_FILE"
+    set +a
+    if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
+      "$DIR/node_modules/.bin/tsx" -e "import { seedIfNeeded } from './apps/server/src/services/seed.ts'; await seedIfNeeded(); console.log('demo seed ok');"
+    else
+      npx --yes tsx -e "import { seedIfNeeded } from './apps/server/src/services/seed.ts'; await seedIfNeeded(); console.log('demo seed ok');"
+    fi
+  ) || echo "Warning: price seed skipped (server start will seed)."
+
+  (
+    cd "$DIR"
+    set -a
+    # shellcheck disable=SC1091
+    source "$DEMO_FILE"
+    set +a
+    if [[ -x "$DIR/node_modules/.bin/tsx" ]]; then
+      "$DIR/node_modules/.bin/tsx" apps/server/scripts/set-admin.ts "$IDS"
+    else
+      npx --yes tsx apps/server/scripts/set-admin.ts "$IDS"
+    fi
+  ) || echo "Warning: demo admin sync failed."
+
+  write_demo_systemd "$API_PORT" "$WEB_PORT"
+  write_demo_nginx "$HOST" "$API_PORT" "$WEB_PORT"
+  demo_svc_restart
+  sleep 2
+
+  echo
+  do_demo_status
+  echo
+  echo -e "${GREEN}Done.${NC}"
+  echo "1) DNS: A record ${HOST} → this server IP (Cloudflare orange OK)"
+  echo "2) Open bot → /start — sample fake accounts appear in «سرویس‌های من»"
+  echo "3) Dash: https://${HOST}"
+  echo "4) Nothing in demo talks to your Sanai panel."
+}
+
+do_demo_disable() {
+  local ans
+  echo "This stops the demo sidecar services (production untouched)."
+  if [[ -f "$(demo_env_file)" ]]; then
+    read -r -p "Also set DEMO_MODE=false in .env.demo? [y/N]: " ans || true
+    case "${ans:-}" in
+      y|Y|yes|YES) set_demo_env_key DEMO_MODE "false"; echo "DEMO_MODE=false in .env.demo" ;;
+    esac
+  fi
+  if has_demo_svc; then
+    demo_svc_stop
+  fi
+  # Legacy: main .env DEMO_MODE
+  if demo_mode_on; then
+    echo "Also clearing production DEMO_MODE..."
+    do_demo_fix_main
+  fi
+  echo "Done."
+}
+
+do_demo_uninstall() {
+  local ans host
+  echo -e "${YELLOW}Remove demo systemd units + nginx site? (.env.demo and demo.db kept unless you delete)${NC}"
+  read -r -p "Uninstall demo services? [y/N]: " ans || true
+  case "${ans:-}" in y|Y|yes|YES) ;; *) echo "Cancelled."; return 0 ;; esac
+  demo_svc_stop 2>/dev/null || true
+  systemctl disable "$DEMO_SERVICE" "$DEMO_WEB_SERVICE" 2>/dev/null || true
+  rm -f "/etc/systemd/system/${DEMO_SERVICE}.service" "/etc/systemd/system/${DEMO_WEB_SERVICE}.service"
+  systemctl daemon-reload
+  host="$(demo_env_get DASH_DOMAIN 2>/dev/null || true)"
+  if [[ -n "$host" ]]; then
+    rm -f "/etc/nginx/sites-enabled/${host}" "/etc/nginx/sites-available/${host}"
+    nginx -t 2>/dev/null && systemctl reload nginx || true
+  fi
+  echo "Demo services removed. Files left: $(demo_env_file) and data/demo.db"
 }
 
 demo_menu() {
-  local choice tok ids
+  local choice
   while true; do
     clear 2>/dev/null || true
     cat <<EOF
 ${BOLD}${CYAN}╔══════════════════════════╗
-║   Demo Bot               ║
+║   Demo showcase          ║
 ╚══════════════════════════╝${NC}
-${DIM}Same install · DEMO_MODE flag · role switcher${NC}
+${DIM}Isolated stack on same VPS · fake DB · no 3x-ui${NC}
 
 EOF
     do_demo_status
     cat <<EOF
 
   ${GREEN}1${NC}) status
-  ${GREEN}2${NC}) enable   ${DIM}(DEMO_MODE=true + optional token/admin)${NC}
-  ${GREEN}3${NC}) disable  ${DIM}(DEMO_MODE=false)${NC}
-  ${GREEN}4${NC}) set-token ${DIM}(demo bot from BotFather)${NC}
-  ${GREEN}5${NC}) set-admin ${DIM}(who can open control)${NC}
+  ${GREEN}2${NC}) setup     ${DIM}(subdomain, ports, token, fake DB — one wizard)${NC}
+  ${GREEN}3${NC}) start / restart demo services
+  ${GREEN}4${NC}) stop demo services
+  ${GREEN}5${NC}) fix-main  ${DIM}(force DEMO_MODE=false on production)${NC}
+  ${GREEN}6${NC}) disable   ${DIM}(stop demo + clear flags)${NC}
+  ${GREEN}7${NC}) uninstall ${DIM}(remove demo systemd/nginx)${NC}
   ${YELLOW}0${NC}) back
 
 EOF
-    read -r -p "Select [0-5]: " choice || true
+    read -r -p "Select [0-7]: " choice || true
     case "${choice:-}" in
       1) do_demo_status; pause ;;
-      2) do_demo_enable; pause ;;
-      3) do_demo_disable; pause ;;
-      4)
-        read -r -p "BOT_TOKEN (Enter to prompt): " tok || true
-        do_set_token "${tok:-}"
-        pause
-        ;;
-      5)
-        read -r -p "Admin ID(s) (Enter to prompt): " ids || true
-        do_set_admin "${ids:-}"
-        pause
-        ;;
+      2) do_demo_setup; pause ;;
+      3) demo_svc_restart; pause ;;
+      4) demo_svc_stop; pause ;;
+      5) do_demo_fix_main; pause ;;
+      6) do_demo_disable; pause ;;
+      7) do_demo_uninstall; pause ;;
       0|b|B|back) return 0 ;;
       *)
         echo "Invalid option."
@@ -396,22 +692,29 @@ do_demo() {
   case "${sub}" in
     ""|menu) demo_menu ;;
     status|st) do_demo_status ;;
-    enable|on|true) do_demo_enable "${1:-}" "${2:-}" ;;
+    setup|enable|on|true) do_demo_setup ;;
+    start|restart) demo_svc_restart ;;
+    stop) demo_svc_stop ;;
+    fix-main|fixmain) do_demo_fix_main ;;
     disable|off|false) do_demo_disable ;;
+    uninstall|remove) do_demo_uninstall ;;
     help|-h|--help)
       cat <<EOF
-${BOLD}q2 demo${NC} — manage DEMO_MODE showcase bot
+${BOLD}q2 demo${NC} — isolated demo stack on the same VPS
 
-  q2 demo              Interactive Demo Bot menu
-  q2 demo status       Show DEMO_MODE + bot
-  q2 demo enable       Turn on DEMO_MODE (optional token / admin)
-  q2 demo disable      Turn off DEMO_MODE
+  q2 demo              Interactive menu
+  q2 demo status       Production + demo sidecar status
+  q2 demo setup        Wizard: subdomain, ports, bot token, fake DB
+  q2 demo start|stop   Demo systemd services
+  q2 demo fix-main     Force DEMO_MODE=false on production .env
+  q2 demo disable      Stop demo + clear flags
+  q2 demo uninstall    Remove demo systemd/nginx units
 
-.env essentials:
-  DEMO_MODE=true
-  BOT_TOKEN=123456:ABC...     # BotFather token for the demo bot
-  ADMIN_TELEGRAM_IDS=111,222  # who controls / can switch roles
-  DASH_DOMAIN=dash.example.com
+Creates:
+  ${DIR}/.env.demo
+  ${DIR}/data/demo.db          # fake DB — no Sanai panel
+  systemd ${DEMO_SERVICE} + ${DEMO_WEB_SERVICE}
+  nginx site for your demo subdomain
 EOF
       ;;
     *)
@@ -515,8 +818,8 @@ Usage:
   q2 set-admin [ID,...]
   q2 activate [KEY]  Bind license (Telegram admin + dash host)
   q2 license         Show license status
-  q2 demo            Demo Bot menu (DEMO_MODE on/off / status)
-  q2 demo status|enable|disable
+  q2 demo            Demo showcase (isolated stack / setup wizard)
+  q2 demo status|setup|fix-main|start|stop
 
 Also available as: ${CYAN}quadtwo${NC}
 EOF
@@ -572,7 +875,7 @@ ${DIM}dir: ${DIR}${NC}
   ${GREEN}9${NC}) set-admin  ${DIM}[ID,...]${NC}
   ${GREEN}a${NC}) activate   ${DIM}[license key]${NC}
   ${GREEN}l${NC}) license status
-  ${GREEN}d${NC}) demo bot   ${DIM}(DEMO_MODE)${NC}
+  ${GREEN}d${NC}) demo        ${DIM}(isolated showcase on same VPS)${NC}
   ${YELLOW}0${NC}) exit
 
 EOF

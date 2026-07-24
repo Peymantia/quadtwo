@@ -6,6 +6,13 @@ import { formatXuiError } from "../panel/xui-errors.js";
 import { parseInboundIds } from "./inbounds.js";
 import type { PlanCategory } from "./pricing.js";
 import { sanitizeSubBase } from "./sub-url.js";
+import { isDemoMode } from "./license.js";
+
+function assertNotDemoPanel() {
+  if (isDemoMode()) {
+    throw new Error("DEMO_MODE: ارتباط با پنل 3x-ui کاملاً قطع است");
+  }
+}
 
 export type PanelCategories = PlanCategory[];
 
@@ -32,6 +39,7 @@ export function panelInboundIds(panel: Pick<PanelServer, "inboundIds">): number[
 }
 
 export function createXuiFromPanel(panel: Pick<PanelServer, "baseUrl" | "apiToken">) {
+  assertNotDemoPanel();
   if (!panel.baseUrl?.trim() || !panel.apiToken?.trim()) {
     throw new Error(formatXuiError("آدرس یا توکن پنل ناقص است"));
   }
@@ -217,6 +225,7 @@ export async function resolvePanelForCategory(category: PlanCategory): Promise<{
   subBase: string | null;
   name: string;
 }> {
+  assertNotDemoPanel();
   const all = await prisma.panelServer.findMany({
     where: { active: true, sellEnabled: true },
   });
@@ -263,6 +272,7 @@ export async function resolvePanelForSubscription(sub: {
   subBase: string | null;
   name: string;
 }> {
+  assertNotDemoPanel();
   if (sub.panelServerId) {
     const panel = await prisma.panelServer.findUnique({ where: { id: sub.panelServerId } });
     if (panel) {

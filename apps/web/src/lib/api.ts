@@ -1,3 +1,11 @@
+export function apiBase(): string {
+  // Browser: same-origin so one Next build works for prod + demo hosts
+  // (nginx routes /api to the correct backend by Host).
+  if (typeof window !== "undefined") return "";
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
+}
+
+/** @deprecated use apiBase() — kept for any external imports */
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
 
 export type Role = "user" | "partner" | "wholesale" | "admin";
@@ -56,7 +64,7 @@ export async function api<T>(
   if (opts?.body !== undefined && !opts.rawBody) {
     headers["Content-Type"] = "application/json";
   }
-  const res = await fetch(`${API_BASE}/api${path}`, {
+  const res = await fetch(`${apiBase()}/api${path}`, {
     method: opts?.method ?? (opts?.body || opts?.rawBody ? "POST" : "GET"),
     headers,
     body: opts?.rawBody ?? (opts?.body !== undefined ? JSON.stringify(opts.body) : undefined),

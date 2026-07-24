@@ -188,6 +188,7 @@ export async function resolveSubUrl(
 export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise<string | null> {
   const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
   if (!sub) return null;
+  if (isDemoMode() || sub.subUrl?.includes("demo.invalid")) return sub.subUrl;
 
   try {
     const resolved = await resolvePanelForSubscription(sub);
@@ -599,6 +600,7 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
 export async function syncSubscriptionExpiryFromPanel(subscriptionId: string): Promise<void> {
   const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
   if (!sub || !sub.startsOnConnect || sub.activatedAt) return;
+  if (isDemoMode() || sub.subUrl?.includes("demo.invalid")) return;
   try {
     const resolved = await resolvePanelForSubscription(sub);
     const got = await resolved.xui.getClient(sub.email);

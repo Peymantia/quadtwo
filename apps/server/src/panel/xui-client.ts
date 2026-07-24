@@ -80,6 +80,9 @@ export class XuiClient {
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: ارتباط با پنل 3x-ui کاملاً قطع است");
+    }
     let res: Response;
     try {
       res = await fetch(this.url(path), {
@@ -356,6 +359,9 @@ export function createXuiFromEnv(env: {
   XUI_BASE_URL?: string;
   XUI_API_TOKEN?: string;
 }) {
+  if (isDemoMode()) {
+    throw new Error("DEMO_MODE: ارتباط با پنل 3x-ui کاملاً قطع است");
+  }
   if (!env.XUI_BASE_URL || !env.XUI_API_TOKEN) {
     throw new Error(
       formatXuiError("XUI_BASE_URL and XUI_API_TOKEN are not set"),
