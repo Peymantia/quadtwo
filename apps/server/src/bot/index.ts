@@ -110,7 +110,7 @@ import { createTelegramBot } from "./telegram.js";
 import { syncTelegramMenu, syncTelegramMenuSafe } from "./menu.js";
 import { installEmojiApiTransform } from "../services/emoji-transform.js";
 import { isDemoMode } from "../services/license.js";
-import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole, getDemoRole, withEffectiveRole } from "../services/demo-role.js";
+import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole, withEffectiveRole } from "../services/demo-role.js";
 
 const waitingName = new Set<number>();
 const waitingPartner = new Map<number, { step: "compose" | "name" | "phone" | "note"; fullName?: string; phone?: string }>();
@@ -1791,7 +1791,8 @@ export function createBot() {
       await ctx.reply("نسخه نمایشی فعال نیست.");
       return;
     }
-    const current = getDemoRole(ctx.from!.id) ?? "user";
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const current = effectiveRole(ctx.from!.id, user.role);
     await ctx.reply(
       [
         "🎭 انتخاب نقش نمایشی",
@@ -1816,6 +1817,19 @@ export function createBot() {
     }
     setDemoRole(ctx.from!.id, role);
     await ctx.answerCallbackQuery({ text: `نقش: ${demoRoleLabel(role)}` });
+    const pickerText = [
+      "🎭 انتخاب نقش نمایشی",
+      "",
+      "منوی ربات و داشبورد بر اساس نقش انتخابی نشان داده می‌شود.",
+      "دادهٔ واقعی دیتابیس عوض نمی‌شود.",
+      "",
+      `نقش فعلی: ${demoRoleLabel(role)}`,
+    ].join("\n");
+    try {
+      await ctx.editMessageText(pickerText, { reply_markup: demoRoleInlineKeyboard(role) });
+    } catch {
+      /* message may be unchanged / too old */
+    }
     await replyMainMenu(ctx, `🎭 نقش دمو روی «${demoRoleLabel(role)}» تنظیم شد`);
   });
   bot.hears(hearsBtn(BTN.hideKeyboard), async (ctx) => {

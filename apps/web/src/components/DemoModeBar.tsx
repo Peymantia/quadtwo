@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, homePathForRole, setDemoRoleLocal, type Role } from "../lib/api";
 
@@ -13,8 +14,14 @@ const DEMO_ROLES: { role: Role; label: string }[] = [
 /** Banner + role chips when server DEMO_MODE is on. */
 export function DemoModeBar({ activeRole }: { activeRole: Role }) {
   const router = useRouter();
+  const [selected, setSelected] = useState<Role>(activeRole);
+
+  useEffect(() => {
+    setSelected(activeRole);
+  }, [activeRole]);
 
   async function pick(role: Role) {
+    setSelected(role);
     setDemoRoleLocal(role);
     try {
       await api("/me/demo-role", { body: { role } });
@@ -36,7 +43,7 @@ export function DemoModeBar({ activeRole }: { activeRole: Role }) {
           <button
             key={r.role}
             type="button"
-            className={`chip${activeRole === r.role ? " on" : ""}`}
+            className={`chip${selected === r.role ? " on" : ""}`}
             onClick={() => void pick(r.role)}
           >
             {r.label}

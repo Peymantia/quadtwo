@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { isDemoMode } from "./license.js";
 
 const DEFAULT_WELCOME = `سلام به ربات پینگ خوش اومدی 🌸
 ما اینجاییم تا شما را بدون هیچ محدویتی به شبکه جهانی متصل کنیم ❤️
@@ -494,6 +495,8 @@ export async function getWebSessionHours(): Promise<number> {
 }
 
 export async function getMaxPurchaseMonths(): Promise<number> {
+  // Demo showcase: allow full multi-month experience without admin toggle
+  if (isDemoMode()) return 12;
   const n = Number(await getSetting("max_purchase_months"));
   if (!n || n < 1) return 1;
   return Math.min(12, Math.floor(n));
