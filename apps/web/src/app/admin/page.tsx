@@ -1649,10 +1649,30 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     }
   }
 
-  async function runReconcile() {
+  async function runFullSync() {
+    let snap = sync;
+    if (!snap) {
+      setSyncBusy(true);
+      try {
+        snap = await api<NonNullable<typeof sync>>("/admin/configs/sync-diff");
+        setSync(snap);
+        const sel: Record<string, boolean> = {};
+        for (const x of snap.panelOnly) sel[x.email] = true;
+        setSelectedImport(sel);
+      } catch (e) {
+        flash(null, errText(e));
+        setSyncBusy(false);
+        return;
+      }
+      setSyncBusy(false);
+    }
     if (
       !(await askConfirm(
-        "تغییرات پنل (حذف / غیرفعال / حجم / انقضا) روی اکانت‌های ربات اعمال شود؟\nاکانت حذف‌شده از پنل در ربات غیرفعال می‌شود.",
+        `همگام‌سازی کامل پنل ↔ ربات:\n` +
+          `• اکانت‌های فقط‌پنل وارد دیتابیس ربات می‌شوند (${snap.panelOnly.length})\n` +
+          `• اکانت‌هایی که از پنل حذف شده‌اند از دیتابیس ربات هم حذف می‌شوند (${snap.botOnly.length})\n` +
+          `• حجم، انقضا، وضعیت، نام و نوت اکانت‌های مشترک از پنل روی ربات اعمال می‌شود\n\n` +
+          `ادامه می‌دهید؟`,
       ))
     ) {
       return;
@@ -1660,18 +1680,22 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     setSyncBusy(true);
     try {
       const r = await api<{
-        checked: number;
-        updated: number;
-        disabledFromPanel: number;
-        removedFromPanel: number;
-        reactivated: number;
+        imported: number;
+        deletedFromBot: number;
+        updatedBot: number;
+        updatedPanel: number;
+        skippedUnreachable: number;
         errors: number;
-      }>("/admin/configs/reconcile", { method: "POST", body: {} });
+        importFailed: Array<{ email: string; error: string }>;
+        ownerLabel: string;
+      }>("/admin/configs/full-sync", { method: "POST", body: {} });
+      const failNote = r.importFailed?.length ? ` · ${r.importFailed.length} ورود ناموفق` : "";
+      const skipNote = r.skippedUnreachable ? ` · ${r.skippedUnreachable} رد (پنل در دسترس نبود)` : "";
       flash(
-        `همگام شد: ${r.updated} به‌روز · ${r.disabledFromPanel} غیرفعال · ${r.removedFromPanel} حذف‌شده از پنل · ${r.reactivated} فعال مجدد`,
+        `همگام کامل: ${r.imported} وارد · ${r.deletedFromBot} حذف از ربات · ${r.updatedBot} به‌روز ربات · ${r.updatedPanel} به‌روز پنل${skipNote}${failNote}`,
       );
       await load();
-      if (sync) void runDiff();
+      await runDiff();
     } catch (e) {
       flash(null, errText(e));
     } finally {
@@ -1926,14 +1950,14 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       <div className="panel">
         <h2>همگام‌سازی پنل ↔ ربات</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          اگر در پنل 3x-ui اکانت را حذف، غیرفعال یا ویرایش کردید، با «اعمال تغییرات پنل» وضعیت ربات به‌روز می‌شود. همچنین هر ۱۰ دقیقه خودکار همگام می‌شود.
+          ابتدا «مقایسه با پنل» را بزنید، سپس «همگام‌سازی کامل» تا اکانت‌های اضافه‌شده وارد ربات شوند، حذف‌شده‌های پنل از دیتابیس ربات پاک شوند، و فیلدهای مشترک (حجم، انقضا، وضعیت، نام/نوت) یکسان شوند. هر ۱۰ دقیقه هم همگام نرم (بدون حذف دائمی) اجرا می‌شود.
         </p>
         <div className="sync-actions">
           <button type="button" className="btn primary" disabled={syncBusy} onClick={() => void runDiff()}>
             {syncBusy ? "در حال مقایسه…" : "مقایسه با پنل"}
           </button>
-          <button type="button" className="btn success" disabled={syncBusy} onClick={() => void runReconcile()}>
-            اعمال تغییرات پنل روی ربات
+          <button type="button" className="btn success" disabled={syncBusy} onClick={() => void runFullSync()}>
+            همگام‌سازی کامل
           </button>
         </div>
         {sync && (
@@ -2013,7 +2037,55 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             ))}
           </div>
         )}
-        {sync && !sync.panelOnly.length && <p className="muted">همهٔ اکانت‌های پنل در دیتابیس ربات هستند.</p>}
+        {sync && sync.botOnly.length > 0 && (
+          <div className="list" style={{ marginTop: 10 }}>
+            <p className="muted" style={{ marginBottom: 8 }}>
+              این اکانت‌ها در دیتابیس ربات هستند ولی در پنل پیدا نشدند. با همگام‌سازی کامل از دیتابیس حذف می‌شوند.
+            </p>
+            {sync.botOnly.map((c) => (
+              <div key={c.subId} className="row-card" style={{ alignItems: "center" }}>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <strong className="num">{c.email}</strong> <span className="badge bad">فقط ربات</span>
+                  <div className="muted">
+                    {c.code} · {c.ownerLabel}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn danger sm"
+                  disabled={syncBusy}
+                  onClick={async () => {
+                    if (
+                      !(await askConfirm(
+                        `اکانت ${c.email} در پنل نیست. فقط از دیتابیس ربات حذف شود؟`,
+                      ))
+                    ) {
+                      return;
+                    }
+                    try {
+                      const r = await api<{ message: string }>("/admin/configs/delete", {
+                        body: { email: c.email, subId: c.subId },
+                      });
+                      flash(r.message);
+                      await load();
+                      void runDiff();
+                    } catch (e) {
+                      flash(null, errText(e));
+                    }
+                  }}
+                >
+                  حذف از ربات
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {sync && !sync.panelOnly.length && !sync.botOnly.length && (
+          <p className="muted">لیست پنل و ربات از نظر وجود اکانت یکسان است.</p>
+        )}
+        {sync && !sync.panelOnly.length && sync.botOnly.length > 0 && (
+          <p className="muted">همهٔ اکانت‌های پنل در دیتابیس ربات هستند.</p>
+        )}
       </div>
 
       <div className="panel">

@@ -828,6 +828,39 @@ function bytesToGb(totalGB: number | undefined): number | null {
   return Math.max(1, Math.round(bytes / 1024 ** 3));
 }
 
+/** Panel comment is stored as `title | note` (same as updateConfig). */
+function parsePanelComment(comment: string | null | undefined): {
+  title: string | null;
+  note: string | null;
+} {
+  const raw = comment?.trim() || "";
+  if (!raw) return { title: null, note: null };
+  const parts = raw.split("|").map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return {
+      title: parts[0]!.slice(0, 80),
+      note: parts.slice(1).join(" | ").slice(0, 500),
+    };
+  }
+  return { title: parts[0]!.slice(0, 80), note: null };
+}
+
+function composePanelComment(
+  title: string | null | undefined,
+  note: string | null | undefined,
+): string {
+  return [title?.trim(), note?.trim()].filter(Boolean).join(" | ").slice(0, 200);
+}
+
+async function deleteSubscriptionDbOnly(subId: string): Promise<void> {
+  await prisma.notificationLog.deleteMany({ where: { subscriptionId: subId } });
+  await prisma.order.updateMany({
+    where: { targetSubId: subId },
+    data: { targetSubId: null },
+  });
+  await prisma.subscription.delete({ where: { id: subId } });
+}
+
 function expiryFromPanel(expiryTime: number): {
   expiresAt: Date;
   startsOnConnect: boolean;
@@ -1059,6 +1092,7 @@ export async function importPanelClientsToBot(emails?: string[]): Promise<Import
         }
       }
 
+      const parsed = parsePanelComment(comment);
       const code = await uniqueSubCode();
       await prisma.subscription.create({
         data: {
@@ -1066,7 +1100,7 @@ export async function importPanelClientsToBot(emails?: string[]): Promise<Import
           userId: owner.id,
           orderId: null,
           panelServerId: c.panelServerId,
-          title: comment || c.email,
+          title: parsed.title || c.email,
           email: c.email,
           clientUuid: uuid,
           panelSubId,
@@ -1075,7 +1109,7 @@ export async function importPanelClientsToBot(emails?: string[]): Promise<Import
           activatedAt: exp.activatedAt,
           expiresAt: exp.expiresAt,
           subUrl,
-          note: "وارد شده از پنل 3x-ui",
+          note: parsed.note || "وارد شده از پنل 3x-ui",
           status: enable ? SubscriptionStatus.active : SubscriptionStatus.disabled,
           isTest: false,
         },
@@ -1229,6 +1263,7 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
         panelSubId?: string | null;
         panelServerId?: string | null;
         title?: string | null;
+        note?: string | null;
       } = {};
 
       if (!panel.enable) {
@@ -1263,7 +1298,20 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
       if (panel.panelServerId && panel.panelServerId !== sub.panelServerId) {
         data.panelServerId = panel.panelServerId;
       }
-      if (panel.comment && !sub.title) data.title = panel.comment.slice(0, 120);
+      if (panel.comment) {
+        const parsed = parsePanelComment(panel.comment);
+        const botComment = composePanelComment(sub.title, sub.note);
+        const panelComment = panel.comment.trim();
+        if (panelComment !== botComment) {
+          if (parsed.title && parsed.title !== sub.title) data.title = parsed.title;
+          if (parsed.note !== undefined && parsed.note !== sub.note) {
+            // Only overwrite note when panel comment encodes a note, or title-only comment clears a stale import note
+            if (parsed.note != null) data.note = parsed.note;
+            else if (!sub.note || sub.note === "وارد شده از پنل 3x-ui") data.note = null;
+          }
+          if (!sub.title && parsed.title) data.title = parsed.title;
+        }
+      }
 
       // Past absolute expiry while still "active" after merges
       const nextStatus = data.status ?? sub.status;
@@ -1283,6 +1331,264 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
   }
 
   return result;
+}
+
+export type FullSyncResult = {
+  imported: number;
+  deletedFromBot: number;
+  updatedBot: number;
+  updatedPanel: number;
+  skippedUnreachable: number;
+  errors: number;
+  importFailed: Array<{ email: string; error: string }>;
+  ownerLabel: string;
+};
+
+/**
+ * Full panel ↔ bot sync (admin confirm):
+ * - panel-only → import into bot DB
+ * - bot-only (confirmed missing on panel) → hard-delete from bot DB
+ * - matched → sync fields both ways (panel is source for traffic/expiry/enable/uuid;
+ *   title/note/comment merge; empty panel comment gets bot title|note pushed up)
+ *
+ * Cron still uses soft reconcile — this hard-delete path is explicit only.
+ */
+export async function fullSyncPanelAndBot(): Promise<FullSyncResult> {
+  const result: FullSyncResult = {
+    imported: 0,
+    deletedFromBot: 0,
+    updatedBot: 0,
+    updatedPanel: 0,
+    skippedUnreachable: 0,
+    errors: 0,
+    importFailed: [],
+    ownerLabel: "",
+  };
+
+  let panelClients: DetailedPanelClient[] = [];
+  try {
+    panelClients = await listDetailedPanelClients();
+  } catch (err) {
+    throw new Error(
+      `خواندن پنل ناموفق بود: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const panels = await listPanelServers();
+  const hasConfigured =
+    panels.some((p) => p.active) || Boolean(env.XUI_BASE_URL && env.XUI_API_TOKEN);
+  if (!panelClients.length && hasConfigured) {
+    throw new Error(
+      "هیچ اکانتی از پنل برنگشت. برای جلوگیری از پاک شدن اشتباه دیتابیس، همگام‌سازی متوقف شد. اتصال پنل را بررسی کنید.",
+    );
+  }
+
+  const importRes = await importPanelClientsToBot();
+  result.imported = importRes.imported;
+  result.importFailed = importRes.failed;
+  result.ownerLabel = importRes.ownerLabel;
+
+  // Refresh after import
+  panelClients = await listDetailedPanelClients();
+  const panelByEmail = new Map(panelClients.map((c) => [c.email.toLowerCase(), c]));
+
+  const subs = await prisma.subscription.findMany({
+    where: {
+      status: {
+        in: [
+          SubscriptionStatus.active,
+          SubscriptionStatus.disabled,
+          SubscriptionStatus.expired,
+        ],
+      },
+    },
+  });
+
+  const now = Date.now();
+
+  for (const sub of subs) {
+    const key = sub.email.toLowerCase();
+    const panel = panelByEmail.get(key);
+
+    try {
+      if (!panel) {
+        // Confirm truly missing on home panel before hard delete
+        try {
+          const resolved = await resolvePanelForSubscription(sub);
+          const got = await resolved.xui.getClient(sub.email);
+          if (got.obj?.client) {
+            const client = got.obj.client;
+            const fake: DetailedPanelClient = {
+              email: sub.email,
+              panelServerId: sub.panelServerId,
+              panelName: "home",
+              xui: resolved.xui,
+              subBase: null,
+              uuid:
+                client.uuid != null
+                  ? String(client.uuid)
+                  : client.id != null
+                    ? String(client.id)
+                    : null,
+              panelSubId: client.subId ?? null,
+              trafficGb: bytesToGb(client.totalGB),
+              expiryTime: Number(client.expiryTime ?? 0),
+              enable: client.enable !== false,
+              limitIp: Number(client.limitIp ?? 0),
+              comment:
+                typeof client.comment === "string" ? client.comment.trim() || null : null,
+            };
+            const synced = await syncMatchedSubscription(sub, fake, now);
+            result.updatedBot += synced.updatedBot;
+            result.updatedPanel += synced.updatedPanel;
+            continue;
+          }
+          // Client payload empty → treat as deleted on panel
+        } catch (err) {
+          const msg = String(err instanceof Error ? err.message : err);
+          if (!/not found|404|وجود ندارد|no client|not exist/i.test(msg)) {
+            result.skippedUnreachable++;
+            continue;
+          }
+        }
+
+        await deleteSubscriptionDbOnly(sub.id);
+        result.deletedFromBot++;
+        continue;
+      }
+
+      const synced = await syncMatchedSubscription(sub, panel, now);
+      result.updatedBot += synced.updatedBot;
+      result.updatedPanel += synced.updatedPanel;
+    } catch (err) {
+      result.errors++;
+      console.warn("full sync failed", sub.email, err);
+    }
+  }
+
+  return result;
+}
+
+async function syncMatchedSubscription(
+  sub: {
+    id: string;
+    email: string;
+    title: string | null;
+    note: string | null;
+    trafficGb: number | null;
+    expiresAt: Date;
+    activatedAt: Date | null;
+    startsOnConnect: boolean;
+    clientUuid: string | null;
+    panelSubId: string | null;
+    panelServerId: string | null;
+    status: SubscriptionStatus;
+  },
+  panel: DetailedPanelClient,
+  now: number,
+): Promise<{ updatedBot: number; updatedPanel: number }> {
+  let updatedBot = 0;
+  let updatedPanel = 0;
+
+  const data: {
+    status?: SubscriptionStatus;
+    trafficGb?: number | null;
+    expiresAt?: Date;
+    activatedAt?: Date | null;
+    startsOnConnect?: boolean;
+    clientUuid?: string | null;
+    panelSubId?: string | null;
+    panelServerId?: string | null;
+    title?: string | null;
+    note?: string | null;
+  } = {};
+
+  // Panel → bot for traffic / expiry / enable / ids
+  if (!panel.enable) {
+    if (sub.status === SubscriptionStatus.active) data.status = SubscriptionStatus.disabled;
+  } else if (
+    sub.status === SubscriptionStatus.disabled ||
+    sub.status === SubscriptionStatus.expired
+  ) {
+    const stillValid =
+      (panel.expiryTime > 0 ? panel.expiryTime : sub.expiresAt.getTime()) > now;
+    if (stillValid) data.status = SubscriptionStatus.active;
+  }
+
+  if (panel.trafficGb !== sub.trafficGb) data.trafficGb = panel.trafficGb;
+
+  if (panel.expiryTime > 0) {
+    const expMs = panel.expiryTime;
+    if (Math.abs(expMs - sub.expiresAt.getTime()) > 60_000) {
+      data.expiresAt = new Date(expMs);
+      data.startsOnConnect = false;
+      data.activatedAt = sub.activatedAt ?? new Date();
+    }
+  } else if (panel.expiryTime < 0 && sub.startsOnConnect !== true) {
+    const exp = expiryFromPanel(panel.expiryTime);
+    data.startsOnConnect = true;
+    data.activatedAt = null;
+    data.expiresAt = exp.expiresAt;
+  }
+
+  if (panel.uuid && panel.uuid !== sub.clientUuid) data.clientUuid = panel.uuid;
+  if (panel.panelSubId && panel.panelSubId !== sub.panelSubId) data.panelSubId = panel.panelSubId;
+  if (panel.panelServerId && panel.panelServerId !== sub.panelServerId) {
+    data.panelServerId = panel.panelServerId;
+  }
+
+  // title / note ↔ panel comment
+  const botComment = composePanelComment(sub.title, sub.note);
+  const panelComment = (panel.comment || "").trim();
+  let nextTitle = sub.title;
+  let nextNote = sub.note;
+
+  if (panelComment && panelComment !== botComment) {
+    const parsed = parsePanelComment(panelComment);
+    if (parsed.title !== sub.title) {
+      data.title = parsed.title;
+      nextTitle = parsed.title;
+    }
+    if (parsed.note !== sub.note) {
+      data.note = parsed.note;
+      nextNote = parsed.note;
+    }
+  }
+
+  const nextStatus = data.status ?? sub.status;
+  const nextExpiry = data.expiresAt ?? sub.expiresAt;
+  if (nextStatus === SubscriptionStatus.active && nextExpiry.getTime() <= now) {
+    data.status = SubscriptionStatus.expired;
+  }
+
+  if (Object.keys(data).length) {
+    await prisma.subscription.update({ where: { id: sub.id }, data });
+    updatedBot = 1;
+  }
+
+  // Bot → panel: fill empty comment from bot title|note
+  const finalComment = composePanelComment(
+    data.title !== undefined ? data.title : nextTitle,
+    data.note !== undefined ? data.note : nextNote,
+  );
+  if (!panelComment && finalComment) {
+    try {
+      const got = await panel.xui.getClient(sub.email);
+      const client = got.obj?.client;
+      if (client) {
+        await panel.xui.updateClient(sub.email, {
+          ...client,
+          email: sub.email,
+          comment: finalComment,
+        });
+        updatedPanel = 1;
+      }
+    } catch (err) {
+      console.warn("full sync panel push failed", sub.email, formatXuiError(err));
+    }
+  }
+
+  return { updatedBot, updatedPanel };
 }
 
 export function startPanelReconcileCron(intervalMs = 10 * 60 * 1000) {

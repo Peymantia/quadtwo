@@ -71,7 +71,7 @@ import { claimTestService } from "../services/test-service.js";
 import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
-import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, endingUrgencyDays } from "../services/admin-configs.js";
+import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, fullSyncPanelAndBot, endingUrgencyDays } from "../services/admin-configs.js";
 import {
   createPanelServer,
   getPanelServer,
@@ -1297,6 +1297,20 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         action: "admin_panel_reconcile",
         actorTelegramId: BigInt(c.get("telegramId")),
         detail: `updated:${result.updated} disabled:${result.disabledFromPanel} removed:${result.removedFromPanel} reactivated:${result.reactivated}`,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/configs/full-sync", async (c) => {
+    try {
+      const result = await fullSyncPanelAndBot();
+      await auditLog({
+        action: "admin_panel_full_sync",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        detail: `imported:${result.imported} deleted:${result.deletedFromBot} updatedBot:${result.updatedBot} updatedPanel:${result.updatedPanel} errors:${result.errors}`,
       });
       return c.json(result);
     } catch (err) {
