@@ -21,6 +21,7 @@ const TABS: ShellTab[] = [
   { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true, bubble: true },
   { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true },
   { key: "users", label: "کاربران", icon: "users", pin: true },
+  { key: "sync", label: "همگام‌سازی", icon: "sync" },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server" },
@@ -211,6 +212,7 @@ export default function AdminPage() {
       {tab === "prices" && <PricesTab flash={flash} askConfirm={askConfirm} />}
       {tab === "categories" && <CategoriesTab flash={flash} askConfirm={askConfirm} />}
       {tab === "configs" && <ConfigsTab flash={flash} askConfirm={askConfirm} />}
+      {tab === "sync" && <SyncTab flash={flash} askConfirm={askConfirm} />}
       {tab === "panels" && <PanelsTab flash={flash} />}
       {tab === "settings" && (
         <SettingsTab flash={flash} hasPassword={Boolean(home.user.hasPassword)} onPasswordSaved={() => void reload()} />
@@ -294,6 +296,10 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
           <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("panels")}>
             <Icon name="server" size={15} />
             سرورها
+          </button>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("sync")}>
+            <Icon name="sync" size={15} />
+            همگام‌سازی
           </button>
           <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("reports")}>
             <Icon name="chart" size={15} />
@@ -1537,6 +1543,303 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
 /* ---------------- Configs (panel accounts) ---------------- */
 
+/* ---------------- Panel ↔ Bot sync (dedicated) ---------------- */
+
+const SYNC_OPTION_DEFS: Array<{ key: string; label: string; hint?: string }> = [
+  { key: "newAccounts", label: "اکانت‌های جدید" },
+  { key: "deletedAccounts", label: "اکانت‌های حذف‌شده" },
+  { key: "name", label: "نام" },
+  { key: "traffic", label: "حجم و مصرف", hint: "فقط حجم کل؛ مصرف از پنل بازنویسی نمی‌شود" },
+  { key: "expiry", label: "تاریخ انقضا" },
+  { key: "inbounds", label: "اینباندها", hint: "فقط هنگام ساخت اکانت جدید در پنل" },
+  { key: "limitIp", label: "محدودیت کاربر" },
+  { key: "comment", label: "کامنت" },
+  { key: "note", label: "نوت" },
+];
+
+function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
+  type Diff = {
+    panelOnly: Array<{ email: string; panelName: string; trafficGb: number | null; expiresAt: string | null }>;
+    botOnly: Array<{ email: string; code: string; subId: string; ownerLabel: string }>;
+    matched: number;
+    panelTotal: number;
+    botTotal: number;
+  };
+
+  const [direction, setDirection] = useState<"panel_to_bot" | "bot_to_panel">("panel_to_bot");
+  const [opts, setOpts] = useState<Record<string, boolean>>({
+    newAccounts: true,
+    deletedAccounts: false,
+    name: false,
+    traffic: false,
+    expiry: false,
+    inbounds: false,
+    limitIp: false,
+    comment: false,
+    note: false,
+  });
+  const [diff, setDiff] = useState<Diff | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [undoAvailable, setUndoAvailable] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+
+  const sourceLabel = direction === "panel_to_bot" ? "پنل 3x-ui" : "دیتابیس ربات";
+  const destLabel = direction === "panel_to_bot" ? "دیتابیس ربات" : "پنل 3x-ui";
+  const selectedOpts = SYNC_OPTION_DEFS.filter((o) => opts[o.key]);
+
+  async function refreshUndo() {
+    try {
+      const r = await api<{ available: boolean }>("/admin/configs/sync/undo-status");
+      setUndoAvailable(Boolean(r.available));
+    } catch {
+      setUndoAvailable(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshUndo();
+  }, []);
+
+  async function runDiff() {
+    setBusy(true);
+    try {
+      const r = await api<Diff>("/admin/configs/sync-diff");
+      setDiff(r);
+      flash(`مقایسه: ${r.panelOnly.length} فقط پنل · ${r.matched} مشترک · ${r.botOnly.length} فقط ربات`);
+      await refreshUndo();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openApplyModal() {
+    if (!selectedOpts.length) {
+      flash(null, "حداقل یک گزینه را انتخاب کنید");
+      return;
+    }
+    setApplyOpen(true);
+  }
+
+  async function confirmApply() {
+    setApplyOpen(false);
+    setBusy(true);
+    try {
+      const r = await api<{
+        created: number;
+        deleted: number;
+        updated: number;
+        skippedUnreachable: number;
+        failed: Array<{ email: string; error: string }>;
+        undoAvailable: boolean;
+      }>("/admin/configs/sync/apply", {
+        method: "POST",
+        body: {
+          direction,
+          options: selectedOpts.map((o) => o.key),
+        },
+      });
+      setUndoAvailable(Boolean(r.undoAvailable));
+      const failNote = r.failed?.length ? ` · ${r.failed.length} ناموفق` : "";
+      flash(`اعمال شد: ${r.created} جدید · ${r.deleted} حذف · ${r.updated} به‌روز${failNote}`);
+      await runDiff();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runUndo() {
+    if (!(await askConfirm("آخرین همگام‌سازی به‌طور کامل برگردانده شود؟"))) return;
+    setBusy(true);
+    try {
+      const r = await api<{ message: string }>("/admin/configs/sync/undo", {
+        method: "POST",
+        body: {},
+      });
+      setUndoAvailable(false);
+      flash(r.message);
+      await runDiff();
+    } catch (e) {
+      flash(null, errText(e));
+      await refreshUndo();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const newCount =
+    direction === "panel_to_bot" ? (diff?.panelOnly.length ?? null) : (diff?.botOnly.length ?? null);
+  const delCount =
+    direction === "panel_to_bot" ? (diff?.botOnly.length ?? null) : (diff?.panelOnly.length ?? null);
+
+  return (
+    <>
+      <div className="panel">
+        <h2>همگام‌سازی</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          مشخص کنید داده از کجا به کجا برود. فقط گزینه‌های تیک‌خورده اعمال می‌شوند. اگر اشتباه شد، Undo آخرین اعمال را برمی‌گرداند.
+        </p>
+
+        <div className="grid" style={{ marginBottom: 14, gap: 12 }}>
+          <div className="field">
+            <label>منبع (از)</label>
+            <select
+              value={direction === "panel_to_bot" ? "panel" : "bot"}
+              onChange={(e) => {
+                const toPanel = e.target.value === "bot";
+                setDirection(toPanel ? "bot_to_panel" : "panel_to_bot");
+              }}
+            >
+              <option value="panel">پنل 3x-ui</option>
+              <option value="bot">دیتابیس ربات</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>مقصد (به)</label>
+            <input value={destLabel} readOnly disabled />
+          </div>
+        </div>
+
+        <div
+          className="row-card"
+          style={{
+            marginBottom: 14,
+            padding: "12px 14px",
+            border: direction === "bot_to_panel" ? "1px solid rgba(251,113,133,0.45)" : undefined,
+          }}
+        >
+          <strong>
+            {sourceLabel} → {destLabel}
+          </strong>
+          {direction === "bot_to_panel" ? (
+            <p className="muted" style={{ margin: "8px 0 0" }}>
+              هشدار: مقادیر انتخاب‌شده از دیتابیس ربات روی پنل نوشته می‌شود و تنظیمات فعلی پنل برای همان فیلدها عوض می‌شود.
+            </p>
+          ) : (
+            <p className="muted" style={{ margin: "8px 0 0" }}>
+              مقادیر انتخاب‌شده از پنل روی دیتابیس ربات اعمال می‌شود. پنل دست نخورده می‌ماند.
+            </p>
+          )}
+        </div>
+
+        <h3 style={{ fontSize: "0.95rem", marginBottom: 8 }}>چه چیزهایی همگام شود؟</h3>
+        <div
+          className="sync-options"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+            gap: 8,
+            marginBottom: 14,
+          }}
+        >
+          {SYNC_OPTION_DEFS.map((o) => (
+            <label
+              key={o.key}
+              className="row-card"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 10px",
+                cursor: "pointer",
+                margin: 0,
+              }}
+              title={o.hint}
+            >
+              <input
+                type="checkbox"
+                checked={Boolean(opts[o.key])}
+                onChange={(e) => setOpts((m) => ({ ...m, [o.key]: e.target.checked }))}
+              />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </div>
+
+        <div className="sync-actions">
+          <button type="button" className="btn primary" disabled={busy} onClick={() => void runDiff()}>
+            {busy ? "…" : "مقایسه وضعیت"}
+          </button>
+          <button type="button" className="btn success" disabled={busy} onClick={openApplyModal}>
+            اعمال تغییرات
+          </button>
+          <button type="button" className="btn ghost" disabled={busy || !undoAvailable} onClick={() => void runUndo()}>
+            Undo last changes
+          </button>
+        </div>
+
+        {diff && (
+          <div className="grid" style={{ marginTop: 14 }}>
+            <div className="stat accent">
+              <div className="label">فقط پنل</div>
+              <div className="value num">{diff.panelOnly.length}</div>
+            </div>
+            <div className="stat">
+              <div className="label">مشترک</div>
+              <div className="value num">{diff.matched}</div>
+            </div>
+            <div className="stat">
+              <div className="label">فقط ربات</div>
+              <div className="value num">{diff.botOnly.length}</div>
+            </div>
+            <div className="stat">
+              <div className="label">کل پنل / ربات</div>
+              <div className="value num" style={{ fontSize: "1rem" }}>
+                {diff.panelTotal} / {diff.botTotal}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Modal open={applyOpen} title="تأیید همگام‌سازی" onClose={() => setApplyOpen(false)}>
+        <p style={{ marginTop: 0 }}>
+          <strong>
+            {sourceLabel} → {destLabel}
+          </strong>
+        </p>
+        {direction === "bot_to_panel" && (
+          <p style={{ marginTop: 0, color: "#fda4af" }}>
+            مقصد پنل است؛ تنظیمات فعلی پنل برای فیلدهای انتخاب‌شده با دادهٔ ربات جایگزین می‌شود.
+          </p>
+        )}
+        <p className="muted">گزینه‌ها:</p>
+        <ul style={{ marginTop: 0 }}>
+          {selectedOpts.map((o) => (
+            <li key={o.key}>{o.label}</li>
+          ))}
+        </ul>
+        {opts.newAccounts && (
+          <p className="muted" style={{ marginBottom: 6 }}>
+            اکانت‌های جدید در مقصد: {newCount == null ? "؟ (اول مقایسه کنید)" : newCount}
+          </p>
+        )}
+        {opts.deletedAccounts && (
+          <p className="muted" style={{ marginBottom: 6 }}>
+            حذف از مقصد: {delCount == null ? "؟ (اول مقایسه کنید)" : delCount}
+          </p>
+        )}
+        {diff && selectedOpts.some((o) => !["newAccounts", "deletedAccounts", "inbounds"].includes(o.key)) && (
+          <p className="muted" style={{ marginBottom: 12 }}>
+            فیلدهای مشترک برای حدود {diff.matched} اکانت از منبع روی مقصد نوشته می‌شود.
+          </p>
+        )}
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button type="button" className="btn ghost" onClick={() => setApplyOpen(false)}>
+            انصراف
+          </button>
+          <button type="button" className="btn success" onClick={() => void confirmApply()}>
+            تأیید و اعمال
+          </button>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [groups, setGroups] = useState<Array<{ key: string; label: string }>>([]);
   const [groupKey, setGroupKey] = useState("all");
@@ -1583,21 +1886,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     enable: true,
   });
   const [editBusy, setEditBusy] = useState(false);
-  const [sync, setSync] = useState<{
-    panelOnly: Array<{
-      email: string;
-      panelName: string;
-      trafficGb: number | null;
-      expiresAt: string | null;
-      enable: boolean;
-    }>;
-    botOnly: Array<{ email: string; code: string; subId: string; ownerLabel: string }>;
-    matched: number;
-    panelTotal: number;
-    botTotal: number;
-  } | null>(null);
-  const [syncBusy, setSyncBusy] = useState(false);
-  const [selectedImport, setSelectedImport] = useState<Record<string, boolean>>({});
+  const [importBusy, setImportBusy] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [searchQ, setSearchQ] = useState("");
   const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
@@ -1633,107 +1922,35 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     void load();
   }, [load]);
 
-  async function runDiff() {
-    setSyncBusy(true);
-    try {
-      const r = await api<NonNullable<typeof sync>>("/admin/configs/sync-diff");
-      setSync(r);
-      const sel: Record<string, boolean> = {};
-      for (const x of r.panelOnly) sel[x.email] = true;
-      setSelectedImport(sel);
-      flash(`مقایسه شد: ${r.panelOnly.length} فقط پنل · ${r.matched} مشترک · ${r.botOnly.length} فقط ربات`);
-    } catch (e) {
-      flash(null, errText(e));
-    } finally {
-      setSyncBusy(false);
-    }
-  }
-
-  async function runFullSync() {
-    let snap = sync;
-    if (!snap) {
-      setSyncBusy(true);
-      try {
-        snap = await api<NonNullable<typeof sync>>("/admin/configs/sync-diff");
-        setSync(snap);
-        const sel: Record<string, boolean> = {};
-        for (const x of snap.panelOnly) sel[x.email] = true;
-        setSelectedImport(sel);
-      } catch (e) {
-        flash(null, errText(e));
-        setSyncBusy(false);
-        return;
-      }
-      setSyncBusy(false);
-    }
-    if (
-      !(await askConfirm(
-        `همگام‌سازی کامل پنل ↔ ربات:\n` +
-          `• اکانت‌های فقط‌پنل وارد دیتابیس ربات می‌شوند (${snap.panelOnly.length})\n` +
-          `• اکانت‌هایی که از پنل حذف شده‌اند از دیتابیس ربات هم حذف می‌شوند (${snap.botOnly.length})\n` +
-          `• حجم، انقضا، وضعیت، نام و نوت اکانت‌های مشترک از پنل روی ربات اعمال می‌شود\n\n` +
-          `ادامه می‌دهید؟`,
-      ))
-    ) {
-      return;
-    }
-    setSyncBusy(true);
-    try {
-      const r = await api<{
-        imported: number;
-        deletedFromBot: number;
-        updatedBot: number;
-        updatedPanel: number;
-        skippedUnreachable: number;
-        errors: number;
-        importFailed: Array<{ email: string; error: string }>;
-        ownerLabel: string;
-      }>("/admin/configs/full-sync", { method: "POST", body: {} });
-      const failNote = r.importFailed?.length ? ` · ${r.importFailed.length} ورود ناموفق` : "";
-      const skipNote = r.skippedUnreachable ? ` · ${r.skippedUnreachable} رد (پنل در دسترس نبود)` : "";
-      flash(
-        `همگام کامل: ${r.imported} وارد · ${r.deletedFromBot} حذف از ربات · ${r.updatedBot} به‌روز ربات · ${r.updatedPanel} به‌روز پنل${skipNote}${failNote}`,
-      );
-      await load();
-      await runDiff();
-    } catch (e) {
-      flash(null, errText(e));
-    } finally {
-      setSyncBusy(false);
-    }
-  }
-
-  async function doImport(emails?: string[]) {
-    const list = emails ?? Object.keys(selectedImport).filter((e) => selectedImport[e]);
-    if (!list.length) {
+  async function doImport(emails: string[]) {
+    if (!emails.length) {
       flash(null, "اکانتی برای وارد کردن انتخاب نشده");
       return;
     }
     if (
       !(await askConfirm(
-        `${list.length} اکانت از پنل وارد دیتابیس ربات شود؟\nمالک همهٔ آن‌ها ادمین خواهد بود.`,
+        `${emails.length} اکانت از پنل وارد دیتابیس ربات شود؟\nمالک همهٔ آن‌ها ادمین خواهد بود.`,
       ))
     ) {
       return;
     }
-    setSyncBusy(true);
+    setImportBusy(true);
     try {
       const r = await api<{
         imported: number;
         skipped: number;
         failed: Array<{ email: string; error: string }>;
         ownerLabel: string;
-      }>("/admin/configs/import", { body: { emails: list } });
+      }>("/admin/configs/import", { body: { emails } });
       const failNote = r.failed.length ? ` · ${r.failed.length} ناموفق` : "";
       flash(
         `${r.imported} وارد شد برای ${r.ownerLabel}${r.skipped ? ` · ${r.skipped} رد شد` : ""}${failNote}`,
       );
-      await runDiff();
       await load();
     } catch (e) {
       flash(null, errText(e));
     } finally {
-      setSyncBusy(false);
+      setImportBusy(false);
     }
   }
 
@@ -1839,7 +2056,6 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       flash(r.message);
       if (editing?.email === email) setEditing(null);
       await load();
-      if (sync) void runDiff();
     } catch (e) {
       flash(null, errText(e));
     }
@@ -1943,151 +2159,8 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     }
   }
 
-  const selectedCount = Object.values(selectedImport).filter(Boolean).length;
-
   return (
     <>
-      <div className="panel">
-        <h2>همگام‌سازی پنل ↔ ربات</h2>
-        <p className="muted" style={{ marginTop: 0 }}>
-          ابتدا «مقایسه با پنل» را بزنید، سپس «همگام‌سازی کامل» تا اکانت‌های اضافه‌شده وارد ربات شوند، حذف‌شده‌های پنل از دیتابیس ربات پاک شوند، و فیلدهای مشترک (حجم، انقضا، وضعیت، نام/نوت) یکسان شوند. هر ۱۰ دقیقه هم همگام نرم (بدون حذف دائمی) اجرا می‌شود.
-        </p>
-        <div className="sync-actions">
-          <button type="button" className="btn primary" disabled={syncBusy} onClick={() => void runDiff()}>
-            {syncBusy ? "در حال مقایسه…" : "مقایسه با پنل"}
-          </button>
-          <button type="button" className="btn success" disabled={syncBusy} onClick={() => void runFullSync()}>
-            همگام‌سازی کامل
-          </button>
-        </div>
-        {sync && (
-          <div className="actions" style={{ marginBottom: 12 }}>
-            {sync.panelOnly.length > 0 && (
-              <button type="button" className="btn ghost sm" disabled={syncBusy || !selectedCount} onClick={() => void doImport()}>
-                وارد کردن انتخاب‌شده ({selectedCount})
-              </button>
-            )}
-            {sync.panelOnly.length > 0 && (
-              <button
-                type="button"
-                className="btn ghost sm"
-                disabled={syncBusy}
-                onClick={() => void doImport(sync.panelOnly.map((x) => x.email))}
-              >
-                وارد کردن همهٔ فقط‌پنل
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={() => {
-                setSync(null);
-                setSelectedImport({});
-              }}
-            >
-              انصراف
-            </button>
-          </div>
-        )}
-        {sync && (
-          <div className="grid" style={{ marginBottom: 14 }}>
-            <div className="stat accent">
-              <div className="label">فقط پنل (قابل ورود)</div>
-              <div className="value num">{sync.panelOnly.length}</div>
-            </div>
-            <div className="stat">
-              <div className="label">مشترک</div>
-              <div className="value num">{sync.matched}</div>
-            </div>
-            <div className="stat">
-              <div className="label">فقط ربات</div>
-              <div className="value num">{sync.botOnly.length}</div>
-            </div>
-            <div className="stat">
-              <div className="label">کل پنل / ربات</div>
-              <div className="value num" style={{ fontSize: "1rem" }}>
-                {sync.panelTotal} / {sync.botTotal}
-              </div>
-            </div>
-          </div>
-        )}
-        {sync && sync.panelOnly.length > 0 && (
-          <div className="list">
-            {sync.panelOnly.map((c) => (
-              <div key={c.email} className="row-card" style={{ alignItems: "center" }}>
-                <label className="switch" title="انتخاب برای ورود" style={{ marginInlineEnd: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(selectedImport[c.email])}
-                    onChange={(e) => setSelectedImport((m) => ({ ...m, [c.email]: e.target.checked }))}
-                  />
-                  <span className="track" />
-                </label>
-                <div style={{ flex: 1, minWidth: 160 }}>
-                  <strong className="num">{c.email}</strong> <span className="badge warn">فقط پنل</span>
-                  <div className="muted">
-                    {c.panelName} · {c.trafficGb == null ? "∞ گیگ" : `${c.trafficGb} گیگ`}
-                    {c.expiresAt ? ` · ${new Date(c.expiresAt).toLocaleDateString("fa-IR")}` : ""}
-                  </div>
-                </div>
-                <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
-                  وارد کردن
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {sync && sync.botOnly.length > 0 && (
-          <div className="list" style={{ marginTop: 10 }}>
-            <p className="muted" style={{ marginBottom: 8 }}>
-              این اکانت‌ها در دیتابیس ربات هستند ولی در پنل پیدا نشدند. با همگام‌سازی کامل از دیتابیس حذف می‌شوند.
-            </p>
-            {sync.botOnly.map((c) => (
-              <div key={c.subId} className="row-card" style={{ alignItems: "center" }}>
-                <div style={{ flex: 1, minWidth: 160 }}>
-                  <strong className="num">{c.email}</strong> <span className="badge bad">فقط ربات</span>
-                  <div className="muted">
-                    {c.code} · {c.ownerLabel}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn danger sm"
-                  disabled={syncBusy}
-                  onClick={async () => {
-                    if (
-                      !(await askConfirm(
-                        `اکانت ${c.email} در پنل نیست. فقط از دیتابیس ربات حذف شود؟`,
-                      ))
-                    ) {
-                      return;
-                    }
-                    try {
-                      const r = await api<{ message: string }>("/admin/configs/delete", {
-                        body: { email: c.email, subId: c.subId },
-                      });
-                      flash(r.message);
-                      await load();
-                      void runDiff();
-                    } catch (e) {
-                      flash(null, errText(e));
-                    }
-                  }}
-                >
-                  حذف از ربات
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {sync && !sync.panelOnly.length && !sync.botOnly.length && (
-          <p className="muted">لیست پنل و ربات از نظر وجود اکانت یکسان است.</p>
-        )}
-        {sync && !sync.panelOnly.length && sync.botOnly.length > 0 && (
-          <p className="muted">همهٔ اکانت‌های پنل در دیتابیس ربات هستند.</p>
-        )}
-      </div>
-
       <div className="panel">
         <h2>اکانت‌ها بر اساس گروه پنل</h2>
         <p className="muted" style={{ marginTop: 0 }}>
@@ -2165,7 +2238,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                 <div className="config-card-actions">
                   <div className="config-card-actions-row">
                     {!c.inDb && (
-                      <button type="button" className="btn success sm" disabled={syncBusy} onClick={() => void doImport([c.email])}>
+                      <button type="button" className="btn success sm" disabled={importBusy} onClick={() => void doImport([c.email])}>
                         وارد کردن
                       </button>
                     )}

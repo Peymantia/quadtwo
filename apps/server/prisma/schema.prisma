@@ -243,6 +243,8 @@ model Subscription {
   subUrl          String?
   /// User-facing memo / note for this service
   note            String?
+  /// Max simultaneous IPs/devices (0 = unlimited); mirrored from panel limitIp
+  limitIp         Int                @default(0)
   status          SubscriptionStatus @default(active)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt

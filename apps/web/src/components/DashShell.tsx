@@ -59,7 +59,8 @@ export type IconName =
   | "logout"
   | "shield"
   | "menu"
-  | "close";
+  | "close"
+  | "sync";
 
 export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
   const p = {
@@ -207,6 +208,15 @@ export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
         <svg {...p}>
           <path d="M6 6l12 12" />
           <path d="M18 6 6 18" />
+        </svg>
+      );
+    case "sync":
+      return (
+        <svg {...p}>
+          <path d="M21 12a9 9 0 0 0-15.5-6.4" />
+          <path d="M3 4v5h5" />
+          <path d="M3 12a9 9 0 0 0 15.5 6.4" />
+          <path d="M21 20v-5h-5" />
         </svg>
       );
   }

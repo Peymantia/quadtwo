@@ -1,13 +1,15 @@
-import { UserRole, SubscriptionStatus } from "@prisma/client";
+import { UserRole, SubscriptionStatus, type Subscription } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { prisma } from "../db.js";
-import { resolvePanelForSubscription, listPanelServers, createXuiFromPanel } from "./panel-servers.js";
+import { resolvePanelForSubscription, listPanelServers, createXuiFromPanel, panelInboundIds } from "./panel-servers.js";
 import { createXuiFromEnv, type XuiClient } from "../panel/xui-client.js";
 import { env, adminIds } from "../config/env.js";
 import { TELEGRAM_GROUP } from "./panel-groups.js";
 import { formatXuiError } from "../panel/xui-errors.js";
-import { gbToBytes, shortCode } from "../utils/format.js";
+import { gbToBytes, shortCode, randomSubId } from "../utils/format.js";
 import { resolveSubUrl } from "./provision.js";
 import { sanitizeSubBase } from "./sub-url.js";
+import { getSetting, setSetting } from "./settings.js";
 
 export type ConfigGroup = {
   key: string;
@@ -775,6 +777,9 @@ export async function updateConfig(opts: {
     if (opts.enable !== undefined) {
       data.status = opts.enable ? "active" : "disabled";
     }
+    if (opts.limitIp !== undefined) {
+      data.limitIp = Math.max(0, Math.min(100, Math.floor(opts.limitIp)));
+    }
     if (Object.keys(data).length) {
       await prisma.subscription.update({ where: { id: sub.id }, data });
     }
@@ -1109,7 +1114,8 @@ export async function importPanelClientsToBot(emails?: string[]): Promise<Import
           activatedAt: exp.activatedAt,
           expiresAt: exp.expiresAt,
           subUrl,
-          note: parsed.note || "وارد شده از پنل 3x-ui",
+          note: parsed.note || "Imported from 3X-UI",
+          limitIp: Math.max(0, Math.min(100, Math.floor(limitIp || 0))),
           status: enable ? SubscriptionStatus.active : SubscriptionStatus.disabled,
           isTest: false,
         },
@@ -1307,7 +1313,13 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
           if (parsed.note !== undefined && parsed.note !== sub.note) {
             // Only overwrite note when panel comment encodes a note, or title-only comment clears a stale import note
             if (parsed.note != null) data.note = parsed.note;
-            else if (!sub.note || sub.note === "وارد شده از پنل 3x-ui") data.note = null;
+            else if (
+              !sub.note ||
+              sub.note === "Imported from 3X-UI" ||
+              sub.note === "وارد شده از پنل 3x-ui"
+            ) {
+              data.note = null;
+            }
           }
           if (!sub.title && parsed.title) data.title = parsed.title;
         }
@@ -1333,262 +1345,899 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
   return result;
 }
 
-export type FullSyncResult = {
-  imported: number;
-  deletedFromBot: number;
-  updatedBot: number;
-  updatedPanel: number;
-  skippedUnreachable: number;
-  errors: number;
-  importFailed: Array<{ email: string; error: string }>;
-  ownerLabel: string;
+export type SyncDirection = "panel_to_bot" | "bot_to_panel";
+
+export type SyncOption =
+  | "newAccounts"
+  | "deletedAccounts"
+  | "name"
+  | "traffic"
+  | "expiry"
+  | "inbounds"
+  | "limitIp"
+  | "comment"
+  | "note";
+
+export const ALL_SYNC_OPTIONS: SyncOption[] = [
+  "newAccounts",
+  "deletedAccounts",
+  "name",
+  "traffic",
+  "expiry",
+  "inbounds",
+  "limitIp",
+  "comment",
+  "note",
+];
+
+export type SyncApplyInput = {
+  direction: SyncDirection;
+  options: SyncOption[];
 };
 
-/**
- * Full panel ↔ bot sync (admin confirm):
- * - panel-only → import into bot DB
- * - bot-only (confirmed missing on panel) → hard-delete from bot DB
- * - matched → sync fields both ways (panel is source for traffic/expiry/enable/uuid;
- *   title/note/comment merge; empty panel comment gets bot title|note pushed up)
- *
- * Cron still uses soft reconcile — this hard-delete path is explicit only.
- */
-export async function fullSyncPanelAndBot(): Promise<FullSyncResult> {
-  const result: FullSyncResult = {
-    imported: 0,
-    deletedFromBot: 0,
-    updatedBot: 0,
-    updatedPanel: 0,
-    skippedUnreachable: 0,
-    errors: 0,
-    importFailed: [],
-    ownerLabel: "",
+export type SelectiveSyncResult = {
+  direction: SyncDirection;
+  options: SyncOption[];
+  created: number;
+  deleted: number;
+  updated: number;
+  skippedUnreachable: number;
+  errors: number;
+  failed: Array<{ email: string; error: string }>;
+  undoAvailable: boolean;
+};
+
+const SYNC_UNDO_KEY = "panel_sync_undo";
+
+type BotSnap = {
+  id: string;
+  code: string;
+  userId: string;
+  orderId: string | null;
+  panelServerId: string | null;
+  title: string | null;
+  email: string;
+  clientUuid: string | null;
+  panelSubId: string | null;
+  trafficGb: number | null;
+  startsOnConnect: boolean;
+  activatedAt: string | null;
+  isTest: boolean;
+  expiresAt: string;
+  subUrl: string | null;
+  note: string | null;
+  limitIp: number;
+  status: SubscriptionStatus;
+};
+
+type PanelSnap = {
+  totalGB?: number;
+  expiryTime?: number;
+  enable?: boolean;
+  limitIp?: number;
+  comment?: string | null;
+  uuid?: string | null;
+  subId?: string | null;
+};
+
+type SyncUndoSnapshot = {
+  direction: SyncDirection;
+  options: SyncOption[];
+  createdAt: string;
+  /** Bot rows created by this sync — delete on undo */
+  createdSubIds: string[];
+  /** Bot rows deleted — recreate on undo */
+  deletedSubs: BotSnap[];
+  /** Panel clients created (bot→panel new) — delete from panel on undo */
+  createdPanelEmails: string[];
+  /** Panel clients deleted (bot→panel deletedAccounts) — best-effort recreate */
+  deletedPanel: Array<{
+    email: string;
+    panelServerId: string | null;
+    before: PanelSnap & { inboundIds?: number[] };
+  }>;
+  /** Bot field updates — restore before */
+  botUpdates: Array<{ id: string; before: Partial<BotSnap> }>;
+  /** Panel field updates — restore before */
+  panelUpdates: Array<{
+    email: string;
+    panelServerId: string | null;
+    before: PanelSnap;
+  }>;
+};
+
+function hasOpt(opts: Set<SyncOption>, o: SyncOption) {
+  return opts.has(o);
+}
+
+function subToSnap(sub: Subscription): BotSnap {
+  return {
+    id: sub.id,
+    code: sub.code,
+    userId: sub.userId,
+    orderId: sub.orderId,
+    panelServerId: sub.panelServerId,
+    title: sub.title,
+    email: sub.email,
+    clientUuid: sub.clientUuid,
+    panelSubId: sub.panelSubId,
+    trafficGb: sub.trafficGb,
+    startsOnConnect: sub.startsOnConnect,
+    activatedAt: sub.activatedAt?.toISOString() ?? null,
+    isTest: sub.isTest,
+    expiresAt: sub.expiresAt.toISOString(),
+    subUrl: sub.subUrl,
+    note: sub.note,
+    limitIp: sub.limitIp ?? 0,
+    status: sub.status,
   };
+}
 
-  let panelClients: DetailedPanelClient[] = [];
+function panelClientToSnap(c: {
+  totalGB?: number;
+  expiryTime?: number;
+  enable?: boolean;
+  limitIp?: number;
+  comment?: string | null;
+  uuid?: string | null;
+  id?: string | null;
+  subId?: string | null;
+}): PanelSnap {
+  return {
+    totalGB: Number(c.totalGB ?? 0),
+    expiryTime: Number(c.expiryTime ?? 0),
+    enable: c.enable !== false,
+    limitIp: Number(c.limitIp ?? 0),
+    comment: typeof c.comment === "string" ? c.comment : c.comment ?? null,
+    uuid: c.uuid != null ? String(c.uuid) : c.id != null ? String(c.id) : null,
+    subId: c.subId ?? null,
+  };
+}
+
+async function saveUndoSnapshot(snap: SyncUndoSnapshot) {
+  await setSetting(SYNC_UNDO_KEY, JSON.stringify(snap));
+}
+
+export async function getSyncUndoStatus(): Promise<{ available: boolean; createdAt: string | null }> {
   try {
-    panelClients = await listDetailedPanelClients();
-  } catch (err) {
-    throw new Error(
-      `خواندن پنل ناموفق بود: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    const raw = await getSetting(SYNC_UNDO_KEY);
+    if (!raw?.trim()) return { available: false, createdAt: null };
+    const parsed = JSON.parse(raw) as SyncUndoSnapshot;
+    return { available: true, createdAt: parsed.createdAt ?? null };
+  } catch {
+    return { available: false, createdAt: null };
   }
+}
 
+async function assertPanelReachable(panelClients: DetailedPanelClient[]) {
   const panels = await listPanelServers();
   const hasConfigured =
     panels.some((p) => p.active) || Boolean(env.XUI_BASE_URL && env.XUI_API_TOKEN);
   if (!panelClients.length && hasConfigured) {
     throw new Error(
-      "هیچ اکانتی از پنل برنگشت. برای جلوگیری از پاک شدن اشتباه دیتابیس، همگام‌سازی متوقف شد. اتصال پنل را بررسی کنید.",
+      "هیچ اکانتی از پنل برنگشت. برای جلوگیری از پاک شدن اشتباه، همگام‌سازی متوقف شد. اتصال پنل را بررسی کنید.",
     );
   }
+}
 
-  const importRes = await importPanelClientsToBot();
-  result.imported = importRes.imported;
-  result.importFailed = importRes.failed;
-  result.ownerLabel = importRes.ownerLabel;
+async function defaultPanelForCreate(): Promise<{
+  xui: XuiClient;
+  inboundIds: number[];
+  subBase: string | null;
+  panelServerId: string | null;
+  panelName: string;
+}> {
+  const panels = await listPanelServers();
+  const active = panels.filter((p) => p.active);
+  if (active[0]) {
+    const p = active[0];
+    return {
+      xui: createXuiFromPanel(p),
+      inboundIds: panelInboundIds(p),
+      subBase: sanitizeSubBase(p.subBase),
+      panelServerId: p.id,
+      panelName: p.name,
+    };
+  }
+  if (env.XUI_BASE_URL && env.XUI_API_TOKEN) {
+    const xui = createXuiFromEnv(env);
+    return {
+      xui,
+      inboundIds: await xui.listEnabledInboundIds(),
+      subBase: sanitizeSubBase(env.XUI_SUB_BASE),
+      panelServerId: null,
+      panelName: "سرور پیش‌فرض (.env)",
+    };
+  }
+  throw new Error("هیچ پنل فعالی برای ساخت اکانت تنظیم نشده است.");
+}
 
-  // Refresh after import
-  panelClients = await listDetailedPanelClients();
+/**
+ * Selective one-way sync with undo snapshot.
+ */
+export async function selectiveSync(input: SyncApplyInput): Promise<SelectiveSyncResult> {
+  const direction = input.direction;
+  if (direction !== "panel_to_bot" && direction !== "bot_to_panel") {
+    throw new Error("جهت همگام‌سازی نامعتبر است");
+  }
+  const optSet = new Set(
+    (input.options ?? []).filter((o): o is SyncOption =>
+      (ALL_SYNC_OPTIONS as string[]).includes(o),
+    ),
+  );
+  if (!optSet.size) throw new Error("حداقل یک گزینه همگام‌سازی را انتخاب کنید");
+
+  const result: SelectiveSyncResult = {
+    direction,
+    options: [...optSet],
+    created: 0,
+    deleted: 0,
+    updated: 0,
+    skippedUnreachable: 0,
+    errors: 0,
+    failed: [],
+    undoAvailable: false,
+  };
+
+  let panelClients = await listDetailedPanelClients();
+  await assertPanelReachable(panelClients);
+
+  const undo: SyncUndoSnapshot = {
+    direction,
+    options: [...optSet],
+    createdAt: new Date().toISOString(),
+    createdSubIds: [],
+    deletedSubs: [],
+    createdPanelEmails: [],
+    deletedPanel: [],
+    botUpdates: [],
+    panelUpdates: [],
+  };
+
   const panelByEmail = new Map(panelClients.map((c) => [c.email.toLowerCase(), c]));
+  const subs = await prisma.subscription.findMany();
+  const botByEmail = new Map(subs.map((s) => [s.email.toLowerCase(), s]));
 
-  const subs = await prisma.subscription.findMany({
-    where: {
-      status: {
-        in: [
-          SubscriptionStatus.active,
-          SubscriptionStatus.disabled,
-          SubscriptionStatus.expired,
-        ],
-      },
-    },
-  });
-
-  const now = Date.now();
-
-  for (const sub of subs) {
-    const key = sub.email.toLowerCase();
-    const panel = panelByEmail.get(key);
-
-    try {
-      if (!panel) {
-        // Confirm truly missing on home panel before hard delete
+  // ——— Structural: new accounts ———
+  if (hasOpt(optSet, "newAccounts")) {
+    if (direction === "panel_to_bot") {
+      for (const c of panelClients) {
+        const key = c.email.toLowerCase();
+        if (botByEmail.has(key)) continue;
         try {
-          const resolved = await resolvePanelForSubscription(sub);
-          const got = await resolved.xui.getClient(sub.email);
-          if (got.obj?.client) {
-            const client = got.obj.client;
-            const fake: DetailedPanelClient = {
-              email: sub.email,
-              panelServerId: sub.panelServerId,
-              panelName: "home",
-              xui: resolved.xui,
-              subBase: null,
-              uuid:
-                client.uuid != null
-                  ? String(client.uuid)
-                  : client.id != null
-                    ? String(client.id)
-                    : null,
-              panelSubId: client.subId ?? null,
-              trafficGb: bytesToGb(client.totalGB),
-              expiryTime: Number(client.expiryTime ?? 0),
-              enable: client.enable !== false,
-              limitIp: Number(client.limitIp ?? 0),
-              comment:
-                typeof client.comment === "string" ? client.comment.trim() || null : null,
-            };
-            const synced = await syncMatchedSubscription(sub, fake, now);
-            result.updatedBot += synced.updatedBot;
-            result.updatedPanel += synced.updatedPanel;
-            continue;
+          const beforeCount = undo.createdSubIds.length;
+          const created = await importOnePanelClient(c);
+          if (created) {
+            undo.createdSubIds.push(created.id);
+            botByEmail.set(key, created as Subscription);
+            result.created++;
+          } else if (undo.createdSubIds.length === beforeCount) {
+            /* skipped */
           }
-          // Client payload empty → treat as deleted on panel
         } catch (err) {
-          const msg = String(err instanceof Error ? err.message : err);
-          if (!/not found|404|وجود ندارد|no client|not exist/i.test(msg)) {
-            result.skippedUnreachable++;
-            continue;
-          }
+          result.errors++;
+          result.failed.push({
+            email: c.email,
+            error: String(err instanceof Error ? err.message : err).slice(0, 200),
+          });
         }
-
-        await deleteSubscriptionDbOnly(sub.id);
-        result.deletedFromBot++;
-        continue;
       }
+    } else {
+      // bot → panel: create missing panel clients
+      for (const sub of subs) {
+        const key = sub.email.toLowerCase();
+        if (panelByEmail.has(key)) continue;
+        try {
+          // Confirm truly missing
+          let exists = false;
+          try {
+            const resolved = await resolvePanelForSubscription(sub);
+            const got = await resolved.xui.getClient(sub.email);
+            if (got.obj?.client) exists = true;
+          } catch (err) {
+            const msg = String(err instanceof Error ? err.message : err);
+            if (!/not found|404|وجود ندارد|no client|not exist/i.test(msg)) {
+              result.skippedUnreachable++;
+              continue;
+            }
+          }
+          if (exists) continue;
 
-      const synced = await syncMatchedSubscription(sub, panel, now);
-      result.updatedBot += synced.updatedBot;
-      result.updatedPanel += synced.updatedPanel;
-    } catch (err) {
-      result.errors++;
-      console.warn("full sync failed", sub.email, err);
+          const target = sub.panelServerId
+            ? await resolvePanelForSubscription(sub)
+            : await defaultPanelForCreate();
+          const inboundIds =
+            hasOpt(optSet, "inbounds") && "inboundIds" in target && target.inboundIds?.length
+              ? target.inboundIds
+              : (await defaultPanelForCreate()).inboundIds;
+          const xui = "xui" in target ? target.xui : (await defaultPanelForCreate()).xui;
+          const panelServerId =
+            "panel" in target && target.panel
+              ? target.panel.id
+              : "panelServerId" in target
+                ? (target as { panelServerId: string | null }).panelServerId
+                : sub.panelServerId;
+
+          const uuid = sub.clientUuid || randomUUID();
+          const panelSubId = sub.panelSubId || randomSubId();
+          const comment = composePanelComment(sub.title, sub.note) || sub.email;
+          const expiryTime = sub.startsOnConnect
+            ? -Math.max(60_000, sub.expiresAt.getTime() - Date.now())
+            : sub.expiresAt.getTime();
+
+          await xui.addClient({
+            client: {
+              id: uuid,
+              email: sub.email,
+              enable: sub.status === SubscriptionStatus.active,
+              expiryTime,
+              totalGB: sub.trafficGb != null && sub.trafficGb > 0 ? gbToBytes(sub.trafficGb) : 0,
+              limitIp: sub.limitIp ?? 0,
+              subId: panelSubId,
+              comment,
+            },
+            inboundIds: inboundIds.length ? inboundIds : [1],
+          });
+
+          undo.createdPanelEmails.push(sub.email);
+          const data: { clientUuid?: string; panelSubId?: string; panelServerId?: string | null } =
+            {};
+          if (!sub.clientUuid) data.clientUuid = uuid;
+          if (!sub.panelSubId) data.panelSubId = panelSubId;
+          if (panelServerId && panelServerId !== sub.panelServerId) data.panelServerId = panelServerId;
+          if (Object.keys(data).length) {
+            await prisma.subscription.update({ where: { id: sub.id }, data });
+          }
+          panelByEmail.set(key, {
+            email: sub.email,
+            panelServerId: panelServerId ?? null,
+            panelName: "created",
+            xui,
+            subBase: null,
+            uuid,
+            panelSubId,
+            trafficGb: sub.trafficGb,
+            expiryTime,
+            enable: sub.status === SubscriptionStatus.active,
+            limitIp: sub.limitIp ?? 0,
+            comment,
+          });
+          result.created++;
+        } catch (err) {
+          result.errors++;
+          result.failed.push({
+            email: sub.email,
+            error: String(err instanceof Error ? err.message : err).slice(0, 200),
+          });
+        }
+      }
     }
+  }
+
+  // Refresh maps after creates
+  panelClients = await listDetailedPanelClients();
+  await assertPanelReachable(panelClients);
+  panelByEmail.clear();
+  for (const c of panelClients) panelByEmail.set(c.email.toLowerCase(), c);
+  const subsFresh = await prisma.subscription.findMany();
+  botByEmail.clear();
+  for (const s of subsFresh) botByEmail.set(s.email.toLowerCase(), s);
+
+  // ——— Structural: deleted accounts ———
+  if (hasOpt(optSet, "deletedAccounts")) {
+    if (direction === "panel_to_bot") {
+      for (const sub of [...botByEmail.values()]) {
+        const key = sub.email.toLowerCase();
+        if (panelByEmail.has(key)) continue;
+        try {
+          try {
+            const resolved = await resolvePanelForSubscription(sub);
+            const got = await resolved.xui.getClient(sub.email);
+            if (got.obj?.client) continue;
+          } catch (err) {
+            const msg = String(err instanceof Error ? err.message : err);
+            if (!/not found|404|وجود ندارد|no client|not exist/i.test(msg)) {
+              result.skippedUnreachable++;
+              continue;
+            }
+          }
+          undo.deletedSubs.push(subToSnap(sub));
+          await deleteSubscriptionDbOnly(sub.id);
+          botByEmail.delete(key);
+          result.deleted++;
+        } catch (err) {
+          result.errors++;
+          result.failed.push({
+            email: sub.email,
+            error: String(err instanceof Error ? err.message : err).slice(0, 200),
+          });
+        }
+      }
+    } else {
+      // bot → panel: delete panel-only clients
+      for (const c of panelClients) {
+        const key = c.email.toLowerCase();
+        if (botByEmail.has(key)) continue;
+        try {
+          undo.deletedPanel.push({
+            email: c.email,
+            panelServerId: c.panelServerId,
+            before: {
+              ...panelClientToSnap({
+                totalGB: c.trafficGb != null ? gbToBytes(c.trafficGb) : 0,
+                expiryTime: c.expiryTime,
+                enable: c.enable,
+                limitIp: c.limitIp,
+                comment: c.comment,
+                uuid: c.uuid,
+                subId: c.panelSubId,
+              }),
+              inboundIds: hasOpt(optSet, "inbounds")
+                ? await c.xui.listEnabledInboundIds().catch(() => [1])
+                : undefined,
+            },
+          });
+          await c.xui.deleteClient(c.email);
+          panelByEmail.delete(key);
+          result.deleted++;
+        } catch (err) {
+          result.errors++;
+          result.failed.push({
+            email: c.email,
+            error: String(err instanceof Error ? err.message : err).slice(0, 200),
+          });
+        }
+      }
+    }
+  }
+
+  // ——— Field sync for matched ———
+  const fieldOpts: SyncOption[] = ["name", "traffic", "expiry", "limitIp", "comment", "note"];
+  const anyField = fieldOpts.some((o) => hasOpt(optSet, o));
+  // inbounds only affects create path in v1
+
+  if (anyField) {
+    const now = Date.now();
+    for (const sub of botByEmail.values()) {
+      const panel = panelByEmail.get(sub.email.toLowerCase());
+      if (!panel) continue;
+      try {
+        if (direction === "panel_to_bot") {
+          const changed = await applyPanelFieldsToBot(sub, panel, optSet, now, undo);
+          if (changed) result.updated++;
+        } else {
+          const changed = await applyBotFieldsToPanel(sub, panel, optSet, undo);
+          if (changed) result.updated++;
+        }
+      } catch (err) {
+        result.errors++;
+        result.failed.push({
+          email: sub.email,
+          error: String(err instanceof Error ? err.message : err).slice(0, 200),
+        });
+      }
+    }
+  }
+
+  const hasChanges =
+    undo.createdSubIds.length +
+      undo.deletedSubs.length +
+      undo.createdPanelEmails.length +
+      undo.deletedPanel.length +
+      undo.botUpdates.length +
+      undo.panelUpdates.length >
+    0;
+
+  if (hasChanges) {
+    await saveUndoSnapshot(undo);
+    result.undoAvailable = true;
   }
 
   return result;
 }
 
-async function syncMatchedSubscription(
-  sub: {
-    id: string;
-    email: string;
-    title: string | null;
-    note: string | null;
-    trafficGb: number | null;
-    expiresAt: Date;
-    activatedAt: Date | null;
-    startsOnConnect: boolean;
-    clientUuid: string | null;
-    panelSubId: string | null;
-    panelServerId: string | null;
-    status: SubscriptionStatus;
-  },
-  panel: DetailedPanelClient,
-  now: number,
-): Promise<{ updatedBot: number; updatedPanel: number }> {
-  let updatedBot = 0;
-  let updatedPanel = 0;
+async function importOnePanelClient(c: DetailedPanelClient): Promise<Subscription | null> {
+  const owner = await resolvePanelImportOwner();
+  const existing = await prisma.subscription.findFirst({
+    where: { email: { equals: c.email } },
+  });
+  if (existing) return null;
 
-  const data: {
-    status?: SubscriptionStatus;
-    trafficGb?: number | null;
-    expiresAt?: Date;
-    activatedAt?: Date | null;
-    startsOnConnect?: boolean;
-    clientUuid?: string | null;
-    panelSubId?: string | null;
-    panelServerId?: string | null;
-    title?: string | null;
-    note?: string | null;
-  } = {};
-
-  // Panel → bot for traffic / expiry / enable / ids
-  if (!panel.enable) {
-    if (sub.status === SubscriptionStatus.active) data.status = SubscriptionStatus.disabled;
-  } else if (
-    sub.status === SubscriptionStatus.disabled ||
-    sub.status === SubscriptionStatus.expired
-  ) {
-    const stillValid =
-      (panel.expiryTime > 0 ? panel.expiryTime : sub.expiresAt.getTime()) > now;
-    if (stillValid) data.status = SubscriptionStatus.active;
+  let uuid = c.uuid;
+  let panelSubId = c.panelSubId;
+  let trafficGb = c.trafficGb;
+  let expiryTime = c.expiryTime;
+  let enable = c.enable;
+  let limitIp = c.limitIp;
+  let comment = c.comment;
+  try {
+    const got = await c.xui.getClient(c.email);
+    const client = got.obj?.client;
+    if (client) {
+      uuid =
+        client.uuid != null ? String(client.uuid) : client.id != null ? String(client.id) : uuid;
+      if (client.subId) panelSubId = client.subId;
+      trafficGb = bytesToGb(client.totalGB) ?? trafficGb;
+      expiryTime = Number(client.expiryTime ?? expiryTime);
+      enable = client.enable !== false;
+      limitIp = Number(client.limitIp ?? limitIp);
+      if (typeof client.comment === "string" && client.comment.trim()) {
+        comment = client.comment.trim();
+      }
+    }
+  } catch {
+    /* list data */
   }
 
-  if (panel.trafficGb !== sub.trafficGb) data.trafficGb = panel.trafficGb;
+  const exp = expiryFromPanel(expiryTime);
+  let subUrl: string | null = null;
+  if (panelSubId) {
+    try {
+      subUrl = await resolveSubUrl(panelSubId, c.xui, c.subBase);
+    } catch {
+      subUrl = null;
+    }
+  }
+  const parsed = parsePanelComment(comment);
+  const code = await uniqueSubCode();
+  return prisma.subscription.create({
+    data: {
+      code,
+      userId: owner.id,
+      orderId: null,
+      panelServerId: c.panelServerId,
+      title: parsed.title || c.email,
+      email: c.email,
+      clientUuid: uuid,
+      panelSubId,
+      trafficGb,
+      startsOnConnect: exp.startsOnConnect,
+      activatedAt: exp.activatedAt,
+      expiresAt: exp.expiresAt,
+      subUrl,
+      note: parsed.note || "Imported from 3X-UI",
+      limitIp: Math.max(0, Math.min(100, Math.floor(limitIp || 0))),
+      status: enable ? SubscriptionStatus.active : SubscriptionStatus.disabled,
+      isTest: false,
+    },
+  });
+}
 
-  if (panel.expiryTime > 0) {
-    const expMs = panel.expiryTime;
-    if (Math.abs(expMs - sub.expiresAt.getTime()) > 60_000) {
-      data.expiresAt = new Date(expMs);
+async function applyPanelFieldsToBot(
+  sub: Subscription,
+  panel: DetailedPanelClient,
+  optSet: Set<SyncOption>,
+  _now: number,
+  undo: SyncUndoSnapshot,
+): Promise<boolean> {
+  const data: Record<string, unknown> = {};
+  const before: Partial<BotSnap> = {};
+
+  if (hasOpt(optSet, "traffic") && panel.trafficGb !== sub.trafficGb) {
+    before.trafficGb = sub.trafficGb;
+    data.trafficGb = panel.trafficGb;
+  }
+
+  if (hasOpt(optSet, "expiry") && panel.expiryTime > 0) {
+    if (Math.abs(panel.expiryTime - sub.expiresAt.getTime()) > 60_000) {
+      before.expiresAt = sub.expiresAt.toISOString();
+      before.startsOnConnect = sub.startsOnConnect;
+      before.activatedAt = sub.activatedAt?.toISOString() ?? null;
+      data.expiresAt = new Date(panel.expiryTime);
       data.startsOnConnect = false;
       data.activatedAt = sub.activatedAt ?? new Date();
     }
-  } else if (panel.expiryTime < 0 && sub.startsOnConnect !== true) {
+  } else if (hasOpt(optSet, "expiry") && panel.expiryTime < 0 && !sub.startsOnConnect) {
     const exp = expiryFromPanel(panel.expiryTime);
+    before.expiresAt = sub.expiresAt.toISOString();
+    before.startsOnConnect = sub.startsOnConnect;
+    before.activatedAt = sub.activatedAt?.toISOString() ?? null;
     data.startsOnConnect = true;
     data.activatedAt = null;
     data.expiresAt = exp.expiresAt;
   }
 
-  if (panel.uuid && panel.uuid !== sub.clientUuid) data.clientUuid = panel.uuid;
-  if (panel.panelSubId && panel.panelSubId !== sub.panelSubId) data.panelSubId = panel.panelSubId;
+  if (hasOpt(optSet, "limitIp") && panel.limitIp !== (sub.limitIp ?? 0)) {
+    before.limitIp = sub.limitIp ?? 0;
+    data.limitIp = panel.limitIp;
+  }
+
+  const panelComment = (panel.comment || "").trim();
+  const parsed = parsePanelComment(panelComment);
+
+  if (hasOpt(optSet, "comment") && panelComment) {
+    const composed = composePanelComment(sub.title, sub.note);
+    if (panelComment !== composed) {
+      if (parsed.title !== sub.title) {
+        before.title = sub.title;
+        data.title = parsed.title;
+      }
+      if (parsed.note !== sub.note) {
+        before.note = sub.note;
+        data.note = parsed.note;
+      }
+    }
+  } else {
+    if (hasOpt(optSet, "name") && parsed.title && parsed.title !== sub.title) {
+      before.title = sub.title;
+      data.title = parsed.title;
+    }
+    if (hasOpt(optSet, "note") && panelComment) {
+      // note from second segment, or whole comment if name not selected
+      const noteVal = hasOpt(optSet, "name")
+        ? parsed.note
+        : parsed.note ?? (parsed.title !== sub.email ? panelComment : null);
+      if (noteVal !== sub.note && (parsed.note != null || !hasOpt(optSet, "name"))) {
+        if (noteVal !== sub.note) {
+          before.note = sub.note;
+          data.note = noteVal;
+        }
+      }
+    }
+  }
+
+  // Always keep uuid/subId/server in sync lightly when any field sync runs
+  if (panel.uuid && panel.uuid !== sub.clientUuid) {
+    before.clientUuid = sub.clientUuid;
+    data.clientUuid = panel.uuid;
+  }
+  if (panel.panelSubId && panel.panelSubId !== sub.panelSubId) {
+    before.panelSubId = sub.panelSubId;
+    data.panelSubId = panel.panelSubId;
+  }
   if (panel.panelServerId && panel.panelServerId !== sub.panelServerId) {
+    before.panelServerId = sub.panelServerId;
     data.panelServerId = panel.panelServerId;
   }
 
-  // title / note ↔ panel comment
-  const botComment = composePanelComment(sub.title, sub.note);
-  const panelComment = (panel.comment || "").trim();
-  let nextTitle = sub.title;
-  let nextNote = sub.note;
+  if (!Object.keys(data).length) return false;
+  undo.botUpdates.push({ id: sub.id, before });
+  await prisma.subscription.update({ where: { id: sub.id }, data });
+  return true;
+}
 
-  if (panelComment && panelComment !== botComment) {
-    const parsed = parsePanelComment(panelComment);
-    if (parsed.title !== sub.title) {
-      data.title = parsed.title;
-      nextTitle = parsed.title;
+async function applyBotFieldsToPanel(
+  sub: Subscription,
+  panel: DetailedPanelClient,
+  optSet: Set<SyncOption>,
+  undo: SyncUndoSnapshot,
+): Promise<boolean> {
+  const got = await panel.xui.getClient(sub.email);
+  const client = got.obj?.client;
+  if (!client) return false;
+
+  const before = panelClientToSnap(client);
+  const patch: Record<string, unknown> = { ...client, email: sub.email };
+  let changed = false;
+
+  if (hasOpt(optSet, "traffic")) {
+    const want = sub.trafficGb != null && sub.trafficGb > 0 ? gbToBytes(sub.trafficGb) : 0;
+    if (Number(client.totalGB ?? 0) !== want) {
+      patch.totalGB = want;
+      changed = true;
     }
-    if (parsed.note !== sub.note) {
-      data.note = parsed.note;
-      nextNote = parsed.note;
+  }
+
+  if (hasOpt(optSet, "expiry")) {
+    const want = sub.startsOnConnect
+      ? -Math.max(60_000, sub.expiresAt.getTime() - Date.now())
+      : sub.expiresAt.getTime();
+    if (Math.abs(Number(client.expiryTime ?? 0) - want) > 60_000) {
+      patch.expiryTime = want;
+      changed = true;
     }
   }
 
-  const nextStatus = data.status ?? sub.status;
-  const nextExpiry = data.expiresAt ?? sub.expiresAt;
-  if (nextStatus === SubscriptionStatus.active && nextExpiry.getTime() <= now) {
-    data.status = SubscriptionStatus.expired;
+  if (hasOpt(optSet, "limitIp") && Number(client.limitIp ?? 0) !== (sub.limitIp ?? 0)) {
+    patch.limitIp = sub.limitIp ?? 0;
+    changed = true;
   }
 
-  if (Object.keys(data).length) {
-    await prisma.subscription.update({ where: { id: sub.id }, data });
-    updatedBot = 1;
+  if (hasOpt(optSet, "comment")) {
+    const want = composePanelComment(sub.title, sub.note);
+    const cur = typeof client.comment === "string" ? client.comment.trim() : "";
+    if (want !== cur) {
+      patch.comment = want;
+      changed = true;
+    }
+  } else {
+    const cur = typeof client.comment === "string" ? client.comment.trim() : "";
+    const parsed = parsePanelComment(cur);
+    let title = parsed.title;
+    let note = parsed.note;
+    if (hasOpt(optSet, "name")) title = sub.title;
+    if (hasOpt(optSet, "note")) note = sub.note;
+    if (hasOpt(optSet, "name") || hasOpt(optSet, "note")) {
+      const want = composePanelComment(title, note);
+      if (want !== cur) {
+        patch.comment = want;
+        changed = true;
+      }
+    }
   }
 
-  // Bot → panel: fill empty comment from bot title|note
-  const finalComment = composePanelComment(
-    data.title !== undefined ? data.title : nextTitle,
-    data.note !== undefined ? data.note : nextNote,
-  );
-  if (!panelComment && finalComment) {
+  if (!changed) return false;
+  undo.panelUpdates.push({
+    email: sub.email,
+    panelServerId: panel.panelServerId,
+    before,
+  });
+  await panel.xui.updateClient(sub.email, patch);
+  return true;
+}
+
+/** @deprecated use selectiveSync — kept for older callers */
+export async function fullSyncPanelAndBot(): Promise<SelectiveSyncResult> {
+  return selectiveSync({
+    direction: "panel_to_bot",
+    options: ALL_SYNC_OPTIONS.filter((o) => o !== "inbounds"),
+  });
+}
+
+export async function undoLastSync(): Promise<{
+  ok: true;
+  message: string;
+  restored: number;
+}> {
+  const raw = await getSetting(SYNC_UNDO_KEY);
+  if (!raw?.trim()) throw new Error("تغییر قابل برگشتی وجود ندارد");
+
+  let snap: SyncUndoSnapshot;
+  try {
+    snap = JSON.parse(raw) as SyncUndoSnapshot;
+  } catch {
+    await setSetting(SYNC_UNDO_KEY, "");
+    throw new Error("اسنپ‌شات Undo نامعتبر بود و پاک شد");
+  }
+
+  let restored = 0;
+
+  // Reverse created bot rows
+  for (const id of snap.createdSubIds ?? []) {
     try {
-      const got = await panel.xui.getClient(sub.email);
-      const client = got.obj?.client;
-      if (client) {
-        await panel.xui.updateClient(sub.email, {
-          ...client,
-          email: sub.email,
-          comment: finalComment,
-        });
-        updatedPanel = 1;
+      await deleteSubscriptionDbOnly(id);
+      restored++;
+    } catch (err) {
+      console.warn("undo delete created sub", id, err);
+    }
+  }
+
+  // Reverse created panel clients
+  for (const email of snap.createdPanelEmails ?? []) {
+    try {
+      const clients = await activeXuiClients();
+      for (const xui of clients) {
+        try {
+          await xui.deleteClient(email);
+          restored++;
+          break;
+        } catch {
+          /* try next */
+        }
       }
     } catch (err) {
-      console.warn("full sync panel push failed", sub.email, formatXuiError(err));
+      console.warn("undo delete panel client", email, err);
     }
   }
 
-  return { updatedBot, updatedPanel };
+  // Restore deleted bot rows
+  for (const s of snap.deletedSubs ?? []) {
+    try {
+      await prisma.subscription.create({
+        data: {
+          id: s.id,
+          code: s.code,
+          userId: s.userId,
+          orderId: s.orderId,
+          panelServerId: s.panelServerId,
+          title: s.title,
+          email: s.email,
+          clientUuid: s.clientUuid,
+          panelSubId: s.panelSubId,
+          trafficGb: s.trafficGb,
+          startsOnConnect: s.startsOnConnect,
+          activatedAt: s.activatedAt ? new Date(s.activatedAt) : null,
+          isTest: s.isTest,
+          expiresAt: new Date(s.expiresAt),
+          subUrl: s.subUrl,
+          note: s.note,
+          limitIp: s.limitIp ?? 0,
+          status: s.status,
+        },
+      });
+      restored++;
+    } catch (err) {
+      console.warn("undo recreate sub", s.email, err);
+    }
+  }
+
+  // Best-effort recreate deleted panel clients
+  for (const d of snap.deletedPanel ?? []) {
+    try {
+      const target = d.panelServerId
+        ? await resolvePanelForSubscription({ panelServerId: d.panelServerId })
+        : await defaultPanelForCreate();
+      const xui = target.xui;
+      const inboundIds =
+        d.before.inboundIds?.length
+          ? d.before.inboundIds
+          : "inboundIds" in target
+            ? target.inboundIds
+            : await xui.listEnabledInboundIds();
+      await xui.addClient({
+        client: {
+          id: d.before.uuid || randomUUID(),
+          email: d.email,
+          enable: d.before.enable !== false,
+          expiryTime: d.before.expiryTime ?? 0,
+          totalGB: d.before.totalGB ?? 0,
+          limitIp: d.before.limitIp ?? 0,
+          subId: d.before.subId || randomSubId(),
+          comment: d.before.comment || d.email,
+        },
+        inboundIds: inboundIds.length ? inboundIds : [1],
+      });
+      restored++;
+    } catch (err) {
+      console.warn("undo recreate panel", d.email, err);
+    }
+  }
+
+  // Restore bot field updates
+  for (const u of snap.botUpdates ?? []) {
+    try {
+      const data: Record<string, unknown> = {};
+      const b = u.before;
+      if ("title" in b) data.title = b.title;
+      if ("note" in b) data.note = b.note;
+      if ("trafficGb" in b) data.trafficGb = b.trafficGb;
+      if ("expiresAt" in b && b.expiresAt) data.expiresAt = new Date(b.expiresAt);
+      if ("startsOnConnect" in b) data.startsOnConnect = b.startsOnConnect;
+      if ("activatedAt" in b) data.activatedAt = b.activatedAt ? new Date(b.activatedAt) : null;
+      if ("limitIp" in b) data.limitIp = b.limitIp;
+      if ("status" in b) data.status = b.status;
+      if ("clientUuid" in b) data.clientUuid = b.clientUuid;
+      if ("panelSubId" in b) data.panelSubId = b.panelSubId;
+      if ("panelServerId" in b) data.panelServerId = b.panelServerId;
+      if (Object.keys(data).length) {
+        await prisma.subscription.update({ where: { id: u.id }, data });
+        restored++;
+      }
+    } catch (err) {
+      console.warn("undo bot update", u.id, err);
+    }
+  }
+
+  // Restore panel field updates
+  for (const u of snap.panelUpdates ?? []) {
+    try {
+      const resolved = u.panelServerId
+        ? await resolvePanelForSubscription({ panelServerId: u.panelServerId })
+        : null;
+      const xui = resolved?.xui ?? (await activeXuiClients())[0];
+      if (!xui) continue;
+      const got = await xui.getClient(u.email);
+      const client = got.obj?.client;
+      if (!client) continue;
+      const patch: Record<string, unknown> = { ...client, email: u.email };
+      if (u.before.totalGB !== undefined) patch.totalGB = u.before.totalGB;
+      if (u.before.expiryTime !== undefined) patch.expiryTime = u.before.expiryTime;
+      if (u.before.enable !== undefined) patch.enable = u.before.enable;
+      if (u.before.limitIp !== undefined) patch.limitIp = u.before.limitIp;
+      if (u.before.comment !== undefined) patch.comment = u.before.comment;
+      await xui.updateClient(u.email, patch);
+      restored++;
+    } catch (err) {
+      console.warn("undo panel update", u.email, err);
+    }
+  }
+
+  await setSetting(SYNC_UNDO_KEY, "");
+  return {
+    ok: true,
+    message: `آخرین همگام‌سازی برگردانده شد (${restored} مورد).`,
+    restored,
+  };
 }
 
 export function startPanelReconcileCron(intervalMs = 10 * 60 * 1000) {

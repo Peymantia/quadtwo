@@ -71,7 +71,7 @@ import { claimTestService } from "../services/test-service.js";
 import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
-import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, fullSyncPanelAndBot, endingUrgencyDays } from "../services/admin-configs.js";
+import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays } from "../services/admin-configs.js";
 import {
   createPanelServer,
   getPanelServer,
@@ -1306,11 +1306,65 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.post("/admin/configs/full-sync", async (c) => {
     try {
-      const result = await fullSyncPanelAndBot();
+      const result = await selectiveSync({
+        direction: "panel_to_bot",
+        options: [
+          "newAccounts",
+          "deletedAccounts",
+          "name",
+          "traffic",
+          "expiry",
+          "limitIp",
+          "comment",
+          "note",
+        ],
+      });
       await auditLog({
         action: "admin_panel_full_sync",
         actorTelegramId: BigInt(c.get("telegramId")),
-        detail: `imported:${result.imported} deleted:${result.deletedFromBot} updatedBot:${result.updatedBot} updatedPanel:${result.updatedPanel} errors:${result.errors}`,
+        detail: `created:${result.created} deleted:${result.deleted} updated:${result.updated} errors:${result.errors}`,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/configs/sync/apply", async (c) => {
+    const body = await c.req
+      .json<{ direction?: string; options?: string[] }>()
+      .catch(() => ({} as { direction?: string; options?: string[] }));
+    try {
+      const result = await selectiveSync({
+        direction: body.direction === "bot_to_panel" ? "bot_to_panel" : "panel_to_bot",
+        options: (body.options ?? []) as Parameters<typeof selectiveSync>[0]["options"],
+      });
+      await auditLog({
+        action: "admin_panel_sync_apply",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        detail: `${result.direction} created:${result.created} deleted:${result.deleted} updated:${result.updated}`,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.get("/admin/configs/sync/undo-status", async (c) => {
+    try {
+      return c.json(await getSyncUndoStatus());
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/configs/sync/undo", async (c) => {
+    try {
+      const result = await undoLastSync();
+      await auditLog({
+        action: "admin_panel_sync_undo",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        detail: result.message,
       });
       return c.json(result);
     } catch (err) {
