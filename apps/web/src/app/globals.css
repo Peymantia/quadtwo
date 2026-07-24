@@ -447,7 +447,7 @@ h3 {
 
 .quick-actions-more {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
   padding-top: 12px;
@@ -462,9 +462,33 @@ h3 {
   font-weight: 650;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 720px) {
   .quick-actions-more {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-actions-more > [data-qa="categories"] {
+    order: 1;
+  }
+
+  .quick-actions-more > [data-qa="panels"] {
+    order: 2;
+  }
+
+  .quick-actions-more > [data-qa="reports"] {
+    order: 3;
+  }
+
+  .quick-actions-more > [data-qa="import"] {
+    order: 4;
+  }
+
+  .quick-actions-more > [data-qa="sync"] {
+    order: 5;
+    grid-column: 1 / -1;
+    flex-direction: row;
+    gap: 8px;
+    padding-block: 12px;
   }
 }
 
@@ -2079,7 +2103,7 @@ button.pay-dest-number:active,
 
 .sync-actions {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -2089,9 +2113,52 @@ button.pay-dest-number:active,
   justify-content: center;
 }
 
-@media (min-width: 560px) {
-  .sync-actions {
-    grid-template-columns: 1fr 1fr;
+.sync-options {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.sync-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.sync-opt span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sync-opt-all {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.sync-diff-result {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 900px) {
+  .sync-options {
+    grid-template-columns: 1fr;
+  }
+
+  .sync-opt {
+    font-size: 0.88rem;
+    padding: 10px 12px;
   }
 }
 

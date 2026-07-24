@@ -289,23 +289,23 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
           </button>
         </div>
         <div className="quick-actions-more">
-          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("categories")}>
+          <button type="button" className="btn ghost sm quick-action-btn" data-qa="categories" onClick={() => onGo("categories")}>
             <Icon name="layers" size={15} />
             دسته‌ها
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("panels")}>
+          <button type="button" className="btn ghost sm quick-action-btn" data-qa="panels" onClick={() => onGo("panels")}>
             <Icon name="server" size={15} />
             سرورها
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("sync")}>
+          <button type="button" className="btn ghost sm quick-action-btn" data-qa="sync" onClick={() => onGo("sync")}>
             <Icon name="sync" size={15} />
             همگام‌سازی
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("reports")}>
+          <button type="button" className="btn ghost sm quick-action-btn" data-qa="reports" onClick={() => onGo("reports")}>
             <Icon name="chart" size={15} />
             گزارش
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("import")}>
+          <button type="button" className="btn ghost sm quick-action-btn" data-qa="import" onClick={() => onGo("import")}>
             <Icon name="file" size={15} />
             اکسل
           </button>
@@ -1548,8 +1548,8 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 const SYNC_OPTION_DEFS: Array<{ key: string; label: string; hint?: string }> = [
   { key: "newAccounts", label: "اکانت‌های جدید" },
   { key: "deletedAccounts", label: "اکانت‌های حذف‌شده" },
-  { key: "name", label: "نام" },
-  { key: "traffic", label: "حجم و مصرف", hint: "فقط حجم کل؛ مصرف از پنل بازنویسی نمی‌شود" },
+  { key: "name", label: "نام (Email)" },
+  { key: "traffic", label: "حجم و مقدار مصرف", hint: "فقط حجم کل؛ مصرف از پنل بازنویسی نمی‌شود" },
   { key: "expiry", label: "تاریخ انقضا" },
   { key: "inbounds", label: "اینباندها", hint: "فقط هنگام ساخت اکانت جدید در پنل" },
   { key: "limitIp", label: "محدودیت کاربر" },
@@ -1567,17 +1567,9 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
   };
 
   const [direction, setDirection] = useState<"panel_to_bot" | "bot_to_panel">("panel_to_bot");
-  const [opts, setOpts] = useState<Record<string, boolean>>({
-    newAccounts: true,
-    deletedAccounts: false,
-    name: false,
-    traffic: false,
-    expiry: false,
-    inbounds: false,
-    limitIp: false,
-    comment: false,
-    note: false,
-  });
+  const [opts, setOpts] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(SYNC_OPTION_DEFS.map((o) => [o.key, o.key === "newAccounts"])),
+  );
   const [diff, setDiff] = useState<Diff | null>(null);
   const [busy, setBusy] = useState(false);
   const [undoAvailable, setUndoAvailable] = useState(false);
@@ -1586,6 +1578,11 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
   const sourceLabel = direction === "panel_to_bot" ? "پنل 3x-ui" : "دیتابیس ربات";
   const destLabel = direction === "panel_to_bot" ? "دیتابیس ربات" : "پنل 3x-ui";
   const selectedOpts = SYNC_OPTION_DEFS.filter((o) => opts[o.key]);
+  const allChecked = SYNC_OPTION_DEFS.every((o) => opts[o.key]);
+
+  function setAllOpts(checked: boolean) {
+    setOpts(Object.fromEntries(SYNC_OPTION_DEFS.map((o) => [o.key, checked])));
+  }
 
   async function refreshUndo() {
     try {
@@ -1608,6 +1605,7 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
       flash(`مقایسه: ${r.panelOnly.length} فقط پنل · ${r.matched} مشترک · ${r.botOnly.length} فقط ربات`);
       await refreshUndo();
     } catch (e) {
+      setDiff(null);
       flash(null, errText(e));
     } finally {
       setBusy(false);
@@ -1726,29 +1724,13 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
         </div>
 
         <h3 style={{ fontSize: "0.95rem", marginBottom: 8 }}>چه چیزهایی همگام شود؟</h3>
-        <div
-          className="sync-options"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
-            gap: 8,
-            marginBottom: 14,
-          }}
-        >
+        <div className="sync-options">
+          <label className="sync-opt sync-opt-all" title="انتخاب / برداشتن همه">
+            <input type="checkbox" checked={allChecked} onChange={(e) => setAllOpts(e.target.checked)} />
+            <span>همه موارد</span>
+          </label>
           {SYNC_OPTION_DEFS.map((o) => (
-            <label
-              key={o.key}
-              className="row-card"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "8px 10px",
-                cursor: "pointer",
-                margin: 0,
-              }}
-              title={o.hint}
-            >
+            <label key={o.key} className="sync-opt" title={o.hint}>
               <input
                 type="checkbox"
                 checked={Boolean(opts[o.key])}
@@ -1767,30 +1749,70 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
             اعمال تغییرات
           </button>
           <button type="button" className="btn ghost" disabled={busy || !undoAvailable} onClick={() => void runUndo()}>
-            Undo last changes
+            Undo
           </button>
         </div>
 
         {diff && (
-          <div className="grid" style={{ marginTop: 14 }}>
-            <div className="stat accent">
-              <div className="label">فقط پنل</div>
-              <div className="value num">{diff.panelOnly.length}</div>
-            </div>
-            <div className="stat">
-              <div className="label">مشترک</div>
-              <div className="value num">{diff.matched}</div>
-            </div>
-            <div className="stat">
-              <div className="label">فقط ربات</div>
-              <div className="value num">{diff.botOnly.length}</div>
-            </div>
-            <div className="stat">
-              <div className="label">کل پنل / ربات</div>
-              <div className="value num" style={{ fontSize: "1rem" }}>
-                {diff.panelTotal} / {diff.botTotal}
+          <div className="sync-diff-result">
+            <div className="grid" style={{ marginBottom: 12 }}>
+              <div className="stat accent">
+                <div className="label">فقط پنل</div>
+                <div className="value num">{diff.panelOnly.length}</div>
+              </div>
+              <div className="stat">
+                <div className="label">مشترک</div>
+                <div className="value num">{diff.matched}</div>
+              </div>
+              <div className="stat">
+                <div className="label">فقط ربات</div>
+                <div className="value num">{diff.botOnly.length}</div>
+              </div>
+              <div className="stat">
+                <div className="label">کل پنل / ربات</div>
+                <div className="value num" style={{ fontSize: "1rem" }}>
+                  {diff.panelTotal} / {diff.botTotal}
+                </div>
               </div>
             </div>
+
+            {!diff.panelOnly.length && !diff.botOnly.length ? (
+              <p className="muted">از نظر وجود اکانت، پنل و ربات یکسان‌اند ({diff.matched} مشترک).</p>
+            ) : null}
+
+            {diff.panelOnly.length > 0 && (
+              <div className="list" style={{ marginBottom: 12 }}>
+                <p style={{ margin: "0 0 8px", fontWeight: 650 }}>
+                  فقط در پنل ({diff.panelOnly.length})
+                </p>
+                {diff.panelOnly.map((c) => (
+                  <div key={c.email} className="row-card">
+                    <strong className="num">{c.email}</strong> <span className="badge warn">فقط پنل</span>
+                    <div className="muted">
+                      {c.panelName}
+                      {c.trafficGb != null ? ` · ${c.trafficGb} گیگ` : " · ∞ گیگ"}
+                      {c.expiresAt ? ` · ${new Date(c.expiresAt).toLocaleDateString("fa-IR")}` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {diff.botOnly.length > 0 && (
+              <div className="list">
+                <p style={{ margin: "0 0 8px", fontWeight: 650 }}>
+                  فقط در ربات ({diff.botOnly.length})
+                </p>
+                {diff.botOnly.map((c) => (
+                  <div key={c.subId} className="row-card">
+                    <strong className="num">{c.email}</strong> <span className="badge bad">فقط ربات</span>
+                    <div className="muted">
+                      {c.code} · {c.ownerLabel}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
