@@ -1,4 +1,5 @@
 import { formatXuiError } from "./xui-errors.js";
+import { isDemoMode } from "../services/license.js";
 
 /**
  * MHSanaei 3x-ui panel API client (Bearer token).
@@ -126,6 +127,9 @@ export class XuiClient {
     client: Record<string, unknown>;
     inboundIds: number[];
   }) {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: ساخت/نوشتن کلاینت روی پنل غیرفعال است");
+    }
     return this.request("panel/api/clients/add", {
       method: "POST",
       body: JSON.stringify({
@@ -136,6 +140,9 @@ export class XuiClient {
   }
 
   updateClient(email: string, body: Record<string, unknown>) {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: ویرایش کلاینت روی پنل غیرفعال است");
+    }
     return this.request(`panel/api/clients/update/${encodeURIComponent(email)}`, {
       method: "POST",
       body: JSON.stringify(sanitizeClientPayload(body)),
@@ -147,6 +154,9 @@ export class XuiClient {
    * 3x-ui exposes dedicated reset / updateTraffic endpoints.
    */
   async resetClientTraffic(email: string): Promise<void> {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: ریست ترافیک پنل غیرفعال است");
+    }
     const enc = encodeURIComponent(email);
     const attempts: Array<{ path: string; body?: string }> = [
       { path: `panel/api/clients/resetTraffic/${enc}`, body: JSON.stringify({}) },
@@ -276,6 +286,9 @@ export class XuiClient {
 
   /** Delete client by email across inbounds. */
   deleteClient(email: string) {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: حذف کلاینت روی پنل غیرفعال است");
+    }
     return this.request(`panel/api/clients/del/${encodeURIComponent(email)}`, {
       method: "POST",
       body: JSON.stringify({}),

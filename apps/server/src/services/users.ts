@@ -7,6 +7,7 @@ import { env } from "../config/env.js";
 import { getExtraAdminIds } from "./settings.js";
 import { partnerPanelGroupName, buildPanelGroupFromAgentName, sanitizePanelGroupSlug } from "./panel-groups.js";
 import { createXuiFromPanel, listPanelServers, resolvePanelForCategory } from "./panel-servers.js";
+import { ensureDemoSampleSubscriptions } from "./demo-samples.js";
 
 async function xuiForAgentGroups() {
   try {
@@ -81,6 +82,8 @@ export async function upsertUserFromTelegram(tg: TgUserLike): Promise<User> {
     create: { userId: user.id },
     update: {},
   });
+
+  await ensureDemoSampleSubscriptions(user.id);
 
   return user;
 }

@@ -6,6 +6,8 @@ import { canEditLimitIp, getDefaultLimitIp } from "./settings.js";
 import { clampMonths, normalizePurchaseTraffic, resolvePrice, type PlanCategory } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
+import { withEffectiveRole } from "./demo-role.js";
+import { isDemoMode } from "./license.js";
 
 export async function createMatrixOrder(input: {
   userId: string;
@@ -23,6 +25,7 @@ export async function createMatrixOrder(input: {
   forceRenew?: boolean;
 }) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
+  const pricedUser = withEffectiveRole(user, user.telegramId);
   const kind = input.kind ?? OrderKind.new;
 
   let category = (input.category as PlanCategory) || "data";
@@ -47,22 +50,22 @@ export async function createMatrixOrder(input: {
     orderUserId = target.userId;
     if (target.panelServerId) {
       panelServerId = target.panelServerId;
-    } else {
+    } else if (!isDemoMode()) {
       const resolved = await resolvePanelForSubscription(target);
       panelServerId = resolved.panel?.id ?? null;
     }
-  } else {
+  } else if (!isDemoMode()) {
     const resolved = await resolvePanelForCategory(category);
     panelServerId = resolved.panel?.id ?? null;
   }
 
   const trafficGb = normalizePurchaseTraffic(category, input.trafficGb);
   const months = clampMonths(input.months);
-  const priced = await resolvePrice(user, trafficGb, months, category);
+  const priced = await resolvePrice(pricedUser, trafficGb, months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
   const quantity = kind === OrderKind.renew ? 1 : Math.max(1, Math.min(50, input.quantity ?? 1));
   const defaultIp = await getDefaultLimitIp();
-  const limitIp = !canEditLimitIp(user.role)
+  const limitIp = !canEditLimitIp(pricedUser.role)
     ? defaultIp
     : input.limitIp === undefined
       ? defaultIp
@@ -117,7 +120,9 @@ export async function payOrderWithWallet(orderId: string, userId: string) {
     throw new Error("شارژ کیف پول باید کارت‌به‌کارت باشد");
   }
 
-  await debitWallet(userId, order.price, `order:${order.id}`);
+  if (order.price > 0) {
+    await debitWallet(userId, order.price, `order:${order.id}`);
+  }
   await prisma.order.update({
     where: { id: order.id },
     data: {

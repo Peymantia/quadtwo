@@ -1,4 +1,4 @@
-import type { UserRole } from "@prisma/client";
+import type { User, UserRole } from "@prisma/client";
 import { isDemoMode } from "./license.js";
 
 const ROLES = new Set<string>(["user", "partner", "wholesale", "admin"]);
@@ -41,6 +41,17 @@ export function effectiveRole(
   return dbRole as UserRole;
 }
 
+/** User object with role replaced by demo overlay (for pricing / permissions). */
+export function withEffectiveRole<T extends { role: UserRole }>(
+  user: T,
+  telegramId: string | number | bigint | undefined,
+): T {
+  if (!isDemoMode() || telegramId === undefined) return user;
+  const role = effectiveRole(telegramId, user.role);
+  if (role === user.role) return user;
+  return { ...user, role };
+}
+
 export function demoRoleLabel(role: string): string {
   switch (role) {
     case "admin":
@@ -53,3 +64,4 @@ export function demoRoleLabel(role: string): string {
       return "کاربر";
   }
 }
+

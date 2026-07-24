@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { OrderKind, UserRole } from "@prisma/client";
 import { signSession } from "../auth/telegram.js";
 import { isDemoMode } from "../services/license.js";
-import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole } from "../services/demo-role.js";
+import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole, withEffectiveRole } from "../services/demo-role.js";
 import { prisma } from "../db.js";
 import {
   issueOtpForUser,
@@ -121,6 +121,8 @@ async function notifyTelegram(chatId: bigint, text: string) {
 }
 
 async function sessionForUser(userId: string) {
+  const { ensureDemoSampleSubscriptions } = await import("../services/demo-samples.js");
+  await ensureDemoSampleSubscriptions(userId);
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   const role = effectiveRole(user.telegramId, user.role);
   const sessionHours = await getWebSessionHours();
@@ -213,6 +215,8 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
 export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/me/home", async (c) => {
     const userId = c.get("userId");
+    const { ensureDemoSampleSubscriptions } = await import("../services/demo-samples.js");
+    await ensureDemoSampleSubscriptions(userId);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const wallet = await getWallet(userId);
     const subs = await prisma.subscription.count({ where: { userId } });
@@ -329,6 +333,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/me/subscriptions", async (c) => {
+    const { ensureDemoSampleSubscriptions } = await import("../services/demo-samples.js");
+    await ensureDemoSampleSubscriptions(c.get("userId"));
     const subs = await prisma.subscription.findMany({
       where: { userId: c.get("userId") },
       orderBy: { createdAt: "desc" },
@@ -456,14 +462,15 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const maxMonths = await getMaxPurchaseMonths();
     const cells = await listPriceMatrix();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
-    const pricingMode = await getPricingModeForRole(user.role);
+    const pricedUser = withEffectiveRole(user, c.get("telegramId"));
+    const pricingMode = await getPricingModeForRole(pricedUser.role);
     const defaultLimitIp = await getDefaultLimitIp();
     const priced = await Promise.all(
       cells
         .filter((cell) => cell.active && cell.months <= maxMonths)
         .filter((cell) => cats.includes(cell.category))
         .map(async (cell) => {
-          const resolved = await resolvePrice(user, cell.trafficGb, cell.months, cell.category);
+          const resolved = await resolvePrice(pricedUser, cell.trafficGb, cell.months, cell.category);
           return {
             id: cell.id,
             category: cell.category,
@@ -482,7 +489,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       );
       for (let months = 1; months <= maxMonths; months++) {
         if (haveMonths.has(months)) continue;
-        const resolved = await resolvePrice(user, null, months, "unlimited");
+        const resolved = await resolvePrice(pricedUser, null, months, "unlimited");
         if (!resolved) continue;
         priced.push({
           id: `rate-unlimited-${months}`,
@@ -502,7 +509,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       categoryLabels: labels,
       maxMonths,
       defaultLimitIp,
-      canEditLimitIp: canEditLimitIp(user.role),
+      canEditLimitIp: canEditLimitIp(pricedUser.role),
       volumeRules: {
         data: { min: 10, max: 50, step: 5 },
         national: { min: 1, max: 20, step: 1 },
@@ -515,10 +522,11 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   api.post("/me/quote", async (c) => {
     const body = await c.req.json<{ trafficGb?: number | null; months?: number; category?: string }>();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+    const pricedUser = withEffectiveRole(user, c.get("telegramId"));
     const category = body.category || "data";
     const trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
     const priced = await resolvePrice(
-      user,
+      pricedUser,
       trafficGb,
       Math.max(1, Number(body.months) || 1),
       category,

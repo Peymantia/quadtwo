@@ -110,7 +110,7 @@ import { createTelegramBot } from "./telegram.js";
 import { syncTelegramMenu, syncTelegramMenuSafe } from "./menu.js";
 import { installEmojiApiTransform } from "../services/emoji-transform.js";
 import { isDemoMode } from "../services/license.js";
-import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole, getDemoRole } from "../services/demo-role.js";
+import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole, getDemoRole, withEffectiveRole } from "../services/demo-role.js";
 
 const waitingName = new Set<number>();
 const waitingPartner = new Map<number, { step: "compose" | "name" | "phone" | "note"; fullName?: string; phone?: string }>();
@@ -347,9 +347,10 @@ async function showRenewWizard(
 async function showBuyWizard(ctx: Context, edit = false) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
-  const limitIp = await resolvePurchaseLimitIp(draft, user.role);
-  const priced = await draftPrice(user, draft);
-  const text = buyDraftText({
+  const roleUser = withEffectiveRole(user, ctx.from!.id);
+  const limitIp = await resolvePurchaseLimitIp(draft, roleUser.role);
+  const priced = await draftPrice(user, draft, ctx.from!.id);
+  let text = buyDraftText({
     trafficGb: draft.unlimited ? null : draft.trafficGb,
     months: draft.months,
     price: priced?.price ?? null,
@@ -360,7 +361,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     category: draft.category,
   });
   const maxMonths = await getMaxPurchaseMonths();
-  const isAgent = canEditLimitIp(user.role);
+  const isAgent = canEditLimitIp(roleUser.role);
   const kb = buyWizardKeyboard({
     trafficGb: draft.trafficGb,
     months: draft.months,
@@ -1001,7 +1002,7 @@ export function createBot() {
   });
   bot.callbackQuery("wiz:qty:+", async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
-    if (!canEditLimitIp(user.role)) {
+    if (!canEditLimitIp(withEffectiveRole(user, ctx.from!.id).role)) {
       await ctx.answerCallbackQuery({ text: "این گزینه فقط برای همکار / عمده‌فروش است", show_alert: true });
       return;
     }
@@ -1011,7 +1012,7 @@ export function createBot() {
   });
   bot.callbackQuery("wiz:qty:-", async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
-    if (!canEditLimitIp(user.role)) {
+    if (!canEditLimitIp(withEffectiveRole(user, ctx.from!.id).role)) {
       await ctx.answerCallbackQuery({ text: "این گزینه فقط برای همکار / عمده‌فروش است", show_alert: true });
       return;
     }
@@ -1021,7 +1022,7 @@ export function createBot() {
   });
   bot.callbackQuery("wiz:ip:+", async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
-    if (!canEditLimitIp(user.role)) {
+    if (!canEditLimitIp(withEffectiveRole(user, ctx.from!.id).role)) {
       await ctx.answerCallbackQuery({ text: "محدودیت دستگاه از تنظیمات سیستم اعمال می‌شود", show_alert: true });
       return;
     }
@@ -1031,7 +1032,7 @@ export function createBot() {
   });
   bot.callbackQuery("wiz:ip:-", async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
-    if (!canEditLimitIp(user.role)) {
+    if (!canEditLimitIp(withEffectiveRole(user, ctx.from!.id).role)) {
       await ctx.answerCallbackQuery({ text: "محدودیت دستگاه از تنظیمات سیستم اعمال می‌شود", show_alert: true });
       return;
     }
@@ -1082,7 +1083,7 @@ export function createBot() {
         return;
       }
       const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
-      const priced = await draftPrice(user, draft);
+      const priced = await draftPrice(user, draft, ctx.from!.id);
       if (!priced) {
         await ctx.reply("این ترکیب حجم/مدت قیمت‌گذاری نشده. با پشتیبانی تماس بگیرید.");
         return;
@@ -1114,7 +1115,7 @@ export function createBot() {
           accountName,
           quantity: draft.quantity,
           category: draft.category,
-          limitIp: await resolvePurchaseLimitIp(draft, user.role),
+          limitIp: await resolvePurchaseLimitIp(draft, withEffectiveRole(user, ctx.from!.id).role),
         }));
       if (!recent) {
         await auditLog({

@@ -7,6 +7,7 @@ import { resolvePanelForCategory } from "./panel-servers.js";
 import { resolveSubUrl } from "./provision.js";
 import { ensureClientsInGroup, TELEGRAM_GROUP } from "./panel-groups.js";
 import { getDefaultLimitIp, getSetting } from "./settings.js";
+import { isDemoMode } from "./license.js";
 
 const TEST_MB = 250;
 const TEST_MS = 24 * 60 * 60 * 1000;
@@ -43,14 +44,56 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
     throw new Error("شما قبلاً سرویس تست را دریافت کرده‌اید.");
   }
 
+  const code = shortCode("TST");
+  const email = `test${String(user.telegramId).slice(-8)}${code.slice(-4)}`.toLowerCase();
+  const subId = randomSubId();
+  const expiresAt = new Date(Date.now() + TEST_MS);
+
+  if (isDemoMode()) {
+    const uuid = randomBytes(16)
+      .toString("hex")
+      .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+    const subUrl = `https://demo.invalid/sub/${subId}`;
+    const qrPng = await QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
+    await prisma.$transaction([
+      prisma.subscription.create({
+        data: {
+          code,
+          userId: user.id,
+          panelServerId: null,
+          title: `[دمو] ${email}`.slice(0, 80),
+          email,
+          clientUuid: uuid,
+          panelSubId: subId,
+          trafficGb: null,
+          startsOnConnect: true,
+          activatedAt: null,
+          isTest: true,
+          expiresAt,
+          subUrl,
+          note: "⚠️ اکانت تست نمایشی — به پنل واقعی وصل نیست",
+          status: SubscriptionStatus.active,
+        },
+      }),
+      prisma.user.update({
+        where: { id: user.id },
+        data: { testClaimedAt: new Date() },
+      }),
+    ]);
+    return {
+      code,
+      email,
+      subUrl,
+      expiresHint: "۱ روز از اولین اتصال · ۲۵۰ مگابایت (نمایشی)",
+      qrPng,
+    };
+  }
+
   const resolved = await resolvePanelForCategory("data");
   if (!resolved.inboundIds.length) {
     throw new Error("هیچ inbound تنظیم نشده — در کنترل سنتر سرورهای پنل را پر کنید");
   }
 
-  const code = shortCode("TST");
-  const email = `test${String(user.telegramId).slice(-8)}${code.slice(-4)}`.toLowerCase();
-  const subId = randomSubId();
   const totalGB = TEST_MB * 1024 * 1024;
   const panelExpiry = -TEST_MS;
   const limitIp = await getDefaultLimitIp();
@@ -94,7 +137,6 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
 
   const subUrl = await resolveSubUrl(panelSubId, resolved.xui, resolved.subBase);
   const qrPng = await QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
-  const expiresAt = new Date(Date.now() + TEST_MS);
 
   await prisma.$transaction([
     prisma.subscription.create({

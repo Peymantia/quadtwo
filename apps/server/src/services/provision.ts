@@ -14,6 +14,7 @@ import {
 import type { PlanCategory } from "./pricing.js";
 import { getDefaultLimitIp } from "./settings.js";
 import { appendSubId, isValidSubBase, sanitizeSubBase } from "./sub-url.js";
+import { isDemoMode } from "./license.js";
 
 export type ProvisionResult = {
   subscriptionId: string;
@@ -318,6 +319,57 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
 
 export type ProvisionResultWithBulk = ProvisionResult & { bulk?: ProvisionResult[] };
 
+/** Local-only subscription for DEMO_MODE — never touches 3x-ui. */
+async function createDemoLocalClient(
+  user: User,
+  order: Order,
+  opts: { email: string; linkOrderId: boolean },
+): Promise<ProvisionResult> {
+  const code = shortCode("DM");
+  const email = sanitizeEmail(opts.email);
+  const subId = randomSubId();
+  const months = order.months || 1;
+  const expiresAt = new Date(Date.now() + monthsToMs(months));
+  const uuid = randomBytes(16)
+    .toString("hex")
+    .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+  // Non-routable URL — clients cannot fetch a real subscription
+  const subUrl = `https://demo.invalid/sub/${subId}`;
+  const qrPng = await qrForSub(subUrl);
+  const extraNote = "⚠️ اکانت نمایشی (دمو) — به پنل واقعی وصل نیست و اتصال برقرار نمی‌کند.";
+  const note = [order.note?.trim(), extraNote].filter(Boolean).join("\n").slice(0, 500);
+
+  const subscription = await prisma.subscription.create({
+    data: {
+      code,
+      userId: user.id,
+      orderId: opts.linkOrderId ? order.id : null,
+      panelServerId: null,
+      title: `[دمو] ${email}`.slice(0, 80),
+      email,
+      clientUuid: uuid,
+      panelSubId: subId,
+      trafficGb: order.trafficGb,
+      startsOnConnect: true,
+      activatedAt: null,
+      expiresAt,
+      subUrl,
+      note,
+      status: SubscriptionStatus.active,
+      isTest: false,
+    },
+  });
+
+  return {
+    subscriptionId: subscription.id,
+    code,
+    email,
+    subUrl,
+    expiresAt,
+    qrPng,
+  };
+}
+
 async function createOnePanelClient(
   user: User,
   order: Order,
@@ -413,6 +465,24 @@ async function createOnePanelClient(
 }
 
 async function createPanelClientsBulk(user: User, order: Order): Promise<ProvisionResultWithBulk> {
+  const qty = Math.max(1, Math.min(50, order.quantity ?? 1));
+  const base = sanitizeEmail(order.accountName || order.customName || shortCode("QT"));
+
+  if (isDemoMode()) {
+    const results: ProvisionResult[] = [];
+    for (let i = 0; i < qty; i++) {
+      const email = qty === 1 ? base : `${base}_${i + 1}`;
+      results.push(
+        await createDemoLocalClient(user, order, {
+          email,
+          linkOrderId: i === 0,
+        }),
+      );
+    }
+    const [first, ...rest] = results;
+    return { ...first!, bulk: rest.length ? rest : undefined };
+  }
+
   let resolved = order.panelServerId
     ? await resolvePanelForSubscription({ panelServerId: order.panelServerId })
     : await resolvePanelForCategory(inferCategoryFromOrder(order));
@@ -424,8 +494,6 @@ async function createPanelClientsBulk(user: User, order: Order): Promise<Provisi
     });
   }
 
-  const qty = Math.max(1, Math.min(50, order.quantity ?? 1));
-  const base = sanitizeEmail(order.accountName || order.customName || shortCode("QT"));
   const results: ProvisionResult[] = [];
 
   for (let i = 0; i < qty; i++) {
@@ -447,15 +515,39 @@ async function createPanelClientsBulk(user: User, order: Order): Promise<Provisi
 
 export async function renewSubscription(order: Order, subscriptionId: string): Promise<ProvisionResult> {
   const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: subscriptionId } });
+  const months = order.months || 1;
+  const expiresAt = new Date(Date.now() + monthsToMs(months));
+
+  if (isDemoMode() || !sub.panelServerId || sub.subUrl?.includes("demo.invalid")) {
+    const updated = await prisma.subscription.update({
+      where: { id: sub.id },
+      data: {
+        trafficGb: order.trafficGb,
+        expiresAt,
+        startsOnConnect: true,
+        activatedAt: null,
+        status: SubscriptionStatus.active,
+        note: [sub.note, "⚠️ تمدید نمایشی (دمو)"].filter(Boolean).join("\n").slice(0, 500),
+      },
+    });
+    const subUrl = updated.subUrl || `https://demo.invalid/sub/${updated.panelSubId || updated.code}`;
+    return {
+      subscriptionId: updated.id,
+      code: updated.code,
+      email: updated.email,
+      subUrl,
+      expiresAt: updated.expiresAt,
+      qrPng: await qrForSub(subUrl),
+    };
+  }
+
   const resolved = await resolvePanelForSubscription(sub);
   const got = await resolved.xui.getClient(sub.email);
   const client = got.obj?.client;
   if (!client) throw new Error("کلاینت در پنل پیدا نشد");
 
-  const months = order.months || 1;
   // Fresh package: start after first use, duration = months × 31 days (panel Duration Days).
   const expiryTime = firstConnectExpiryMs(months);
-  const expiresAt = new Date(Date.now() + monthsToMs(months));
   const totalGB = order.trafficGb === null ? 0 : gbToBytes(order.trafficGb);
 
   await resolved.xui.updateClient(sub.email, {

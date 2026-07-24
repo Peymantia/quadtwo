@@ -8,6 +8,7 @@ import {
 } from "../services/pricing.js";
 import { clampLimitIp } from "../services/panel-groups.js";
 import { getDefaultLimitIp, getMaxPurchaseMonths, isSalesCategoryEnabled, resolvePurchaseLimitIp } from "../services/settings.js";
+import { withEffectiveRole } from "../services/demo-role.js";
 import type { User } from "@prisma/client";
 
 async function capMonths(m: number) {
@@ -129,10 +130,12 @@ export async function setDraftNameMode(telegramId: bigint, mode: "random" | "cus
 export async function draftPrice(
   user: User,
   draft: { trafficGb: number | null; months: number; unlimited: boolean; category?: string },
+  telegramId?: string | number | bigint,
 ) {
   const gb = draft.unlimited || draft.category === "unlimited" ? null : draft.trafficGb;
   const category = (draft.category as PlanCategory) || (gb === null ? "unlimited" : "data");
-  return resolvePrice(user, gb, draft.months, category);
+  const pricedUser = withEffectiveRole(user, telegramId ?? user.telegramId);
+  return resolvePrice(pricedUser, gb, draft.months, category);
 }
 
 export { resolvePurchaseLimitIp };

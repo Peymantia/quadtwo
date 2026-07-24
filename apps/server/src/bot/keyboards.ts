@@ -65,7 +65,7 @@ export type MainMenuOpts = {
 
 /**
  * Sticky reply keyboard — order + colors (Telegram: success=green, primary=blue, danger=red):
- * خرید 🟢
+ * خرید 🟢 [| تغییر نقش دمو 🟢 در DEMO_MODE]
  * سرویس‌ها | تمدید  (خنثی)
  * کیف پول | حساب  (خنثی)
  * کلیه سرویس‌ها | پشتیبانی  (ادمین) / پشتیبانی (همکار|کاربر)
@@ -76,10 +76,11 @@ export type MainMenuOpts = {
  */
 export function mainMenuReply(opts: MainMenuOpts) {
   const isAgent = opts.isPartner || opts.isWholesale || opts.isAdmin;
-  const kb = new Keyboard()
-    .text(BTN.buy)
-    .success()
-    .row()
+  const kb = new Keyboard().text(BTN.buy).success();
+  if (opts.demoMode) {
+    kb.text(BTN.demoRole).success();
+  }
+  kb.row()
     .text(BTN.myServices)
     .text(BTN.renew)
     .row()
@@ -109,10 +110,6 @@ export function mainMenuReply(opts: MainMenuOpts) {
 
   // Always OTP credentials first — do not open Mini App directly (no password on screen).
   kb.text(BTN.dashOtp).danger().row();
-
-  if (opts.demoMode) {
-    kb.text(BTN.demoRole).row();
-  }
 
   return kb.persistent().resized();
 }

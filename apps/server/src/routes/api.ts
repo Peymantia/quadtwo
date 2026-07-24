@@ -9,7 +9,7 @@ import { getAllSettings, getSetting } from "../services/settings.js";
 import { upsertUserFromTelegram } from "../services/users.js";
 import { corsOrigins } from "../config/env.js";
 import { isDemoMode, verifyRequestHost, getLicenseStatus } from "../services/license.js";
-import { effectiveRole, parseDemoRole, setDemoRole, getDemoRole } from "../services/demo-role.js";
+import { effectiveRole, parseDemoRole, setDemoRole, getDemoRole, withEffectiveRole } from "../services/demo-role.js";
 import {
   registerDashAuthRoutes,
   registerDashMeRoutes,
@@ -160,7 +160,7 @@ export function createApiApp() {
       cells: cells.map((cell) => ({
         trafficGb: cell.trafficGb,
         months: cell.months,
-        price: priceFromCell(user.role, cell),
+        price: priceFromCell(withEffectiveRole(user, c.get("telegramId")).role, cell),
         priceUser: cell.priceUser,
         pricePartner: cell.pricePartner,
         priceWholesale: cell.priceWholesale,
@@ -171,7 +171,8 @@ export function createApiApp() {
   api.post("/me/quote", async (c) => {
     const body = await c.req.json<{ trafficGb: number | null; months: number; category?: string }>();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
-    const priced = await resolvePrice(user, body.trafficGb, body.months, body.category || "data");
+    const pricedUser = withEffectiveRole(user, c.get("telegramId"));
+    const priced = await resolvePrice(pricedUser, body.trafficGb, body.months, body.category || "data");
     if (!priced) return c.json({ price: null });
     return c.json({ price: priced.price, mode: priced.mode });
   });

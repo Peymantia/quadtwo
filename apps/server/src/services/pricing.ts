@@ -8,6 +8,7 @@ import {
   type PriceRates,
   type RoleRates,
 } from "./settings.js";
+import { isDemoMode } from "./license.js";
 
 export const DATA_MIN_GB = 10;
 export const DATA_MAX_GB = 50;
@@ -137,24 +138,32 @@ export async function resolvePrice(
   trafficGb: number | null,
   months: number,
   category: PlanCategory = "data",
+  roleOverride?: UserRole | string | null,
 ) {
+  const role = (roleOverride ?? user.role) as UserRole;
+
+  // Demo: admin role experiences free checkout
+  if (isDemoMode() && role === "admin") {
+    return { cell: null, price: 0, mode: "rate" as const };
+  }
+
   const isUnlimited = trafficGb === null || category === "unlimited";
-  const mode = await getPricingModeForRole(user.role);
+  const mode = await getPricingModeForRole(role);
 
   // Unlimited: prefer monthly rates; fall back to matrix cell so admin matrix prices still work.
   if (isUnlimited) {
     const cell = await findPriceCell(null, months, "unlimited");
     if (cell?.isGolden) {
-      const goldenPrice = priceFromCell(user.role, cell);
+      const goldenPrice = priceFromCell(role, cell);
       if (goldenPrice > 0) return { cell, price: goldenPrice, mode: "rate" as const };
     }
     const rates = await getPriceRates();
-    const ratePrice = calcRatePrice(user.role, null, months, rates, "unlimited");
+    const ratePrice = calcRatePrice(role, null, months, rates, "unlimited");
     if (ratePrice > 0) {
       return { cell: null, price: ratePrice, mode: "rate" as const };
     }
     if (cell) {
-      const matrixPrice = priceFromCell(user.role, cell);
+      const matrixPrice = priceFromCell(role, cell);
       if (matrixPrice > 0) return { cell, price: matrixPrice, mode: "matrix" as const };
     }
     return null;
@@ -164,17 +173,17 @@ export async function resolvePrice(
     // Golden/special matrix cells still override when an exact match exists
     const cell = await findPriceCell(trafficGb, months, category);
     if (cell?.isGolden) {
-      return { cell, price: priceFromCell(user.role, cell), mode: "rate" as const };
+      return { cell, price: priceFromCell(role, cell), mode: "rate" as const };
     }
     const rates = await getPriceRates();
-    const price = calcRatePrice(user.role, trafficGb, months, rates, category);
+    const price = calcRatePrice(role, trafficGb, months, rates, category);
     if (!price || price <= 0) return null;
     return { cell: null, price, mode: "rate" as const };
   }
 
   const cell = await findPriceCell(trafficGb, months, category);
   if (!cell) return null;
-  return { cell, price: priceFromCell(user.role, cell), mode: "matrix" as const };
+  return { cell, price: priceFromCell(role, cell), mode: "matrix" as const };
 }
 
 export function matrixLine(trafficGb: number | null, months: number, price: number | null, qty = 1) {
