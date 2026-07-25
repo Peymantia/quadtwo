@@ -245,6 +245,8 @@ model Subscription {
   note            String?
   /// Max simultaneous IPs/devices (0 = unlimited); mirrored from panel limitIp
   limitIp         Int                @default(0)
+  /// Last known raw 3x-ui expiryTime (ms). Negative = duration until first connect; positive = absolute.
+  panelExpiryTime BigInt?
   status          SubscriptionStatus @default(active)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt

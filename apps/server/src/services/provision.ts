@@ -449,6 +449,7 @@ async function createOnePanelClient(
       startsOnConnect: true,
       activatedAt: null,
       expiresAt,
+      panelExpiryTime: BigInt(panelExpiry),
       subUrl,
       note,
       status: SubscriptionStatus.active,
@@ -582,6 +583,7 @@ export async function renewSubscription(order: Order, subscriptionId: string): P
       panelSubId,
       startsOnConnect: true,
       activatedAt: null,
+      panelExpiryTime: BigInt(expiryTime),
       status: SubscriptionStatus.active,
       ...(resolved.panel && !sub.panelServerId ? { panelServerId: resolved.panel.id } : {}),
     },
@@ -611,6 +613,15 @@ export async function syncSubscriptionExpiryFromPanel(subscriptionId: string): P
         data: {
           expiresAt: new Date(panelExpiry),
           activatedAt: new Date(),
+          startsOnConnect: false,
+          panelExpiryTime: BigInt(Math.trunc(panelExpiry)),
+        },
+      });
+    } else if (panelExpiry < 0) {
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: {
+          panelExpiryTime: BigInt(Math.trunc(panelExpiry)),
         },
       });
     }

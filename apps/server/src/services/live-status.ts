@@ -2,6 +2,7 @@ import { prisma } from "../db.js";
 import { formatExpiryLabel, formatTraffic } from "../utils/format.js";
 import { resolvePanelForSubscription } from "./panel-servers.js";
 import { syncSubscriptionExpiryFromPanel, refreshSubscriptionSubUrl } from "./provision.js";
+import { applyPanelExpiryToBotData, panelExpiryDiffersFromBot } from "./panel-expiry.js";
 import { isDemoMode } from "./license.js";
 import { DEMO_SAMPLE_MARKER } from "./demo-samples.js";
 
@@ -136,6 +137,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
         expiresAt?: Date;
         activatedAt?: Date | null;
         startsOnConnect?: boolean;
+        panelExpiryTime?: bigint;
       } = {};
 
       if (client.enable === false && fresh.status === "active") {
@@ -155,10 +157,12 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
       }
 
       const panelExp = Number(client.expiryTime ?? 0);
-      if (panelExp > 0 && (!fresh.activatedAt || Math.abs(fresh.expiresAt.getTime() - panelExp) > 60_000)) {
-        patch.expiresAt = new Date(panelExp);
-        patch.activatedAt = fresh.activatedAt ?? new Date();
-        patch.startsOnConnect = false;
+      if (panelExpiryDiffersFromBot(panelExp, fresh)) {
+        const next = applyPanelExpiryToBotData(panelExp, fresh);
+        patch.expiresAt = next.expiresAt;
+        patch.activatedAt = next.activatedAt;
+        patch.startsOnConnect = next.startsOnConnect;
+        patch.panelExpiryTime = next.panelExpiryTime;
       }
 
       if (Object.keys(patch).length) {

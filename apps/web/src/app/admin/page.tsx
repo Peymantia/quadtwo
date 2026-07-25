@@ -746,7 +746,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
           <label>جستجو (یوزرنیم، آی‌دی، نام)</label>
           <input value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap hide-mobile">
           <table className="table">
             <thead>
               <tr>
@@ -783,12 +783,45 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               ))}
             </tbody>
           </table>
-          {shown.length > 60 && (
-            <p className="muted" style={{ marginTop: 10 }}>
-              نمایش ۶۰ از {shown.length} کاربر — جستجو یا فیلتر نقش را دقیق‌تر کنید.
-            </p>
-          )}
         </div>
+
+        <div className="users-mlist show-mobile">
+          {shown.slice(0, 60).map((u) => (
+            <div key={u.id} className="users-mcard">
+              <div className="users-mrow">
+                <div className="users-muser">
+                  <strong>{u.username ? `@${u.username}` : u.firstName || u.telegramId}</strong>
+                  {u.agentName && <div className="muted">{u.agentName}</div>}
+                  <div className="muted num">{u.telegramId}</div>
+                </div>
+                <div className="users-mwallet num">{formatToman(u.balance)}</div>
+              </div>
+              <div className="users-mrow users-mrow-actions">
+                <select
+                  className="users-mrole"
+                  value={u.role}
+                  onChange={(e) => changeRole(u, e.target.value)}
+                  aria-label="نقش"
+                >
+                  {Object.entries(ROLE_FA).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
+                  جزئیات و شارژ
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {shown.length > 60 && (
+          <p className="muted" style={{ marginTop: 10 }}>
+            نمایش ۶۰ از {shown.length} کاربر — جستجو یا فیلتر نقش را دقیق‌تر کنید.
+          </p>
+        )}
         {!shown.length && <p className="muted">کاربری یافت نشد.</p>}
       </div>
 
@@ -1565,6 +1598,18 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
   type Diff = {
     panelOnly: Array<{ email: string; panelName: string; trafficGb: number | null; expiresAt: string | null }>;
     botOnly: Array<{ email: string; code: string; subId: string; ownerLabel: string }>;
+    mismatched: Array<{
+      email: string;
+      code: string;
+      subId: string;
+      fields: Array<"expiry" | "traffic" | "limitIp" | "enable">;
+      panelExpiresAt: string | null;
+      botExpiresAt: string;
+      panelTrafficGb: number | null;
+      botTrafficGb: number | null;
+      panelStartsOnConnect: boolean;
+      botStartsOnConnect: boolean;
+    }>;
     matched: number;
     panelTotal: number;
     botTotal: number;
@@ -1572,7 +1617,12 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
 
   const [direction, setDirection] = useState<"panel_to_bot" | "bot_to_panel">("panel_to_bot");
   const [opts, setOpts] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(SYNC_OPTION_DEFS.map((o) => [o.key, o.key === "newAccounts"])),
+    Object.fromEntries(
+      SYNC_OPTION_DEFS.map((o) => [
+        o.key,
+        o.key === "newAccounts" || o.key === "expiry" || o.key === "traffic",
+      ]),
+    ),
   );
   const [diff, setDiff] = useState<Diff | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1606,7 +1656,10 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
     try {
       const r = await api<Diff>("/admin/configs/sync-diff");
       setDiff(r);
-      flash(`مقایسه: ${r.panelOnly.length} فقط پنل · ${r.matched} مشترک · ${r.botOnly.length} فقط ربات`);
+      const mism = r.mismatched?.length ?? 0;
+      flash(
+        `مقایسه: ${r.panelOnly.length} فقط پنل · ${r.matched} مشترک · ${mism} ناهمخوان · ${r.botOnly.length} فقط ربات`,
+      );
       await refreshUndo();
     } catch (e) {
       setDiff(null);
@@ -1768,6 +1821,10 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
                 <div className="label">مشترک</div>
                 <div className="value num">{diff.matched}</div>
               </div>
+              <div className="stat" style={{ borderColor: (diff.mismatched?.length ?? 0) ? "rgba(251,191,36,0.5)" : undefined }}>
+                <div className="label">ناهمخوان</div>
+                <div className="value num">{diff.mismatched?.length ?? 0}</div>
+              </div>
               <div className="stat">
                 <div className="label">فقط ربات</div>
                 <div className="value num">{diff.botOnly.length}</div>
@@ -1780,9 +1837,40 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
               </div>
             </div>
 
-            {!diff.panelOnly.length && !diff.botOnly.length ? (
-              <p className="muted">از نظر وجود اکانت، پنل و ربات یکسان‌اند ({diff.matched} مشترک).</p>
+            {!diff.panelOnly.length && !diff.botOnly.length && !(diff.mismatched?.length ?? 0) ? (
+              <p className="muted">پنل و ربات از نظر اکانت و فیلدهای کلیدی یکسان‌اند ({diff.matched} مشترک).</p>
             ) : null}
+
+            {(diff.mismatched?.length ?? 0) > 0 && (
+              <div className="list" style={{ marginBottom: 12 }}>
+                <p style={{ margin: "0 0 8px", fontWeight: 650 }}>
+                  فیلد ناهمخوان ({diff.mismatched!.length}) — با تیک «تاریخ انقضا / حجم» و اعمال، از منبع روی مقصد نوشته می‌شود
+                </p>
+                {diff.mismatched!.map((c) => {
+                  const fieldLabels: Record<string, string> = {
+                    expiry: "انقضا",
+                    traffic: "حجم",
+                    limitIp: "محدودیت IP",
+                    enable: "فعال/غیرفعال",
+                  };
+                  return (
+                    <div key={c.subId} className="row-card">
+                      <strong className="num">{c.email}</strong>{" "}
+                      <span className="badge warn">{c.fields.map((f) => fieldLabels[f] ?? f).join(" · ")}</span>
+                      <div className="muted">
+                        {c.code}
+                        {c.fields.includes("expiry")
+                          ? ` · انقضا پنل: ${c.panelExpiresAt ? new Date(c.panelExpiresAt).toLocaleDateString("fa-IR") : "—"} / ربات: ${new Date(c.botExpiresAt).toLocaleDateString("fa-IR")}${c.panelStartsOnConnect !== c.botStartsOnConnect ? " (شروع با اتصال متفاوت)" : ""}`
+                          : ""}
+                        {c.fields.includes("traffic")
+                          ? ` · حجم پنل: ${c.panelTrafficGb != null ? `${c.panelTrafficGb} گیگ` : "∞"} / ربات: ${c.botTrafficGb != null ? `${c.botTrafficGb} گیگ` : "∞"}`
+                          : ""}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {diff.panelOnly.length > 0 && (
               <div className="list" style={{ marginBottom: 12 }}>
@@ -1850,7 +1938,10 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
         )}
         {diff && selectedOpts.some((o) => !["newAccounts", "deletedAccounts", "inbounds"].includes(o.key)) && (
           <p className="muted" style={{ marginBottom: 12 }}>
-            فیلدهای مشترک برای حدود {diff.matched} اکانت از منبع روی مقصد نوشته می‌شود.
+            فیلدهای مشترک برای حدود {diff.matched} اکانت از منبع روی مقصد نوشته می‌شود
+            {(diff.mismatched?.length ?? 0) > 0
+              ? ` (${diff.mismatched!.length} مورد الان ناهمخوان‌اند).`
+              : "."}
           </p>
         )}
         <div className="actions" style={{ marginTop: 12 }}>

@@ -10,6 +10,12 @@ import { gbToBytes, shortCode, randomSubId } from "../utils/format.js";
 import { resolveSubUrl } from "./provision.js";
 import { sanitizeSubBase } from "./sub-url.js";
 import { getSetting, setSetting } from "./settings.js";
+import {
+  applyPanelExpiryToBotData,
+  expiryFromPanel,
+  expiryTimeForPanel,
+  panelExpiryDiffersFromBot,
+} from "./panel-expiry.js";
 
 export type ConfigGroup = {
   key: string;
@@ -773,6 +779,7 @@ export async function updateConfig(opts: {
       if (!Number.isFinite(d.getTime())) throw new Error("تاریخ انقضا نامعتبر است");
       data.expiresAt = d;
       data.startsOnConnect = false;
+      data.panelExpiryTime = BigInt(d.getTime());
       if (!sub.activatedAt) data.activatedAt = new Date();
     }
     if (opts.enable !== undefined) {
@@ -805,9 +812,27 @@ export type SyncDiffItem = {
   panelSubId: string | null;
 };
 
+export type SyncFieldMismatch = {
+  email: string;
+  code: string;
+  subId: string;
+  fields: Array<"expiry" | "traffic" | "limitIp" | "enable">;
+  panelExpiresAt: string | null;
+  botExpiresAt: string;
+  panelTrafficGb: number | null;
+  botTrafficGb: number | null;
+  panelLimitIp: number;
+  botLimitIp: number;
+  panelEnable: boolean;
+  botEnable: boolean;
+  panelStartsOnConnect: boolean;
+  botStartsOnConnect: boolean;
+};
+
 export type SyncDiffResult = {
   panelOnly: SyncDiffItem[];
   botOnly: Array<{ email: string; code: string; subId: string; ownerLabel: string }>;
+  mismatched: SyncFieldMismatch[];
   matched: number;
   panelTotal: number;
   botTotal: number;
@@ -865,32 +890,6 @@ async function deleteSubscriptionDbOnly(subId: string): Promise<void> {
     data: { targetSubId: null },
   });
   await prisma.subscription.delete({ where: { id: subId } });
-}
-
-function expiryFromPanel(expiryTime: number): {
-  expiresAt: Date;
-  startsOnConnect: boolean;
-  activatedAt: Date | null;
-} {
-  if (expiryTime < 0) {
-    return {
-      expiresAt: new Date(Date.now() + Math.abs(expiryTime)),
-      startsOnConnect: true,
-      activatedAt: null,
-    };
-  }
-  if (expiryTime > 0) {
-    return {
-      expiresAt: new Date(expiryTime),
-      startsOnConnect: false,
-      activatedAt: new Date(),
-    };
-  }
-  return {
-    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-    startsOnConnect: false,
-    activatedAt: new Date(),
-  };
 }
 
 async function listDetailedPanelClients(): Promise<DetailedPanelClient[]> {
@@ -1010,9 +1009,40 @@ export async function diffPanelVsBot(): Promise<SyncDiffResult> {
       ownerLabel: ownerFromUser(s.user),
     }));
 
+  const mismatched: SyncFieldMismatch[] = [];
+  for (const c of panelClients) {
+    const sub = botByEmail.get(c.email.toLowerCase());
+    if (!sub) continue;
+    const fields: SyncFieldMismatch["fields"] = [];
+    if (panelExpiryDiffersFromBot(c.expiryTime, sub)) fields.push("expiry");
+    if (c.trafficGb !== sub.trafficGb) fields.push("traffic");
+    if (c.limitIp !== (sub.limitIp ?? 0)) fields.push("limitIp");
+    const botEnable = sub.status === SubscriptionStatus.active;
+    if (c.enable !== botEnable) fields.push("enable");
+    if (!fields.length) continue;
+    const panelExp = expiryFromPanel(c.expiryTime);
+    mismatched.push({
+      email: c.email,
+      code: sub.code,
+      subId: sub.id,
+      fields,
+      panelExpiresAt: panelExp.expiresAt.toISOString(),
+      botExpiresAt: sub.expiresAt.toISOString(),
+      panelTrafficGb: c.trafficGb,
+      botTrafficGb: sub.trafficGb,
+      panelLimitIp: c.limitIp,
+      botLimitIp: sub.limitIp ?? 0,
+      panelEnable: c.enable,
+      botEnable,
+      panelStartsOnConnect: panelExp.startsOnConnect,
+      botStartsOnConnect: sub.startsOnConnect,
+    });
+  }
+
   return {
     panelOnly,
     botOnly,
+    mismatched,
     matched: botSubs.length - botOnly.length,
     panelTotal: panelClients.length,
     botTotal: botSubs.length,
@@ -1114,6 +1144,7 @@ export async function importPanelClientsToBot(emails?: string[]): Promise<Import
           startsOnConnect: exp.startsOnConnect,
           activatedAt: exp.activatedAt,
           expiresAt: exp.expiresAt,
+          panelExpiryTime: BigInt(Math.trunc(expiryTime)),
           subUrl,
           note: parsed.note || "Imported from 3X-UI",
           limitIp: Math.max(0, Math.min(100, Math.floor(limitIp || 0))),
@@ -1215,6 +1246,7 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
               expiresAt?: Date;
               activatedAt?: Date | null;
               startsOnConnect?: boolean;
+              panelExpiryTime?: bigint;
               clientUuid?: string | null;
               panelSubId?: string | null;
             } = {};
@@ -1228,10 +1260,12 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
             const gb = bytesToGb(client.totalGB);
             if (gb !== sub.trafficGb) data.trafficGb = gb;
             const expMs = Number(client.expiryTime ?? 0);
-            if (expMs > 0 && Math.abs(expMs - sub.expiresAt.getTime()) > 60_000) {
-              data.expiresAt = new Date(expMs);
-              data.startsOnConnect = false;
-              data.activatedAt = sub.activatedAt ?? new Date();
+            if (panelExpiryDiffersFromBot(expMs, sub)) {
+              const next = applyPanelExpiryToBotData(expMs, sub);
+              data.expiresAt = next.expiresAt;
+              data.startsOnConnect = next.startsOnConnect;
+              data.activatedAt = next.activatedAt;
+              data.panelExpiryTime = next.panelExpiryTime;
             }
             if (client.uuid != null || client.id != null) {
               const uuid = String(client.uuid ?? client.id);
@@ -1266,6 +1300,7 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
         expiresAt?: Date;
         activatedAt?: Date | null;
         startsOnConnect?: boolean;
+        panelExpiryTime?: bigint;
         clientUuid?: string | null;
         panelSubId?: string | null;
         panelServerId?: string | null;
@@ -1278,12 +1313,6 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
           data.status = SubscriptionStatus.disabled;
           result.disabledFromPanel++;
         }
-      } else if (sub.status === SubscriptionStatus.disabled) {
-        const stillValid = sub.expiresAt.getTime() > now;
-        if (stillValid) {
-          data.status = SubscriptionStatus.active;
-          result.reactivated++;
-        }
       }
 
       if (panel.trafficGb !== sub.trafficGb) {
@@ -1291,12 +1320,19 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
         data.trafficGb = panel.trafficGb;
       }
 
-      if (panel.expiryTime > 0) {
-        const expMs = panel.expiryTime;
-        if (Math.abs(expMs - sub.expiresAt.getTime()) > 60_000) {
-          data.expiresAt = new Date(expMs);
-          data.startsOnConnect = false;
-          data.activatedAt = sub.activatedAt ?? new Date();
+      if (panelExpiryDiffersFromBot(panel.expiryTime, sub)) {
+        const next = applyPanelExpiryToBotData(panel.expiryTime, sub);
+        data.expiresAt = next.expiresAt;
+        data.startsOnConnect = next.startsOnConnect;
+        data.activatedAt = next.activatedAt;
+        data.panelExpiryTime = next.panelExpiryTime;
+      }
+
+      if (panel.enable && sub.status === SubscriptionStatus.disabled) {
+        const stillValid = (data.expiresAt ?? sub.expiresAt).getTime() > now;
+        if (stillValid) {
+          data.status = SubscriptionStatus.active;
+          result.reactivated++;
         }
       }
 
@@ -1403,6 +1439,7 @@ type BotSnap = {
   trafficGb: number | null;
   startsOnConnect: boolean;
   activatedAt: string | null;
+  panelExpiryTime: string | null;
   isTest: boolean;
   expiresAt: string;
   subUrl: string | null;
@@ -1465,6 +1502,7 @@ function subToSnap(sub: Subscription): BotSnap {
     trafficGb: sub.trafficGb,
     startsOnConnect: sub.startsOnConnect,
     activatedAt: sub.activatedAt?.toISOString() ?? null,
+    panelExpiryTime: sub.panelExpiryTime != null ? String(sub.panelExpiryTime) : null,
     isTest: sub.isTest,
     expiresAt: sub.expiresAt.toISOString(),
     subUrl: sub.subUrl,
@@ -1662,9 +1700,7 @@ export async function selectiveSync(input: SyncApplyInput): Promise<SelectiveSyn
           const uuid = sub.clientUuid || randomUUID();
           const panelSubId = sub.panelSubId || randomSubId();
           const comment = composePanelComment(sub.title, sub.note) || sub.email;
-          const expiryTime = sub.startsOnConnect
-            ? -Math.max(60_000, sub.expiresAt.getTime() - Date.now())
-            : sub.expiresAt.getTime();
+          const expiryTime = expiryTimeForPanel(sub);
 
           await xui.addClient({
             client: {
@@ -1895,6 +1931,7 @@ async function importOnePanelClient(c: DetailedPanelClient): Promise<Subscriptio
       startsOnConnect: exp.startsOnConnect,
       activatedAt: exp.activatedAt,
       expiresAt: exp.expiresAt,
+      panelExpiryTime: BigInt(Math.trunc(expiryTime)),
       subUrl,
       note: parsed.note || "Imported from 3X-UI",
       limitIp: Math.max(0, Math.min(100, Math.floor(limitIp || 0))),
@@ -1949,23 +1986,17 @@ async function applyPanelFieldsToBot(
     data.trafficGb = trafficGb;
   }
 
-  if (hasOpt(optSet, "expiry") && expiryTime > 0) {
-    if (Math.abs(expiryTime - sub.expiresAt.getTime()) > 60_000) {
-      before.expiresAt = sub.expiresAt.toISOString();
-      before.startsOnConnect = sub.startsOnConnect;
-      before.activatedAt = sub.activatedAt?.toISOString() ?? null;
-      data.expiresAt = new Date(expiryTime);
-      data.startsOnConnect = false;
-      data.activatedAt = sub.activatedAt ?? new Date();
-    }
-  } else if (hasOpt(optSet, "expiry") && expiryTime < 0 && !sub.startsOnConnect) {
-    const exp = expiryFromPanel(expiryTime);
+  if (hasOpt(optSet, "expiry") && panelExpiryDiffersFromBot(expiryTime, sub)) {
+    const next = applyPanelExpiryToBotData(expiryTime, sub);
     before.expiresAt = sub.expiresAt.toISOString();
     before.startsOnConnect = sub.startsOnConnect;
     before.activatedAt = sub.activatedAt?.toISOString() ?? null;
-    data.startsOnConnect = true;
-    data.activatedAt = null;
-    data.expiresAt = exp.expiresAt;
+    before.panelExpiryTime =
+      sub.panelExpiryTime != null ? String(sub.panelExpiryTime) : null;
+    data.expiresAt = next.expiresAt;
+    data.startsOnConnect = next.startsOnConnect;
+    data.activatedAt = next.activatedAt;
+    data.panelExpiryTime = next.panelExpiryTime;
   }
 
   if (hasOpt(optSet, "limitIp") && limitIp !== (sub.limitIp ?? 0)) {
@@ -2058,9 +2089,7 @@ async function applyBotFieldsToPanel(
   }
 
   if (hasOpt(optSet, "expiry")) {
-    const want = sub.startsOnConnect
-      ? -Math.max(60_000, sub.expiresAt.getTime() - Date.now())
-      : sub.expiresAt.getTime();
+    const want = expiryTimeForPanel(sub);
     if (Math.abs(Number(client.expiryTime ?? 0) - want) > 60_000) {
       patch.expiryTime = want;
       changed = true;
@@ -2102,6 +2131,18 @@ async function applyBotFieldsToPanel(
     before,
   });
   await panel.xui.updateClient(sub.email, patch);
+  if (hasOpt(optSet, "expiry") && typeof patch.expiryTime === "number") {
+    const want = Number(patch.expiryTime);
+    if (
+      sub.panelExpiryTime == null ||
+      Math.abs(Number(sub.panelExpiryTime) - want) > 60_000
+    ) {
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: { panelExpiryTime: BigInt(Math.trunc(want)) },
+      });
+    }
+  }
   return true;
 }
 
@@ -2176,6 +2217,10 @@ export async function undoLastSync(): Promise<{
           trafficGb: s.trafficGb,
           startsOnConnect: s.startsOnConnect,
           activatedAt: s.activatedAt ? new Date(s.activatedAt) : null,
+          panelExpiryTime:
+            s.panelExpiryTime != null && s.panelExpiryTime !== ""
+              ? BigInt(s.panelExpiryTime)
+              : null,
           isTest: s.isTest,
           expiresAt: new Date(s.expiresAt),
           subUrl: s.subUrl,
@@ -2233,6 +2278,12 @@ export async function undoLastSync(): Promise<{
       if ("expiresAt" in b && b.expiresAt) data.expiresAt = new Date(b.expiresAt);
       if ("startsOnConnect" in b) data.startsOnConnect = b.startsOnConnect;
       if ("activatedAt" in b) data.activatedAt = b.activatedAt ? new Date(b.activatedAt) : null;
+      if ("panelExpiryTime" in b) {
+        data.panelExpiryTime =
+          b.panelExpiryTime != null && b.panelExpiryTime !== ""
+            ? BigInt(b.panelExpiryTime)
+            : null;
+      }
       if ("limitIp" in b) data.limitIp = b.limitIp;
       if ("status" in b) data.status = b.status;
       if ("clientUuid" in b) data.clientUuid = b.clientUuid;

@@ -1165,6 +1165,84 @@ h3 {
   .hide-mobile {
     display: none !important;
   }
+
+  .show-mobile {
+    display: block !important;
+  }
+}
+
+.show-mobile {
+  display: none;
+}
+
+/* Admin users — stacked cards on mobile (no table header) */
+.users-mlist {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.users-mcard {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(10, 13, 35, 0.35);
+  padding: 12px 14px;
+}
+
+.users-mrow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.users-mrow + .users-mrow {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.users-muser {
+  min-width: 0;
+  flex: 1;
+}
+
+.users-muser strong {
+  display: block;
+  word-break: break-word;
+}
+
+.users-mwallet {
+  flex-shrink: 0;
+  font-weight: 700;
+  white-space: nowrap;
+  padding-top: 2px;
+}
+
+.users-mrow-actions {
+  align-items: center;
+}
+
+.users-mrole {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  border: 1px solid var(--line);
+  background: rgba(10, 13, 35, 0.6);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 8px 10px;
+  outline: none;
+}
+
+.users-mrow-actions .btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .users-mlist.show-mobile {
+    display: flex !important;
+  }
 }
 
 /* ---------- Cards / layout ---------- */
