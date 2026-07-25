@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, formatToman } from "../lib/api";
+import { Modal } from "./Modal";
 
 export type SalesPeriod = "today" | "week" | "month" | "jalali_month" | "all";
 
@@ -23,6 +24,9 @@ type SalesStats = {
     at: string;
     who: string | null;
     accountName: string | null;
+    email: string | null;
+    botSubId: string | null;
+    trafficGb: number | null;
   }>;
 };
 
@@ -38,6 +42,33 @@ type AgentRow = {
   activeSubs: number;
 };
 
+export type AccountFullPayload = {
+  source: "live" | "archive";
+  archiveId: string | null;
+  restoredAt: string | null;
+  text: string;
+  detail: {
+    email: string;
+    uuid: string | null;
+    password: string | null;
+    panelSubId: string | null;
+    hysteriaAuth: string | null;
+    trafficGb: number | null;
+    remainTrafficLabel: string;
+    limitIp: number;
+    expiresAt: string | null;
+    remainDays: number | null;
+    comment: string | null;
+    inboundIds: number[];
+    notes: string | null;
+    title: string | null;
+    code: string | null;
+    botSubId: string | null;
+    subUrl: string | null;
+    ownerLabel: string | null;
+  };
+};
+
 const PERIODS: Array<[SalesPeriod, string]> = [
   ["today", "امروز"],
   ["week", "هفته"],
@@ -46,20 +77,123 @@ const PERIODS: Array<[SalesPeriod, string]> = [
   ["all", "کل"],
 ];
 
+export function AccountDetailModal({
+  open,
+  onClose,
+  email,
+  subId,
+  archiveId,
+  onRestored,
+}: {
+  open: boolean;
+  onClose: () => void;
+  email?: string | null;
+  subId?: string | null;
+  archiveId?: string | null;
+  onRestored?: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [data, setData] = useState<AccountFullPayload | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    setErr(null);
+    setData(null);
+    const q = new URLSearchParams();
+    if (email) q.set("email", email);
+    if (subId) q.set("subId", subId);
+    if (archiveId) q.set("archiveId", archiveId);
+    void api<AccountFullPayload>(`/admin/accounts/full?${q}`)
+      .then(setData)
+      .catch((e) => setErr(String(e instanceof Error ? e.message : e)))
+      .finally(() => setLoading(false));
+  }, [open, email, subId, archiveId]);
+
+  async function restore() {
+    const id = data?.archiveId || archiveId;
+    if (!id) return;
+    setRestoring(true);
+    try {
+      const r = await api<{ message: string }>(`/admin/archives/${id}/restore`, { method: "POST", body: {} });
+      onRestored?.();
+      onClose();
+      alert(r.message);
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  const d = data?.detail;
+  const title = d ? `جزئیات اکانت — ${d.email}` : "جزئیات اکانت";
+
+  return (
+    <Modal open={open} title={title} onClose={onClose} wide>
+      {loading && <p className="muted">در حال بارگذاری…</p>}
+      {err && (
+        <p className="muted" style={{ color: "var(--pink)" }}>
+          {err}
+        </p>
+      )}
+      {d && (
+        <>
+          {data?.source === "archive" && (
+            <p className="muted" style={{ marginTop: 0 }}>
+              از آرشیو حذف{data.restoredAt ? " (قبلاً بازگردانی شده)" : ""}
+            </p>
+          )}
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              fontSize: "0.88rem",
+              lineHeight: 1.55,
+              margin: "0 0 14px",
+              background: "var(--surface-2, rgba(0,0,0,0.04))",
+              padding: "12px 14px",
+              borderRadius: 10,
+            }}
+          >
+            {data?.text}
+          </pre>
+          {data?.source === "archive" && data.archiveId && !data.restoredAt && (
+            <button type="button" className="btn success" disabled={restoring} onClick={() => void restore()}>
+              {restoring ? "در حال بازگردانی…" : "بازگردانی به دیتابیس / پنل"}
+            </button>
+          )}
+        </>
+      )}
+    </Modal>
+  );
+}
+
 export function SalesReportPanel({
   endpoint,
   defaultPeriod = "jalali_month",
   showWallet = false,
   title = "گزارش فروش",
+  showAccountDetail,
 }: {
   endpoint: string;
   defaultPeriod?: SalesPeriod;
   showWallet?: boolean;
   title?: string;
+  /** Admin-only full account snapshot modal */
+  showAccountDetail?: boolean;
 }) {
+  const allowDetail = showAccountDetail ?? endpoint.includes("/admin/");
   const [period, setPeriod] = useState<SalesPeriod>(defaultPeriod);
   const [stats, setStats] = useState<SalesStats | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<{
+    email?: string | null;
+    subId?: string | null;
+  }>({});
 
   const load = useCallback(async () => {
     setErr(null);
@@ -75,6 +209,12 @@ export function SalesReportPanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  function openDetail(o: SalesStats["recent"][number]) {
+    if (!allowDetail || (!o.email && !o.botSubId)) return;
+    setDetailTarget({ email: o.email, subId: o.botSubId });
+    setDetailOpen(true);
+  }
 
   return (
     <div className="panel">
@@ -125,20 +265,47 @@ export function SalesReportPanel({
       {stats?.recent?.length ? (
         <div className="list" style={{ marginTop: 12 }}>
           <p style={{ margin: "0 0 8px", fontWeight: 650 }}>آخرین سفارش‌ها</p>
-          {stats.recent.map((o) => (
-            <div key={o.id} className="row-card">
-              <div>
-                <strong>{o.kind === "renew" ? "تمدید" : "خرید"}</strong>
-                <div className="muted">
-                  {o.who || o.accountName || "—"} · {new Date(o.at).toLocaleString("fa-IR")}
+          {stats.recent.map((o) => {
+            const acct = o.email || o.accountName;
+            const canDetail = allowDetail && Boolean(o.email || o.botSubId);
+            return (
+              <div key={o.id} className="row-card" style={{ alignItems: "flex-start", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong>
+                    {o.kind === "renew" ? "تمدید" : "خرید"}
+                    {acct ? `: ${acct}` : ""}
+                  </strong>
+                  <div className="muted">
+                    {o.who ? `${o.who} · ` : ""}
+                    {o.trafficGb != null ? `${o.trafficGb} گیگ · ` : ""}
+                    {new Date(o.at).toLocaleString("fa-IR")}
+                  </div>
+                  {canDetail && (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      style={{ marginTop: 8, padding: "4px 10px", fontSize: "0.82rem" }}
+                      onClick={() => openDetail(o)}
+                    >
+                      مشاهده جزئیات
+                    </button>
+                  )}
                 </div>
+                <span className="num">{formatToman(o.price)}</span>
               </div>
-              <span className="num">{formatToman(o.price)}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         stats && <p className="muted">سفارشی در این بازه نیست.</p>
+      )}
+      {allowDetail && (
+        <AccountDetailModal
+          open={detailOpen}
+          onClose={() => setDetailOpen(false)}
+          email={detailTarget.email}
+          subId={detailTarget.subId}
+        />
       )}
     </div>
   );
@@ -181,7 +348,11 @@ export function AgentsLeaderboardPanel() {
           </button>
         ))}
       </div>
-      {label && <p className="muted" style={{ marginTop: 0 }}>بازه: {label}</p>}
+      {label && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          بازه: {label}
+        </p>
+      )}
       <div className="list">
         {rows.map((r) => (
           <div key={r.id} className="row-card">

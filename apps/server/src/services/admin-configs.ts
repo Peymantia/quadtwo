@@ -16,6 +16,7 @@ import {
   expiryTimeForPanel,
   panelExpiryDiffersFromBot,
 } from "./panel-expiry.js";
+import { archiveAccountSnapshot, gatherAccountFullDetail } from "./account-archive.js";
 
 export type ConfigGroup = {
   key: string;
@@ -483,14 +484,17 @@ export type DeleteConfigResult = {
   deletedDb: boolean;
   email: string;
   message: string;
+  archiveId: string | null;
 };
 
 /**
  * Delete config: from panel if present, always from bot DB when row exists.
+ * Snapshots full account detail into AccountArchive first (for restore / reports).
  */
 export async function deleteConfig(opts: {
   subId?: string | null;
   email: string;
+  actorTelegramId?: number | bigint | null;
 }): Promise<DeleteConfigResult> {
   const email = opts.email.trim();
   if (!email) throw new Error("ایمیل کانفیگ خالی است");
@@ -503,6 +507,21 @@ export async function deleteConfig(opts: {
     sub = await prisma.subscription.findFirst({
       where: { email: { equals: email } },
     });
+  }
+
+  let archiveId: string | null = null;
+  try {
+    const detail = await gatherAccountFullDetail({ email, subId: sub?.id ?? opts.subId });
+    if (detail.panelFound || detail.inDb) {
+      const archived = await archiveAccountSnapshot({
+        detail,
+        reason: "deleted",
+        actorTelegramId: opts.actorTelegramId ?? null,
+      });
+      archiveId = archived.id;
+    }
+  } catch (err) {
+    console.warn("account archive before delete failed", email, err);
   }
 
   let deletedPanel = false;
@@ -548,6 +567,17 @@ export async function deleteConfig(opts: {
   let deletedDb = false;
   if (sub) {
     await prisma.notificationLog.deleteMany({ where: { subscriptionId: sub.id } });
+    // Keep accountName filled so sales reports still show the email after delete
+    if (sub.orderId) {
+      await prisma.order.updateMany({
+        where: { id: sub.orderId, OR: [{ accountName: null }, { accountName: "" }] },
+        data: { accountName: email },
+      });
+    }
+    await prisma.order.updateMany({
+      where: { targetSubId: sub.id, OR: [{ accountName: null }, { accountName: "" }] },
+      data: { accountName: email },
+    });
     await prisma.order.updateMany({
       where: { targetSubId: sub.id },
       data: { targetSubId: null },
@@ -561,11 +591,13 @@ export async function deleteConfig(opts: {
   else if (deletedPanel) parts.push("از پنل حذف شد (در دیتابیس ربات نبود).");
   else if (deletedDb) parts.push("در پنل نبود؛ فقط از دیتابیس ربات حذف شد.");
   else parts.push("چیزی برای حذف پیدا نشد.");
+  if (archiveId) parts.push("اسنپ‌شات برای بازگردانی ذخیره شد.");
 
   return {
     deletedPanel,
     deletedDb,
     email,
+    archiveId,
     message: parts.join(" "),
   };
 }

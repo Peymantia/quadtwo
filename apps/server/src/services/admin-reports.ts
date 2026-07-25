@@ -46,6 +46,9 @@ export type SalesRecentRow = {
   at: string;
   who: string | null;
   accountName: string | null;
+  email: string | null;
+  botSubId: string | null;
+  trafficGb: number | null;
 };
 
 export type SalesStats = {
@@ -116,7 +119,11 @@ export async function buildSalesStats(opts: {
   const [orders, activeSubs, walletAgg] = await Promise.all([
     prisma.order.findMany({
       where: orderWhere,
-      include: { user: { select: { username: true, firstName: true, telegramId: true, agentName: true } } },
+      include: {
+        user: { select: { username: true, firstName: true, telegramId: true, agentName: true } },
+        targetSub: { select: { id: true, email: true, title: true, trafficGb: true } },
+        subscription: { select: { id: true, email: true, title: true, trafficGb: true } },
+      },
       orderBy: { updatedAt: "desc" },
     }),
     prisma.subscription.count({
@@ -145,14 +152,21 @@ export async function buildSalesStats(opts: {
   const walletChargeTotal = walletAgg._sum.price ?? 0;
   const walletChargeCount = typeof walletAgg._count === "number" ? walletAgg._count : 0;
 
-  const recent: SalesRecentRow[] = orders.slice(0, recentLimit).map((o) => ({
-    id: o.id,
-    kind: o.kind,
-    price: o.price,
-    at: o.updatedAt.toISOString(),
-    who: opts.userId ? null : whoLabel(o.user),
-    accountName: o.accountName,
-  }));
+  const recent: SalesRecentRow[] = orders.slice(0, recentLimit).map((o) => {
+    const linked = o.targetSub ?? o.subscription;
+    const email = linked?.email ?? (o.accountName && o.accountName !== "renew" && o.accountName !== "wallet" ? o.accountName : null);
+    return {
+      id: o.id,
+      kind: o.kind,
+      price: o.price,
+      at: o.updatedAt.toISOString(),
+      who: opts.userId ? null : whoLabel(o.user),
+      accountName: linked?.title || o.accountName || email,
+      email,
+      botSubId: linked?.id ?? null,
+      trafficGb: linked?.trafficGb ?? o.trafficGb ?? null,
+    };
+  });
 
   const label = periodLabel(period);
   const title = opts.title ?? (opts.userId ? "گزارش فروش شما" : "گزارش فروش");
@@ -176,8 +190,10 @@ export async function buildSalesStats(opts: {
   lines.push("", recent.length ? "آخرین سفارش‌ها:" : "سفارشی در این بازه نیست.");
   for (const o of recent) {
     const kindFa = o.kind === "renew" ? "تمدید" : "خرید";
-    const who = o.who ? ` — ${o.who}` : o.accountName ? ` — ${o.accountName}` : "";
-    lines.push(`• ${kindFa} ${formatToman(o.price)}${who}`);
+    const acct = o.email || o.accountName;
+    const who = o.who ? ` — ${o.who}` : "";
+    const acctPart = acct ? ` · ${acct}` : "";
+    lines.push(`• ${kindFa} ${formatToman(o.price)}${who}${acctPart}`);
   }
 
   return {

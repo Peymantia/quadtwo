@@ -320,6 +320,23 @@ model DiscountCode {
   @@index([active])
 }
 
+/// Snapshot of a deleted (or archived) panel account for restore / audit detail
+model AccountArchive {
+  id              String    @id @default(cuid())
+  email           String
+  /// Full JSON payload (panel + bot fields)
+  payload         String
+  reason          String    @default("deleted")
+  actorTelegramId BigInt?
+  panelServerId   String?
+  restoredAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([email])
+  @@index([createdAt])
+  @@index([reason])
+}
+
 /// Dedupe log so expiry/traffic alerts are not spammed every cron tick
 model NotificationLog {
   id             String   @id @default(cuid())

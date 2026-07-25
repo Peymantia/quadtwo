@@ -198,12 +198,16 @@ export function registerAdminConfigs(bot: Bot) {
     await ctx.answerCallbackQuery({ text: "در حال حذف..." });
     try {
       const target = await resolveViewTarget(ctx.match![1]!);
-      const result = await deleteConfig({ subId: target.subId, email: target.email });
+      const result = await deleteConfig({
+        subId: target.subId,
+        email: target.email,
+        actorTelegramId: ctx.from!.id,
+      });
       await auditLog({
         action: "admin_config_delete",
         actorTelegramId: ctx.from!.id,
         target: target.email,
-        detail: `panel=${result.deletedPanel} db=${result.deletedDb}`,
+        detail: `panel=${result.deletedPanel} db=${result.deletedDb}${result.archiveId ? ` archive=${result.archiveId}` : ""}`,
       });
       await ctx.editMessageText(`✅ ${result.message}\n\nاکانت: ${result.email}`, {
         reply_markup: new InlineKeyboard().text("« گروه‌ها", "cfg:home"),

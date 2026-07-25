@@ -94,7 +94,9 @@ export type EmojiKey =
   | "agent_name"
   | "dash_web"
   | "login_id"
-  | "demo_role";
+  | "demo_role"
+  | "discount"
+  | "guillemet_nav";
 
 /** Current bot Unicode glyphs (Universal style). */
 export const UNIVERSAL: Record<EmojiKey, string> = {
@@ -190,6 +192,9 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   dash_web: "🌐",
   login_id: "👤",
   demo_role: "🎭",
+  discount: "🎟",
+  /** Leading « on nav buttons (بازگشت / انصراف / …) */
+  guillemet_nav: "«",
 };
 
 /**
@@ -291,6 +296,10 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   login_id: "5987557724886405444",
   /** Demo role picker / «تغییر نقش دمو» */
   demo_role: "5318990544221775177",
+  /** Discount codes / ticket */
+  discount: "5229064374403998351",
+  /** Default for « … ; overridden by resolvePremiumId for بازگشت / انصراف */
+  guillemet_nav: "5253767677670862169",
 };
 
 /** When several keys share a glyph, pick ID from surrounding label text. */
@@ -338,6 +347,12 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
   if (glyph === "◀️") {
     if (after.includes("قبلی") || after.includes("بازگشت")) return PREMIUM_IDS.prev_page;
     return PREMIUM_IDS.prev_page;
+  }
+  if (glyph === "«") {
+    // Buy flow: بازگشت → next_page-style arrow; انصراف در انتخاب پلن → pause
+    if (after.includes("انصراف")) return PREMIUM_IDS.pause;
+    if (after.includes("بازگشت")) return PREMIUM_IDS.next_page;
+    return PREMIUM_IDS.guillemet_nav;
   }
   const row = UNIVERSAL_BY_LENGTH.find((r) => r.glyph === glyph);
   return row?.id;

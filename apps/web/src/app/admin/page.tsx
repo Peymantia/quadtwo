@@ -14,7 +14,7 @@ import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
 import { SubQrModal } from "../../components/SubQrModal";
 import { DiscountCodesPanel } from "../../components/DiscountCodesPanel";
-import { AgentsLeaderboardPanel, SalesReportPanel } from "../../components/SalesReportPanel";
+import { AgentsLeaderboardPanel, SalesReportPanel, AccountDetailModal } from "../../components/SalesReportPanel";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -23,13 +23,13 @@ const TABS: ShellTab[] = [
   { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true, bubble: true },
   { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true },
   { key: "users", label: "کاربران", icon: "users", pin: true },
-  { key: "sync", label: "همگام‌سازی", icon: "sync" },
-  { key: "prices", label: "قیمت‌ها", icon: "tag" },
-  { key: "discounts", label: "تخفیف", icon: "tag" },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server" },
+  { key: "discounts", label: "کد تخفیف", icon: "tag" },
+  { key: "reports", label: "گزارشات", icon: "chart" },
+  { key: "sync", label: "همگام‌سازی", icon: "sync" },
+  { key: "prices", label: "قیمت‌ها", icon: "tag" },
   { key: "settings", label: "تنظیمات", icon: "gear" },
-  { key: "reports", label: "گزارش", icon: "chart" },
   { key: "import", label: "اکسل", icon: "file" },
 ];
 
@@ -307,17 +307,17 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
             <Icon name="server" size={15} />
             سرورها
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" data-qa="sync" onClick={() => onGo("sync")}>
-            <Icon name="sync" size={15} />
-            همگام‌سازی
+          <button type="button" className="btn ghost sm quick-action-btn" data-qa="discounts" onClick={() => onGo("discounts")}>
+            <Icon name="tag" size={15} />
+            کد تخفیف
           </button>
           <button type="button" className="btn ghost sm quick-action-btn" data-qa="reports" onClick={() => onGo("reports")}>
             <Icon name="chart" size={15} />
-            گزارش
+            گزارشات
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" data-qa="import" onClick={() => onGo("import")}>
-            <Icon name="file" size={15} />
-            اکسل
+          <button type="button" className="btn ghost sm quick-action-btn" data-qa="sync" onClick={() => onGo("sync")}>
+            <Icon name="sync" size={15} />
+            همگام‌سازی
           </button>
         </div>
       </div>
@@ -3751,12 +3751,67 @@ function SettingsTab({
 
 /* ---------------- Reports ---------------- */
 
+const AUDIT_LABELS: Record<string, string> = {
+  admin_config_delete: "حذف اکانت",
+  admin_account_restore: "بازگردانی اکانت",
+  admin_config_update: "ویرایش اکانت",
+  admin_config_import: "ورود از پنل",
+};
+
 function ReportsTab() {
-  const [audit, setAudit] = useState<Array<{ action: string; detail: string | null; createdAt: string }>>([]);
+  const [audit, setAudit] = useState<
+    Array<{
+      id: string;
+      action: string;
+      target: string | null;
+      detail: string | null;
+      createdAt: string;
+    }>
+  >([]);
+  const [archives, setArchives] = useState<
+    Array<{
+      id: string;
+      email: string;
+      reason: string;
+      summary: string;
+      restoredAt: string | null;
+      createdAt: string;
+    }>
+  >([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<{
+    email?: string | null;
+    archiveId?: string | null;
+  }>({});
+
+  const loadReportsMeta = useCallback(() => {
+    void api<{ logs: typeof audit }>("/admin/audit").then((r) => setAudit(r.logs));
+    void api<{ archives: typeof archives }>("/admin/archives?reason=deleted&limit=40").then((r) =>
+      setArchives(r.archives ?? []),
+    );
+  }, []);
 
   useEffect(() => {
-    void api<{ logs: typeof audit }>("/admin/audit").then((r) => setAudit(r.logs));
-  }, []);
+    loadReportsMeta();
+  }, [loadReportsMeta]);
+
+  function openArchiveDetail(a: (typeof archives)[number]) {
+    setDetailTarget({ email: a.email, archiveId: a.id });
+    setDetailOpen(true);
+  }
+
+  function openAuditDetail(a: (typeof audit)[number]) {
+    const archiveMatch = a.detail?.match(/archive=([a-z0-9]+)/i);
+    if (archiveMatch?.[1]) {
+      setDetailTarget({ email: a.target, archiveId: archiveMatch[1] });
+      setDetailOpen(true);
+      return;
+    }
+    if (a.target) {
+      setDetailTarget({ email: a.target, archiveId: null });
+      setDetailOpen(true);
+    }
+  }
 
   return (
     <>
@@ -3768,20 +3823,74 @@ function ReportsTab() {
       />
       <AgentsLeaderboardPanel />
       <div className="panel">
-        <h2>لاگ عملیات</h2>
+        <h2>لاگ حذف اکانت</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          قبل از حذف، اسنپ‌شات کامل ذخیره می‌شود تا در صورت اشتباه بتوانید بازگردانی کنید.
+        </p>
         <div className="list">
-          {audit.map((a, i) => (
-            <div key={i} className="row-card">
-              <div>
-                <strong>{a.action}</strong>
-                {a.detail && <div className="muted">{a.detail}</div>}
+          {archives.map((a) => (
+            <div key={a.id} className="row-card" style={{ alignItems: "flex-start", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <strong>{a.email}</strong>
+                <div className="muted">
+                  {a.summary}
+                  {a.restoredAt ? " · بازگردانی‌شده" : ""}
+                  {" · "}
+                  {new Date(a.createdAt).toLocaleString("fa-IR")}
+                </div>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  style={{ marginTop: 8, padding: "4px 10px", fontSize: "0.82rem" }}
+                  onClick={() => openArchiveDetail(a)}
+                >
+                  مشاهده جزئیات
+                </button>
               </div>
-              <span className="muted">{new Date(a.createdAt).toLocaleString("fa-IR")}</span>
             </div>
           ))}
+          {!archives.length && <p className="muted">حذف آرشیو‌شده‌ای ثبت نشده.</p>}
+        </div>
+      </div>
+      <div className="panel">
+        <h2>لاگ عملیات</h2>
+        <div className="list">
+          {audit.map((a) => {
+            const label = AUDIT_LABELS[a.action] || a.action;
+            const canDetail = Boolean(a.target) || /archive=/i.test(a.detail || "");
+            return (
+              <div key={a.id} className="row-card" style={{ alignItems: "flex-start", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong>
+                    {label}
+                    {a.target ? `: ${a.target}` : ""}
+                  </strong>
+                  {a.detail && <div className="muted">{a.detail}</div>}
+                  {canDetail && (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      style={{ marginTop: 8, padding: "4px 10px", fontSize: "0.82rem" }}
+                      onClick={() => openAuditDetail(a)}
+                    >
+                      مشاهده جزئیات
+                    </button>
+                  )}
+                </div>
+                <span className="muted">{new Date(a.createdAt).toLocaleString("fa-IR")}</span>
+              </div>
+            );
+          })}
           {!audit.length && <p className="muted">لاگی ثبت نشده.</p>}
         </div>
       </div>
+      <AccountDetailModal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        email={detailTarget.email}
+        archiveId={detailTarget.archiveId}
+        onRestored={loadReportsMeta}
+      />
     </>
   );
 }

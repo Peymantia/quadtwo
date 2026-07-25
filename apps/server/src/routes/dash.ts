@@ -91,6 +91,12 @@ import {
   updatePanelServer,
 } from "../services/panel-servers.js";
 import { listRecentAudit, auditLog } from "../services/audit.js";
+import {
+  listAccountArchives,
+  getAccountArchive,
+  restoreAccountFromArchive,
+  resolveAccountDetailForReport,
+} from "../services/account-archive.js";
 import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
 import { importWorkbook, readWorkbookFromBuffer, formatImportResult } from "../services/bulk-import.js";
 import { getSubscriptionTrafficBytes } from "../services/live-status.js";
@@ -1113,6 +1119,48 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     });
   });
 
+  api.get("/admin/accounts/full", async (c) => {
+    const email = c.req.query("email") || "";
+    const subId = c.req.query("subId") || null;
+    const archiveId = c.req.query("archiveId") || null;
+    try {
+      const result = await resolveAccountDetailForReport({ email, subId, archiveId });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.get("/admin/archives", async (c) => {
+    const reason = c.req.query("reason") || undefined;
+    const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") || 50)));
+    const rows = await listAccountArchives({ limit, reason });
+    return c.json({ archives: rows });
+  });
+
+  api.get("/admin/archives/:id", async (c) => {
+    try {
+      return c.json(await getAccountArchive(c.req.param("id")));
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 404);
+    }
+  });
+
+  api.post("/admin/archives/:id/restore", async (c) => {
+    try {
+      const result = await restoreAccountFromArchive({ archiveId: c.req.param("id") });
+      await auditLog({
+        action: "admin_account_restore",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: result.email,
+        detail: `archive=${c.req.param("id")} sub=${result.botSubId}`,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
   api.get("/admin/orders/pending", async (c) => {
     const orders = await prisma.order.findMany({
       where: { status: { in: ["awaiting_review", "pending_payment"] } },
@@ -1736,11 +1784,16 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.post("/admin/configs/delete", async (c) => {
     const body = await c.req.json<{ email: string; subId?: string | null }>();
-    const result = await deleteConfig({ email: body.email, subId: body.subId });
+    const result = await deleteConfig({
+      email: body.email,
+      subId: body.subId,
+      actorTelegramId: BigInt(c.get("telegramId")),
+    });
     await auditLog({
       action: "admin_config_delete",
       actorTelegramId: BigInt(c.get("telegramId")),
       target: body.email,
+      detail: `panel=${result.deletedPanel} db=${result.deletedDb}${result.archiveId ? ` archive=${result.archiveId}` : ""}`,
     });
     return c.json(result);
   });

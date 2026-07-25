@@ -19,6 +19,30 @@ type DiscountItem = {
 
 type Flash = (ok: string | null, err?: string | null) => void;
 
+function toLocalInput(iso: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function expiryFromNow(opts: { days?: number; weeks?: number; months?: number }): string {
+  const d = new Date();
+  if (opts.days) d.setDate(d.getDate() + opts.days);
+  if (opts.weeks) d.setDate(d.getDate() + opts.weeks * 7);
+  if (opts.months) d.setMonth(d.getMonth() + opts.months);
+  return toLocalInput(d.toISOString());
+}
+
+const EXPIRY_PRESETS: Array<{ label: string; opts: { days?: number; weeks?: number; months?: number } }> = [
+  { label: "یک روز", opts: { days: 1 } },
+  { label: "سه روز", opts: { days: 3 } },
+  { label: "یک هفته", opts: { weeks: 1 } },
+  { label: "دو هفته", opts: { weeks: 2 } },
+  { label: "یک ماه", opts: { months: 1 } },
+];
+
 export function DiscountCodesPanel({
   flash,
   askConfirm,
@@ -150,7 +174,28 @@ export function DiscountCodesPanel({
         </div>
         <div className="field">
           <label>انقضا (اختیاری)</label>
-          <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} disabled={busy} />
+          <div className="expiry-quick-row">
+            <input
+              type="datetime-local"
+              dir="ltr"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              disabled={busy}
+            />
+            <div className="chip-row expiry-quick-chips">
+              {EXPIRY_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className="chip chip-sm"
+                  disabled={busy}
+                  onClick={() => setExpiresAt(expiryFromNow(p.opts))}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <div className="field" style={{ gridColumn: "1 / -1" }}>
           <label>یادداشت</label>
