@@ -21,8 +21,8 @@ function AdminPanelSwitcher() {
   const previewing = current !== "/admin";
 
   return (
-    <label className="panel-switcher" title="سوییچ تست بین سرورها (فقط ادمین)">
-      <span className="panel-switcher-label">{previewing ? "پیش‌نمایش" : "پنل"}</span>
+    <label className="panel-switcher" title="پیش‌نمایش پنل‌های دیگر (فقط ادمین)">
+      <span className="panel-switcher-label">{previewing ? "پیش‌نمایش" : "نوع پنل"}</span>
       <select
         className="panel-switcher-select"
         value={current}
@@ -30,7 +30,7 @@ function AdminPanelSwitcher() {
           const next = e.target.value;
           if (next && next !== pathname) router.push(next);
         }}
-        aria-label="سوییچ پنل داشبورد"
+        aria-label="پیش‌نمایش نوع پنل"
       >
         {PREVIEW_PANELS.map((p) => (
           <option key={p.path} value={p.path}>
@@ -348,7 +348,11 @@ export function DashShell(props: {
           <span>{props.brand}</span>
         </div>
         <div className="topbar-side">
-          {props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>}
+          {isAdmin ? (
+            <AdminPanelSwitcher />
+          ) : (
+            props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>
+          )}
           {hasSettings && (
             <button
               type="button"
@@ -409,7 +413,9 @@ export function DashShell(props: {
             </div>
             <div className="topbar-side">
               {isAdmin && <AdminPanelSwitcher />}
-              {props.walletLabel && <span className="money-pill num hide-mobile">{props.walletLabel}</span>}
+              {!isAdmin && props.walletLabel && (
+                <span className="money-pill num hide-mobile">{props.walletLabel}</span>
+              )}
               {hasSettings && (
                 <button
                   type="button"

@@ -181,7 +181,6 @@ export default function AdminPage() {
       title="کنترل سنتر"
       role={home.user.role}
       userLabel={userLabel}
-      walletLabel={formatToman(home.wallet.balance)}
       tabs={TABS}
       active={tab}
       demoMode={Boolean(home.demoMode)}
