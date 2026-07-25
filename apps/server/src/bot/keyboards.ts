@@ -73,7 +73,7 @@ export type MainMenuOpts = {
  *   داشبورد | وب اپ | کنترل سنتر
  *   [| تغییر نقش دمو — فقط DEMO_MODE]
  *
- * Other roles: buy, services, wallet/account, support, guide/test, agent|partner + lookup, hide, dash OTP.
+ * Other roles: buy, services, wallet/account, support|تمام‌صفحه, guide/test, agent|partner + lookup, dash OTP.
  */
 export function mainMenuReply(opts: MainMenuOpts) {
   if (opts.isAdmin) {
@@ -108,6 +108,7 @@ export function mainMenuReply(opts: MainMenuOpts) {
     .text(BTN.account)
     .row()
     .text(BTN.support)
+    .text(BTN.hideKeyboard)
     .row()
     .text(BTN.guide)
     .success()
@@ -121,7 +122,6 @@ export function mainMenuReply(opts: MainMenuOpts) {
     kb.text(BTN.partner).primary().text(BTN.configLookup).primary().row();
   }
 
-  kb.text(BTN.hideKeyboard).row();
   // Always OTP credentials first — do not open Mini App directly (no password on screen).
   kb.text(BTN.dashOtp).danger().row();
 
@@ -157,7 +157,7 @@ export function buyCategoryKeyboard(cats: Array<{ key: string; label: string }>)
     if (style === "primary") kb.text(c.label, `buy:cat:${c.key}`).primary().row();
     else kb.text(c.label, `buy:cat:${c.key}`).success().row();
   }
-  kb.text("« انصراف", "buy:cat:cancel");
+  kb.text("⏸ انصراف", "buy:cat:cancel");
   return kb;
 }
 
@@ -193,6 +193,7 @@ export function mainMenuInline(opts: MainMenuOpts) {
     .text(BTN.account, "m:account")
     .row()
     .text(BTN.support, "m:support")
+    .text(BTN.hideKeyboard, "m:hidekb")
     .row()
     .text(BTN.guide, "m:guide")
     .success()
@@ -283,7 +284,7 @@ export function buyWizardKeyboard(opts: {
     .text("✅ ادامه خرید", "wiz:checkout")
     .success()
     .row()
-    .text("« بازگشت", "buy:back:cat")
+    .text("◀️ بازگشت", "buy:back:cat")
     .text("❌ انصراف", "buy:cat:cancel");
 }
 

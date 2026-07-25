@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, formatToman } from "../lib/api";
 
 type DiscountItem = {
@@ -61,6 +61,8 @@ export function DiscountCodesPanel({
   const [maxUses, setMaxUses] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [note, setNote] = useState("");
+  const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
+  const expiryMenuRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +78,22 @@ export function DiscountCodesPanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!expiryMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!expiryMenuRef.current?.contains(e.target as Node)) setExpiryMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpiryMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [expiryMenuOpen]);
 
   async function create() {
     setBusy(true);
@@ -95,6 +113,7 @@ export function DiscountCodesPanel({
       setMaxUses("");
       setExpiresAt("");
       setNote("");
+      setExpiryMenuOpen(false);
       flash("کد تخفیف ساخته شد");
       await load();
     } catch (e) {
@@ -132,6 +151,11 @@ export function DiscountCodesPanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  function pickExpiry(opts: { days?: number; weeks?: number; months?: number }) {
+    setExpiresAt(expiryFromNow(opts));
+    setExpiryMenuOpen(false);
   }
 
   return (
@@ -174,7 +198,7 @@ export function DiscountCodesPanel({
         </div>
         <div className="field">
           <label>انقضا (اختیاری)</label>
-          <div className="expiry-quick-row">
+          <div className="expiry-quick-row expiry-quick-row--inline">
             <input
               type="datetime-local"
               dir="ltr"
@@ -182,18 +206,32 @@ export function DiscountCodesPanel({
               onChange={(e) => setExpiresAt(e.target.value)}
               disabled={busy}
             />
-            <div className="chip-row expiry-quick-chips">
-              {EXPIRY_PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  className="chip chip-sm"
-                  disabled={busy}
-                  onClick={() => setExpiresAt(expiryFromNow(p.opts))}
-                >
-                  {p.label}
-                </button>
-              ))}
+            <div className="expiry-preset-menu" ref={expiryMenuRef}>
+              <button
+                type="button"
+                className="btn ghost sm expiry-preset-trigger"
+                disabled={busy}
+                aria-expanded={expiryMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setExpiryMenuOpen((o) => !o)}
+              >
+                سریع ▾
+              </button>
+              {expiryMenuOpen && (
+                <div className="expiry-preset-dropdown" role="menu">
+                  {EXPIRY_PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      role="menuitem"
+                      className="expiry-preset-item"
+                      onClick={() => pickExpiry(p.opts)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

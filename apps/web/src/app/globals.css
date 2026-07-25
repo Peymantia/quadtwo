@@ -1477,13 +1477,76 @@ h3 {
   gap: 8px;
 }
 
+.expiry-quick-row--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .expiry-quick-row > input[type="datetime-local"] {
   width: 100%;
   max-width: 280px;
 }
 
+.expiry-quick-row--inline > input[type="datetime-local"] {
+  flex: 1 1 180px;
+  max-width: 260px;
+}
+
 .expiry-quick-chips {
   gap: 6px;
+}
+
+.expiry-preset-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.expiry-preset-trigger {
+  padding: 6px 10px !important;
+  font-size: 0.78rem !important;
+  font-weight: 650;
+  min-height: 34px;
+  white-space: nowrap;
+}
+
+.expiry-preset-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-end: 0;
+  z-index: 40;
+  min-width: 140px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(18, 22, 48, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.expiry-preset-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: right;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.expiry-preset-item:hover,
+.expiry-preset-item:focus-visible {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--cyan);
+  outline: none;
 }
 
 .chip.chip-sm {

@@ -264,10 +264,14 @@ async function showBuyCategoryPicker(ctx: Context, edit = false) {
     })),
   );
   if (edit && ctx.callbackQuery?.message) {
-    await ctx.editMessageText(text, { reply_markup: kb });
-  } else {
-    await ctx.reply(text, { reply_markup: kb });
+    try {
+      await ctx.editMessageText(text, { reply_markup: kb });
+      return;
+    } catch (err) {
+      console.warn("showBuyCategoryPicker edit failed", err);
+    }
   }
+  await ctx.reply(text, { reply_markup: kb });
 }
 
 const NATIONAL_EMERGENCY_MSG = "این سرویس در شرایط اضطراری فعال می‌شود.";
@@ -433,10 +437,14 @@ async function showBuyWizard(ctx: Context, edit = false) {
     discountCode: draft.discountCode,
   });
   if (edit && ctx.callbackQuery?.message) {
-    await ctx.editMessageText(text, { reply_markup: kb });
-  } else {
-    await ctx.reply(text, { reply_markup: kb });
+    try {
+      await ctx.editMessageText(text, { reply_markup: kb });
+      return;
+    } catch (err) {
+      console.warn("showBuyWizard edit failed", err);
+    }
   }
+  await ctx.reply(text, { reply_markup: kb });
 }
 
 async function deliverResult(
@@ -882,17 +890,28 @@ export function createBot() {
     await showBuyCategoryPicker(ctx, true);
   });
 
-  bot.callbackQuery(/^buy:cat:(?!cancel$)([a-z0-9_-]+)$/, async (ctx) => {
+  bot.callbackQuery(/^buy:cat:(?!cancel$)(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
-    const cat = ctx.match![1]!;
+    const cat = String(ctx.match![1] || "")
+      .trim()
+      .toLowerCase();
+    if (!cat || !/^[a-z0-9_-]+$/.test(cat)) {
+      await ctx.reply("دسته نامعتبر است.");
+      return;
+    }
     const cats = await getSalesCategories();
     if (!cats[cat]) {
       await ctx.reply(cat === "national" ? NATIONAL_EMERGENCY_MSG : "این دسته فعلاً برای فروش فعال نیست.");
       return;
     }
-    await setDraftCategory(BigInt(ctx.from!.id), cat);
-    await showBuyWizard(ctx, true);
+    try {
+      await setDraftCategory(BigInt(ctx.from!.id), cat);
+      await showBuyWizard(ctx, true);
+    } catch (err) {
+      console.error("buy:cat handler", err);
+      await ctx.reply("خطا در باز کردن خرید. دوباره تلاش کنید.");
+    }
   });
 
   bot.command("buy", async (ctx) => {

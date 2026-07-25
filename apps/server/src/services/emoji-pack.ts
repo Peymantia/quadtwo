@@ -95,8 +95,7 @@ export type EmojiKey =
   | "dash_web"
   | "login_id"
   | "demo_role"
-  | "discount"
-  | "guillemet_nav";
+  | "discount";
 
 /** Current bot Unicode glyphs (Universal style). */
 export const UNIVERSAL: Record<EmojiKey, string> = {
@@ -193,8 +192,6 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   login_id: "👤",
   demo_role: "🎭",
   discount: "🎟",
-  /** Leading « on nav buttons (بازگشت / انصراف / …) */
-  guillemet_nav: "«",
 };
 
 /**
@@ -298,8 +295,6 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   demo_role: "5318990544221775177",
   /** Discount codes / ticket */
   discount: "5229064374403998351",
-  /** Default for « … ; overridden by resolvePremiumId for بازگشت / انصراف */
-  guillemet_nav: "5253767677670862169",
 };
 
 /** When several keys share a glyph, pick ID from surrounding label text. */
@@ -345,14 +340,15 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
     return PREMIUM_IDS.play;
   }
   if (glyph === "◀️") {
-    if (after.includes("قبلی") || after.includes("بازگشت")) return PREMIUM_IDS.prev_page;
+    // Buy-flow back uses the arrow ID requested for «بازگشت»
+    if (after.includes("بازگشت")) return PREMIUM_IDS.next_page;
+    if (after.includes("قبلی")) return PREMIUM_IDS.prev_page;
     return PREMIUM_IDS.prev_page;
   }
-  if (glyph === "«") {
-    // Buy flow: بازگشت → next_page-style arrow; انصراف در انتخاب پلن → pause
-    if (after.includes("انصراف")) return PREMIUM_IDS.pause;
-    if (after.includes("بازگشت")) return PREMIUM_IDS.next_page;
-    return PREMIUM_IDS.guillemet_nav;
+  if (glyph === "⏸") {
+    // Plan-picker cancel (and similar) — pause sticker
+    if (after.includes("انصراف") || after.includes("لغو")) return PREMIUM_IDS.pause;
+    return PREMIUM_IDS.pause;
   }
   const row = UNIVERSAL_BY_LENGTH.find((r) => r.glyph === glyph);
   return row?.id;
