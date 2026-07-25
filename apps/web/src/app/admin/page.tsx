@@ -1553,82 +1553,92 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
   return (
     <div className="panel">
       <h2>مدیریت دسته‌بندی‌ها</h2>
-      <p className="muted" style={{ marginTop: 0 }}>
-        نام نمایشی هر دسته را ویرایش کنید، فروش آن را فعال/غیرفعال کنید، یا با دکمه‌های بالا/پایین ترتیب نمایش در ربات و داشبورد را عوض کنید.
+      <p className="muted cat-intro">
+        نام، فعال‌بودن فروش و ترتیب نمایش در ربات و داشبورد را از اینجا تنظیم کنید.
       </p>
-      <div className="list">
-        {cats.map((c, i) => (
-          <div key={c.key} className="row-card" style={{ alignItems: "center" }}>
-            <div className="actions" style={{ alignItems: "center", flexDirection: "column", gap: 4, minWidth: 44 }}>
-              <button
-                type="button"
-                className="btn sm"
-                title="بالا"
-                disabled={reordering || i === 0}
-                onClick={() => void moveCategory(i, -1)}
-                aria-label="جابه‌جایی به بالا"
-              >
-                ▲
-              </button>
-              <span className="muted" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }} dir="ltr">
-                {i + 1}
-              </span>
-              <button
-                type="button"
-                className="btn sm"
-                title="پایین"
-                disabled={reordering || i === cats.length - 1}
-                onClick={() => void moveCategory(i, 1)}
-                aria-label="جابه‌جایی به پایین"
-              >
-                ▼
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div className="field" style={{ marginBottom: 6 }}>
-                <label>
-                  نام دسته ({c.key}) — {c.cellCount} پلن
-                  {c.builtin ? " · پیش‌فرض" : ""}
-                </label>
+      <div className="cat-list">
+        {cats.map((c, i) => {
+          const draft = labelEdits[c.key] ?? c.label;
+          const dirty = draft !== c.label;
+          return (
+            <div key={c.key} className="cat-card">
+              <div className="cat-card__rail" aria-label={`ردیف ${i + 1}`}>
+                <button
+                  type="button"
+                  className="cat-card__move"
+                  title="بالا"
+                  disabled={reordering || i === 0}
+                  onClick={() => void moveCategory(i, -1)}
+                  aria-label="جابه‌جایی به بالا"
+                >
+                  ▲
+                </button>
+                <span className="cat-card__rank" dir="ltr">
+                  {i + 1}
+                </span>
+                <button
+                  type="button"
+                  className="cat-card__move"
+                  title="پایین"
+                  disabled={reordering || i === cats.length - 1}
+                  onClick={() => void moveCategory(i, 1)}
+                  aria-label="جابه‌جایی به پایین"
+                >
+                  ▼
+                </button>
+              </div>
+              <div className="cat-card__body">
+                <div className="cat-card__head">
+                  <div className="cat-card__meta">
+                    <span className="cat-card__key" dir="ltr">
+                      {c.key}
+                    </span>
+                    <span>{c.cellCount} پلن</span>
+                    {c.builtin ? <span className="cat-card__tag">پیش‌فرض</span> : null}
+                  </div>
+                  <label className="switch switch-sm" title="فروش فعال/غیرفعال">
+                    <input type="checkbox" checked={c.enabled} onChange={(e) => save(c, { enabled: e.target.checked })} />
+                    <span className="track" />
+                  </label>
+                </div>
                 <input
-                  value={labelEdits[c.key] ?? c.label}
+                  className="cat-card__input"
+                  value={draft}
                   onChange={(e) => setLabelEdits((m) => ({ ...m, [c.key]: e.target.value }))}
+                  aria-label={`نام دسته ${c.key}`}
                 />
+                <div className="cat-card__toolbar">
+                  {dirty ? (
+                    <button type="button" className="btn primary sm" onClick={() => save(c, { label: draft })}>
+                      ذخیره
+                    </button>
+                  ) : null}
+                  <button type="button" className="btn ghost sm cat-card__del" onClick={() => void remove(c)}>
+                    حذف
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="actions" style={{ alignItems: "center" }}>
-              <label className="switch" title="فعال/غیرفعال کردن فروش">
-                <input type="checkbox" checked={c.enabled} onChange={(e) => save(c, { enabled: e.target.checked })} />
-                <span className="track" />
-              </label>
-              <button
-                type="button"
-                className="btn primary sm"
-                disabled={(labelEdits[c.key] ?? c.label) === c.label}
-                onClick={() => save(c, { label: labelEdits[c.key] })}
-              >
-                ذخیره نام
-              </button>
-              <button type="button" className="btn danger sm" onClick={() => void remove(c)}>
-                حذف دسته
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <h2 style={{ marginTop: 18 }}>افزودن دسته</h2>
-      <div className="field">
-        <label>کلید (انگلیسی، مثلاً vip2)</label>
-        <input dir="ltr" value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="vip2" />
+      <div className="cat-add">
+        <h2>افزودن دسته</h2>
+        <div className="cat-add__grid">
+          <div className="field">
+            <label>کلید (انگلیسی)</label>
+            <input dir="ltr" value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="vip2" />
+          </div>
+          <div className="field">
+            <label>نام نمایشی</label>
+            <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="ویژه ۲" />
+          </div>
+        </div>
+        <button type="button" className="btn success sm cat-add__btn" disabled={!newKey.trim()} onClick={() => void addCategory()}>
+          افزودن دسته
+        </button>
       </div>
-      <div className="field">
-        <label>نام نمایشی</label>
-        <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="ویژه ۲" />
-      </div>
-      <button type="button" className="btn success wide" disabled={!newKey.trim()} onClick={() => void addCategory()}>
-        افزودن دسته
-      </button>
     </div>
   );
 }
