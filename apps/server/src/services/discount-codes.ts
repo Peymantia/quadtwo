@@ -72,7 +72,7 @@ export async function previewDiscount(opts: {
       where: { id: row.createdByUserId },
       select: { role: true },
     });
-    if (creator?.role !== UserRole.admin && creator?.role !== "admin") {
+    if (creator?.role !== UserRole.admin) {
       return { error: "این کد فقط برای فروش سازنده‌اش قابل استفاده است" };
     }
   }
