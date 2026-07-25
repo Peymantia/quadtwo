@@ -165,17 +165,17 @@ export function buyCategoryKeyboard(cats: Array<{ key: string; label: string }>)
 export function mainMenuInline(opts: MainMenuOpts) {
   if (opts.isAdmin) {
     const kb = new InlineKeyboard()
-      .text(BTN.buy, "m:buy")
       .text(BTN.myServices, "m:myservices")
+      .text(BTN.buy, "m:buy")
       .row()
-      .text(BTN.renew, "m:renew")
       .text(BTN.allConfigs, "m:configs")
+      .text(BTN.renew, "m:renew")
       .row()
-      .text(BTN.configLookup, "m:cfglookup")
       .text(BTN.hideKeyboard, "m:hidekb")
+      .text(BTN.configLookup, "m:cfglookup")
       .row()
-      .text(BTN.controlCenter, "cc:home")
       .text(BTN.dashOtp, "m:dashotp")
+      .text(BTN.controlCenter, "cc:home")
       .row();
     if (opts.demoMode) kb.text(BTN.demoRole, "m:demorole").row();
     return kb;
