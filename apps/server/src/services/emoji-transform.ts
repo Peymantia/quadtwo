@@ -1,6 +1,5 @@
 import type { Api } from "grammy";
 import { getSetting, setSetting } from "./settings.js";
-import { isDemoMode } from "./license.js";
 import {
   PREMIUM_IDS,
   UNIVERSAL_BY_LENGTH,
@@ -13,8 +12,6 @@ let cached: { style: EmojiStyle; at: number } | null = null;
 const CACHE_MS = 5_000;
 
 export async function getEmojiStyle(): Promise<EmojiStyle> {
-  // Isolated demo bot: always show Premium custom emojis
-  if (isDemoMode()) return "premium";
   const now = Date.now();
   if (cached && now - cached.at < CACHE_MS) return cached.style;
   const raw = await getSetting("emoji_style");

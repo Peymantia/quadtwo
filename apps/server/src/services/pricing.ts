@@ -8,7 +8,6 @@ import {
   type PriceRates,
   type RoleRates,
 } from "./settings.js";
-import { isDemoMode } from "./license.js";
 
 export const DATA_MIN_GB = 10;
 export const DATA_MAX_GB = 50;
@@ -142,8 +141,8 @@ export async function resolvePrice(
 ) {
   const role = (roleOverride ?? user.role) as UserRole;
 
-  // Demo: admin role experiences free checkout
-  if (isDemoMode() && role === "admin") {
+  // Admin checkout is always complimentary (prod + demo)
+  if (role === "admin") {
     return { cell: null, price: 0, mode: "rate" as const };
   }
 

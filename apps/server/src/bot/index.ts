@@ -1125,6 +1125,23 @@ export function createBot() {
           detail: `${order.kind} ${formatToman(order.price)}`,
         });
       }
+      if (order.price <= 0) {
+        try {
+          await ctx.editMessageText(`${orderSummaryText(order)}\n\n✅ رایگان (ادمین) — در حال آماده‌سازی…`);
+        } catch {
+          await ctx.reply(`${orderSummaryText(order)}\n\n✅ رایگان (ادمین) — در حال آماده‌سازی…`);
+        }
+        const result = await payOrderWithWallet(order.id, user.id);
+        if ("kind" in result && result.kind === "wallet_credit") return;
+        await deliverResult(
+          ctx.api,
+          ctx.from!.id,
+          result as ProvisionResultWithBulk,
+          order.trafficGb,
+          "new",
+        );
+        return;
+      }
       const wallet = await getWallet(user.id);
       try {
         await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
@@ -2000,6 +2017,19 @@ export function createBot() {
         target: order.id,
         detail: `renew ${formatToman(order.price)}`,
       });
+      if (order.price <= 0) {
+        await ctx.editMessageText(`${orderSummaryText(order)}\n\n✅ رایگان (ادمین) — در حال آماده‌سازی…`);
+        const result = await payOrderWithWallet(order.id, user.id);
+        if ("kind" in result && result.kind === "wallet_credit") return;
+        await deliverResult(
+          ctx.api,
+          ctx.from!.id,
+          result as ProvisionResultWithBulk,
+          order.trafficGb,
+          "renew",
+        );
+        return;
+      }
       const wallet = await getWallet(user.id);
       await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
         reply_markup: payMethodKeyboard(order.id, wallet.balance),

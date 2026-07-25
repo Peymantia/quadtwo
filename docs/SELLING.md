@@ -57,7 +57,7 @@ q2 demo uninstall
 - لینک‌ها `demo.invalid` — اتصال واقعی برقرار نمی‌شود  
 docs\SELLING.md
 - هر تماس با API پنل 3x-ui در `DEMO_MODE` قطع است  
-- ایموجی‌های ربات دمو همیشه **Premium** هستند (مثلاً 🎭 انتخاب نقش با custom emoji)  
+- ایموجی‌ها طبق تنظیم `emoji_style` (Universal / Premium) — مثل نصب اصلی  
 
 ### اگر اشتباهی دمو را روی فروش روشن کردید
 

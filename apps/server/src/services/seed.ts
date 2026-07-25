@@ -65,12 +65,6 @@ export async function seedIfNeeded() {
   await cleanupInvalidUnlimitedCells();
   await ensureUnlimitedSalesEnabled();
 
-  const { isDemoMode } = await import("./license.js");
-  if (isDemoMode()) {
-    const { setEmojiStyle } = await import("./emoji-transform.js");
-    await setEmojiStyle("premium");
-  }
-
   const count = await prisma.priceCell.count();
   if (count === 0) {
     const rows = [];

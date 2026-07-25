@@ -64,37 +64,59 @@ export type MainMenuOpts = {
 };
 
 /**
- * Sticky reply keyboard — order + colors (Telegram: success=green, primary=blue, danger=red):
- * خرید 🟢 [| تغییر نقش دمو 🟢 در DEMO_MODE]
- * سرویس‌ها | تمدید  (خنثی)
- * کیف پول | حساب  (خنثی)
- * کلیه سرویس‌ها | پشتیبانی  (ادمین) / پشتیبانی (همکار|کاربر)
- * آموزش 🟢 | تست 🟢
- * نماینده/نمایندگی 🔵 | مشاهده سریع 🔵
- * تمام‌صفحه | کنترل سنتر  (ادمین) / تمام‌صفحه
- * داشبورد 🔴 (رنگ خاص)
+ * Sticky reply keyboard — order + colors (Telegram: success=green, primary=blue, danger=red).
+ *
+ * Admin (prod + demo):
+ *   خرید 🟢 [| تغییر نقش دمو 🟢]
+ *   تمدید | سرویس‌های من
+ *   کلیه سرویس‌ها | تمام‌صفحه
+ *   مشاهده سریع 🔵 | کنترل سنتر
+ *   داشبورد وب اپ 🔴
+ *
+ * Other roles: buy, services, wallet/account, support, guide/test, agent|partner + lookup, hide, dash OTP.
  */
 export function mainMenuReply(opts: MainMenuOpts) {
-  const isAgent = opts.isPartner || opts.isWholesale || opts.isAdmin;
+  if (opts.isAdmin) {
+    const kb = new Keyboard().text(BTN.buy).success();
+    if (opts.demoMode) kb.text(BTN.demoRole).success();
+    kb
+      .row()
+      .text(BTN.renew)
+      .text(BTN.myServices)
+      .row()
+      .text(BTN.allConfigs)
+      .text(BTN.hideKeyboard)
+      .row()
+      .text(BTN.configLookup)
+      .primary()
+      .text(BTN.controlCenter)
+      .row()
+      .text(BTN.dashOtp)
+      .danger()
+      .row();
+    return kb.persistent().resized();
+  }
+
+  const isAgent = opts.isPartner || opts.isWholesale;
   const kb = new Keyboard().text(BTN.buy).success();
   if (opts.demoMode) {
     kb.text(BTN.demoRole).success();
   }
-  kb.row()
+  kb
+    .row()
     .text(BTN.myServices)
     .text(BTN.renew)
     .row()
     .text(BTN.wallet)
     .text(BTN.account)
+    .row()
+    .text(BTN.support)
+    .row()
+    .text(BTN.guide)
+    .success()
+    .text(BTN.test)
+    .success()
     .row();
-
-  if (opts.isAdmin) {
-    kb.text(BTN.allConfigs).text(BTN.support).row();
-  } else {
-    kb.text(BTN.support).row();
-  }
-
-  kb.text(BTN.guide).success().text(BTN.test).success().row();
 
   if (isAgent) {
     kb.text(BTN.agentPanel).primary().text(BTN.configLookup).primary().row();
@@ -102,12 +124,7 @@ export function mainMenuReply(opts: MainMenuOpts) {
     kb.text(BTN.partner).primary().text(BTN.configLookup).primary().row();
   }
 
-  if (opts.isAdmin) {
-    kb.text(BTN.hideKeyboard).text(BTN.controlCenter).row();
-  } else {
-    kb.text(BTN.hideKeyboard).row();
-  }
-
+  kb.text(BTN.hideKeyboard).row();
   // Always OTP credentials first — do not open Mini App directly (no password on screen).
   kb.text(BTN.dashOtp).danger().row();
 
@@ -149,7 +166,26 @@ export function buyCategoryKeyboard(cats: Array<{ key: string; label: string }>)
 
 /** @deprecated inline main menu — use mainMenuReply */
 export function mainMenuInline(opts: MainMenuOpts) {
-  const isAgent = opts.isPartner || opts.isWholesale || opts.isAdmin;
+  if (opts.isAdmin) {
+    const kb = new InlineKeyboard().text(BTN.buy, "m:buy").success().row();
+    if (opts.demoMode) kb.text(BTN.demoRole, "m:demorole").success().row();
+    return kb
+      .text(BTN.renew, "m:renew")
+      .text(BTN.myServices, "m:myservices")
+      .row()
+      .text(BTN.allConfigs, "m:configs")
+      .text(BTN.hideKeyboard, "m:hidekb")
+      .row()
+      .text(BTN.configLookup, "m:cfglookup")
+      .primary()
+      .text(BTN.controlCenter, "cc:home")
+      .row()
+      .text(BTN.dashOtp, "m:dashotp")
+      .danger()
+      .row();
+  }
+
+  const isAgent = opts.isPartner || opts.isWholesale;
   const kb = new InlineKeyboard()
     .text(BTN.buy, "m:buy")
     .success()
@@ -159,24 +195,19 @@ export function mainMenuInline(opts: MainMenuOpts) {
     .row()
     .text(BTN.wallet, "m:wallet")
     .text(BTN.account, "m:account")
+    .row()
+    .text(BTN.support, "m:support")
+    .row()
+    .text(BTN.guide, "m:guide")
+    .success()
+    .text(BTN.test, "m:test")
+    .success()
     .row();
-
-  if (opts.isAdmin) {
-    kb.text(BTN.allConfigs, "m:configs").text(BTN.support, "m:support").row();
-  } else {
-    kb.text(BTN.support, "m:support").row();
-  }
-
-  kb.text(BTN.guide, "m:guide").success().text(BTN.test, "m:test").success().row();
 
   if (isAgent) {
     kb.text(BTN.agentPanel, "m:partnerpanel").primary().text(BTN.configLookup, "m:cfglookup").primary().row();
   } else {
     kb.text(BTN.partner, "m:partner").primary().text(BTN.configLookup, "m:cfglookup").primary().row();
-  }
-
-  if (opts.isAdmin) {
-    kb.text(BTN.controlCenter, "cc:home").row();
   }
 
   kb.text(BTN.dashOtp, "m:dashotp").danger().row();
