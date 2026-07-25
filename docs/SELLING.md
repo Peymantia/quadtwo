@@ -55,7 +55,6 @@ q2 demo uninstall
 - قیمت فقط برای نقش فعلی  
 - با ورود هر کاربر، چند اکانت **نمونه محلی** در «سرویس‌های من» (۳۰/۵۰ گیگ، نامحدود، تست و …)  
 - لینک‌ها `demo.invalid` — اتصال واقعی برقرار نمی‌شود  
-docs\SELLING.md
 - هر تماس با API پنل 3x-ui در `DEMO_MODE` قطع است  
 - ایموجی‌ها طبق تنظیم `emoji_style` (Universal / Premium) — مثل نصب اصلی  
 
@@ -67,7 +66,15 @@ q2 demo fix-main
 q2 demo setup   # ویزارد خودش اصلی را خاموش می‌کند
 ```
 
-روی نصب مشتری پولی **هرگز** `DEMO_MODE=true` در `.env` اصلی نگذارید.
+### مشتری (بدون دمو)
+
+```bash
+q2                  # منو → i) install without demo
+q2 install-without-demo
+q2 demo uninstall   # یا منو → u
+```
+
+نصب مشتری دمو ندارد. دمو فقط روی VPS خودت با `q2 demo setup`.
 
 ---
 

@@ -628,20 +628,96 @@ do_demo_disable() {
 }
 
 do_demo_uninstall() {
-  local ans host
-  echo -e "${YELLOW}Remove demo systemd units + nginx site? (.env.demo and demo.db kept unless you delete)${NC}"
-  read -r -p "Uninstall demo services? [y/N]: " ans || true
+  local ans host purge
+  echo -e "${BOLD}Uninstall demo showcase${NC}"
+  echo "Removes: systemd ${DEMO_SERVICE}/${DEMO_WEB_SERVICE}, nginx site,"
+  echo "         .env.demo, data/demo.db — production shop stays."
+  echo
+  read -r -p "Uninstall demo completely? [y/N]: " ans || true
   case "${ans:-}" in y|Y|yes|YES) ;; *) echo "Cancelled."; return 0 ;; esac
+
   demo_svc_stop 2>/dev/null || true
   systemctl disable "$DEMO_SERVICE" "$DEMO_WEB_SERVICE" 2>/dev/null || true
   rm -f "/etc/systemd/system/${DEMO_SERVICE}.service" "/etc/systemd/system/${DEMO_WEB_SERVICE}.service"
   systemctl daemon-reload
+
   host="$(demo_env_get DASH_DOMAIN 2>/dev/null || true)"
   if [[ -n "$host" ]]; then
     rm -f "/etc/nginx/sites-enabled/${host}" "/etc/nginx/sites-available/${host}"
     nginx -t 2>/dev/null && systemctl reload nginx || true
+    echo "Nginx site removed: ${host}"
   fi
-  echo "Demo services removed. Files left: $(demo_env_file) and data/demo.db"
+
+  rm -f "$(demo_env_file)"
+  rm -f "${DIR}/data/demo.db" "${DIR}/data/demo.db-journal" 2>/dev/null || true
+  echo "Removed .env.demo and data/demo.db (if present)."
+
+  if [[ -f "$(env_file)" ]] && demo_mode_on; then
+    set_env_key DEMO_MODE "false"
+    echo -e "Production DEMO_MODE → ${GREEN}false${NC}"
+    svc_restart
+  fi
+  echo -e "${GREEN}Demo uninstall complete.${NC} Customer shop is demo-free."
+}
+
+# Prepare / install production only — no showcase stack (for paying customers).
+do_install_without_demo() {
+  local ans host
+  echo -e "${BOLD}Install without demo${NC} ${DIM}(customer / production only)${NC}"
+  echo
+  echo "This path is for buyers who should NOT get the demo showcase:"
+  echo "  · DEMO_MODE=false on production"
+  echo "  · remove any quadtwo-demo services / .env.demo / demo.db"
+  echo "  · if QuadTwo is missing, run the normal installer"
+  echo
+
+  if [[ ! -f "$(env_file)" ]]; then
+    echo "No production install at ${DIR}."
+    read -r -p "Run fresh install.sh now (no demo)? [y/N]: " ans || true
+    case "${ans:-}" in y|Y|yes|YES) ;; *) echo "Cancelled."; return 0 ;; esac
+    if [[ -f "${DIR}/scripts/install.sh" ]]; then
+      bash "${DIR}/scripts/install.sh"
+    elif [[ -f "${DIR}/install.sh" ]]; then
+      bash "${DIR}/install.sh"
+    else
+      bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install.sh)
+    fi
+  else
+    echo "Production install found at ${DIR}."
+    read -r -p "Strip demo + force DEMO_MODE=false? [y/N]: " ans || true
+    case "${ans:-}" in y|Y|yes|YES) ;; *) echo "Cancelled."; return 0 ;; esac
+  fi
+
+  if [[ -f "$(env_file)" ]]; then
+    set_env_key DEMO_MODE "false"
+    echo -e "DEMO_MODE → ${GREEN}false${NC}"
+  fi
+
+  if has_demo_svc || [[ -f "$(demo_env_file)" ]]; then
+    echo "Removing demo sidecar…"
+    demo_svc_stop 2>/dev/null || true
+    systemctl disable "$DEMO_SERVICE" "$DEMO_WEB_SERVICE" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${DEMO_SERVICE}.service" "/etc/systemd/system/${DEMO_WEB_SERVICE}.service"
+    systemctl daemon-reload 2>/dev/null || true
+    host="$(demo_env_get DASH_DOMAIN 2>/dev/null || true)"
+    if [[ -n "${host:-}" ]]; then
+      rm -f "/etc/nginx/sites-enabled/${host}" "/etc/nginx/sites-available/${host}"
+      nginx -t 2>/dev/null && systemctl reload nginx || true
+    fi
+    rm -f "$(demo_env_file)"
+    rm -f "${DIR}/data/demo.db" "${DIR}/data/demo.db-journal" 2>/dev/null || true
+    echo "Demo stack removed."
+  else
+    echo "No demo sidecar present."
+  fi
+
+  if [[ -f "$(env_file)" ]]; then
+    svc_restart 2>/dev/null || true
+  fi
+  echo
+  echo -e "${GREEN}Done.${NC} Customer install is without demo."
+  echo "  Activate license: q2 activate"
+  echo "  Demo later (your VPS only): q2 demo setup"
 }
 
 demo_menu() {
@@ -664,7 +740,7 @@ EOF
   ${GREEN}4${NC}) stop demo services
   ${GREEN}5${NC}) fix-main  ${DIM}(force DEMO_MODE=false on production)${NC}
   ${GREEN}6${NC}) disable   ${DIM}(stop demo + clear flags)${NC}
-  ${GREEN}7${NC}) uninstall ${DIM}(remove demo systemd/nginx)${NC}
+  ${GREEN}7${NC}) uninstall ${DIM}(remove demo systemd/nginx + .env.demo + demo.db)${NC}
   ${YELLOW}0${NC}) back
 
 EOF
@@ -819,7 +895,9 @@ Usage:
   q2 activate [KEY]  Bind license (Telegram admin + dash host)
   q2 license         Show license status
   q2 demo            Demo showcase (isolated stack / setup wizard)
-  q2 demo status|setup|fix-main|start|stop
+  q2 demo status|setup|fix-main|start|stop|uninstall
+  q2 install-without-demo   Customer install — strip demo / DEMO_MODE=off
+  q2 demo uninstall         Remove demo sidecar completely
 
 Also available as: ${CYAN}quadtwo${NC}
 EOF
@@ -841,6 +919,9 @@ run_cmd() {
     activate) do_activate "${1:-}" ;;
     license|lic) do_license_status ;;
     demo) do_demo "$@" ;;
+    install-without-demo|install_without_demo|customer-install)
+      do_install_without_demo
+      ;;
     help|-h|--help) print_usage ;;
     "") return 1 ;;
     *)
@@ -875,11 +956,13 @@ ${DIM}dir: ${DIR}${NC}
   ${GREEN}9${NC}) set-admin  ${DIM}[ID,...]${NC}
   ${GREEN}a${NC}) activate   ${DIM}[license key]${NC}
   ${GREEN}l${NC}) license status
-  ${GREEN}d${NC}) demo        ${DIM}(isolated showcase on same VPS)${NC}
+  ${GREEN}d${NC}) demo        ${DIM}(isolated showcase — your VPS)${NC}
+  ${GREEN}i${NC}) install without demo  ${DIM}(customer / production only)${NC}
+  ${GREEN}u${NC}) demo uninstall        ${DIM}(remove demo completely)${NC}
   ${YELLOW}0${NC}) exit
 
 EOF
-  read -r -p "Select [0-9/a/l/d]: " choice || true
+  read -r -p "Select [0-9/a/l/d/i/u]: " choice || true
   case "${choice:-}" in
     1) run_cmd start; pause ;;
     2) run_cmd stop; pause ;;
@@ -909,6 +992,14 @@ EOF
       ;;
     l|L) run_cmd license; pause ;;
     d|D) run_cmd demo ;;
+    i|I)
+      do_install_without_demo
+      pause
+      ;;
+    u|U)
+      do_demo_uninstall
+      pause
+      ;;
     0|q|Q|exit) echo "Bye."; exit 0 ;;
     *)
       echo "Invalid option."

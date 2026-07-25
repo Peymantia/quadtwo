@@ -97,6 +97,7 @@ write_env() {
 NODE_ENV=production
 PORT=${PORT}
 DATABASE_URL=file:${INSTALL_DIR}/data/quadtwo.db
+DEMO_MODE=false
 
 BOT_TOKEN=${BOT_TOKEN}
 BOT_MODE=polling
