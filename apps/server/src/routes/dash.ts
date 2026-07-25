@@ -69,7 +69,7 @@ import { Bot } from "grammy";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
-import { formatTraffic, formatToman } from "../utils/format.js";
+import { formatTraffic, formatToman, startOfPersianMonth, persianMonthName } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
 import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays } from "../services/admin-configs.js";
 import {
@@ -708,8 +708,8 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/partner/home", async (c) => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
-    const since = new Date();
-    since.setDate(since.getDate() - 30);
+    const since = startOfPersianMonth();
+    const monthName = persianMonthName();
     const orders = await prisma.order.findMany({
       where: {
         userId: user.id,
@@ -719,15 +719,20 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       },
     });
     const sales = orders.reduce((s, o) => s + o.price, 0);
+    const activeSubs = await prisma.subscription.count({
+      where: { userId: user.id, status: "active" },
+    });
     return c.json({
       agentName: user.agentName,
       panelGroup: user.panelGroup,
       role: user.role,
       report: {
-        period: "30d",
+        period: "month",
+        monthName,
         orders: orders.length,
         sales,
         salesLabel: formatToman(sales),
+        activeSubs,
       },
     });
   });

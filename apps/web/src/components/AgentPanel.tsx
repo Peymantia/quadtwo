@@ -53,7 +53,13 @@ const TABS: ShellTab[] = [
 export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const { home, loading, reload } = useDashAuth(props.allowed);
   const [tab, setTab] = useState("home");
-  const [report, setReport] = useState<{ orders: number; salesLabel: string; panelGroup?: string | null } | null>(null);
+  const [report, setReport] = useState<{
+    orders: number;
+    salesLabel: string;
+    monthName?: string;
+    activeSubs?: number;
+    panelGroup?: string | null;
+  } | null>(null);
   const [configs, setConfigs] = useState<ConfigItem[]>([]);
   const [cells, setCells] = useState<Cell[]>([]);
   const [catLabels, setCatLabels] = useState<Record<string, string>>({});
@@ -92,9 +98,10 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     setMsg(null);
     setErr(null);
     if (tab === "home") {
-      void api<{ report: { orders: number; salesLabel: string }; panelGroup: string | null }>("/partner/home").then(
-        (r) => setReport({ ...r.report, panelGroup: r.panelGroup }),
-      );
+      void api<{
+        report: { orders: number; salesLabel: string; monthName?: string; activeSubs?: number };
+        panelGroup: string | null;
+      }>("/partner/home").then((r) => setReport({ ...r.report, panelGroup: r.panelGroup }));
     }
     if (tab === "create") {
       void api<{
@@ -372,7 +379,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               <div className="value num">{formatToman(home.wallet.balance)}</div>
             </div>
             <div className="stat">
-              <div className="label">فروش ۳۰ روز اخیر</div>
+              <div className="label">
+                فروش ماه جاری{report?.monthName ? ` (${report.monthName})` : ""}
+              </div>
               <div className="value num">{report?.salesLabel ?? "—"}</div>
             </div>
             <div className="stat">
@@ -380,10 +389,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               <div className="value num">{report?.orders ?? 0}</div>
             </div>
             <div className="stat">
-              <div className="label">گروه پنل</div>
-              <div className="value" style={{ fontSize: "1rem" }}>
-                {report?.panelGroup || "—"}
-              </div>
+              <div className="label">سرویس فعال</div>
+              <div className="value num">{report?.activeSubs ?? 0}</div>
             </div>
           </div>
           <div className="panel">

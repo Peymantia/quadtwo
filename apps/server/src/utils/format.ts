@@ -17,6 +17,23 @@ export function formatToman(amount: number): string {
   return `${amount.toLocaleString("fa-IR")} تومان`;
 }
 
+/** Start of the current Jalali (Persian) month in local time. */
+export function startOfPersianMonth(d = new Date()): Date {
+  const dayPart = new Intl.DateTimeFormat("en-u-ca-persian", { day: "numeric" })
+    .formatToParts(d)
+    .find((p) => p.type === "day");
+  const day = Math.max(1, Number(dayPart?.value || "1") || 1);
+  const start = new Date(d);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (day - 1));
+  return start;
+}
+
+/** Persian month name, e.g. «مرداد». */
+export function persianMonthName(d = new Date()): string {
+  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", { month: "long" }).format(d);
+}
+
 /** Isolate LTR runs (card numbers, codes) so RTL Persian UI does not reverse digits on screen. */
 export function ltrIsolate(value: string): string {
   const v = value.trim();
