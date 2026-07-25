@@ -237,19 +237,24 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
     pendingOrders: number;
     users: number;
     activeSubs: number;
-    salesToday: { label: string; count: number };
+    salesToday: { label: string; count: number; total?: number };
   } | null>(null);
 
   useEffect(() => {
     void api<NonNullable<typeof stats>>("/admin/home").then(setStats);
   }, []);
 
+  const salesTodayNum =
+    stats?.salesToday.total != null
+      ? stats.salesToday.total.toLocaleString("fa-IR")
+      : (stats?.salesToday.label ?? "—").replace(/\s*تومان\s*$/u, "").trim() || "—";
+
   return (
     <>
       <div className="grid stats-row-4">
         <div className="stat accent">
-          <div className="label">فروش امروز</div>
-          <div className="value num">{stats?.salesToday.label ?? "—"}</div>
+          <div className="label">فروش امروز (تومان)</div>
+          <div className="value num">{salesTodayNum}</div>
         </div>
         <div className="stat">
           <div className="label">سفارش در انتظار</div>
