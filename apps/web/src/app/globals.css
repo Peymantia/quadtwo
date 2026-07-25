@@ -1634,7 +1634,7 @@ h3 {
   inset: 0;
   display: grid;
   place-items: center;
-  z-index: 200;
+  z-index: 1100;
   pointer-events: none;
   padding: 20px;
 }
@@ -1671,6 +1671,7 @@ h3 {
 .toast-wrap-modal {
   pointer-events: auto;
   background: rgba(4, 6, 20, 0.55);
+  z-index: 1200;
 }
 
 .toast.confirm {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 /** Centered toast message; auto-dismisses (errors stay a bit longer). */
 export function Toast({
@@ -19,17 +20,19 @@ export function Toast({
   }, [msg, err, onClear]);
 
   if (!msg && !err) return null;
+  if (typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div className="toast-wrap" role="status" aria-live="polite">
       <div className={`toast ${err ? "err" : "ok"}`} onClick={onClear}>
         {err ?? msg}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
-/** Centered yes/no confirm dialog (replaces window.confirm). */
+/** Centered yes/no confirm dialog (replaces window.confirm). Portaled above Modals. */
 export function ConfirmToast({
   message,
   onYes,
@@ -47,7 +50,9 @@ export function ConfirmToast({
     return () => window.removeEventListener("keydown", onKey);
   }, [onNo]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div className="toast-wrap toast-wrap-modal" role="alertdialog" aria-modal="true" onClick={onNo}>
       <div className="toast confirm" onClick={(e) => e.stopPropagation()}>
         <p className="toast-confirm-msg">{message}</p>
@@ -60,6 +65,7 @@ export function ConfirmToast({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
