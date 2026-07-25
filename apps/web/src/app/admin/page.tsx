@@ -356,6 +356,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
       pricingMode?: "matrix" | "rate";
       defaultLimitIp?: number;
       canEditLimitIp?: boolean;
+      discountsEnabled?: boolean;
       volumeRules?: RateShopCatalog["volumeRules"];
     }>("/me/catalog").then((r) => {
       setCells(r.cells ?? []);
@@ -368,6 +369,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
         pricingMode: r.pricingMode === "rate" ? "rate" : "matrix",
         defaultLimitIp: r.defaultLimitIp,
         canEditLimitIp: true,
+        discountsEnabled: Boolean(r.discountsEnabled),
         volumeRules: r.volumeRules,
         cells: r.cells,
       });
@@ -1483,6 +1485,7 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
   const [labelEdits, setLabelEdits] = useState<Record<string, string>>({});
   const [newKey, setNewKey] = useState("");
   const [newLabel, setNewLabel] = useState("");
+  const [reordering, setReordering] = useState(false);
 
   const load = useCallback(() => api<{ categories: CategoryRow[] }>("/admin/categories").then((r) => setCats(r.categories)), []);
 
@@ -1527,15 +1530,60 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
     }
   }
 
+  async function moveCategory(index: number, dir: -1 | 1) {
+    const next = index + dir;
+    if (next < 0 || next >= cats.length) return;
+    const ordered = [...cats];
+    const tmp = ordered[index]!;
+    ordered[index] = ordered[next]!;
+    ordered[next] = tmp;
+    setCats(ordered);
+    setReordering(true);
+    try {
+      await api("/admin/categories/order", { method: "PUT", body: { order: ordered.map((c) => c.key) } });
+      flash("ترتیب ذخیره شد");
+    } catch (e) {
+      flash(null, errText(e));
+      await load();
+    } finally {
+      setReordering(false);
+    }
+  }
+
   return (
     <div className="panel">
       <h2>مدیریت دسته‌بندی‌ها</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        نام نمایشی هر دسته را ویرایش کنید، فروش آن را فعال/غیرفعال کنید یا کل دسته را همراه پلن‌هایش حذف کنید.
+        نام نمایشی هر دسته را ویرایش کنید، فروش آن را فعال/غیرفعال کنید، یا با دکمه‌های بالا/پایین ترتیب نمایش در ربات و داشبورد را عوض کنید.
       </p>
       <div className="list">
-        {cats.map((c) => (
+        {cats.map((c, i) => (
           <div key={c.key} className="row-card" style={{ alignItems: "center" }}>
+            <div className="actions" style={{ alignItems: "center", flexDirection: "column", gap: 4, minWidth: 44 }}>
+              <button
+                type="button"
+                className="btn sm"
+                title="بالا"
+                disabled={reordering || i === 0}
+                onClick={() => void moveCategory(i, -1)}
+                aria-label="جابه‌جایی به بالا"
+              >
+                ▲
+              </button>
+              <span className="muted" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }} dir="ltr">
+                {i + 1}
+              </span>
+              <button
+                type="button"
+                className="btn sm"
+                title="پایین"
+                disabled={reordering || i === cats.length - 1}
+                onClick={() => void moveCategory(i, 1)}
+                aria-label="جابه‌جایی به پایین"
+              >
+                ▼
+              </button>
+            </div>
             <div style={{ flex: 1, minWidth: 200 }}>
               <div className="field" style={{ marginBottom: 6 }}>
                 <label>

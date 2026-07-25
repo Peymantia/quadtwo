@@ -1478,10 +1478,22 @@ h3 {
 }
 
 .expiry-quick-row--inline {
+  display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
+  width: 100%;
+}
+
+.field.expiry-field {
+  overflow: visible;
+  position: relative;
+  z-index: 2;
+}
+
+.field.expiry-field:focus-within {
+  z-index: 6;
 }
 
 .expiry-quick-row > input[type="datetime-local"] {
@@ -1490,8 +1502,10 @@ h3 {
 }
 
 .expiry-quick-row--inline > input[type="datetime-local"] {
-  flex: 1 1 180px;
-  max-width: 260px;
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  max-width: none;
 }
 
 .expiry-quick-chips {
@@ -1500,27 +1514,32 @@ h3 {
 
 .expiry-preset-menu {
   position: relative;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  z-index: 5;
 }
 
 .expiry-preset-trigger {
   padding: 6px 10px !important;
   font-size: 0.78rem !important;
   font-weight: 650;
-  min-height: 34px;
+  min-height: 38px;
   white-space: nowrap;
 }
 
+/* Open under the date field (inward) — button sits at inline-start */
 .expiry-preset-dropdown {
   position: absolute;
   top: calc(100% + 4px);
-  inset-inline-end: 0;
-  z-index: 40;
-  min-width: 140px;
+  inset-inline-start: 0;
+  inset-inline-end: auto;
+  z-index: 50;
+  min-width: 132px;
+  width: max-content;
+  max-width: min(180px, calc(100vw - 48px));
   padding: 6px;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(18, 22, 48, 0.96);
+  background: rgba(18, 22, 48, 0.98);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(10px);
   display: flex;
@@ -1540,6 +1559,7 @@ h3 {
   font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .expiry-preset-item:hover,

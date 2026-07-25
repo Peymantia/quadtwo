@@ -162,7 +162,7 @@ export function DiscountCodesPanel({
     <div className="panel">
       <h2>کدهای تخفیف</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        هر کد فقط روی خریدهای همان سازنده اعمال می‌شود. سقف درصد برای نقش شما: {maxPercent}٪.
+        هر کد فقط روی خریدهای همان سازنده اعمال می‌شود؛ کدهای ادمین برای همه قابل استفاده‌اند. سقف درصد برای نقش شما: {maxPercent}٪.
         {!enabled ? " — فعلاً توسط ادمین خاموش است (ادمین همچنان می‌تواند کد بسازد)." : ""}
       </p>
 
@@ -196,45 +196,45 @@ export function DiscountCodesPanel({
             disabled={busy}
           />
         </div>
-        <div className="field">
-          <label>انقضا (اختیاری)</label>
-          <div className="expiry-quick-row expiry-quick-row--inline">
-            <input
-              type="datetime-local"
-              dir="ltr"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              disabled={busy}
-            />
-            <div className="expiry-preset-menu" ref={expiryMenuRef}>
-              <button
-                type="button"
-                className="btn ghost sm expiry-preset-trigger"
+          <div className="field expiry-field">
+            <label>انقضا (اختیاری)</label>
+            <div className="expiry-quick-row expiry-quick-row--inline">
+              <div className="expiry-preset-menu" ref={expiryMenuRef}>
+                <button
+                  type="button"
+                  className="btn ghost sm expiry-preset-trigger"
+                  disabled={busy}
+                  aria-expanded={expiryMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setExpiryMenuOpen((o) => !o)}
+                >
+                  سریع ▾
+                </button>
+                {expiryMenuOpen && (
+                  <div className="expiry-preset-dropdown" role="menu">
+                    {EXPIRY_PRESETS.map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        role="menuitem"
+                        className="expiry-preset-item"
+                        onClick={() => pickExpiry(p.opts)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <input
+                type="datetime-local"
+                dir="ltr"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
                 disabled={busy}
-                aria-expanded={expiryMenuOpen}
-                aria-haspopup="menu"
-                onClick={() => setExpiryMenuOpen((o) => !o)}
-              >
-                سریع ▾
-              </button>
-              {expiryMenuOpen && (
-                <div className="expiry-preset-dropdown" role="menu">
-                  {EXPIRY_PRESETS.map((p) => (
-                    <button
-                      key={p.label}
-                      type="button"
-                      role="menuitem"
-                      className="expiry-preset-item"
-                      onClick={() => pickExpiry(p.opts)}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              />
             </div>
           </div>
-        </div>
         <div className="field" style={{ gridColumn: "1 / -1" }}>
           <label>یادداشت</label>
           <input value={note} onChange={(e) => setNote(e.target.value)} disabled={busy} />

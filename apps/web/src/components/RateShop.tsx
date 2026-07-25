@@ -47,8 +47,8 @@ type Props = {
 type SeekStep = { value: number; label: string };
 
 function sortCategories(cats: string[]): string[] {
-  const rank = (k: string) => (k === "data" ? 0 : k === "national" ? 1 : k === "unlimited" ? 2 : 10);
-  return [...cats].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  // Catalog already returns admin display order; keep that order.
+  return [...cats];
 }
 
 function randomName(prefix: string) {
@@ -430,7 +430,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
       {catalog.discountsEnabled && (
         <div className="field">
-          <label>کد تخفیف (اختیاری — فقط کد خودتان)</label>
+          <label>کد تخفیف (اختیاری)</label>
           <input
             value={discountCode}
             onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}

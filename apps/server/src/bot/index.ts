@@ -146,6 +146,8 @@ const walletPayLocks = new Set<string>();
 
 async function requireChannel(ctx: Context) {
   if (!ctx.from) return true;
+  // Showcase bot: never gate visitors behind channel join (admins already bypass).
+  if (isDemoMode()) return true;
   // Bot operators shouldn't be blocked by join gates.
   if (await isControlAdmin(ctx.from.id)) return true;
 
@@ -169,20 +171,20 @@ async function requireChannel(ctx: Context) {
       const msg = String(err instanceof Error ? err.message : err);
       console.warn(`requireChannel getChatMember @${username} failed:`, msg);
       // Bot is not in the channel / not admin / wrong username → cannot verify.
-      if (
-        /chat not found|bot is not a member|not enough rights|have no rights|CHAT_ADMIN_REQUIRED|PEER_ID_INVALID|user not found/i.test(
-          msg,
-        )
-      ) {
-        botErrors.push(`@${username}`);
-      } else {
-        // Unknown API failure — don't falsely accuse the user of not joining.
-        botErrors.push(`@${username}`);
-      }
+      botErrors.push(username);
     }
   }
 
-  if (!missing.length && !botErrors.length) return true;
+  // If the bot cannot verify membership at all, do not lock out every non-admin.
+  // (Previously this looked like "bot only works for admin" because admins bypass the gate.)
+  if (!missing.length) {
+    if (botErrors.length) {
+      console.warn(
+        `requireChannel: fail-open — cannot verify @${botErrors.join(", @")} (add bot as channel admin)`,
+      );
+    }
+    return true;
+  }
 
   const kb = new InlineKeyboard();
   for (const username of missing) {
@@ -190,23 +192,10 @@ async function requireChannel(ctx: Context) {
   }
   kb.text("✅ بررسی عضویت", "check:channel");
 
-  const lines: string[] = [];
-  if (missing.length) {
-    lines.push("برای استفاده از ربات ابتدا میباست در کانال ما عضو شوید:", "", ...missing.map((u) => `• @${u}`));
-  }
-  if (botErrors.length) {
-    if (lines.length) lines.push("");
-    lines.push(
-      "⚠️ ربات فعلاً نمی‌تواند عضویت این کانال(ها) را بررسی کند:",
-      "",
-      ...botErrors.map((u) => `• ${u}`),
-      "",
-      "بات را به کانال اضافه کنید و ادمین کنید (حداقل دسترسی دیدن اعضا).",
-      "اگر بات را تازه ساختید، ادمین بودن بات قبلی کافی نیست — بات جدید را دوباره ادمین کنید.",
-    );
-  }
-
-  await ctx.reply(lines.join("\n"), { reply_markup: kb });
+  await ctx.reply(
+    ["برای استفاده از ربات ابتدا میباست در کانال ما عضو شوید:", "", ...missing.map((u) => `• @${u}`)].join("\n"),
+    { reply_markup: kb },
+  );
   return false;
 }
 

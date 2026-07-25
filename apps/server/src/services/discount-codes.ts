@@ -67,7 +67,14 @@ export async function previewDiscount(opts: {
   const row = await prisma.discountCode.findUnique({ where: { code: normalized } });
   if (!row || !row.active) return { error: "کد تخفیف معتبر نیست" };
   if (row.createdByUserId !== opts.buyer.id) {
-    return { error: "این کد فقط برای فروش سازنده‌اش قابل استفاده است" };
+    // Admin-created codes are global promos; partner/wholesale codes stay creator-scoped
+    const creator = await prisma.user.findUnique({
+      where: { id: row.createdByUserId },
+      select: { role: true },
+    });
+    if (creator?.role !== UserRole.admin && creator?.role !== "admin") {
+      return { error: "این کد فقط برای فروش سازنده‌اش قابل استفاده است" };
+    }
   }
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     return { error: "مهلت این کد تخفیف تمام شده است" };

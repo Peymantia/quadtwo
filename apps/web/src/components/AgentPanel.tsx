@@ -6,7 +6,6 @@ import { Toast, ConfirmToast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
 import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
 import { CardPayModal } from "./CardPayModal";
-import { Modal } from "./Modal";
 import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "./SortSelect";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
@@ -20,15 +19,6 @@ type PayCard = { number: string; holder: string };
 type PayModalState = { orderId: string; price: number; card: PayCard } | null;
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
-type Cell = {
-  id: string;
-  trafficGb: number | null;
-  months: number;
-  title: string | null;
-  price: number;
-  category: string;
-  isGolden?: boolean;
-};
 
 type ConfigItem = {
   email: string;
@@ -65,12 +55,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     panelGroup?: string | null;
   } | null>(null);
   const [configs, setConfigs] = useState<ConfigItem[]>([]);
-  const [cells, setCells] = useState<Cell[]>([]);
   const [catLabels, setCatLabels] = useState<Record<string, string>>({});
-  const [pricingMode, setPricingMode] = useState<"matrix" | "rate">("matrix");
   const [rateCatalog, setRateCatalog] = useState<RateShopCatalog | null>(null);
-  const [selected, setSelected] = useState<Cell | null>(null);
-  const [accountName, setAccountName] = useState("");
   const [filter, setFilter] = useState("");
   const [configSort, setConfigSort] = useState<ListSort>("newest");
   const [configPage, setConfigPage] = useState(0);
@@ -83,7 +69,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [payCard, setPayCard] = useState<PayCard | null>(null);
   const [txs, setTxs] = useState<Array<{ id: string; type: string; amount: number; createdAt: string; note?: string | null }>>([]);
   const [confirmRotate, setConfirmRotate] = useState<ConfigItem | null>(null);
-  const [matrixConfirmOpen, setMatrixConfirmOpen] = useState(false);
   const [payModal, setPayModal] = useState<PayModalState>(null);
   const [qrSub, setQrSub] = useState<{ url: string; title: string } | null>(null);
 
@@ -109,18 +94,17 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     }
     if (tab === "create") {
       void api<{
-        cells: Cell[];
+        cells?: RateShopCatalog["cells"];
         categoryLabels: Record<string, string>;
         categories?: string[];
         maxMonths?: number;
         pricingMode?: "matrix" | "rate";
         defaultLimitIp?: number;
         canEditLimitIp?: boolean;
+        discountsEnabled?: boolean;
         volumeRules?: RateShopCatalog["volumeRules"];
       }>("/me/catalog").then((r) => {
-        setCells(r.cells);
         setCatLabels(r.categoryLabels ?? {});
-        setPricingMode(r.pricingMode === "rate" ? "rate" : "matrix");
         setRateCatalog({
           categories: r.categories ?? [],
           categoryLabels: r.categoryLabels ?? {},
@@ -128,6 +112,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           pricingMode: r.pricingMode === "rate" ? "rate" : "matrix",
           defaultLimitIp: r.defaultLimitIp,
           canEditLimitIp: true,
+          discountsEnabled: Boolean(r.discountsEnabled),
           volumeRules: r.volumeRules,
           cells: r.cells,
         });
@@ -169,51 +154,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   }, [filter, configSort, configPageSize]);
 
   if (loading || !home) return <LoadingScreen />;
-
-  async function create(payWithWallet: boolean) {
-    if (!selected) return;
-    setMatrixConfirmOpen(false);
-    setErr(null);
-    setMsg(null);
-    setResult(null);
-    setBusy(true);
-    try {
-      const name = accountName.trim() || `p${Date.now().toString(36)}`;
-      const r = await api<{
-        provisioned?: CreatedAccount;
-        order?: { id: string; price: number };
-        card?: PayCard;
-        error?: string;
-      }>("/partner/create", {
-        body: {
-          trafficGb: selected.trafficGb,
-          months: selected.months,
-          category: selected.category,
-          accountName: name,
-          payWithWallet,
-        },
-      });
-      if (r.provisioned?.code) {
-        setResult({
-          ...r.provisioned,
-          categoryLabel: catLabels[selected.category] || selected.category,
-          months: selected.months,
-          trafficGb: r.provisioned.trafficGb ?? selected.trafficGb,
-        });
-        setAccountName("");
-        await reload();
-      } else if (r.order && r.card) {
-        setPayCard(r.card);
-        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
-      } else {
-        setMsg(`سفارش ${formatToman(r.order!.price)} ثبت شد`);
-      }
-    } catch (e) {
-      setErr(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function createRate(payload: RateOrderPayload) {
     setErr(null);
@@ -422,51 +362,12 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         <>
           <div className="panel">
             <h2>ساخت کانفیگ برای مشتری</h2>
-            {pricingMode === "rate" && rateCatalog ? (
+            {rateCatalog && rateCatalog.categories.length > 0 ? (
               <RateShop catalog={rateCatalog} busy={busy} variant="agent" onSubmit={createRate} />
             ) : (
-              <>
-                <div className="field">
-                  <label>نام اکانت (اختیاری — روی کانفیگ نمایش داده می‌شود)</label>
-                  <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="مثلاً ali-mobile" />
-                </div>
-                <div className="plan-grid">
-                  {cells.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="plan-card"
-                      style={{
-                        cursor: "pointer",
-                        textAlign: "right",
-                        color: "inherit",
-                        borderColor: selected?.id === c.id ? "rgba(56,189,248,0.7)" : undefined,
-                        background: selected?.id === c.id ? "rgba(56,189,248,0.09)" : undefined,
-                      }}
-                      onClick={() => setSelected(c)}
-                    >
-                      <div className="plan-name">
-                        {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
-                      </div>
-                      <div className="plan-meta">
-                        <span>{catLabels[c.category] || c.category}</span>
-                        <span className="num">{c.months} ماه</span>
-                      </div>
-                      <div className="plan-price num">{formatToman(c.price)}</div>
-                    </button>
-                  ))}
-                </div>
-                {!cells.length && <p className="muted">هنوز پلنی برای فروش تنظیم نشده است.</p>}
-                <button
-                  type="button"
-                  className="btn success wide"
-                  style={{ marginTop: 14 }}
-                  disabled={!selected || busy}
-                  onClick={() => setMatrixConfirmOpen(true)}
-                >
-                  بررسی و پرداخت
-                </button>
-              </>
+              <p className="muted" style={{ margin: 0 }}>
+                هنوز پلنی برای فروش تنظیم نشده است.
+              </p>
             )}
           </div>
           {result?.code && (
@@ -683,31 +584,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           }}
           onSaved={() => void reload()}
         />
-      )}
-
-      {selected && (
-        <Modal open={matrixConfirmOpen} title="تأیید ساخت اکانت" onClose={() => setMatrixConfirmOpen(false)}>
-          <p className="order-confirm-summary">
-            {[
-              `اکانت «${accountName.trim() || "رندوم"}»`,
-              `نوع: ${catLabels[selected.category] || selected.category}`,
-              `حجم: ${selected.trafficGb == null ? "نامحدود" : `${selected.trafficGb.toLocaleString("fa-IR")} گیگابایت`}`,
-              `مدت: ${selected.months.toLocaleString("fa-IR")} ماه`,
-              `مبلغ: ${formatToman(selected.price)}`,
-            ].join("\n")}
-          </p>
-          <div className="actions order-confirm-actions">
-            <button type="button" className="btn seek-pay-wallet" disabled={busy} onClick={() => void create(true)}>
-              تأیید و پرداخت از کیف پول
-            </button>
-            <button type="button" className="btn seek-pay-card" disabled={busy} onClick={() => void create(false)}>
-              تأیید و پرداخت کارت به کارت
-            </button>
-            <button type="button" className="btn ghost" disabled={busy} onClick={() => setMatrixConfirmOpen(false)}>
-              انصراف
-            </button>
-          </div>
-        </Modal>
       )}
 
       {payModal && (

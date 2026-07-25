@@ -1,9 +1,13 @@
 import { prisma } from "../db.js";
+import { isDemoMode } from "./license.js";
 import {
   ensureDefaultSettings,
+  getChannels,
   getPriceRates,
   getSalesCategories,
+  saveChannels,
   saveSalesCategories,
+  setSetting,
 } from "./settings.js";
 
 const month1: Array<{
@@ -60,8 +64,24 @@ export async function ensureUnlimitedSalesEnabled() {
   console.log("enabled unlimited in sales_categories (pricing already configured)");
 }
 
+/** Demo showcase must stay open to any Telegram visitor — never force channel join. */
+async function disableForcedChannelsInDemo() {
+  if (!isDemoMode()) return;
+  await setSetting("channel_required", "false");
+  try {
+    const channels = await getChannels();
+    if (channels.some((c) => c.required)) {
+      await saveChannels(channels.map((c) => ({ ...c, required: false })));
+      console.log("[demo] cleared forced channel join (showcase must stay open)");
+    }
+  } catch (err) {
+    console.warn("[demo] could not clear channel force flags:", err);
+  }
+}
+
 export async function seedIfNeeded() {
   await ensureDefaultSettings();
+  await disableForcedChannelsInDemo();
   await cleanupInvalidUnlimitedCells();
   await ensureUnlimitedSalesEnabled();
 

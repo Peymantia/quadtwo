@@ -62,6 +62,11 @@ import {
   defaultNotifConfig,
   listEnabledSalesCategories,
   saveCategoryLabels,
+  saveCategoryOrder,
+  getCategoryOrder,
+  sortKeysByCategoryOrder,
+  ensureCategoryInOrder,
+  removeCategoryFromOrder,
   saveChannels,
   savePriceRates,
   savePricingModes,
@@ -1376,6 +1381,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/admin/categories", async (c) => {
     const enabled = await getSalesCategories();
     const labels = await getCategoryLabels();
+    const order = await getCategoryOrder();
     const counts = await prisma.priceCell.groupBy({
       by: ["category"],
       where: { active: true },
@@ -1388,8 +1394,9 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       ...Object.keys(labels),
       ...counts.map((x) => x.category),
     ]);
+    const sorted = sortKeysByCategoryOrder([...keys], order);
     return c.json({
-      categories: [...keys].map((key) => ({
+      categories: sorted.map((key) => ({
         key,
         label: labels[key] || key,
         enabled: enabled[key] === true,
@@ -1397,6 +1404,34 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         builtin: (BUILTIN_CATEGORY_KEYS as readonly string[]).includes(key),
       })),
     });
+  });
+
+  api.put("/admin/categories/order", async (c) => {
+    const body = await c.req.json<{ order?: string[] }>();
+    if (!Array.isArray(body.order) || !body.order.length) {
+      return c.json({ error: "ترتیب نامعتبر است" }, 400);
+    }
+    const enabled = await getSalesCategories();
+    const labels = await getCategoryLabels();
+    const known = new Set<string>([
+      ...BUILTIN_CATEGORY_KEYS,
+      ...Object.keys(enabled),
+      ...Object.keys(labels),
+    ]);
+    const order = body.order
+      .map((k) => sanitizeCategoryKey(String(k)))
+      .filter((k) => k && known.has(k));
+    const seen = new Set(order);
+    for (const k of known) {
+      if (!seen.has(k)) order.push(k);
+    }
+    await saveCategoryOrder(order);
+    await auditLog({
+      action: "web_category_reorder",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      detail: order.join(","),
+    });
+    return c.json({ ok: true, order });
   });
 
   api.post("/admin/categories", async (c) => {
@@ -1416,6 +1451,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     const cats = await getSalesCategories();
     cats[key] = true;
     await saveSalesCategories(cats);
+    await ensureCategoryInOrder(key);
     await auditLog({
       action: "web_category_create",
       actorTelegramId: BigInt(c.get("telegramId")),
@@ -1455,6 +1491,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       const labels = await getCategoryLabels();
       delete labels[key];
       await saveCategoryLabels(labels);
+      await removeCategoryFromOrder(key);
     }
     const res = await prisma.priceCell.updateMany({
       where: { category: key, active: true },

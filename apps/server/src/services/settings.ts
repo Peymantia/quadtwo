@@ -130,6 +130,8 @@ const defaults: Record<string, string> = {
     national: "اینترنت ملی",
     unlimited: "نامحدود",
   }),
+  /** Display order for plan categories (web dashboard + bot) */
+  category_order_json: JSON.stringify(["data", "national", "unlimited"]),
   /** Web dashboard session lifetime after login, in hours */
   web_session_hours: "168",
   /** Bot emoji display: universal (Unicode) | premium (custom emoji IDs) */
@@ -481,6 +483,67 @@ export async function saveCategoryLabels(labels: CategoryLabels) {
   await setSetting("category_labels_json", JSON.stringify(labels));
 }
 
+/** Display order for category keys (first = top row / first chip). */
+export function defaultCategoryOrder(): string[] {
+  return [...BUILTIN_CATEGORY_KEYS];
+}
+
+export async function getCategoryOrder(): Promise<string[]> {
+  try {
+    const raw = JSON.parse(await getSetting("category_order_json")) as unknown;
+    if (!Array.isArray(raw)) return defaultCategoryOrder();
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const item of raw) {
+      if (typeof item !== "string") continue;
+      const key = item.trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(key);
+    }
+    return out.length ? out : defaultCategoryOrder();
+  } catch {
+    return defaultCategoryOrder();
+  }
+}
+
+export async function saveCategoryOrder(order: string[]) {
+  const seen = new Set<string>();
+  const clean: string[] = [];
+  for (const item of order) {
+    const key = typeof item === "string" ? item.trim() : "";
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    clean.push(key);
+  }
+  await setSetting("category_order_json", JSON.stringify(clean.length ? clean : defaultCategoryOrder()));
+}
+
+/** Sort keys by admin display order; unknown keys follow in locale order. */
+export function sortKeysByCategoryOrder(keys: string[], order: string[]): string[] {
+  const rank = new Map(order.map((k, i) => [k, i]));
+  return [...keys].sort((a, b) => {
+    const ra = rank.has(a) ? rank.get(a)! : 10_000;
+    const rb = rank.has(b) ? rank.get(b)! : 10_000;
+    if (ra !== rb) return ra - rb;
+    return a.localeCompare(b);
+  });
+}
+
+/** Ensure every known key appears in order (append missing); drop unknown optionally kept. */
+export async function ensureCategoryInOrder(key: string) {
+  const order = await getCategoryOrder();
+  if (order.includes(key)) return;
+  order.push(key);
+  await saveCategoryOrder(order);
+}
+
+export async function removeCategoryFromOrder(key: string) {
+  const order = await getCategoryOrder();
+  const next = order.filter((k) => k !== key);
+  if (next.length !== order.length) await saveCategoryOrder(next);
+}
+
 /** Sanitize a new category key: lowercase latin slug. */
 export function sanitizeCategoryKey(raw: string): string {
   return raw
@@ -509,6 +572,7 @@ export async function getMaxPurchaseMonths(): Promise<number> {
 export async function listEnabledSalesCategories(): Promise<string[]> {
   const cats = await getSalesCategories();
   const labels = await getCategoryLabels();
+  const order = await getCategoryOrder();
   const keys = new Set([...Object.keys(cats), ...Object.keys(labels), ...BUILTIN_CATEGORY_KEYS]);
-  return [...keys].filter((k) => cats[k] === true);
+  return sortKeysByCategoryOrder([...keys].filter((k) => cats[k] === true), order);
 }

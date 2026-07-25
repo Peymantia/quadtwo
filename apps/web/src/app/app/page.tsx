@@ -125,6 +125,7 @@ export default function UserAppPage() {
         pricingMode?: "matrix" | "rate";
         defaultLimitIp?: number;
         canEditLimitIp?: boolean;
+        discountsEnabled?: boolean;
         volumeRules?: RateShopCatalog["volumeRules"];
       }>("/me/catalog").then((r) => {
         setRateCatalog({
@@ -134,6 +135,7 @@ export default function UserAppPage() {
           pricingMode: r.pricingMode === "rate" ? "rate" : "matrix",
           defaultLimitIp: r.defaultLimitIp,
           canEditLimitIp: r.canEditLimitIp,
+          discountsEnabled: Boolean(r.discountsEnabled),
           volumeRules: r.volumeRules,
           cells: r.cells,
         });

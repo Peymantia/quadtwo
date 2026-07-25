@@ -83,7 +83,11 @@ export async function upsertUserFromTelegram(tg: TgUserLike): Promise<User> {
     update: {},
   });
 
-  await ensureDemoSampleSubscriptions(user.id);
+  try {
+    await ensureDemoSampleSubscriptions(user.id);
+  } catch (err) {
+    console.warn("ensureDemoSampleSubscriptions failed:", err);
+  }
 
   return user;
 }
