@@ -412,7 +412,11 @@ export function DashShell(props: {
               {props.userLabel && <p className="sub">{props.userLabel}</p>}
             </div>
             <div className="topbar-side">
-              {isAdmin && <AdminPanelSwitcher />}
+              {isAdmin && (
+                <span className="hide-mobile">
+                  <AdminPanelSwitcher />
+                </span>
+              )}
               {!isAdmin && props.walletLabel && (
                 <span className="money-pill num hide-mobile">{props.walletLabel}</span>
               )}
