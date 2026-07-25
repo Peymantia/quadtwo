@@ -66,34 +66,31 @@ export type MainMenuOpts = {
 /**
  * Sticky reply keyboard — order + colors (Telegram: success=green, primary=blue, danger=red).
  *
- * Admin (prod + demo):
- *   خرید 🟢 [| تغییر نقش دمو 🟢]
- *   تمدید | سرویس‌های من
- *   کلیه سرویس‌ها | تمام‌صفحه
- *   مشاهده سریع 🔵 | کنترل سنتر
- *   داشبورد وب اپ 🔴
+ * Admin (prod + demo) — all neutral:
+ *   خرید | سرویس‌های من
+ *   تمدید | کلیه سرویس‌ها
+ *   مشاهده سریع | تمام‌صفحه
+ *   کنترل سنتر | داشبورد وب اپ
+ *   [| تغییر نقش دمو — فقط DEMO_MODE]
  *
  * Other roles: buy, services, wallet/account, support, guide/test, agent|partner + lookup, hide, dash OTP.
  */
 export function mainMenuReply(opts: MainMenuOpts) {
   if (opts.isAdmin) {
-    const kb = new Keyboard().text(BTN.buy).success();
-    if (opts.demoMode) kb.text(BTN.demoRole).success();
-    kb
-      .row()
-      .text(BTN.renew)
+    const kb = new Keyboard()
+      .text(BTN.buy)
       .text(BTN.myServices)
       .row()
+      .text(BTN.renew)
       .text(BTN.allConfigs)
-      .text(BTN.hideKeyboard)
       .row()
       .text(BTN.configLookup)
-      .primary()
-      .text(BTN.controlCenter)
+      .text(BTN.hideKeyboard)
       .row()
+      .text(BTN.controlCenter)
       .text(BTN.dashOtp)
-      .danger()
       .row();
+    if (opts.demoMode) kb.text(BTN.demoRole).row();
     return kb.persistent().resized();
   }
 
@@ -167,22 +164,21 @@ export function buyCategoryKeyboard(cats: Array<{ key: string; label: string }>)
 /** @deprecated inline main menu — use mainMenuReply */
 export function mainMenuInline(opts: MainMenuOpts) {
   if (opts.isAdmin) {
-    const kb = new InlineKeyboard().text(BTN.buy, "m:buy").success().row();
-    if (opts.demoMode) kb.text(BTN.demoRole, "m:demorole").success().row();
-    return kb
-      .text(BTN.renew, "m:renew")
+    const kb = new InlineKeyboard()
+      .text(BTN.buy, "m:buy")
       .text(BTN.myServices, "m:myservices")
       .row()
+      .text(BTN.renew, "m:renew")
       .text(BTN.allConfigs, "m:configs")
-      .text(BTN.hideKeyboard, "m:hidekb")
       .row()
       .text(BTN.configLookup, "m:cfglookup")
-      .primary()
-      .text(BTN.controlCenter, "cc:home")
+      .text(BTN.hideKeyboard, "m:hidekb")
       .row()
+      .text(BTN.controlCenter, "cc:home")
       .text(BTN.dashOtp, "m:dashotp")
-      .danger()
       .row();
+    if (opts.demoMode) kb.text(BTN.demoRole, "m:demorole").row();
+    return kb;
   }
 
   const isAgent = opts.isPartner || opts.isWholesale;
