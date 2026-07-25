@@ -16,7 +16,7 @@ export const BTN = {
   support: "🆘 پشتیبانی",
   test: "🧪 دریافت اکانت تست",
   dashboard: "🌐 داشبورد وب",
-  dashOtp: "🔐 ورود به داشبورد وب اپ",
+  dashOtp: "🔐 داشبورد | وب اپ",
   configLookup: "🔎 مشاهده سریع",
   partner: "🤝 درخواست نمایندگی",
   allConfigs: "📋 نمایش کلیه سرویس‌ها",
@@ -70,7 +70,7 @@ export type MainMenuOpts = {
  *   سرویس‌های من | خرید
  *   کلیه سرویس‌ها | تمدید
  *   تمام‌صفحه | مشاهده سریع
- *   داشبورد وب اپ | کنترل سنتر
+ *   داشبورد | وب اپ | کنترل سنتر
  *   [| تغییر نقش دمو — فقط DEMO_MODE]
  *
  * Other roles: buy, services, wallet/account, support, guide/test, agent|partner + lookup, hide, dash OTP.
@@ -225,6 +225,8 @@ export function buyWizardKeyboard(opts: {
   maxMonths?: number;
   /** Admin / partner / wholesale: quantity + IP limit steppers */
   canEditAgentOptions?: boolean;
+  discountsEnabled?: boolean;
+  discountCode?: string | null;
 }) {
   const vol = opts.unlimited ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
   const unit = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
@@ -262,9 +264,19 @@ export function buyWizardKeyboard(opts: {
       .row();
   }
 
+  kb.text(`💰 ${unit}${total}`, "wiz:noop").row();
+
+  if (opts.discountsEnabled) {
+    if (opts.discountCode) {
+      kb.text(`🎟 ${opts.discountCode}`, "wiz:discount:set")
+        .text("✖ حذف کد", "wiz:discount:clear")
+        .row();
+    } else {
+      kb.text("🎟 کد تخفیف", "wiz:discount:set").row();
+    }
+  }
+
   return kb
-    .text(`💰 ${unit}${total}`, "wiz:noop")
-    .row()
     .text("🎲 نام رندوم", "wiz:name:random")
     .text("✍️ نام دلخواه", "wiz:name:custom")
     .row()
@@ -449,6 +461,8 @@ export function renewWizardKeyboard(opts: {
   price: number | null;
   maxMonths?: number;
   category?: string;
+  discountsEnabled?: boolean;
+  discountCode?: string | null;
 }) {
   const priceLabel = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
   const maxMonths = opts.maxMonths ?? 1;
@@ -475,9 +489,19 @@ export function renewWizardKeyboard(opts: {
     kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
   }
 
+  kb.text(`💰 ${priceLabel}`, "wiz:noop").row();
+
+  if (opts.discountsEnabled) {
+    if (opts.discountCode) {
+      kb.text(`🎟 ${opts.discountCode}`, "renew:discount:set")
+        .text("✖ حذف کد", "renew:discount:clear")
+        .row();
+    } else {
+      kb.text("🎟 کد تخفیف", "renew:discount:set").row();
+    }
+  }
+
   return kb
-    .text(`💰 ${priceLabel}`, "wiz:noop")
-    .row()
     .text("✅ تأیید و پرداخت تمدید", `renew:checkout:${opts.subId}`)
     .success()
     .row()
@@ -517,6 +541,9 @@ export function buyDraftText(opts: {
   accountMode: string;
   accountName?: string | null;
   category?: string;
+  discountCode?: string | null;
+  discountAmount?: number | null;
+  priceAfterDiscount?: number | null;
 }) {
   const qty = Math.max(1, opts.quantity ?? 1);
   const vol =
@@ -524,17 +551,29 @@ export function buyDraftText(opts: {
   const dur = opts.months === 1 ? "۱ ماهه" : `${opts.months} ماهه`;
   const unitPrice = opts.price;
   const totalPrice = unitPrice === null ? null : unitPrice * qty;
-  const priceLabel = totalPrice === null ? "قیمت‌گذاری نشده" : formatToman(totalPrice);
+  const finalPrice =
+    opts.priceAfterDiscount != null && opts.priceAfterDiscount >= 0
+      ? opts.priceAfterDiscount
+      : totalPrice;
+  const priceLabel = finalPrice === null ? "قیمت‌گذاری نشده" : formatToman(finalPrice);
   const name =
     opts.accountMode === "custom" && opts.accountName?.trim()
       ? opts.accountName.trim()
       : "رندوم (بعد از تأیید)";
+
+  const discountLine =
+    opts.discountCode && opts.discountAmount && opts.discountAmount > 0
+      ? `🎟 تخفیف ${opts.discountCode}: −${formatToman(opts.discountAmount)}`
+      : opts.discountCode
+        ? `🎟 کد: ${opts.discountCode}`
+        : "";
 
   return [
     qty > 1 ? "🛒 خرید عمده:" : "🛒 خرید سرویس:",
     `💎 ${vol} ⏳ ${dur}`,
     `📱 محدودیت: ${formatLimitIp(opts.limitIp)}`,
     `💰 قیمت: ${priceLabel}`,
+    discountLine,
     qty > 1 ? `📦 تعداد: ${qty} عدد` : "",
     `👤 نام اکانت: ${name}`,
     "",
@@ -612,6 +651,9 @@ export function controlCenterKeyboard() {
     .row()
     .text("🏷 دسته‌های فروش", "cc:sales:cat")
     .primary()
+    .row()
+    .text("🎟 کد تخفیف", "cc:discounts")
+    .success()
     .row()
     .text("📖 آموزش و دانلود اپ", "cc:guide")
     .row()

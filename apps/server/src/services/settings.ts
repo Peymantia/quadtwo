@@ -75,6 +75,10 @@ const defaults: Record<string, string> = {
   guide_windows_url: "https://github.com/2dust/v2rayN/releases/latest",
   guide_macos_url: "https://apps.apple.com/app/v2box/id6446814690",
   test_service_enabled: "true",
+  /** Promo / discount codes at checkout (admin toggle) */
+  discount_codes_enabled: "false",
+  /** Max % for partner/wholesale when creating codes (admin always up to 100) */
+  discount_max_percent: "30",
   national_service_note: "این سرویس در شرایط اضطراری فعال می‌شود.",
   extra_admin_ids: "",
   /** Default IP/device limit for new configs (0 = unlimited) */

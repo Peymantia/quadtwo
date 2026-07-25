@@ -34,6 +34,16 @@ import {
 import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, rotateUuid, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
 import {
+  createDiscountCode,
+  deleteDiscountCode,
+  getDiscountMaxPercentForRole,
+  isDiscountCodesEnabled,
+  listDiscountCodesForUser,
+  previewDiscount,
+  updateDiscountCode,
+  canManageDiscountCodes,
+} from "../services/discount-codes.js";
+import {
   getAllSettings,
   getCategoryLabels,
   getChannels,
@@ -69,8 +79,8 @@ import { Bot } from "grammy";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
-import { formatTraffic, formatToman, startOfPersianMonth, persianMonthName } from "../utils/format.js";
-import { adminSalesReport, searchUsersAndOrders } from "../services/admin-reports.js";
+import { formatTraffic, formatToman, persianMonthName } from "../utils/format.js";
+import { adminSalesReport, searchUsersAndOrders, buildSalesStats, parseSalesPeriod, agentsSalesLeaderboard } from "../services/admin-reports.js";
 import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays } from "../services/admin-configs.js";
 import {
   createPanelServer,
@@ -510,6 +520,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       maxMonths,
       defaultLimitIp,
       canEditLimitIp: canEditLimitIp(pricedUser.role),
+      discountsEnabled: await isDiscountCodesEnabled(),
       volumeRules: {
         data: { min: 10, max: 50, step: 5 },
         national: { min: 1, max: 20, step: 1 },
@@ -520,11 +531,18 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.post("/me/quote", async (c) => {
-    const body = await c.req.json<{ trafficGb?: number | null; months?: number; category?: string }>();
+    const body = await c.req.json<{
+      trafficGb?: number | null;
+      months?: number;
+      category?: string;
+      quantity?: number;
+      discountCode?: string | null;
+    }>();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
     const pricedUser = withEffectiveRole(user, c.get("telegramId"));
     const category = body.category || "data";
     const trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
+    const qty = Math.max(1, Math.min(50, Number(body.quantity) || 1));
     const priced = await resolvePrice(
       pricedUser,
       trafficGb,
@@ -532,7 +550,37 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       category,
     );
     if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
-    return c.json({ price: priced.price, mode: priced.mode, trafficGb });
+    const priceBefore = priced.price * qty;
+    let discountAmount = 0;
+    let price = priceBefore;
+    let discountCode: string | null = null;
+    let percentOff: number | null = null;
+    let discountError: string | null = null;
+    if (body.discountCode?.trim()) {
+      const prev = await previewDiscount({
+        buyer: pricedUser,
+        code: body.discountCode,
+        price: priceBefore,
+      });
+      if ("error" in prev) {
+        discountError = prev.error;
+      } else {
+        discountAmount = prev.discountAmount;
+        price = prev.priceAfter;
+        discountCode = prev.code;
+        percentOff = prev.percentOff;
+      }
+    }
+    return c.json({
+      price,
+      priceBefore,
+      discountAmount,
+      discountCode,
+      percentOff,
+      discountError,
+      mode: priced.mode,
+      trafficGb,
+    });
   });
 
   api.get("/me/orders", async (c) => {
@@ -552,6 +600,21 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         createdAt: o.createdAt.toISOString(),
       })),
     });
+  });
+
+  api.get("/me/reports/sales", async (c) => {
+    const role = c.get("role");
+    if (role !== "admin" && role !== "partner" && role !== "wholesale") {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    const period = parseSalesPeriod(c.req.query("period") || "jalali_month");
+    const stats = await buildSalesStats({
+      userId: role === "admin" ? null : c.get("userId"),
+      period,
+      includeWallet: role === "admin",
+      title: role === "admin" ? "گزارش فروش" : "گزارش فروش شما",
+    });
+    return c.json(stats);
   });
 
   api.post("/me/wallet/charge", async (c) => {
@@ -592,6 +655,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       payWithWallet?: boolean;
       limitIp?: number;
       note?: string | null;
+      discountCode?: string | null;
     }>();
     try {
       const accountName = body.accountName?.trim() || `u${Date.now().toString(36)}`;
@@ -605,6 +669,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         targetSubId: body.targetSubId,
         limitIp: body.limitIp,
         note: body.note,
+        discountCode: body.discountCode,
       });
       if (c.get("role") === "admin") {
         try {
@@ -708,31 +773,26 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/partner/home", async (c) => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
-    const since = startOfPersianMonth();
-    const monthName = persianMonthName();
-    const orders = await prisma.order.findMany({
-      where: {
-        userId: user.id,
-        status: "completed",
-        kind: { in: ["new", "renew"] },
-        updatedAt: { gte: since },
-      },
-    });
-    const sales = orders.reduce((s, o) => s + o.price, 0);
-    const activeSubs = await prisma.subscription.count({
-      where: { userId: user.id, status: "active" },
+    const stats = await buildSalesStats({
+      userId: user.id,
+      period: "jalali_month",
+      includeWallet: false,
+      recentLimit: 0,
+      title: "فروش ماه جاری",
     });
     return c.json({
       agentName: user.agentName,
       panelGroup: user.panelGroup,
       role: user.role,
       report: {
-        period: "month",
-        monthName,
-        orders: orders.length,
-        sales,
-        salesLabel: formatToman(sales),
-        activeSubs,
+        period: "jalali_month",
+        monthName: persianMonthName(),
+        orders: stats.count,
+        sales: stats.total,
+        salesLabel: formatToman(stats.total),
+        activeSubs: stats.activeSubs,
+        newCount: stats.newCount,
+        renewCount: stats.renewCount,
       },
     });
   });
@@ -870,6 +930,7 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       payWithWallet?: boolean;
       limitIp?: number;
       note?: string | null;
+      discountCode?: string | null;
     }>();
     const order = await createMatrixOrder({
       userId: c.get("userId"),
@@ -880,6 +941,7 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       kind: OrderKind.new,
       limitIp: body.limitIp,
       note: body.note,
+      discountCode: body.discountCode,
     });
     if (c.get("role") === "admin") {
       try {
@@ -909,6 +971,78 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       card,
     });
   });
+
+  api.get("/me/discounts", async (c) => {
+    const role = c.get("role");
+    if (!canManageDiscountCodes(role)) return c.json({ error: "Forbidden" }, 403);
+    const enabled = await isDiscountCodesEnabled();
+    const maxPercent = await getDiscountMaxPercentForRole(role);
+    const items = await listDiscountCodesForUser(c.get("userId"), role);
+    return c.json({ enabled, maxPercent, items });
+  });
+
+  api.post("/me/discounts", async (c) => {
+    const role = c.get("role");
+    if (!canManageDiscountCodes(role)) return c.json({ error: "Forbidden" }, 403);
+    const body = await c.req.json<{
+      code?: string;
+      percentOff?: number;
+      maxUses?: number | null;
+      expiresAt?: string | null;
+      note?: string | null;
+      ownerUserId?: string | null;
+    }>();
+    try {
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+      const item = await createDiscountCode({
+        actor: user,
+        code: body.code || "",
+        percentOff: Number(body.percentOff),
+        maxUses: body.maxUses,
+        expiresAt: body.expiresAt,
+        note: body.note,
+        ownerUserId: role === "admin" ? body.ownerUserId : null,
+      });
+      return c.json({ ok: true, item });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.patch("/me/discounts/:id", async (c) => {
+    const role = c.get("role");
+    if (!canManageDiscountCodes(role)) return c.json({ error: "Forbidden" }, 403);
+    const body = await c.req.json<{
+      active?: boolean;
+      percentOff?: number;
+      maxUses?: number | null;
+      expiresAt?: string | null;
+      note?: string | null;
+    }>();
+    try {
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+      const item = await updateDiscountCode({
+        actor: user,
+        id: c.req.param("id"),
+        ...body,
+      });
+      return c.json({ ok: true, item });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.delete("/me/discounts/:id", async (c) => {
+    const role = c.get("role");
+    if (!canManageDiscountCodes(role)) return c.json({ error: "Forbidden" }, 403);
+    try {
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+      await deleteDiscountCode({ actor: user, id: c.req.param("id") });
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
 }
 
 export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
@@ -926,8 +1060,14 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/reports/sales", async (c) => {
-    const period = (c.req.query("period") as "today" | "week" | "month") || "week";
-    return c.json(await adminSalesReport(period));
+    const period = parseSalesPeriod(c.req.query("period"));
+    return c.json(await buildSalesStats({ userId: null, period, includeWallet: true }));
+  });
+
+  api.get("/admin/reports/agents", async (c) => {
+    const role = c.req.query("role") === "wholesale" ? "wholesale" : "partner";
+    const period = parseSalesPeriod(c.req.query("period") || "jalali_month");
+    return c.json(await agentsSalesLeaderboard({ role, period }));
   });
 
   api.get("/admin/search", async (c) => {

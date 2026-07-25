@@ -64,6 +64,8 @@ import {
   registerControlCenter,
   showControlCenter,
 } from "./admin-center.js";
+import { registerDiscountBotHandlers, handleDiscountCreateText, clearDiscountBotWaits } from "./discount-bot.js";
+import { registerMySalesBotHandlers } from "./my-sales.js";
 import { registerAdminConfigs, showConfigGroups } from "./admin-configs.js";
 import {
   adjustDraftMonths,
@@ -74,7 +76,13 @@ import {
   getOrCreateDraft,
   setDraftCategory,
   setDraftNameMode,
+  setDraftDiscountCode,
 } from "./draft.js";
+import {
+  isDiscountCodesEnabled,
+  normalizeDiscountCode,
+  previewDiscount,
+} from "../services/discount-codes.js";
 import {
   clearMyServicesWaits,
   handleMyServicesSearch,
@@ -113,6 +121,8 @@ import { isDemoMode } from "../services/license.js";
 import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole, withEffectiveRole } from "../services/demo-role.js";
 
 const waitingName = new Set<number>();
+/** Waiting for discount code text: buy wizard or renew */
+const waitingDiscount = new Map<number, "buy" | "renew">();
 const waitingPartner = new Map<number, { step: "compose" | "name" | "phone" | "note"; fullName?: string; phone?: string }>();
 const waitingMatrix = new Map<number, string>();
 const waitingWalletAmount = new Set<number>();
@@ -120,7 +130,14 @@ const waitingAgentName = new Set<number>();
 /** Renew wizard: telegramId → { subId, months } */
 const renewState = new Map<
   number,
-  { subId: string; months: number; trafficGb: number | null; unlimited: boolean; category: string }
+  {
+    subId: string;
+    months: number;
+    trafficGb: number | null;
+    unlimited: boolean;
+    category: string;
+    discountCode?: string | null;
+  }
 >();
 const waitingConfigLookup = new Set<number>();
 /** Prevent double-tap checkout / wallet pay creating duplicate accounts */
@@ -301,7 +318,8 @@ async function showRenewWizard(
   }
 
   const months = Math.min(maxMonths, clampMonths(opts.months ?? same?.months ?? 1));
-  renewState.set(ctx.from!.id, { subId, months, trafficGb, unlimited, category });
+  const discountCode = same?.discountCode ?? null;
+  renewState.set(ctx.from!.id, { subId, months, trafficGb, unlimited, category, discountCode });
 
   const priced = await draftPrice(user, {
     trafficGb,
@@ -309,6 +327,23 @@ async function showRenewWizard(
     unlimited,
     category,
   });
+
+  let priceLabel = priced ? formatToman(priced.price) : null;
+  let discountLine = "";
+  const discountsOn = await isDiscountCodesEnabled();
+  if (discountsOn && discountCode && priced) {
+    const prev = await previewDiscount({
+      buyer: withEffectiveRole(user, ctx.from!.id),
+      code: discountCode,
+      price: priced.price,
+    });
+    if (!("error" in prev) && prev.discountAmount > 0) {
+      priceLabel = formatToman(prev.priceAfter);
+      discountLine = `🎟 تخفیف ${prev.code}: −${formatToman(prev.discountAmount)}`;
+    } else if ("error" in prev) {
+      discountLine = `🎟 کد ${discountCode}: ${prev.error}`;
+    }
+  }
 
   const text = [
     "♻️ تمدید سرویس",
@@ -323,7 +358,8 @@ async function showRenewWizard(
     "",
     `حجم تمدید: ${unlimited ? "نامحدود" : formatTraffic(trafficGb)}`,
     `مدت: ${months} ماه`,
-    priced ? `قیمت: ${formatToman(priced.price)}` : "این ترکیب قیمت‌گذاری نشده.",
+    priceLabel ? `قیمت: ${priceLabel}` : "این ترکیب قیمت‌گذاری نشده.",
+    discountLine,
   ]
     .filter(Boolean)
     .join("\n");
@@ -336,6 +372,8 @@ async function showRenewWizard(
     price: priced?.price ?? null,
     maxMonths,
     category,
+    discountsEnabled: discountsOn,
+    discountCode,
   });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
@@ -350,6 +388,22 @@ async function showBuyWizard(ctx: Context, edit = false) {
   const roleUser = withEffectiveRole(user, ctx.from!.id);
   const limitIp = await resolvePurchaseLimitIp(draft, roleUser.role);
   const priced = await draftPrice(user, draft, ctx.from!.id);
+  const qty = Math.max(1, draft.quantity);
+  const baseTotal = priced ? priced.price * qty : null;
+  let discountAmount: number | null = null;
+  let priceAfterDiscount: number | null = null;
+  const discountsOn = await isDiscountCodesEnabled();
+  if (discountsOn && draft.discountCode && baseTotal != null) {
+    const prev = await previewDiscount({
+      buyer: roleUser,
+      code: draft.discountCode,
+      price: baseTotal,
+    });
+    if (!("error" in prev)) {
+      discountAmount = prev.discountAmount;
+      priceAfterDiscount = prev.priceAfter;
+    }
+  }
   let text = buyDraftText({
     trafficGb: draft.unlimited ? null : draft.trafficGb,
     months: draft.months,
@@ -359,6 +413,9 @@ async function showBuyWizard(ctx: Context, edit = false) {
     accountMode: draft.accountMode,
     accountName: draft.accountName,
     category: draft.category,
+    discountCode: draft.discountCode,
+    discountAmount,
+    priceAfterDiscount,
   });
   const maxMonths = await getMaxPurchaseMonths();
   const isAgent = canEditLimitIp(roleUser.role);
@@ -372,6 +429,8 @@ async function showBuyWizard(ctx: Context, edit = false) {
     category: draft.category,
     maxMonths,
     canEditAgentOptions: isAgent,
+    discountsEnabled: discountsOn,
+    discountCode: draft.discountCode,
   });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
@@ -583,7 +642,7 @@ async function handleDashboard(ctx: Context) {
       `🔗 آدرس: ${url}`,
       "",
       "ورود با رمز عبور یا کد یکبار مصرف از تلگرام.",
-      "برای دریافت کد، دکمه «ورود به داشبورد وب اپ» را بزنید.",
+      "برای دریافت کد، دکمه «داشبورد | وب اپ» را بزنید.",
     ].join("\n"),
     {
       reply_markup: new InlineKeyboard()
@@ -689,6 +748,12 @@ async function handlePartnerPanel(ctx: Context) {
         .text(user.agentName ? "✏️ تغییر نام (نیاز به تأیید ادمین)" : "➕ تعریف نام نماینده", "agent:set")
         .primary()
         .row()
+        .text("🎟 کدهای تخفیف", "disc:home")
+        .success()
+        .row()
+        .text("📊 گزارش فروش", "mysales:home")
+        .primary()
+        .row()
         .text("« بازگشت", "menu:home"),
     },
   );
@@ -696,6 +761,8 @@ async function handlePartnerPanel(ctx: Context) {
 
 function clearWaits(tid: number) {
   waitingName.delete(tid);
+  waitingDiscount.delete(tid);
+  clearDiscountBotWaits(tid);
   waitingPartner.delete(tid);
   waitingMatrix.delete(tid);
   waitingWalletAmount.delete(tid);
@@ -724,6 +791,8 @@ export function createBot() {
   });
 
   registerControlCenter(bot);
+  registerDiscountBotHandlers(bot);
+  registerMySalesBotHandlers(bot);
   registerMyServicesHandlers(bot);
   registerAdminConfigs(bot);
 
@@ -1055,6 +1124,43 @@ export function createBot() {
     await ctx.reply("نام اکانت را ارسال کنید (فقط حروف و عدد انگلیسی):");
   });
 
+  bot.callbackQuery("wiz:discount:set", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await isDiscountCodesEnabled())) {
+      await ctx.reply("کد تخفیف فعلاً غیرفعال است.");
+      return;
+    }
+    waitingDiscount.set(ctx.from!.id, "buy");
+    await ctx.reply("کد تخفیف خودتان را بفرستید (فقط کدهایی که خودتان ساخته‌اید):");
+  });
+
+  bot.callbackQuery("wiz:discount:clear", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    waitingDiscount.delete(ctx.from!.id);
+    await setDraftDiscountCode(BigInt(ctx.from!.id), null);
+    await showBuyWizard(ctx, true);
+  });
+
+  bot.callbackQuery("renew:discount:set", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await isDiscountCodesEnabled())) {
+      await ctx.reply("کد تخفیف فعلاً غیرفعال است.");
+      return;
+    }
+    waitingDiscount.set(ctx.from!.id, "renew");
+    await ctx.reply("کد تخفیف خودتان را بفرستید:");
+  });
+
+  bot.callbackQuery("renew:discount:clear", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    waitingDiscount.delete(ctx.from!.id);
+    const cur = renewState.get(ctx.from!.id);
+    if (cur) {
+      renewState.set(ctx.from!.id, { ...cur, discountCode: null });
+      await showRenewWizard(ctx, cur.subId, {}, true);
+    }
+  });
+
   bot.callbackQuery("wiz:checkout", async (ctx) => {
     const tid = ctx.from!.id;
     if (checkoutLocks.has(tid)) {
@@ -1116,6 +1222,7 @@ export function createBot() {
           quantity: draft.quantity,
           category: draft.category,
           limitIp: await resolvePurchaseLimitIp(draft, withEffectiveRole(user, ctx.from!.id).role),
+          discountCode: draft.discountCode,
         }));
       if (!recent) {
         await auditLog({
@@ -1384,6 +1491,7 @@ export function createBot() {
     }
 
     if (await handleControlCenterText(ctx, text)) return;
+    if (await handleDiscountCreateText(ctx, text)) return;
     if (await handleMyServicesSearch(ctx, text)) return;
     if (await handleServiceNoteText(ctx, text)) return;
 
@@ -1486,6 +1594,53 @@ export function createBot() {
       await setDraftNameMode(BigInt(tid), "custom", name);
       await ctx.reply(`نام اکانت ذخیره شد: ${name}`);
       await showBuyWizard(ctx);
+      return;
+    }
+
+    const discWait = waitingDiscount.get(tid);
+    if (discWait) {
+      const code = normalizeDiscountCode(text);
+      const user = await upsertUserFromTelegram(ctx.from!);
+      const roleUser = withEffectiveRole(user, tid);
+      waitingDiscount.delete(tid);
+      if (!code) {
+        await ctx.reply("کد خالی است.");
+        return;
+      }
+      let checkPrice = 10_000;
+      if (discWait === "buy") {
+        const draft = await getOrCreateDraft(BigInt(tid));
+        const priced = await draftPrice(user, draft, tid);
+        if (priced) checkPrice = priced.price * Math.max(1, draft.quantity);
+      } else {
+        const st = renewState.get(tid);
+        if (st) {
+          const p = await draftPrice(user, {
+            trafficGb: st.trafficGb,
+            months: st.months,
+            unlimited: st.unlimited,
+            category: st.category,
+          });
+          if (p) checkPrice = p.price;
+        }
+      }
+      const prev = await previewDiscount({ buyer: roleUser, code, price: checkPrice });
+      if ("error" in prev) {
+        await ctx.reply(`❌ ${prev.error}`);
+        return;
+      }
+      if (discWait === "buy") {
+        await setDraftDiscountCode(BigInt(tid), prev.code);
+        await ctx.reply(`✅ کد ${prev.code} اعمال شد (−${prev.percentOff}٪)`);
+        await showBuyWizard(ctx);
+      } else {
+        const st = renewState.get(tid);
+        if (st) {
+          renewState.set(tid, { ...st, discountCode: prev.code });
+          await ctx.reply(`✅ کد ${prev.code} اعمال شد (−${prev.percentOff}٪)`);
+          await showRenewWizard(ctx, st.subId, {}, false);
+        }
+      }
       return;
     }
 
@@ -2010,6 +2165,7 @@ export function createBot() {
         targetSubId: sub.id,
         quantity: 1,
         category,
+        discountCode: state?.discountCode,
       });
       await auditLog({
         action: "order_created",
@@ -2215,7 +2371,7 @@ export function createBot() {
       [
         "آدرس وب‌اپ ذخیره شد ✅",
         "",
-        "کاربران با /app یا دکمه «ورود به داشبورد وب اپ» شناسه و رمز موقت می‌گیرند، سپس وارد می‌شوند.",
+        "کاربران با /app یا دکمه «داشبورد | وب اپ» شناسه و رمز موقت می‌گیرند، سپس وارد می‌شوند.",
       ].join("\n"),
     );
   });

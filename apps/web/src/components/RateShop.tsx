@@ -11,6 +11,7 @@ export type RateShopCatalog = {
   pricingMode?: "matrix" | "rate";
   defaultLimitIp?: number;
   canEditLimitIp?: boolean;
+  discountsEnabled?: boolean;
   volumeRules?: {
     data: { min: number; max: number; step: number };
     national: { min: number; max: number; step: number };
@@ -32,6 +33,7 @@ export type RateOrderPayload = {
   accountName?: string;
   note?: string | null;
   payWithWallet: boolean;
+  discountCode?: string | null;
 };
 
 type Props = {
@@ -185,6 +187,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const [quoting, setQuoting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingName, setPendingName] = useState("");
+  const [discountCode, setDiscountCode] = useState("");
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [priceBefore, setPriceBefore] = useState<number | null>(null);
+  const [discountErr, setDiscountErr] = useState<string | null>(null);
 
   const volumeFixed = category === "unlimited";
   const monthsLocked = category === "national" || Math.max(1, catalog.maxMonths || 1) <= 1;
@@ -272,19 +278,32 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     const t = window.setTimeout(() => {
       setQuoting(true);
       setQuoteErr(null);
-      void api<{ price: number }>("/me/quote", {
+      void api<{
+        price: number;
+        priceBefore?: number;
+        discountAmount?: number;
+        discountError?: string | null;
+      }>("/me/quote", {
         body: {
           category,
           trafficGb: volumeFixed ? null : trafficGb,
           months: category === "national" ? 1 : months,
+          discountCode: catalog.discountsEnabled && discountCode.trim() ? discountCode.trim() : null,
         },
       })
         .then((r) => {
-          if (!cancelled) setPrice(r.price);
+          if (cancelled) return;
+          setPrice(r.price);
+          setPriceBefore(r.priceBefore ?? r.price);
+          setDiscountAmount(r.discountAmount ?? 0);
+          setDiscountErr(r.discountError ?? null);
         })
         .catch((e) => {
           if (cancelled) return;
           setPrice(null);
+          setPriceBefore(null);
+          setDiscountAmount(0);
+          setDiscountErr(null);
           setQuoteErr(String(e instanceof Error ? e.message : e));
         })
         .finally(() => {
@@ -295,7 +314,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [category, trafficGb, months, volumeFixed]);
+  }, [category, trafficGb, months, volumeFixed, discountCode, catalog.discountsEnabled]);
 
   function resolveAccountName() {
     if (nameMode === "custom") return customName.trim();
@@ -318,6 +337,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       accountName: pendingName,
       note: note.trim() || null,
       payWithWallet,
+      discountCode: catalog.discountsEnabled && discountCode.trim() ? discountCode.trim() : null,
     });
   }
 
@@ -329,8 +349,12 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     `حجم: ${volumeFixed ? "نامحدود" : `${(trafficGb ?? 0).toLocaleString("fa-IR")} گیگابایت`}`,
     `مدت: ${(category === "national" ? 1 : months).toLocaleString("fa-IR")} ماه`,
     `محدودیت کاربر: ${limitIp <= 0 ? "نامحدود" : `${limitIp.toLocaleString("fa-IR")} کاربر`}`,
+    discountAmount > 0 && priceBefore != null
+      ? `قبل از تخفیف: ${formatToman(priceBefore)}`
+      : "",
+    discountAmount > 0 ? `تخفیف: −${formatToman(discountAmount)}` : "",
     `مبلغ: ${price != null ? formatToman(price) : "—"}`,
-  ];
+  ].filter(Boolean);
   if (note.trim()) confirmLines.push(`توضیحات: ${note.trim()}`);
 
   if (!cats.length) {
@@ -388,10 +412,32 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           {quoting ? "…" : price != null ? formatToman(price) : quoteErr ? "—" : "…"}
         </strong>
       </div>
+      {discountAmount > 0 && priceBefore != null && priceBefore !== price && (
+        <p className="muted" style={{ margin: "0 0 8px" }}>
+          قبل از تخفیف: {formatToman(priceBefore)} · تخفیف −{formatToman(discountAmount)}
+        </p>
+      )}
+      {discountErr && (
+        <p className="muted" style={{ color: "var(--pink)", margin: "0 0 8px" }}>
+          {discountErr}
+        </p>
+      )}
       {quoteErr && (
         <p className="muted" style={{ color: "var(--pink)", margin: 0 }}>
           {quoteErr}
         </p>
+      )}
+
+      {catalog.discountsEnabled && (
+        <div className="field">
+          <label>کد تخفیف (اختیاری — فقط کد خودتان)</label>
+          <input
+            value={discountCode}
+            onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
+            placeholder="مثلاً SALE20"
+            disabled={busy}
+          />
+        </div>
       )}
 
       {(variant === "agent" || variant === "admin") && (

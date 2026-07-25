@@ -127,6 +127,13 @@ export async function setDraftNameMode(telegramId: bigint, mode: "random" | "cus
   });
 }
 
+export async function setDraftDiscountCode(telegramId: bigint, code: string | null) {
+  return prisma.buyDraft.update({
+    where: { telegramId },
+    data: { discountCode: code },
+  });
+}
+
 export async function draftPrice(
   user: User,
   draft: { trafficGb: number | null; months: number; unlimited: boolean; category?: string },

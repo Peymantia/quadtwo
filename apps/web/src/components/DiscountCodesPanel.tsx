@@ -1,0 +1,204 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { api, formatToman } from "../lib/api";
+
+type DiscountItem = {
+  id: string;
+  code: string;
+  percentOff: number;
+  active: boolean;
+  maxUses: number | null;
+  usedCount: number;
+  expiresAt: string | null;
+  note: string | null;
+  createdAt: string;
+  ownerLabel?: string;
+  ownerRole?: string;
+};
+
+type Flash = (ok: string | null, err?: string | null) => void;
+
+export function DiscountCodesPanel({
+  flash,
+  askConfirm,
+  showOwner = false,
+}: {
+  flash: Flash;
+  askConfirm?: (msg: string) => Promise<boolean>;
+  showOwner?: boolean;
+}) {
+  const [enabled, setEnabled] = useState(false);
+  const [maxPercent, setMaxPercent] = useState(30);
+  const [items, setItems] = useState<DiscountItem[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState("");
+  const [percent, setPercent] = useState("10");
+  const [maxUses, setMaxUses] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [note, setNote] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api<{ enabled: boolean; maxPercent: number; items: DiscountItem[] }>("/me/discounts");
+      setEnabled(r.enabled);
+      setMaxPercent(r.maxPercent);
+      setItems(r.items ?? []);
+    } catch (e) {
+      flash(null, String(e instanceof Error ? e.message : e));
+    }
+  }, [flash]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function create() {
+    setBusy(true);
+    try {
+      await api("/me/discounts", {
+        method: "POST",
+        body: {
+          code,
+          percentOff: Number(percent),
+          maxUses: maxUses.trim() ? Number(maxUses) : null,
+          expiresAt: expiresAt.trim() || null,
+          note: note.trim() || null,
+        },
+      });
+      setCode("");
+      setPercent("10");
+      setMaxUses("");
+      setExpiresAt("");
+      setNote("");
+      flash("کد تخفیف ساخته شد");
+      await load();
+    } catch (e) {
+      flash(null, String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggle(item: DiscountItem) {
+    setBusy(true);
+    try {
+      await api(`/me/discounts/${item.id}`, {
+        method: "PATCH",
+        body: { active: !item.active },
+      });
+      flash(item.active ? "کد غیرفعال شد" : "کد فعال شد");
+      await load();
+    } catch (e) {
+      flash(null, String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(item: DiscountItem) {
+    if (askConfirm && !(await askConfirm(`کد «${item.code}» حذف شود؟`))) return;
+    setBusy(true);
+    try {
+      await api(`/me/discounts/${item.id}`, { method: "DELETE" });
+      flash("حذف شد");
+      await load();
+    } catch (e) {
+      flash(null, String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h2>کدهای تخفیف</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        هر کد فقط روی خریدهای همان سازنده اعمال می‌شود. سقف درصد برای نقش شما: {maxPercent}٪.
+        {!enabled ? " — فعلاً توسط ادمین خاموش است (ادمین همچنان می‌تواند کد بسازد)." : ""}
+      </p>
+
+      <div className="grid" style={{ marginBottom: 14 }}>
+        <div className="field">
+          <label>کد</label>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="مثلاً SALE20"
+            disabled={busy}
+          />
+        </div>
+        <div className="field">
+          <label>درصد تخفیف (۱–{maxPercent})</label>
+          <input
+            className="num"
+            inputMode="numeric"
+            value={percent}
+            onChange={(e) => setPercent(e.target.value)}
+            disabled={busy}
+          />
+        </div>
+        <div className="field">
+          <label>حداکثر استفاده (خالی = نامحدود)</label>
+          <input
+            className="num"
+            inputMode="numeric"
+            value={maxUses}
+            onChange={(e) => setMaxUses(e.target.value)}
+            disabled={busy}
+          />
+        </div>
+        <div className="field">
+          <label>انقضا (اختیاری)</label>
+          <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} disabled={busy} />
+        </div>
+        <div className="field" style={{ gridColumn: "1 / -1" }}>
+          <label>یادداشت</label>
+          <input value={note} onChange={(e) => setNote(e.target.value)} disabled={busy} />
+        </div>
+      </div>
+      <div className="actions" style={{ marginBottom: 16 }}>
+        <button type="button" className="btn primary" disabled={busy || !code.trim()} onClick={() => void create()}>
+          ساخت کد
+        </button>
+      </div>
+
+      {!items.length ? (
+        <p className="muted">هنوز کدی نساخته‌اید.</p>
+      ) : (
+        <div className="list">
+          {items.map((item) => (
+            <div key={item.id} className="row-card">
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <strong className="num">{item.code}</strong>{" "}
+                  <span className={`badge ${item.active ? "ok" : "bad"}`}>{item.active ? "فعال" : "خاموش"}</span>
+                  <div className="muted">
+                    {item.percentOff}٪ · استفاده {item.usedCount.toLocaleString("fa-IR")}
+                    {item.maxUses != null ? ` / ${item.maxUses.toLocaleString("fa-IR")}` : " / ∞"}
+                    {item.expiresAt ? ` · تا ${new Date(item.expiresAt).toLocaleString("fa-IR")}` : ""}
+                    {showOwner && item.ownerLabel ? ` · ${item.ownerLabel}` : ""}
+                  </div>
+                  {item.note && <div className="muted">{item.note}</div>}
+                </div>
+                <div className="actions">
+                  <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void toggle(item)}>
+                    {item.active ? "غیرفعال" : "فعال"}
+                  </button>
+                  <button type="button" className="btn danger sm" disabled={busy} onClick={() => void remove(item)}>
+                    حذف
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Compact hint for price lines — unused helper kept for formatToman import stability if needed */
+export function discountSavedLabel(amount: number) {
+  return amount > 0 ? `تخفیف: −${formatToman(amount)}` : "";
+}

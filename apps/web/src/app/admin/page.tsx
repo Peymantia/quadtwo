@@ -13,6 +13,8 @@ import { SortSelect, type ListSort } from "../../components/SortSelect";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
 import { SubQrModal } from "../../components/SubQrModal";
+import { DiscountCodesPanel } from "../../components/DiscountCodesPanel";
+import { AgentsLeaderboardPanel, SalesReportPanel } from "../../components/SalesReportPanel";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -23,6 +25,7 @@ const TABS: ShellTab[] = [
   { key: "users", label: "کاربران", icon: "users", pin: true },
   { key: "sync", label: "همگام‌سازی", icon: "sync" },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
+  { key: "discounts", label: "تخفیف", icon: "tag" },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server" },
   { key: "settings", label: "تنظیمات", icon: "gear" },
@@ -209,6 +212,9 @@ export default function AdminPage() {
       {tab === "orders" && <OrdersTab flash={flash} />}
       {tab === "users" && <UsersTab flash={flash} askConfirm={askConfirm} />}
       {tab === "prices" && <PricesTab flash={flash} askConfirm={askConfirm} />}
+      {tab === "discounts" && (
+        <DiscountCodesPanel flash={flash} askConfirm={askConfirm} showOwner />
+      )}
       {tab === "categories" && <CategoriesTab flash={flash} askConfirm={askConfirm} />}
       {tab === "configs" && <ConfigsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "sync" && <SyncTab flash={flash} askConfirm={askConfirm} />}
@@ -420,6 +426,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
           limitIp: payload.limitIp,
           note: payload.note,
           payWithWallet: true,
+          discountCode: payload.discountCode,
         },
       });
       if (r.provisioned?.code) {
@@ -3568,6 +3575,42 @@ function SettingsTab({
         </div>
         <div className="setting-row">
           <div>
+            <div className="t">کد تخفیف</div>
+            <div className="d">فعال‌سازی ورود کد در خرید (ربات و وب). هر کد فقط برای فروش سازنده‌اش.</div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={settings.discount_codes_enabled === "true"}
+              onChange={(e) => save({ discount_codes_enabled: e.target.checked ? "true" : "false" })}
+            />
+            <span className="track" />
+          </label>
+        </div>
+        {settings.discount_codes_enabled === "true" && (
+          <div className="setting-row">
+            <div>
+              <div className="t">سقف درصد تخفیف همکار / عمده</div>
+              <div className="d">ادمین تا ۱۰۰٪؛ همکار و عمده حداکثر این عدد.</div>
+            </div>
+            <input
+              className="num"
+              inputMode="numeric"
+              value={settings.discount_max_percent || "30"}
+              onChange={(e) => save({ discount_max_percent: e.target.value })}
+              style={{
+                width: 72,
+                border: "1px solid var(--line)",
+                background: "rgba(10,13,35,.6)",
+                color: "var(--text)",
+                borderRadius: 10,
+                padding: "8px 12px",
+              }}
+            />
+          </div>
+        )}
+        <div className="setting-row">
+          <div>
             <div className="t">محدودیت پیش‌فرض دستگاه (IP)</div>
             <div className="d">۰ یعنی نامحدود.</div>
           </div>
@@ -3709,13 +3752,7 @@ function SettingsTab({
 /* ---------------- Reports ---------------- */
 
 function ReportsTab() {
-  const [period, setPeriod] = useState<"today" | "week" | "month">("week");
-  const [report, setReport] = useState<{ total: number; count: number } | null>(null);
   const [audit, setAudit] = useState<Array<{ action: string; detail: string | null; createdAt: string }>>([]);
-
-  useEffect(() => {
-    void api<{ total: number; count: number }>(`/admin/reports/sales?period=${period}`).then(setReport);
-  }, [period]);
 
   useEffect(() => {
     void api<{ logs: typeof audit }>("/admin/audit").then((r) => setAudit(r.logs));
@@ -3723,32 +3760,13 @@ function ReportsTab() {
 
   return (
     <>
-      <div className="panel">
-        <h2>گزارش فروش</h2>
-        <div className="chip-row" style={{ marginBottom: 13 }}>
-          {(
-            [
-              ["today", "امروز"],
-              ["week", "هفته"],
-              ["month", "ماه"],
-            ] as const
-          ).map(([k, l]) => (
-            <button key={k} type="button" className={`chip${period === k ? " on" : ""}`} onClick={() => setPeriod(k)}>
-              {l}
-            </button>
-          ))}
-        </div>
-        <div className="grid">
-          <div className="stat accent">
-            <div className="label">جمع فروش</div>
-            <div className="value num">{report ? formatToman(report.total) : "—"}</div>
-          </div>
-          <div className="stat">
-            <div className="label">تعداد سفارش</div>
-            <div className="value num">{report?.count ?? "—"}</div>
-          </div>
-        </div>
-      </div>
+      <SalesReportPanel
+        endpoint="/admin/reports/sales"
+        defaultPeriod="week"
+        showWallet
+        title="گزارش فروش کل"
+      />
+      <AgentsLeaderboardPanel />
       <div className="panel">
         <h2>لاگ عملیات</h2>
         <div className="list">

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { parseAndValidateInitData, signSession, verifySession } from "../auth/telegram.js";
 import { prisma } from "../db.js";
-import { orderSummaryText } from "../services/orders.js";
+import { markPaid, orderSummaryText } from "../services/orders.js";
 import { listPriceMatrix, priceFromCell, resolvePrice } from "../services/pricing.js";
 import { provisionOrder } from "../services/provision.js";
 import { getAllSettings, getSetting } from "../services/settings.js";
@@ -210,7 +210,7 @@ export function createApiApp() {
 
   api.post("/admin/orders/:id/approve", async (c) => {
     const id = c.req.param("id");
-    await prisma.order.update({ where: { id }, data: { status: "paid" } });
+    await markPaid(id);
     const result = await provisionOrder(id);
     if ("kind" in result && result.kind === "wallet_credit") {
       return c.json({ type: "wallet_credit", balance: result.balance });

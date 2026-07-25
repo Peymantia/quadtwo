@@ -174,6 +174,7 @@ export default function UserAppPage() {
           limitIp: payload.limitIp,
           note: payload.note,
           payWithWallet: payload.payWithWallet,
+          discountCode: payload.discountCode,
         },
       });
       if (r.provisioned?.code) {

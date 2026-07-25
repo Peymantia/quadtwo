@@ -13,6 +13,8 @@ import { useDashAuth } from "../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "./RateShop";
 import { AccountCreatedModal, type CreatedAccount } from "./AccountCreatedModal";
 import { SubQrModal } from "./SubQrModal";
+import { DiscountCodesPanel } from "./DiscountCodesPanel";
+import { SalesReportPanel } from "./SalesReportPanel";
 
 type PayCard = { number: string; holder: string };
 type PayModalState = { orderId: string; price: number; card: PayCard } | null;
@@ -47,6 +49,8 @@ const TABS: ShellTab[] = [
   { key: "create", label: "ساخت کانفیگ", shortLabel: "فروش", icon: "shop" },
   { key: "wallet", label: "کیف پول", icon: "wallet" },
   { key: "configs", label: "کانفیگ‌ها", icon: "wifi" },
+  { key: "reports", label: "گزارش", icon: "chart" },
+  { key: "discounts", label: "تخفیف", icon: "tag" },
   { key: "settings", label: "تنظیمات", icon: "gear" },
 ];
 
@@ -231,6 +235,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           limitIp: payload.limitIp,
           note: payload.note,
           payWithWallet: payload.payWithWallet,
+          discountCode: payload.discountCode,
         },
       });
       if (r.provisioned?.code) {
@@ -404,6 +409,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               </button>
               <button type="button" className="btn ghost wide" onClick={() => setTab("wallet")}>
                 شارژ کیف پول
+              </button>
+              <button type="button" className="btn light wide" onClick={() => setTab("reports")}>
+                گزارش فروش
               </button>
             </div>
           </div>
@@ -650,6 +658,20 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             </div>
           </div>
         </>
+      )}
+
+      {tab === "reports" && (
+        <SalesReportPanel endpoint="/me/reports/sales" defaultPeriod="jalali_month" title="گزارش فروش شما" />
+      )}
+
+      {tab === "discounts" && (
+        <DiscountCodesPanel
+          flash={(ok, err) => {
+            setMsg(ok);
+            setErr(err ?? null);
+          }}
+          askConfirm={async (msg) => window.confirm(msg)}
+        />
       )}
 
       {tab === "settings" && (

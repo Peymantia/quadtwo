@@ -269,27 +269,5 @@ export async function demoteToUser(userId: string) {
   });
 }
 
-export async function partnerSalesReport(role: "partner" | "wholesale") {
-  const users = await prisma.user.findMany({
-    where: { role: role === "wholesale" ? UserRole.wholesale : UserRole.partner },
-    include: {
-      orders: {
-        where: { status: "completed", kind: { in: ["new", "renew"] } },
-      },
-      subscriptions: true,
-    },
-  });
-  return users.map((u) => {
-    const sales = u.orders.reduce((s, o) => s + o.price, 0);
-    return {
-      id: u.id,
-      telegramId: String(u.telegramId),
-      username: u.username,
-      name: u.firstName,
-      group: u.panelGroup,
-      orders: u.orders.length,
-      sales,
-      subs: u.subscriptions.length,
-    };
-  });
-}
+/** @deprecated import from admin-reports.js */
+export { partnerSalesReport } from "./admin-reports.js";

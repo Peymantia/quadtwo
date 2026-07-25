@@ -8,6 +8,7 @@ import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
 import { withEffectiveRole } from "./demo-role.js";
 import { isDemoMode } from "./license.js";
+import { assertAndApplyDiscount, recordDiscountUse } from "./discount-codes.js";
 
 export async function createMatrixOrder(input: {
   userId: string;
@@ -23,6 +24,8 @@ export async function createMatrixOrder(input: {
   note?: string | null;
   /** Admin renew of any account — skip ownership/eligibility checks */
   forceRenew?: boolean;
+  /** Optional discount code (creator-scoped) */
+  discountCode?: string | null;
 }) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
   const pricedUser = withEffectiveRole(user, user.telegramId);
@@ -72,6 +75,15 @@ export async function createMatrixOrder(input: {
       : Math.max(0, Math.min(10, Math.floor(input.limitIp)));
   const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;
 
+  const priceBefore = priced.price * quantity;
+  // Discount is scoped to the checkout buyer (who pays), not necessarily orderUserId on renew-of-others
+  const applied = await assertAndApplyDiscount({
+    buyer: pricedUser,
+    code: input.discountCode,
+    price: priceBefore,
+  });
+  const finalPrice = applied ? applied.priceAfter : priceBefore;
+
   return prisma.order.create({
     data: {
       userId: orderUserId,
@@ -82,14 +94,17 @@ export async function createMatrixOrder(input: {
       limitIp,
       note,
       panelServerId,
-      price: priced.price * quantity,
+      price: finalPrice,
+      discountCodeId: applied?.codeId ?? null,
+      discountAmount: applied?.discountAmount ?? 0,
+      priceBeforeDiscount: applied ? applied.priceBefore : null,
       accountName,
       customName: accountName,
       targetSubId: input.targetSubId,
       status: OrderStatus.pending_payment,
       paymentMethod: input.paymentMethod ?? PaymentMethod.card_to_card,
     },
-    include: { user: true, targetSub: true },
+    include: { user: true, targetSub: true, discountCode: true },
   });
 }
 
@@ -130,6 +145,7 @@ export async function payOrderWithWallet(orderId: string, userId: string) {
       status: OrderStatus.paid,
     },
   });
+  await recordDiscountUse(order.discountCodeId);
   return provisionOrder(order.id);
 }
 
@@ -150,6 +166,7 @@ export async function provisionAdminComplimentary(orderId: string, _adminUserId?
       adminNote: order.kind === OrderKind.renew ? "تمدید رایگان توسط ادمین" : "ساخت رایگان توسط ادمین",
     },
   });
+  await recordDiscountUse(order.discountCodeId);
   return provisionOrder(order.id);
 }
 
@@ -188,7 +205,7 @@ export async function findPendingPaymentOrder(userId: string) {
 export async function getOrderForAdmin(orderId: string) {
   return prisma.order.findUnique({
     where: { id: orderId },
-    include: { user: true, subscription: true, targetSub: true },
+    include: { user: true, subscription: true, targetSub: true, discountCode: true },
   });
 }
 
@@ -204,10 +221,12 @@ export async function rejectOrder(orderId: string, note: string) {
 }
 
 export async function markPaid(orderId: string) {
-  return prisma.order.update({
+  const order = await prisma.order.update({
     where: { id: orderId },
     data: { status: OrderStatus.paid },
   });
+  await recordDiscountUse(order.discountCodeId);
+  return order;
 }
 
 export function orderSummaryText(order: {
@@ -218,6 +237,9 @@ export function orderSummaryText(order: {
   kind?: OrderKind;
   quantity?: number;
   limitIp?: number;
+  discountAmount?: number;
+  priceBeforeDiscount?: number | null;
+  discountCode?: { code: string; percentOff: number } | null;
 }) {
   if (order.kind === OrderKind.wallet_charge) {
     return [`نوع: ➕ شارژ کیف پول`, `مبلغ: ${order.price.toLocaleString("fa-IR")} تومان`].join("\n");
@@ -240,6 +262,18 @@ export function orderSummaryText(order: {
       : order.limitIp <= 0
         ? "محدودیت کاربر: نامحدود"
         : `محدودیت کاربر: ${order.limitIp} کاربر`;
+  const discountLines: string[] = [];
+  if (order.discountAmount && order.discountAmount > 0) {
+    const code = order.discountCode?.code;
+    discountLines.push(
+      code
+        ? `تخفیف (${code} ${order.discountCode?.percentOff ?? ""}٪): −${order.discountAmount.toLocaleString("fa-IR")} تومان`
+        : `تخفیف: −${order.discountAmount.toLocaleString("fa-IR")} تومان`,
+    );
+    if (order.priceBeforeDiscount != null) {
+      discountLines.push(`قبل از تخفیف: ${order.priceBeforeDiscount.toLocaleString("fa-IR")} تومان`);
+    }
+  }
   return [
     `نوع: ${kindLabel}`,
     `حجم: ${vol}`,
@@ -247,6 +281,7 @@ export function orderSummaryText(order: {
     `تعداد: ${qty}`,
     ip,
     order.accountName ? `نام پایه: ${order.accountName}` : "",
+    ...discountLines,
     `مبلغ کل: ${order.price.toLocaleString("fa-IR")} تومان`,
   ]
     .filter(Boolean)

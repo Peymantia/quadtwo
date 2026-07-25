@@ -41,12 +41,14 @@ import {
   type RolePricingModes,
   type SalesCategories,
 } from "../services/settings.js";
-import { demoteToUser, listNotifyAdminTelegramIds, partnerSalesReport } from "../services/users.js";
+import { demoteToUser, listNotifyAdminTelegramIds } from "../services/users.js";
 import { formatToman } from "../utils/format.js";
 import { getBackupConfig, saveBackupConfig, sendBackupToAdmins } from "../services/backup.js";
 import {
-  adminSalesReport,
+  agentsSalesLeaderboard,
+  buildSalesStats,
   formatSearchResults,
+  parseSalesPeriod,
   searchUsersAndOrders,
   type SalesPeriod,
 } from "../services/admin-reports.js";
@@ -869,27 +871,33 @@ async function showDemote(ctx: Context) {
   );
 }
 
-async function showReport(ctx: Context, role: "partner" | "wholesale") {
-  const rows = await partnerSalesReport(role);
-  const title = role === "wholesale" ? "عمده‌فروش‌ها" : "همکاران";
-  const lines = rows.length
-    ? rows.map(
-        (r) =>
-          `• ${r.username ? `@${r.username}` : r.telegramId} — ${r.orders} سفارش · ${formatToman(r.sales)} · ${r.subs} سرویس`,
-      )
-    : ["موردی نیست."];
-  await ctx.editMessageText(`📊 گزارش فروش ${title}\n\n${lines.join("\n")}`, {
-    reply_markup: new InlineKeyboard().text("« کنترل سنتر", "cc:home"),
+async function showReport(ctx: Context, role: "partner" | "wholesale", period: SalesPeriod = "jalali_month") {
+  const { text } = await agentsSalesLeaderboard({ role, period });
+  const p = (key: SalesPeriod, label: string) => (period === key ? `• ${label}` : label);
+  await ctx.editMessageText(text.slice(0, 3900), {
+    reply_markup: new InlineKeyboard()
+      .text(p("today", "امروز"), `cc:rep:${role}:today`)
+      .text(p("week", "هفته"), `cc:rep:${role}:week`)
+      .text(p("jalali_month", "ماه"), `cc:rep:${role}:jalali_month`)
+      .row()
+      .text(p("month", "۳۰روز"), `cc:rep:${role}:month`)
+      .text(p("all", "کل"), `cc:rep:${role}:all`)
+      .row()
+      .text("« کنترل سنتر", "cc:home"),
   });
 }
 
 async function showSales(ctx: Context, period: SalesPeriod = "today") {
-  const report = await adminSalesReport(period);
-  await ctx.editMessageText(report.text, {
+  const report = await buildSalesStats({ userId: null, period, includeWallet: true });
+  const p = (key: SalesPeriod, label: string) => (period === key ? `• ${label}` : label);
+  await ctx.editMessageText(report.text.slice(0, 3900), {
     reply_markup: new InlineKeyboard()
-      .text(period === "today" ? "• امروز" : "امروز", "cc:sales:today")
-      .text(period === "week" ? "• هفته" : "هفته", "cc:sales:week")
-      .text(period === "month" ? "• ماه" : "ماه", "cc:sales:month")
+      .text(p("today", "امروز"), "cc:sales:today")
+      .text(p("week", "هفته"), "cc:sales:week")
+      .text(p("jalali_month", "ماه"), "cc:sales:jalali_month")
+      .row()
+      .text(p("month", "۳۰روز"), "cc:sales:month")
+      .text(p("all", "کل"), "cc:sales:all")
       .row()
       .text("« کنترل سنتر", "cc:home"),
   });
@@ -1317,10 +1325,10 @@ export function registerControlCenter(bot: Bot) {
     await showSales(ctx, "today");
   });
 
-  bot.callbackQuery(/^cc:sales:(today|week|month)$/, async (ctx) => {
+  bot.callbackQuery(/^cc:sales:(today|week|month|jalali_month|all)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    await showSales(ctx, ctx.match![1] as SalesPeriod);
+    await showSales(ctx, parseSalesPeriod(ctx.match![1]));
   });
 
   bot.callbackQuery("cc:search", async (ctx) => {
@@ -1341,13 +1349,19 @@ export function registerControlCenter(bot: Bot) {
   bot.callbackQuery("cc:rep:partner", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    await showReport(ctx, "partner");
+    await showReport(ctx, "partner", "jalali_month");
   });
 
   bot.callbackQuery("cc:rep:wholesale", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    await showReport(ctx, "wholesale");
+    await showReport(ctx, "wholesale", "jalali_month");
+  });
+
+  bot.callbackQuery(/^cc:rep:(partner|wholesale):(today|week|month|jalali_month|all)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showReport(ctx, ctx.match![1] as "partner" | "wholesale", parseSalesPeriod(ctx.match![2]));
   });
 
   bot.callbackQuery("cc:demote", async (ctx) => {

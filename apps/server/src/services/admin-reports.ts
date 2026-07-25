@@ -1,6 +1,6 @@
-import { OrderStatus } from "@prisma/client";
+import { OrderKind, OrderStatus, UserRole } from "@prisma/client";
 import { prisma } from "../db.js";
-import { formatToman } from "../utils/format.js";
+import { formatToman, persianMonthName, startOfPersianMonth } from "../utils/format.js";
 
 function startOfDay(d = new Date()) {
   const x = new Date(d);
@@ -14,56 +14,277 @@ function daysAgo(n: number) {
   return x;
 }
 
-export type SalesPeriod = "today" | "week" | "month";
+export type SalesPeriod = "today" | "week" | "month" | "jalali_month" | "all";
 
-export async function adminSalesReport(period: SalesPeriod) {
-  const since =
-    period === "today" ? startOfDay() : period === "week" ? daysAgo(7) : daysAgo(30);
+export const SALES_PERIODS: SalesPeriod[] = ["today", "week", "month", "jalali_month", "all"];
 
-  const orders = await prisma.order.findMany({
-    where: {
-      status: OrderStatus.completed,
-      kind: { in: ["new", "renew"] },
-      updatedAt: { gte: since },
-    },
-    include: { user: true },
-    orderBy: { updatedAt: "desc" },
-  });
+export function parseSalesPeriod(raw: string | undefined | null): SalesPeriod {
+  const p = (raw || "week").trim() as SalesPeriod;
+  return SALES_PERIODS.includes(p) ? p : "week";
+}
+
+export function periodSince(period: SalesPeriod): Date | null {
+  if (period === "all") return null;
+  if (period === "today") return startOfDay();
+  if (period === "week") return daysAgo(7);
+  if (period === "month") return daysAgo(30);
+  return startOfPersianMonth();
+}
+
+export function periodLabel(period: SalesPeriod): string {
+  if (period === "today") return "امروز";
+  if (period === "week") return "۷ روز اخیر";
+  if (period === "month") return "۳۰ روز اخیر";
+  if (period === "jalali_month") return `ماه ${persianMonthName()}`;
+  return "از ابتدا";
+}
+
+export type SalesRecentRow = {
+  id: string;
+  kind: string;
+  price: number;
+  at: string;
+  who: string | null;
+  accountName: string | null;
+};
+
+export type SalesStats = {
+  period: SalesPeriod;
+  periodLabel: string;
+  since: string | null;
+  total: number;
+  count: number;
+  newCount: number;
+  renewCount: number;
+  avgOrder: number;
+  walletChargeTotal: number;
+  walletChargeCount: number;
+  activeSubs: number;
+  recent: SalesRecentRow[];
+  text: string;
+};
+
+export type AgentSalesRow = {
+  id: string;
+  telegramId: string;
+  username: string | null;
+  name: string | null;
+  agentName: string | null;
+  group: string | null;
+  orders: number;
+  sales: number;
+  newCount: number;
+  renewCount: number;
+  activeSubs: number;
+};
+
+function whoLabel(u: {
+  username: string | null;
+  firstName: string | null;
+  telegramId: bigint;
+  agentName?: string | null;
+}): string {
+  if (u.username) return `@${u.username}`;
+  if (u.agentName) return u.agentName;
+  if (u.firstName) return u.firstName;
+  return String(u.telegramId);
+}
+
+/**
+ * Sales stats for one seller (partner/wholesale/admin self) or global (userId = null).
+ */
+export async function buildSalesStats(opts: {
+  userId?: string | null;
+  period: SalesPeriod;
+  recentLimit?: number;
+  /** Include wallet_charge aggregates (usually admin-only) */
+  includeWallet?: boolean;
+  title?: string;
+}): Promise<SalesStats> {
+  const period = opts.period;
+  const since = periodSince(period);
+  const recentLimit = opts.recentLimit ?? 12;
+  const includeWallet = opts.includeWallet !== false && !opts.userId;
+
+  const orderWhere = {
+    status: OrderStatus.completed,
+    kind: { in: [OrderKind.new, OrderKind.renew] as OrderKind[] },
+    ...(opts.userId ? { userId: opts.userId } : {}),
+    ...(since ? { updatedAt: { gte: since } } : {}),
+  };
+
+  const [orders, activeSubs, walletAgg] = await Promise.all([
+    prisma.order.findMany({
+      where: orderWhere,
+      include: { user: { select: { username: true, firstName: true, telegramId: true, agentName: true } } },
+      orderBy: { updatedAt: "desc" },
+    }),
+    prisma.subscription.count({
+      where: {
+        status: "active",
+        ...(opts.userId ? { userId: opts.userId } : {}),
+      },
+    }),
+    includeWallet
+      ? prisma.order.aggregate({
+          where: {
+            status: OrderStatus.completed,
+            kind: OrderKind.wallet_charge,
+            ...(since ? { updatedAt: { gte: since } } : {}),
+          },
+          _sum: { price: true },
+          _count: true,
+        })
+      : Promise.resolve({ _sum: { price: null as number | null }, _count: 0 }),
+  ]);
 
   const total = orders.reduce((s, o) => s + o.price, 0);
-  const byKind = {
-    new: orders.filter((o) => o.kind === "new").length,
-    renew: orders.filter((o) => o.kind === "renew").length,
+  const newCount = orders.filter((o) => o.kind === OrderKind.new).length;
+  const renewCount = orders.filter((o) => o.kind === OrderKind.renew).length;
+  const avgOrder = orders.length ? Math.round(total / orders.length) : 0;
+  const walletChargeTotal = walletAgg._sum.price ?? 0;
+  const walletChargeCount = typeof walletAgg._count === "number" ? walletAgg._count : 0;
+
+  const recent: SalesRecentRow[] = orders.slice(0, recentLimit).map((o) => ({
+    id: o.id,
+    kind: o.kind,
+    price: o.price,
+    at: o.updatedAt.toISOString(),
+    who: opts.userId ? null : whoLabel(o.user),
+    accountName: o.accountName,
+  }));
+
+  const label = periodLabel(period);
+  const title = opts.title ?? (opts.userId ? "گزارش فروش شما" : "گزارش فروش");
+  const lines = [
+    `📈 ${title} — ${label}`,
+    "",
+    `تعداد سفارش تکمیل‌شده: ${orders.length.toLocaleString("fa-IR")}`,
+    `  • خرید جدید: ${newCount.toLocaleString("fa-IR")}`,
+    `  • تمدید: ${renewCount.toLocaleString("fa-IR")}`,
+    `جمع فروش: ${formatToman(total)}`,
+    orders.length ? `میانگین سفارش: ${formatToman(avgOrder)}` : "",
+    `سرویس فعال: ${activeSubs.toLocaleString("fa-IR")}`,
+  ].filter(Boolean);
+
+  if (includeWallet) {
+    lines.push(
+      `شارژ کیف پول: ${walletChargeCount.toLocaleString("fa-IR")} مورد · ${formatToman(walletChargeTotal)}`,
+    );
+  }
+
+  lines.push("", recent.length ? "آخرین سفارش‌ها:" : "سفارشی در این بازه نیست.");
+  for (const o of recent) {
+    const kindFa = o.kind === "renew" ? "تمدید" : "خرید";
+    const who = o.who ? ` — ${o.who}` : o.accountName ? ` — ${o.accountName}` : "";
+    lines.push(`• ${kindFa} ${formatToman(o.price)}${who}`);
+  }
+
+  return {
+    period,
+    periodLabel: label,
+    since: since?.toISOString() ?? null,
+    total,
+    count: orders.length,
+    newCount,
+    renewCount,
+    avgOrder,
+    walletChargeTotal,
+    walletChargeCount,
+    activeSubs,
+    recent,
+    text: lines.join("\n"),
   };
-  const walletCharges = await prisma.order.aggregate({
-    where: {
-      status: OrderStatus.completed,
-      kind: "wallet_charge",
-      updatedAt: { gte: since },
+}
+
+/** @deprecated prefer buildSalesStats — kept for older callers */
+export async function adminSalesReport(period: "today" | "week" | "month") {
+  return buildSalesStats({ userId: null, period, includeWallet: true });
+}
+
+export async function agentsSalesLeaderboard(opts: {
+  role: "partner" | "wholesale";
+  period: SalesPeriod;
+}): Promise<{ period: SalesPeriod; periodLabel: string; rows: AgentSalesRow[]; text: string }> {
+  const since = periodSince(opts.period);
+  const role = opts.role === "wholesale" ? UserRole.wholesale : UserRole.partner;
+  const users = await prisma.user.findMany({
+    where: { role },
+    select: {
+      id: true,
+      telegramId: true,
+      username: true,
+      firstName: true,
+      agentName: true,
+      panelGroup: true,
+      orders: {
+        where: {
+          status: OrderStatus.completed,
+          kind: { in: [OrderKind.new, OrderKind.renew] },
+          ...(since ? { updatedAt: { gte: since } } : {}),
+        },
+        select: { price: true, kind: true },
+      },
+      subscriptions: {
+        where: { status: "active" },
+        select: { id: true },
+      },
     },
-    _sum: { price: true },
-    _count: true,
   });
 
-  const label = period === "today" ? "امروز" : period === "week" ? "۷ روز اخیر" : "۳۰ روز اخیر";
+  const rows: AgentSalesRow[] = users
+    .map((u) => {
+      const sales = u.orders.reduce((s, o) => s + o.price, 0);
+      return {
+        id: u.id,
+        telegramId: String(u.telegramId),
+        username: u.username,
+        name: u.firstName,
+        agentName: u.agentName,
+        group: u.panelGroup,
+        orders: u.orders.length,
+        sales,
+        newCount: u.orders.filter((o) => o.kind === OrderKind.new).length,
+        renewCount: u.orders.filter((o) => o.kind === OrderKind.renew).length,
+        activeSubs: u.subscriptions.length,
+      };
+    })
+    .sort((a, b) => b.sales - a.sales || b.orders - a.orders);
 
+  const title = opts.role === "wholesale" ? "عمده‌فروش‌ها" : "همکاران";
+  const label = periodLabel(opts.period);
   const lines = [
-    `📈 گزارش فروش — ${label}`,
+    `📊 گزارش فروش ${title} — ${label}`,
     "",
-    `تعداد سفارش تکمیل‌شده: ${orders.length}`,
-    `  • خرید جدید: ${byKind.new}`,
-    `  • تمدید: ${byKind.renew}`,
-    `جمع فروش: ${formatToman(total)}`,
-    `شارژ کیف پول: ${walletCharges._count} مورد · ${formatToman(walletCharges._sum.price ?? 0)}`,
-    "",
-    orders.length ? "آخرین سفارش‌ها:" : "سفارشی در این بازه نیست.",
-    ...orders.slice(0, 12).map((o) => {
-      const who = o.user.username ? `@${o.user.username}` : o.user.firstName || String(o.user.telegramId);
-      return `• ${o.kind === "renew" ? "تمدید" : "خرید"} ${formatToman(o.price)} — ${who}`;
-    }),
+    ...(rows.length
+      ? rows.slice(0, 40).map((r) => {
+          const who = r.username ? `@${r.username}` : r.agentName || r.telegramId;
+          return `• ${who} — ${r.orders.toLocaleString("fa-IR")} سفارش · ${formatToman(r.sales)} · ${r.activeSubs.toLocaleString("fa-IR")} فعال`;
+        })
+      : ["موردی نیست."]),
   ];
 
-  return { text: lines.join("\n"), total, count: orders.length };
+  return {
+    period: opts.period,
+    periodLabel: label,
+    rows,
+    text: lines.join("\n"),
+  };
+}
+
+/** @deprecated use agentsSalesLeaderboard */
+export async function partnerSalesReport(role: "partner" | "wholesale") {
+  const { rows } = await agentsSalesLeaderboard({ role, period: "all" });
+  return rows.map((r) => ({
+    id: r.id,
+    telegramId: r.telegramId,
+    username: r.username,
+    name: r.name,
+    group: r.group,
+    orders: r.orders,
+    sales: r.sales,
+    subs: r.activeSubs,
+  }));
 }
 
 export async function searchUsersAndOrders(query: string) {
