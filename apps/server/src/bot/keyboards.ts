@@ -66,11 +66,11 @@ export type MainMenuOpts = {
 /**
  * Sticky reply keyboard — order + colors (Telegram: success=green, primary=blue, danger=red).
  *
- * Admin (prod + demo) — all neutral:
- *   خرید | سرویس‌های من
- *   تمدید | کلیه سرویس‌ها
- *   مشاهده سریع | تمام‌صفحه
- *   کنترل سنتر | داشبورد وب اپ
+ * Admin (prod + demo) — all neutral (RTL: first in row = visual right):
+ *   سرویس‌های من | خرید
+ *   کلیه سرویس‌ها | تمدید
+ *   تمام‌صفحه | مشاهده سریع
+ *   داشبورد وب اپ | کنترل سنتر
  *   [| تغییر نقش دمو — فقط DEMO_MODE]
  *
  * Other roles: buy, services, wallet/account, support, guide/test, agent|partner + lookup, hide, dash OTP.
@@ -78,17 +78,17 @@ export type MainMenuOpts = {
 export function mainMenuReply(opts: MainMenuOpts) {
   if (opts.isAdmin) {
     const kb = new Keyboard()
-      .text(BTN.buy)
       .text(BTN.myServices)
+      .text(BTN.buy)
       .row()
-      .text(BTN.renew)
       .text(BTN.allConfigs)
+      .text(BTN.renew)
       .row()
-      .text(BTN.configLookup)
       .text(BTN.hideKeyboard)
+      .text(BTN.configLookup)
       .row()
-      .text(BTN.controlCenter)
       .text(BTN.dashOtp)
+      .text(BTN.controlCenter)
       .row();
     if (opts.demoMode) kb.text(BTN.demoRole).row();
     return kb.persistent().resized();
