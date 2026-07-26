@@ -79,7 +79,7 @@ import {
   type PriceRates,
   type RolePricingModes,
 } from "../services/settings.js";
-import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, type BackupConfig } from "../services/backup.js";
+import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, type BackupConfig } from "../services/backup.js";
 import { Bot } from "grammy";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
@@ -2192,6 +2192,38 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       });
     }
     return c.json(r);
+  });
+
+  api.post("/admin/backup/restore", async (c) => {
+    const body = await c.req.parseBody();
+    const file = body["file"];
+    if (!(file instanceof File)) {
+      return c.json({ error: "فایل پشتیبان را انتخاب کنید" }, 400);
+    }
+    const name = (file.name || "").toLowerCase();
+    if (name && !name.endsWith(".db") && !name.endsWith(".sqlite") && !name.endsWith(".sqlite3")) {
+      return c.json({ error: "فرمت باید .db باشد" }, 400);
+    }
+    if (file.size > 80 * 1024 * 1024) {
+      return c.json({ error: "حجم فایل بیش از حد مجاز است" }, 400);
+    }
+    const buf = Buffer.from(await file.arrayBuffer());
+    const result = await restoreDatabaseFromBackupBuffer(buf);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    await auditLog({
+      action: "backup_restored",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: file.name || "backup.db",
+      detail: `safety=${result.safetyName} web`,
+    });
+    // Restart so Prisma reconnects to the swapped SQLite file
+    setTimeout(() => process.exit(0), 1200);
+    return c.json({
+      ok: true,
+      safetyName: result.safetyName,
+      size: result.size,
+      message: "بازیابی انجام شد. سرور در حال ری‌استارت است.",
+    });
   });
 
   api.put("/admin/settings", async (c) => {

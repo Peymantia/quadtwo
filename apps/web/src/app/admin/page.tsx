@@ -220,7 +220,12 @@ export default function AdminPage() {
       {tab === "sync" && <SyncTab flash={flash} askConfirm={askConfirm} />}
       {tab === "panels" && <PanelsTab flash={flash} />}
       {tab === "settings" && (
-        <SettingsTab flash={flash} hasPassword={Boolean(home.user.hasPassword)} onPasswordSaved={() => void reload()} />
+        <SettingsTab
+          flash={flash}
+          askConfirm={askConfirm}
+          hasPassword={Boolean(home.user.hasPassword)}
+          onPasswordSaved={() => void reload()}
+        />
       )}
       {tab === "reports" && <ReportsTab />}
       {tab === "import" && <ImportTab flash={flash} />}
@@ -3102,10 +3107,12 @@ const GUIDE_PLATFORMS = [
 
 function SettingsTab({
   flash,
+  askConfirm,
   hasPassword,
   onPasswordSaved,
 }: {
   flash: Flash;
+  askConfirm: AskConfirm;
   hasPassword: boolean;
   onPasswordSaved: () => void;
 }) {
@@ -3268,6 +3275,35 @@ function SettingsTab({
       } else {
         flash(null, r.error || "ارسال پشتیبان ناموفق بود");
       }
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function restoreBackupFile(file: File) {
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".db") && !name.endsWith(".sqlite") && !name.endsWith(".sqlite3")) {
+      flash(null, "فرمت باید .db باشد");
+      return;
+    }
+    if (
+      !(await askConfirm(
+        "دیتابیس فعلی با این فایل جایگزین شود؟ قبل از بازیابی یک نسخهٔ ایمنی ساخته می‌شود و سرور ری‌استارت خواهد شد.",
+      ))
+    ) {
+      return;
+    }
+    setBackupBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await api<{ ok: boolean; safetyName?: string; message?: string }>("/admin/backup/restore", {
+        method: "POST",
+        rawBody: fd,
+      });
+      flash(r.message || `بازیابی شد · ایمنی: ${r.safetyName || "—"}`);
     } catch (e) {
       flash(null, errText(e));
     } finally {
@@ -3588,6 +3624,22 @@ function SettingsTab({
             <button type="button" className="btn primary wide" disabled={backupBusy} onClick={() => void sendBackupNow()}>
               {backupBusy ? "در حال ارسال…" : "ارسال الان به تلگرام"}
             </button>
+            <div className="field" style={{ marginTop: 12 }}>
+              <label>بازیابی از فایل پشتیبان (.db)</label>
+              <input
+                type="file"
+                accept=".db,.sqlite,.sqlite3,application/octet-stream"
+                disabled={backupBusy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void restoreBackupFile(f);
+                }}
+              />
+              <p className="hint" style={{ marginBottom: 0 }}>
+                دیتابیس فعلی جایگزین می‌شود؛ قبلش نسخهٔ ایمنی ساخته می‌شود و سپس سرور ری‌استارت می‌کند.
+              </p>
+            </div>
           </>
         )}
         {!backup && <p className="muted">در حال دریافت تنظیمات پشتیبان…</p>}

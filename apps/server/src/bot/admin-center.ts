@@ -43,7 +43,7 @@ import {
 } from "../services/settings.js";
 import { demoteToUser, listNotifyAdminTelegramIds } from "../services/users.js";
 import { formatToman } from "../utils/format.js";
-import { getBackupConfig, saveBackupConfig, sendBackupToAdmins } from "../services/backup.js";
+import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer } from "../services/backup.js";
 import {
   agentsSalesLeaderboard,
   buildSalesStats,
@@ -108,6 +108,7 @@ export const ccWait = new Map<
   | { kind: "guide_url"; platform: "ios" | "android" | "windows" | "macos" | "extra" }
   | { kind: "iplimit" }
   | { kind: "backup_time" }
+  | { kind: "backup_restore" }
   | { kind: "search" }
   | { kind: "broadcast" }
   | {
@@ -140,6 +141,66 @@ export const ccWait = new Map<
     }
   | { kind: "excel_import" }
 >();
+
+/** Handle SQLite backup document for restore. Returns true if consumed. */
+export async function handleBackupRestoreDocument(ctx: Context): Promise<boolean> {
+  const tid = ctx.from?.id;
+  if (!tid) return false;
+  const wait = ccWait.get(tid);
+  if (!wait || wait.kind !== "backup_restore") return false;
+  if (!(await isControlAdmin(tid))) {
+    ccWait.delete(tid);
+    return false;
+  }
+
+  const doc = ctx.message?.document;
+  if (!doc) {
+    await ctx.reply("لطفاً فایل پشتیبان را به‌صورت Document بفرستید (نه فشرده داخل آرشیو).");
+    return true;
+  }
+  const name = (doc.file_name || "").toLowerCase();
+  if (name && !name.endsWith(".db") && !name.endsWith(".sqlite") && !name.endsWith(".sqlite3")) {
+    await ctx.reply("فرمت باید .db باشد (همان فایل پشتیبان ربات).");
+    return true;
+  }
+  if (doc.file_size && doc.file_size > 80 * 1024 * 1024) {
+    await ctx.reply("حجم فایل بیش از حد مجاز است (حداکثر ۸۰ مگابایت).");
+    return true;
+  }
+
+  try {
+    await ctx.reply("⏳ در حال بررسی و بازیابی پشتیبان…");
+    const file = await ctx.getFile();
+    const url = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("دانلود فایل از تلگرام ناموفق بود");
+    const buf = Buffer.from(await res.arrayBuffer());
+    const result = await restoreDatabaseFromBackupBuffer(buf);
+    ccWait.delete(tid);
+    if (!result.ok) {
+      await ctx.reply(`❌ بازیابی ناموفق:\n${result.error}`);
+      return true;
+    }
+    await auditLog({
+      action: "backup_restored",
+      actorTelegramId: tid,
+      target: doc.file_name || "backup.db",
+      detail: `safety=${result.safetyName}`,
+    });
+    await ctx.reply(
+      [
+        "✅ بازیابی انجام شد",
+        "",
+        `نسخهٔ ایمنی قبل از بازیابی: ${result.safetyName}`,
+        "ربات چند ثانیه دیگر ری‌استارت می‌شود تا دیتابیس جدید بارگذاری شود.",
+      ].join("\n"),
+    );
+    setTimeout(() => process.exit(0), 1500);
+  } catch (err) {
+    await ctx.reply(`خطا در بازیابی:\n${String(err).replace(/^Error:\s*/, "")}`);
+  }
+  return true;
+}
 
 /** Handle Excel document upload for bulk import. Returns true if consumed. */
 export async function handleExcelImportDocument(ctx: Context): Promise<boolean> {
@@ -1546,6 +1607,9 @@ export function registerControlCenter(bot: Bot) {
           .text("📤 دریافت الان", "cc:backup:now")
           .success()
           .row()
+          .text("📥 بازیابی از فایل", "cc:backup:restore")
+          .danger()
+          .row()
           .text(cfg.enabled ? "⏸ خاموش کردن خودکار" : "▶️ روشن کردن خودکار", "cc:backup:tog")
           .row()
           .text("⏰ تنظیم ساعت", "cc:backup:time")
@@ -1576,6 +1640,23 @@ export function registerControlCenter(bot: Bot) {
     }
   });
 
+  bot.callbackQuery("cc:backup:restore", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "backup_restore" });
+    await ctx.reply(
+      [
+        "⚠️ بازیابی پشتیبان",
+        "",
+        "دیتابیس فعلی با فایل ارسالی جایگزین می‌شود.",
+        "قبل از جایگزینی، یک نسخهٔ ایمنی از دیتابیس فعلی ساخته می‌شود.",
+        "",
+        "فایل `.db` پشتیبان را همین‌جا به‌صورت Document بفرستید.",
+        "لغو: /cancel",
+      ].join("\n"),
+    );
+  });
+
   bot.callbackQuery("cc:backup:tog", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     const cfg = await getBackupConfig();
@@ -1596,6 +1677,9 @@ export function registerControlCenter(bot: Bot) {
         reply_markup: new InlineKeyboard()
           .text("📤 دریافت الان", "cc:backup:now")
           .success()
+          .row()
+          .text("📥 بازیابی از فایل", "cc:backup:restore")
+          .danger()
           .row()
           .text(cfg.enabled ? "⏸ خاموش کردن خودکار" : "▶️ روشن کردن خودکار", "cc:backup:tog")
           .row()

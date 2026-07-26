@@ -195,6 +195,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [priceBefore, setPriceBefore] = useState<number | null>(null);
   const [discountErr, setDiscountErr] = useState<string | null>(null);
+  const [discountOkHint, setDiscountOkHint] = useState<string | null>(null);
+  const [checkingDiscount, setCheckingDiscount] = useState(false);
+  const [verifiedDiscount, setVerifiedDiscount] = useState<string | null>(null);
   const [offerIndex, setOfferIndex] = useState(0);
 
   const isOffer = category === "offer";
@@ -267,6 +270,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     setMonthIndex(0);
     setOfferIndex(0);
     setDiscountCode("");
+    setVerifiedDiscount(null);
+    setDiscountOkHint(null);
+    setDiscountErr(null);
+    setDiscountAmount(0);
     if (ipLocked) setIpIndex(0);
     else setIpIndex(nearestIndex(ipSteps, catalog.defaultLimitIp ?? 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on category change
@@ -328,7 +335,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           category,
           trafficGb,
           months: category === "national" ? 1 : months,
-          discountCode: discountsAllowed && discountCode.trim() ? discountCode.trim() : null,
+          discountCode:
+            discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
+              ? verifiedDiscount
+              : null,
         },
       })
         .then((r) => {
@@ -336,7 +346,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           setPrice(r.price);
           setPriceBefore(r.priceBefore ?? r.price);
           setDiscountAmount(r.discountAmount ?? 0);
-          setDiscountErr(r.discountError ?? null);
+          // Keep check-button errors; only clear when verified discount applies cleanly
+          if (!r.discountError && verifiedDiscount) setDiscountErr(null);
         })
         .catch((e) => {
           if (cancelled) return;
@@ -354,7 +365,63 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [category, trafficGb, months, discountCode, discountsAllowed, isOffer, selectedOffer]);
+  }, [category, trafficGb, months, discountsAllowed, isOffer, selectedOffer, verifiedDiscount]);
+
+  async function checkDiscountCode() {
+    const code = discountCode.trim().toUpperCase();
+    if (!code) {
+      setDiscountErr("کد تخفیف را وارد کنید");
+      setDiscountOkHint(null);
+      setVerifiedDiscount(null);
+      return;
+    }
+    setCheckingDiscount(true);
+    setDiscountErr(null);
+    setDiscountOkHint(null);
+    try {
+      const r = await api<{
+        price: number;
+        priceBefore?: number;
+        discountAmount?: number;
+        discountError?: string | null;
+        percentOff?: number | null;
+        discountCode?: string | null;
+      }>("/me/quote", {
+        body: {
+          category,
+          trafficGb,
+          months: category === "national" ? 1 : months,
+          discountCode: code,
+        },
+      });
+      if (r.discountError) {
+        setVerifiedDiscount(null);
+        setDiscountAmount(0);
+        setDiscountErr(r.discountError);
+        setPrice(r.priceBefore ?? r.price);
+        setPriceBefore(r.priceBefore ?? r.price);
+        return;
+      }
+      if (!r.discountAmount || r.discountAmount <= 0) {
+        setVerifiedDiscount(null);
+        setDiscountErr("کد تخفیف وارد شده صحیح نیست");
+        return;
+      }
+      setVerifiedDiscount(r.discountCode || code);
+      setDiscountCode(r.discountCode || code);
+      setDiscountAmount(r.discountAmount);
+      setPrice(r.price);
+      setPriceBefore(r.priceBefore ?? r.price);
+      setDiscountOkHint(
+        `کد معتبر است${r.percentOff ? ` (−${r.percentOff}٪)` : ""} · تخفیف ${formatToman(r.discountAmount)}`,
+      );
+    } catch (e) {
+      setVerifiedDiscount(null);
+      setDiscountErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setCheckingDiscount(false);
+    }
+  }
 
   function resolveAccountName() {
     if (nameMode === "custom") return customName.trim();
@@ -377,7 +444,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       accountName: pendingName,
       note: note.trim() || null,
       payWithWallet,
-      discountCode: discountsAllowed && discountCode.trim() ? discountCode.trim() : null,
+      discountCode:
+        discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
+          ? verifiedDiscount
+          : null,
     });
   }
 
@@ -516,12 +586,33 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       {discountsAllowed && (
         <div className="field">
           <label>کد تخفیف (اختیاری)</label>
-          <input
-            value={discountCode}
-            onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
-            placeholder="مثلاً SALE20"
-            disabled={busy}
-          />
+          <div className="discount-check-row">
+            <input
+              value={discountCode}
+              onChange={(e) => {
+                setDiscountCode(e.target.value.toUpperCase());
+                setDiscountErr(null);
+                setDiscountOkHint(null);
+                setDiscountAmount(0);
+                setVerifiedDiscount(null);
+              }}
+              placeholder="مثلاً SALE20"
+              disabled={busy || checkingDiscount}
+            />
+            <button
+              type="button"
+              className="btn primary sm"
+              disabled={busy || checkingDiscount || !discountCode.trim()}
+              onClick={() => void checkDiscountCode()}
+            >
+              {checkingDiscount ? "…" : "بررسی کد"}
+            </button>
+          </div>
+          {discountOkHint && !discountErr && (
+            <p className="muted" style={{ color: "var(--green)", margin: "6px 0 0" }}>
+              {discountOkHint}
+            </p>
+          )}
         </div>
       )}
 

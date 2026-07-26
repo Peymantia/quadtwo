@@ -60,6 +60,7 @@ import {
   handleBroadcastMedia,
   handleControlCenterText,
   handleExcelImportDocument,
+  handleBackupRestoreDocument,
   isControlAdmin,
   registerControlCenter,
   showControlCenter,
@@ -1235,7 +1236,41 @@ export function createBot() {
       return;
     }
     waitingDiscount.set(ctx.from!.id, "buy");
-    await ctx.reply("کد تخفیف خودتان را بفرستید (فقط کدهایی که خودتان ساخته‌اید):");
+    await ctx.reply("کد تخفیف را بفرستید تا بررسی و اعمال شود:");
+  });
+
+  bot.callbackQuery("wiz:discount:check", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
+    if (isOfferCategory(draft.category)) {
+      await ctx.reply("کد تخفیف برای پیشنهاد ویژه فعال نیست.");
+      return;
+    }
+    if (!(await isDiscountCodesEnabled())) {
+      await ctx.reply("کد تخفیف فعلاً غیرفعال است.");
+      return;
+    }
+    if (draft.discountCode) {
+      const user = await upsertUserFromTelegram(ctx.from!);
+      const roleUser = withEffectiveRole(user, ctx.from!.id);
+      const priced = await draftPrice(user, draft, ctx.from!.id);
+      const qty = Math.max(1, draft.quantity);
+      const checkPrice = priced ? priced.price * qty : 10_000;
+      const prev = await previewDiscount({ buyer: roleUser, code: draft.discountCode, price: checkPrice });
+      if ("error" in prev) {
+        await setDraftDiscountCode(BigInt(ctx.from!.id), null);
+        await ctx.reply(`❌ ${prev.error}`);
+        await showBuyWizard(ctx, true);
+        return;
+      }
+      await ctx.reply(
+        `✅ کد ${prev.code} معتبر است (−${prev.percentOff}٪)\nمبلغ پس از تخفیف: ${formatToman(prev.priceAfter)}`,
+      );
+      await showBuyWizard(ctx, true);
+      return;
+    }
+    waitingDiscount.set(ctx.from!.id, "buy");
+    await ctx.reply("کد تخفیف را بفرستید تا بررسی شود:");
   });
 
   bot.callbackQuery("wiz:discount:clear", async (ctx) => {
@@ -1252,7 +1287,41 @@ export function createBot() {
       return;
     }
     waitingDiscount.set(ctx.from!.id, "renew");
-    await ctx.reply("کد تخفیف خودتان را بفرستید:");
+    await ctx.reply("کد تخفیف را بفرستید تا بررسی و اعمال شود:");
+  });
+
+  bot.callbackQuery("renew:discount:check", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await isDiscountCodesEnabled())) {
+      await ctx.reply("کد تخفیف فعلاً غیرفعال است.");
+      return;
+    }
+    const st = renewState.get(ctx.from!.id);
+    if (st?.discountCode) {
+      const user = await upsertUserFromTelegram(ctx.from!);
+      const roleUser = withEffectiveRole(user, ctx.from!.id);
+      const p = await draftPrice(user, {
+        trafficGb: st.trafficGb,
+        months: st.months,
+        unlimited: st.unlimited,
+        category: st.category,
+      });
+      const checkPrice = p?.price ?? 10_000;
+      const prev = await previewDiscount({ buyer: roleUser, code: st.discountCode, price: checkPrice });
+      if ("error" in prev) {
+        renewState.set(ctx.from!.id, { ...st, discountCode: null });
+        await ctx.reply(`❌ ${prev.error}`);
+        await showRenewWizard(ctx, st.subId, {}, true);
+        return;
+      }
+      await ctx.reply(
+        `✅ کد ${prev.code} معتبر است (−${prev.percentOff}٪)\nمبلغ پس از تخفیف: ${formatToman(prev.priceAfter)}`,
+      );
+      await showRenewWizard(ctx, st.subId, {}, true);
+      return;
+    }
+    waitingDiscount.set(ctx.from!.id, "renew");
+    await ctx.reply("کد تخفیف را بفرستید تا بررسی شود:");
   });
 
   bot.callbackQuery("renew:discount:clear", async (ctx) => {
@@ -1504,6 +1573,7 @@ export function createBot() {
     ["message:photo", "message:document", "message:video", "message:animation", "message:audio", "message:voice", "message:sticker"],
     async (ctx) => {
     if (await handleBroadcastMedia(ctx)) return;
+    if (await handleBackupRestoreDocument(ctx)) return;
     if (await handleExcelImportDocument(ctx)) return;
 
     // Receipts: photo or image document only

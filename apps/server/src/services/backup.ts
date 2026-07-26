@@ -112,6 +112,74 @@ function formatBytes(n: number) {
   return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+const SQLITE_MAGIC = Buffer.from("SQLite format 3\0");
+
+export function isSqliteDatabaseBuffer(buf: Buffer): boolean {
+  return buf.length >= SQLITE_MAGIC.length && buf.subarray(0, SQLITE_MAGIC.length).equals(SQLITE_MAGIC);
+}
+
+/**
+ * Replace the live SQLite DB with a backup file buffer.
+ * Creates a safety snapshot of the current DB first, then swaps files.
+ * Caller should restart the process so Prisma reconnects cleanly.
+ */
+export async function restoreDatabaseFromBackupBuffer(
+  buf: Buffer,
+): Promise<{ ok: true; safetyName: string; size: number } | { ok: false; error: string }> {
+  if (!buf?.length) return { ok: false, error: "فایل خالی است" };
+  if (!isSqliteDatabaseBuffer(buf)) {
+    return { ok: false, error: "فایل معتبر SQLite نیست (باید خروجی پشتیبان Quadtwo باشد)" };
+  }
+  if (buf.length < 4096) {
+    return { ok: false, error: "حجم فایل پشتیبان مشکوک / خیلی کوچک است" };
+  }
+
+  const src = resolveDatabaseFilePath();
+  const dir = await backupDir();
+  const incoming = join(dir, `restore-incoming-${stamp()}.db`);
+  const safetyName = `pre-restore-${stamp()}.db`;
+  const safety = join(dir, safetyName);
+
+  try {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(incoming, buf);
+
+    // Safety snapshot of current live DB
+    try {
+      const sqlPath = safety.replace(/\\/g, "/").replace(/'/g, "''");
+      await prisma.$executeRawUnsafe(`VACUUM INTO '${sqlPath}'`);
+    } catch {
+      try {
+        await prisma.$executeRawUnsafe(`PRAGMA wal_checkpoint(TRUNCATE)`);
+      } catch {
+        /* ignore */
+      }
+      await copyFile(src, safety);
+    }
+
+    const cfg = await getBackupConfig();
+    cfg.lastAt = new Date().toISOString();
+    cfg.lastStatus = `restored; safety=${safetyName}; size=${formatBytes(buf.length)}`;
+    await saveBackupConfig(cfg);
+
+    await prisma.$disconnect().catch(() => undefined);
+
+    await copyFile(incoming, src);
+    for (const suffix of ["-wal", "-shm"]) {
+      try {
+        const { unlink } = await import("node:fs/promises");
+        await unlink(src + suffix);
+      } catch {
+        /* none */
+      }
+    }
+
+    return { ok: true, safetyName, size: buf.length };
+  } catch (err) {
+    return { ok: false, error: String(err instanceof Error ? err.message : err) };
+  }
+}
+
 /** Create backup and send the file to all admin Telegram IDs. */
 export async function sendBackupToAdmins(
   api: Api,

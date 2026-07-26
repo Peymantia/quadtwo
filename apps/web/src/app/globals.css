@@ -3101,6 +3101,32 @@ button.pay-dest-number:active,
   gap: 10px;
 }
 
+.discount-check-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.discount-check-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.discount-check-row .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .discount-check-row {
+    flex-direction: column;
+  }
+
+  .discount-check-row .btn {
+    width: 100%;
+  }
+}
+
 .seek-pay-row .wide {
   grid-column: 1 / -1;
 }
