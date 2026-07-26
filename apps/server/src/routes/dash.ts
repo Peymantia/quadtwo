@@ -31,7 +31,7 @@ import {
   provisionAdminComplimentary,
   rejectOrder,
 } from "../services/orders.js";
-import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, type PlanCategory } from "../services/pricing.js";
+import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, rotateUuid, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
 import {
   createDiscountCode,
@@ -567,7 +567,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     let discountCode: string | null = null;
     let percentOff: number | null = null;
     let discountError: string | null = null;
-    if (body.discountCode?.trim()) {
+    const offerLocked = isOfferCategory(category);
+    if (!offerLocked && body.discountCode?.trim()) {
       const prev = await previewDiscount({
         buyer: pricedUser,
         code: body.discountCode,
@@ -581,6 +582,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         discountCode = prev.code;
         percentOff = prev.percentOff;
       }
+    } else if (offerLocked && body.discountCode?.trim()) {
+      discountError = "کد تخفیف برای پیشنهاد ویژه فعال نیست";
     }
     return c.json({
       price,
@@ -1323,9 +1326,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "isGolden", "trafficGb", "months", "category", "active"]) {
       if (body[k] !== undefined) data[k] = body[k];
     }
-    // ∞GB only belongs in unlimited category
-    if (data.trafficGb === null || data.category === "unlimited") {
+    // ∞GB only in unlimited — offer may also be ∞ while staying category=offer
+    if (data.category === "unlimited") {
       data.trafficGb = null;
+    } else if (data.trafficGb === null && typeof data.category === "string" && data.category !== "offer") {
       data.category = "unlimited";
     }
     await prisma.priceCell.update({ where: { id: c.req.param("id") }, data });

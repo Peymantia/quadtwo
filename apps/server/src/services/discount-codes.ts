@@ -1,4 +1,4 @@
-import { UserRole, type User } from "@prisma/client";
+import { OrderStatus, UserRole, type User } from "@prisma/client";
 import { prisma } from "../db.js";
 import { getSetting, setSetting } from "./settings.js";
 
@@ -40,8 +40,33 @@ export type AppliedDiscount = {
 
 export type DiscountPreview = AppliedDiscount | { error: string };
 
+const MSG = {
+  invalid: "کد تخفیف وارد شده صحیح نیست",
+  expired: "کد تخفیف منقضی شده",
+  alreadyUsed: "شما قبلا از این کد تخفیف استفاده کرده اید",
+  disabled: "کد تخفیف فعلاً غیرفعال است",
+  empty: "کد تخفیف را وارد کنید",
+  creatorOnly: "این کد فقط برای فروش سازنده‌اش قابل استفاده است",
+  exhausted: "ظرفیت استفاده از این کد تمام شده است",
+} as const;
+
+/** Buyer already applied this code on an open or completed order. */
+async function buyerAlreadyUsedDiscount(buyerId: string, codeId: string): Promise<boolean> {
+  const n = await prisma.order.count({
+    where: {
+      userId: buyerId,
+      discountCodeId: codeId,
+      status: {
+        notIn: [OrderStatus.rejected, OrderStatus.cancelled],
+      },
+    },
+  });
+  return n > 0;
+}
+
 /**
- * Codes only apply to the creator's own checkout (فروش خودش).
+ * Validate a code and compute discounted price.
+ * Valid codes reduce price; invalid/expired/already-used return a clear Persian error.
  */
 export async function previewDiscount(opts: {
   buyer: Pick<User, "id" | "role">;
@@ -49,10 +74,10 @@ export async function previewDiscount(opts: {
   price: number;
 }): Promise<DiscountPreview> {
   if (!(await isDiscountCodesEnabled())) {
-    return { error: "کد تخفیف فعلاً غیرفعال است" };
+    return { error: MSG.disabled };
   }
   const normalized = normalizeDiscountCode(opts.code);
-  if (!normalized) return { error: "کد تخفیف را وارد کنید" };
+  if (!normalized) return { error: MSG.empty };
   if (opts.price <= 0) {
     return {
       codeId: "",
@@ -65,7 +90,8 @@ export async function previewDiscount(opts: {
   }
 
   const row = await prisma.discountCode.findUnique({ where: { code: normalized } });
-  if (!row || !row.active) return { error: "کد تخفیف معتبر نیست" };
+  if (!row || !row.active) return { error: MSG.invalid };
+
   if (row.createdByUserId !== opts.buyer.id) {
     // Admin-created codes are global promos; partner/wholesale codes stay creator-scoped
     const creator = await prisma.user.findUnique({
@@ -73,14 +99,21 @@ export async function previewDiscount(opts: {
       select: { role: true },
     });
     if (creator?.role !== UserRole.admin) {
-      return { error: "این کد فقط برای فروش سازنده‌اش قابل استفاده است" };
+      return { error: MSG.creatorOnly };
     }
   }
+
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
-    return { error: "مهلت این کد تخفیف تمام شده است" };
+    return { error: MSG.expired };
   }
+
+  const isOneTime = row.maxUses === 1;
+  if (isOneTime && (await buyerAlreadyUsedDiscount(opts.buyer.id, row.id))) {
+    return { error: MSG.alreadyUsed };
+  }
+
   if (row.maxUses != null && row.usedCount >= row.maxUses) {
-    return { error: "ظرفیت استفاده از این کد تمام شده است" };
+    return { error: MSG.exhausted };
   }
 
   const percent = Math.max(1, Math.min(100, row.percentOff));

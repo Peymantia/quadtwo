@@ -3,7 +3,7 @@ import { prisma } from "../db.js";
 import { resolvePanelForCategory, resolvePanelForSubscription } from "./panel-servers.js";
 import { checkRenewEligibility, inferRenewCategory } from "./renew-eligibility.js";
 import { canEditLimitIp, getDefaultLimitIp } from "./settings.js";
-import { clampMonths, normalizePurchaseTraffic, resolvePrice, type PlanCategory } from "./pricing.js";
+import { clampMonths, normalizePurchaseTraffic, resolvePrice, isOfferCategory, findPriceCell, type PlanCategory } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
 import { withEffectiveRole } from "./demo-role.js";
@@ -64,6 +64,11 @@ export async function createMatrixOrder(input: {
 
   const trafficGb = normalizePurchaseTraffic(category, input.trafficGb);
   const months = clampMonths(input.months);
+  const offerLocked = isOfferCategory(category);
+  if (offerLocked) {
+    const cell = await findPriceCell(trafficGb, months, "offer");
+    if (!cell?.active) throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
+  }
   const priced = await resolvePrice(pricedUser, trafficGb, months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
   const quantity = kind === OrderKind.renew ? 1 : Math.max(1, Math.min(50, input.quantity ?? 1));
@@ -75,13 +80,15 @@ export async function createMatrixOrder(input: {
       : Math.max(0, Math.min(10, Math.floor(input.limitIp)));
   const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;
 
-  const priceBefore = priced.price * quantity;
-  // Discount is scoped to the checkout buyer (who pays), not necessarily orderUserId on renew-of-others
-  const applied = await assertAndApplyDiscount({
-    buyer: pricedUser,
-    code: input.discountCode,
-    price: priceBefore,
-  });
+  const priceBefore = priced.price * (offerLocked ? 1 : quantity);
+  const applied =
+    offerLocked || !input.discountCode?.trim()
+      ? null
+      : await assertAndApplyDiscount({
+          buyer: pricedUser,
+          code: input.discountCode,
+          price: priceBefore,
+        });
   const finalPrice = applied ? applied.priceAfter : priceBefore;
 
   return prisma.order.create({
@@ -90,8 +97,8 @@ export async function createMatrixOrder(input: {
       kind,
       trafficGb,
       months,
-      quantity,
-      limitIp,
+      quantity: offerLocked ? 1 : quantity,
+      limitIp: offerLocked ? defaultIp : limitIp,
       note,
       panelServerId,
       price: finalPrice,

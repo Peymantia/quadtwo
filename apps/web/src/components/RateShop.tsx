@@ -17,11 +17,15 @@ export type RateShopCatalog = {
     national: { min: number; max: number; step: number };
     unlimited: null;
   };
-  /** For matrix mode — snap volume/months to priced cells */
+  /** For matrix mode — snap volume/months to priced cells; offer uses fixed cards */
   cells?: Array<{
+    id?: string;
     category: string;
     trafficGb: number | null;
     months: number;
+    title?: string | null;
+    price?: number | null;
+    isGolden?: boolean;
   }>;
 };
 
@@ -191,12 +195,24 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [priceBefore, setPriceBefore] = useState<number | null>(null);
   const [discountErr, setDiscountErr] = useState<string | null>(null);
+  const [offerIndex, setOfferIndex] = useState(0);
 
-  const volumeFixed = category === "unlimited";
-  const monthsLocked = category === "national" || Math.max(1, catalog.maxMonths || 1) <= 1;
-  const ipLocked = !allowIpEdit;
+  const isOffer = category === "offer";
+  const offerCells = useMemo(
+    () => (catalog.cells ?? []).filter((c) => c.category === "offer" && c.price != null),
+    [catalog.cells],
+  );
+  const selectedOffer = isOffer ? offerCells[Math.min(offerIndex, Math.max(0, offerCells.length - 1))] ?? null : null;
+
+  const volumeFixed = category === "unlimited" || (isOffer && selectedOffer?.trafficGb == null);
+  const monthsLocked = isOffer || category === "national" || Math.max(1, catalog.maxMonths || 1) <= 1;
+  const ipLocked = isOffer || !allowIpEdit;
 
   const volumeSteps = useMemo((): SeekStep[] => {
+    if (isOffer && selectedOffer) {
+      if (selectedOffer.trafficGb == null) return [{ value: 0, label: "∞" }];
+      return [{ value: selectedOffer.trafficGb, label: String(selectedOffer.trafficGb) }];
+    }
     if (volumeFixed) return [{ value: 0, label: "∞" }];
     if (catalog.pricingMode === "matrix" && catalog.cells?.length) {
       const gbs = [
@@ -214,9 +230,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     }
     const r = catalog.volumeRules?.data ?? { min: 10, max: 50, step: 5 };
     return steppedValues(r.min, r.max, r.step).map((g) => ({ value: g, label: String(g) }));
-  }, [category, catalog, volumeFixed]);
+  }, [category, catalog, volumeFixed, isOffer, selectedOffer]);
 
   const monthSteps = useMemo((): SeekStep[] => {
+    if (isOffer && selectedOffer) return [{ value: selectedOffer.months, label: String(selectedOffer.months) }];
     if (category === "national") return [{ value: 1, label: "۱" }];
     if (catalog.pricingMode === "matrix" && catalog.cells?.length) {
       const ms = [
@@ -228,7 +245,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     }
     const max = Math.max(1, Math.min(12, catalog.maxMonths || 1));
     return Array.from({ length: max }, (_, i) => ({ value: i + 1, label: String(i + 1) }));
-  }, [category, catalog]);
+  }, [category, catalog, isOffer, selectedOffer]);
 
   const ipSteps = useMemo((): SeekStep[] => {
     const def = Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0));
@@ -248,10 +265,16 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   useEffect(() => {
     setGbIndex(0);
     setMonthIndex(0);
+    setOfferIndex(0);
+    setDiscountCode("");
     if (ipLocked) setIpIndex(0);
     else setIpIndex(nearestIndex(ipSteps, catalog.defaultLimitIp ?? 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on category change
   }, [category]);
+
+  useEffect(() => {
+    setOfferIndex((i) => Math.min(i, Math.max(0, offerCells.length - 1)));
+  }, [offerCells]);
 
   useEffect(() => {
     setGbIndex((i) => Math.min(i, Math.max(0, volumeSteps.length - 1)));
@@ -261,11 +284,17 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     setMonthIndex((i) => Math.min(i, Math.max(0, monthSteps.length - 1)));
   }, [monthSteps]);
 
-  const trafficGb = volumeFixed ? null : volumeSteps[gbIndex]?.value ?? volumeSteps[0]?.value ?? 10;
-  const months = monthSteps[monthIndex]?.value ?? 1;
-  const limitIp = ipSteps[ipIndex]?.value ?? catalog.defaultLimitIp ?? 0;
+  const trafficGb = isOffer
+    ? selectedOffer?.trafficGb ?? null
+    : volumeFixed
+      ? null
+      : volumeSteps[gbIndex]?.value ?? volumeSteps[0]?.value ?? 10;
+  const months = isOffer ? selectedOffer?.months ?? 1 : monthSteps[monthIndex]?.value ?? 1;
+  const limitIp = isOffer
+    ? Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0))
+    : ipSteps[ipIndex]?.value ?? catalog.defaultLimitIp ?? 0;
 
-  const volumeValue = volumeFixed ? (
+  const volumeValue = volumeFixed || trafficGb == null ? (
     "نامحدود"
   ) : (
     <SeekValueLabel num={trafficGb ?? 0} unit="گیگابایت" />
@@ -273,9 +302,20 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const monthValue = <SeekValueLabel num={months} unit="ماه" />;
   const ipValue = limitIp <= 0 ? "نامحدود" : <SeekValueLabel num={limitIp} unit="کاربر" />;
 
+  const discountsAllowed = Boolean(catalog.discountsEnabled) && !isOffer;
+
   useEffect(() => {
     let cancelled = false;
     const t = window.setTimeout(() => {
+      if (isOffer && !selectedOffer) {
+        setPrice(null);
+        setPriceBefore(null);
+        setDiscountAmount(0);
+        setDiscountErr(null);
+        setQuoteErr("پلنی برای پیشنهاد ویژه تعریف نشده است");
+        setQuoting(false);
+        return;
+      }
       setQuoting(true);
       setQuoteErr(null);
       void api<{
@@ -286,9 +326,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       }>("/me/quote", {
         body: {
           category,
-          trafficGb: volumeFixed ? null : trafficGb,
+          trafficGb,
           months: category === "national" ? 1 : months,
-          discountCode: catalog.discountsEnabled && discountCode.trim() ? discountCode.trim() : null,
+          discountCode: discountsAllowed && discountCode.trim() ? discountCode.trim() : null,
         },
       })
         .then((r) => {
@@ -314,7 +354,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [category, trafficGb, months, volumeFixed, discountCode, catalog.discountsEnabled]);
+  }, [category, trafficGb, months, discountCode, discountsAllowed, isOffer, selectedOffer]);
 
   function resolveAccountName() {
     if (nameMode === "custom") return customName.trim();
@@ -331,22 +371,28 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     setConfirmOpen(false);
     await onSubmit({
       category,
-      trafficGb: volumeFixed ? null : trafficGb,
+      trafficGb,
       months: category === "national" ? 1 : months,
       limitIp,
       accountName: pendingName,
       note: note.trim() || null,
       payWithWallet,
-      discountCode: catalog.discountsEnabled && discountCode.trim() ? discountCode.trim() : null,
+      discountCode: discountsAllowed && discountCode.trim() ? discountCode.trim() : null,
     });
   }
 
-  const canSubmit = !busy && !quoting && price != null && (nameMode === "random" || Boolean(customName.trim()));
+  const canSubmit =
+    !busy &&
+    !quoting &&
+    price != null &&
+    (!isOffer || Boolean(selectedOffer)) &&
+    (nameMode === "random" || Boolean(customName.trim()));
   const catLabel = catalog.categoryLabels[category] || category;
   const confirmLines = [
     `اکانت «${pendingName}»`,
     `نوع: ${catLabel}`,
-    `حجم: ${volumeFixed ? "نامحدود" : `${(trafficGb ?? 0).toLocaleString("fa-IR")} گیگابایت`}`,
+    selectedOffer?.title ? `پلن: ${selectedOffer.title}` : "",
+    `حجم: ${trafficGb == null ? "نامحدود" : `${(trafficGb ?? 0).toLocaleString("fa-IR")} گیگابایت`}`,
     `مدت: ${(category === "national" ? 1 : months).toLocaleString("fa-IR")} ماه`,
     `محدودیت کاربر: ${limitIp <= 0 ? "نامحدود" : `${limitIp.toLocaleString("fa-IR")} کاربر`}`,
     discountAmount > 0 && priceBefore != null
@@ -379,32 +425,71 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         </div>
       </div>
 
-      <SeekBar
-        title="حجم"
-        value={volumeValue}
-        steps={volumeSteps}
-        index={gbIndex}
-        disabled={busy || volumeFixed || volumeSteps.length <= 1}
-        onChange={setGbIndex}
-      />
+      {isOffer ? (
+        <div className="field">
+          <label>پیشنهاد ویژه (ثابت)</label>
+          <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
+            حجم، مدت و قیمت این پلن ثابت است؛ فقط نام اکانت را مشخص کنید. کد تخفیف اعمال نمی‌شود.
+          </p>
+          {!offerCells.length ? (
+            <p className="muted" style={{ color: "var(--pink)", margin: 0 }}>
+              هنوز پلنی در دسته offer تعریف نشده است.
+            </p>
+          ) : (
+            <div className="chip-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+              {offerCells.map((cell, idx) => {
+                const vol = cell.trafficGb == null ? "نامحدود" : `${cell.trafficGb} گیگ`;
+                const title = cell.title?.trim() || `${vol} · ${cell.months} ماه`;
+                return (
+                  <button
+                    key={cell.id || `${cell.trafficGb}-${cell.months}-${idx}`}
+                    type="button"
+                    className={`plan-card${offerIndex === idx ? " on" : ""} golden`}
+                    style={{ textAlign: "right", cursor: "pointer", width: "100%" }}
+                    onClick={() => setOfferIndex(idx)}
+                    disabled={busy}
+                  >
+                    <div className="plan-name">⭐ {title}</div>
+                    <div className="plan-meta muted">
+                      {vol} · {cell.months} ماه
+                    </div>
+                    <div className="plan-price num">{formatToman(cell.price ?? 0)}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          <SeekBar
+            title="حجم"
+            value={volumeValue}
+            steps={volumeSteps}
+            index={gbIndex}
+            disabled={busy || volumeFixed || volumeSteps.length <= 1}
+            onChange={setGbIndex}
+          />
 
-      <SeekBar
-        title="مدت"
-        value={monthValue}
-        steps={monthSteps}
-        index={monthIndex}
-        disabled={busy || monthsLocked || monthSteps.length <= 1}
-        onChange={setMonthIndex}
-      />
+          <SeekBar
+            title="مدت"
+            value={monthValue}
+            steps={monthSteps}
+            index={monthIndex}
+            disabled={busy || monthsLocked || monthSteps.length <= 1}
+            onChange={setMonthIndex}
+          />
 
-      <SeekBar
-        title="محدودیت کاربر"
-        value={ipValue}
-        steps={ipSteps}
-        index={ipIndex}
-        disabled={busy || ipLocked || ipSteps.length <= 1}
-        onChange={setIpIndex}
-      />
+          <SeekBar
+            title="محدودیت کاربر"
+            value={ipValue}
+            steps={ipSteps}
+            index={ipIndex}
+            disabled={busy || ipLocked || ipSteps.length <= 1}
+            onChange={setIpIndex}
+          />
+        </>
+      )}
 
       <div className="seek-price seek-price-live">
         <span className="muted">مبلغ</span>
@@ -428,7 +513,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         </p>
       )}
 
-      {catalog.discountsEnabled && (
+      {discountsAllowed && (
         <div className="field">
           <label>کد تخفیف (اختیاری)</label>
           <input

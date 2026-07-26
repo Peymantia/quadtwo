@@ -35,29 +35,40 @@ export function snapNationalGb(raw: number): number {
   return Math.max(NATIONAL_MIN_GB, Math.min(NATIONAL_MAX_GB, n));
 }
 
+/** Builtin: data | national | unlimited — custom slugs allowed too */
+export type PlanCategory = string;
+
+/** Fixed special-offer category: volume/months/price locked; only account name is editable. */
+export function isOfferCategory(category: string | null | undefined): boolean {
+  return (category || "").trim().toLowerCase() === "offer";
+}
+
 /** Normalize traffic for purchase (unlimited → null; national 1–20; else 10–50 ×5). */
 export function normalizePurchaseTraffic(category: string, trafficGb: number | null): number | null {
   if (category === "unlimited") return null;
+  if (isOfferCategory(category)) {
+    if (trafficGb == null) return null;
+    const n = Math.floor(Number(trafficGb));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
   if (trafficGb === null) return category === "unlimited" ? null : snapDataGb(10);
   if (category === "national") return snapNationalGb(trafficGb);
   return snapDataGb(trafficGb);
 }
 
 export function volumeRulesForCategory(category: string): {
-  kind: "unlimited" | "national" | "data";
+  kind: "unlimited" | "national" | "data" | "offer";
   min?: number;
   max?: number;
   step?: number;
 } {
+  if (isOfferCategory(category)) return { kind: "offer" };
   if (category === "unlimited") return { kind: "unlimited" };
   if (category === "national") {
     return { kind: "national", min: NATIONAL_MIN_GB, max: NATIONAL_MAX_GB, step: 1 };
   }
   return { kind: "data", min: DATA_MIN_GB, max: DATA_MAX_GB, step: DATA_STEP_GB };
 }
-
-/** Builtin: data | national | unlimited — custom slugs allowed too */
-export type PlanCategory = string;
 
 export function nextVolume(current: number | null, unlimited: boolean, dir: 1 | -1): {
   trafficGb: number | null;
@@ -94,7 +105,7 @@ export async function findPriceCell(
   months: number,
   category: PlanCategory = "data",
 ) {
-  const cat = trafficGb === null ? "unlimited" : category;
+  const cat = isOfferCategory(category) ? "offer" : trafficGb === null ? "unlimited" : category;
   return prisma.priceCell.findFirst({
     where: { trafficGb, months, category: cat, active: true },
   });
@@ -144,6 +155,15 @@ export async function resolvePrice(
   // Admin checkout is always complimentary (prod + demo)
   if (role === "admin") {
     return { cell: null, price: 0, mode: "rate" as const };
+  }
+
+  // Offer plans are always fixed matrix cells (no rate formula / seek bars).
+  if (isOfferCategory(category)) {
+    const cell = await findPriceCell(trafficGb, months, "offer");
+    if (!cell) return null;
+    const price = priceFromCell(role, cell);
+    if (price <= 0) return null;
+    return { cell, price, mode: "matrix" as const };
   }
 
   const isUnlimited = trafficGb === null || category === "unlimited";
@@ -207,6 +227,14 @@ export async function listGoldenOffers() {
   });
 }
 
+/** Active fixed plans in the `offer` category. */
+export async function listOfferPlans() {
+  return prisma.priceCell.findMany({
+    where: { active: true, category: "offer" },
+    orderBy: [{ sortOrder: "asc" }, { months: "asc" }, { trafficGb: "asc" }],
+  });
+}
+
 /** Distinct months that have active data plans, plus empty months 1–3 for easy navigation */
 export async function listDataMonths(): Promise<Array<{ months: number; count: number }>> {
   const cells = await listPriceMatrix("data");
@@ -239,7 +267,13 @@ export async function upsertPriceCell(input: {
   isGolden?: boolean;
   title?: string;
 }) {
-  const category = input.trafficGb === null ? "unlimited" : (input.category ?? "data");
+  const requested = (input.category ?? "data").trim() || "data";
+  const category =
+    isOfferCategory(requested)
+      ? "offer"
+      : input.trafficGb === null
+        ? "unlimited"
+        : requested;
   const existing = await prisma.priceCell.findFirst({
     where: { trafficGb: input.trafficGb, months: input.months, category },
   });

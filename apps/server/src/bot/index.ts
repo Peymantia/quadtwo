@@ -15,7 +15,7 @@ import {
   payOrderWithWallet,
   rejectOrder,
 } from "../services/orders.js";
-import { listPriceMatrix, upsertPriceCell } from "../services/pricing.js";
+import { listPriceMatrix, upsertPriceCell, isOfferCategory, listOfferPlans } from "../services/pricing.js";
 import {
   provisionOrder,
   refreshSubscriptionSubUrl,
@@ -77,6 +77,7 @@ import {
   setDraftCategory,
   setDraftNameMode,
   setDraftDiscountCode,
+  setDraftOfferPlan,
 } from "./draft.js";
 import {
   isDiscountCodesEnabled,
@@ -242,7 +243,8 @@ async function showBuyCategoryPicker(ctx: Context, edit = false) {
   }
   if (keys.length === 1 && cats[keys[0]!] === true) {
     await setDraftCategory(BigInt(ctx.from!.id), keys[0]!);
-    await showBuyWizard(ctx, edit);
+    if (isOfferCategory(keys[0])) await showOfferPlanPicker(ctx, edit);
+    else await showBuyWizard(ctx, edit);
     return;
   }
   const text = "🛒 خرید سرویس\n\nنوع سرویس را انتخاب کنید:";
@@ -323,18 +325,20 @@ async function showRenewWizard(
 
   let priceLabel = priced ? formatToman(priced.price) : null;
   let discountLine = "";
+  let activeDiscount = discountCode;
   const discountsOn = await isDiscountCodesEnabled();
-  if (discountsOn && discountCode && priced) {
+  if (discountsOn && activeDiscount && priced) {
     const prev = await previewDiscount({
       buyer: withEffectiveRole(user, ctx.from!.id),
-      code: discountCode,
+      code: activeDiscount,
       price: priced.price,
     });
     if (!("error" in prev) && prev.discountAmount > 0) {
       priceLabel = formatToman(prev.priceAfter);
       discountLine = `🎟 تخفیف ${prev.code}: −${formatToman(prev.discountAmount)}`;
     } else if ("error" in prev) {
-      discountLine = `🎟 کد ${discountCode}: ${prev.error}`;
+      activeDiscount = null;
+      renewState.set(ctx.from!.id, { subId, months, trafficGb, unlimited, category, discountCode: null });
     }
   }
 
@@ -366,13 +370,53 @@ async function showRenewWizard(
     maxMonths,
     category,
     discountsEnabled: discountsOn,
-    discountCode,
+    discountCode: activeDiscount,
   });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
   } else {
     await ctx.reply(text, { reply_markup: kb });
   }
+}
+
+async function showOfferPlanPicker(ctx: Context, edit = false) {
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const roleUser = withEffectiveRole(user, ctx.from!.id);
+  const plans = await listOfferPlans();
+  if (!plans.length) {
+    await ctx.reply("فعلاً پلن پیشنهاد ویژه‌ای تعریف نشده است.");
+    return;
+  }
+  if (plans.length === 1) {
+    const p = plans[0]!;
+    await setDraftOfferPlan(BigInt(ctx.from!.id), { trafficGb: p.trafficGb, months: p.months });
+    await showBuyWizard(ctx, edit);
+    return;
+  }
+
+  const kb = new InlineKeyboard();
+  for (const p of plans) {
+    const priced = await draftPrice(
+      user,
+      { trafficGb: p.trafficGb, months: p.months, unlimited: p.trafficGb == null, category: "offer" },
+      ctx.from!.id,
+    );
+    const vol = p.trafficGb == null ? "نامحدود" : formatTraffic(p.trafficGb);
+    const title = p.title?.trim() || `${vol} · ${p.months} ماه`;
+    const price = priced ? formatToman(priced.price) : "—";
+    kb.text(`⭐ ${title} · ${price}`.slice(0, 64), `buy:offer:${p.id}`).row();
+  }
+  kb.text("◀️ بازگشت", "buy:back:cat").text("❌ انصراف", "buy:cat:cancel");
+  const text = "⭐ پیشنهاد ویژه\n\nیکی از پلن‌های ثابت را انتخاب کنید:";
+  if (edit && ctx.callbackQuery?.message) {
+    try {
+      await ctx.editMessageText(text, { reply_markup: kb });
+      return;
+    } catch {
+      /* fallthrough */
+    }
+  }
+  await ctx.reply(text, { reply_markup: kb });
 }
 
 async function showBuyWizard(ctx: Context, edit = false) {
@@ -385,7 +429,12 @@ async function showBuyWizard(ctx: Context, edit = false) {
   const baseTotal = priced ? priced.price * qty : null;
   let discountAmount: number | null = null;
   let priceAfterDiscount: number | null = null;
-  const discountsOn = await isDiscountCodesEnabled();
+  const offer = isOfferCategory(draft.category);
+  const discountsOn = !offer && (await isDiscountCodesEnabled());
+  if (offer && draft.discountCode) {
+    await setDraftDiscountCode(BigInt(ctx.from!.id), null);
+    draft.discountCode = null;
+  }
   if (discountsOn && draft.discountCode && baseTotal != null) {
     const prev = await previewDiscount({
       buyer: roleUser,
@@ -395,10 +444,23 @@ async function showBuyWizard(ctx: Context, edit = false) {
     if (!("error" in prev)) {
       discountAmount = prev.discountAmount;
       priceAfterDiscount = prev.priceAfter;
+    } else {
+      // Stale/invalid code must not linger on the draft
+      await setDraftDiscountCode(BigInt(ctx.from!.id), null);
+      draft.discountCode = null;
     }
   }
+
+  let offerTitle: string | null = null;
+  if (offer) {
+    const match = (await listOfferPlans()).find(
+      (p) => p.months === draft.months && (p.trafficGb ?? null) === (draft.trafficGb ?? null),
+    );
+    offerTitle = match?.title ?? null;
+  }
+
   let text = buyDraftText({
-    trafficGb: draft.unlimited ? null : draft.trafficGb,
+    trafficGb: draft.unlimited || draft.trafficGb == null ? null : draft.trafficGb,
     months: draft.months,
     price: priced?.price ?? null,
     quantity: draft.quantity,
@@ -410,12 +472,23 @@ async function showBuyWizard(ctx: Context, edit = false) {
     discountAmount,
     priceAfterDiscount,
   });
+  if (offer) {
+    text = [
+      "⭐ پیشنهاد ویژه (پلن ثابت)",
+      offerTitle ? `📌 ${offerTitle}` : "",
+      "حجم، مدت و قیمت قابل تغییر نیست — فقط نام اکانت را مشخص کنید.",
+      "",
+      text,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
   const maxMonths = await getMaxPurchaseMonths();
   const isAgent = canEditLimitIp(roleUser.role);
   const kb = buyWizardKeyboard({
     trafficGb: draft.trafficGb,
     months: draft.months,
-    unlimited: draft.unlimited,
+    unlimited: draft.unlimited || draft.trafficGb == null,
     quantity: draft.quantity,
     limitIp,
     price: priced?.price ?? null,
@@ -424,6 +497,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     canEditAgentOptions: isAgent,
     discountsEnabled: discountsOn,
     discountCode: draft.discountCode,
+    offerTitle,
   });
   if (edit && ctx.callbackQuery?.message) {
     try {
@@ -896,11 +970,28 @@ export function createBot() {
     }
     try {
       await setDraftCategory(BigInt(ctx.from!.id), cat);
-      await showBuyWizard(ctx, true);
+      if (isOfferCategory(cat)) {
+        await showOfferPlanPicker(ctx, true);
+      } else {
+        await showBuyWizard(ctx, true);
+      }
     } catch (err) {
       console.error("buy:cat handler", err);
       await ctx.reply("خطا در باز کردن خرید. دوباره تلاش کنید.");
     }
+  });
+
+  bot.callbackQuery(/^buy:offer:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireChannel(ctx))) return;
+    const id = String(ctx.match![1] || "");
+    const plan = (await listOfferPlans()).find((p) => p.id === id);
+    if (!plan) {
+      await ctx.reply("این پیشنهاد ویژه پیدا نشد.");
+      return;
+    }
+    await setDraftOfferPlan(BigInt(ctx.from!.id), { trafficGb: plan.trafficGb, months: plan.months });
+    await showBuyWizard(ctx, true);
   });
 
   bot.command("buy", async (ctx) => {
@@ -1134,6 +1225,11 @@ export function createBot() {
 
   bot.callbackQuery("wiz:discount:set", async (ctx) => {
     await ctx.answerCallbackQuery();
+    const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
+    if (isOfferCategory(draft.category)) {
+      await ctx.reply("کد تخفیف برای پیشنهاد ویژه فعال نیست.");
+      return;
+    }
     if (!(await isDiscountCodesEnabled())) {
       await ctx.reply("کد تخفیف فعلاً غیرفعال است.");
       return;
@@ -1615,6 +1711,13 @@ export function createBot() {
         await ctx.reply("کد خالی است.");
         return;
       }
+      if (discWait === "buy") {
+        const draft = await getOrCreateDraft(BigInt(tid));
+        if (isOfferCategory(draft.category)) {
+          await ctx.reply("کد تخفیف برای پیشنهاد ویژه فعال نیست.");
+          return;
+        }
+      }
       let checkPrice = 10_000;
       if (discWait === "buy") {
         const draft = await getOrCreateDraft(BigInt(tid));
@@ -1639,13 +1742,17 @@ export function createBot() {
       }
       if (discWait === "buy") {
         await setDraftDiscountCode(BigInt(tid), prev.code);
-        await ctx.reply(`✅ کد ${prev.code} اعمال شد (−${prev.percentOff}٪)`);
+        await ctx.reply(
+          `✅ کد ${prev.code} اعمال شد (−${prev.percentOff}٪)\nمبلغ پس از تخفیف: ${formatToman(prev.priceAfter)}`,
+        );
         await showBuyWizard(ctx);
       } else {
         const st = renewState.get(tid);
         if (st) {
           renewState.set(tid, { ...st, discountCode: prev.code });
-          await ctx.reply(`✅ کد ${prev.code} اعمال شد (−${prev.percentOff}٪)`);
+          await ctx.reply(
+            `✅ کد ${prev.code} اعمال شد (−${prev.percentOff}٪)\nمبلغ پس از تخفیف: ${formatToman(prev.priceAfter)}`,
+          );
           await showRenewWizard(ctx, st.subId, {}, false);
         }
       }

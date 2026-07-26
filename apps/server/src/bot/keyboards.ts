@@ -228,52 +228,65 @@ export function buyWizardKeyboard(opts: {
   canEditAgentOptions?: boolean;
   discountsEnabled?: boolean;
   discountCode?: string | null;
+  /** Offer title when category is offer */
+  offerTitle?: string | null;
 }) {
-  const vol = opts.unlimited ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
+  const isOffer = (opts.category || "").toLowerCase() === "offer";
+  const vol = opts.unlimited || opts.trafficGb == null ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
   const unit = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
   const total =
     opts.price === null || opts.quantity <= 1
       ? ""
       : ` · جمع ${formatToman(opts.price * opts.quantity)}`;
   const maxMonths = opts.maxMonths ?? 1;
-  const showMonthStepper = maxMonths > 1 && opts.category !== "national";
+  const showMonthStepper = !isOffer && maxMonths > 1 && opts.category !== "national";
   const isAgent = opts.canEditAgentOptions === true;
 
-  const kb = new InlineKeyboard()
-    .text("−", "wiz:vol:-")
-    .text(`📏 ${vol}`, "wiz:noop")
-    .text("+", "wiz:vol:+")
-    .row();
+  const kb = new InlineKeyboard();
 
-  if (showMonthStepper) {
-    kb.text("−", "wiz:mon:-")
-      .text(`⏳ ${opts.months} ماه`, "wiz:noop")
-      .text("+", "wiz:mon:+")
-      .row();
+  if (isOffer) {
+    if (opts.offerTitle?.trim()) {
+      kb.text(`⭐ ${opts.offerTitle.trim().slice(0, 40)}`, "wiz:noop").row();
+    }
+    kb.text(`📏 ${vol}`, "wiz:noop").row();
+    kb.text(`⏳ ${opts.months} ماه`, "wiz:noop").row();
+    kb.text(`💰 ${unit}${total}`, "wiz:noop").row();
   } else {
-    kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
-  }
-
-  if (isAgent) {
-    kb.text("−", "wiz:qty:-")
-      .text(`${opts.quantity} عدد`, "wiz:noop")
-      .text("+", "wiz:qty:+")
-      .row()
-      .text("−", "wiz:ip:-")
-      .text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
-      .text("+", "wiz:ip:+")
+    kb.text("−", "wiz:vol:-")
+      .text(`📏 ${vol}`, "wiz:noop")
+      .text("+", "wiz:vol:+")
       .row();
-  }
 
-  kb.text(`💰 ${unit}${total}`, "wiz:noop").row();
-
-  if (opts.discountsEnabled) {
-    if (opts.discountCode) {
-      kb.text(`🎟 ${opts.discountCode}`, "wiz:discount:set")
-        .text("✖ حذف کد", "wiz:discount:clear")
+    if (showMonthStepper) {
+      kb.text("−", "wiz:mon:-")
+        .text(`⏳ ${opts.months} ماه`, "wiz:noop")
+        .text("+", "wiz:mon:+")
         .row();
     } else {
-      kb.text("🎟 کد تخفیف", "wiz:discount:set").row();
+      kb.text(`⏳ ۱ ماهه`, "wiz:noop").row();
+    }
+
+    if (isAgent) {
+      kb.text("−", "wiz:qty:-")
+        .text(`${opts.quantity} عدد`, "wiz:noop")
+        .text("+", "wiz:qty:+")
+        .row()
+        .text("−", "wiz:ip:-")
+        .text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
+        .text("+", "wiz:ip:+")
+        .row();
+    }
+
+    kb.text(`💰 ${unit}${total}`, "wiz:noop").row();
+
+    if (opts.discountsEnabled) {
+      if (opts.discountCode) {
+        kb.text(`🎟 ${opts.discountCode}`, "wiz:discount:set")
+          .text("✖ حذف کد", "wiz:discount:clear")
+          .row();
+      } else {
+        kb.text("🎟 کد تخفیف", "wiz:discount:set").row();
+      }
     }
   }
 

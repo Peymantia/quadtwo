@@ -129,6 +129,7 @@ const defaults: Record<string, string> = {
     data: "بسته‌های VIP",
     national: "اینترنت ملی",
     unlimited: "نامحدود",
+    offer: "پیشنهاد ویژه",
   }),
   /** Display order for plan categories (web dashboard + bot) */
   category_order_json: JSON.stringify(["data", "national", "unlimited"]),
@@ -462,7 +463,7 @@ export async function isSalesCategoryEnabled(category: string) {
 export type CategoryLabels = Record<string, string>;
 
 export function defaultCategoryLabels(): CategoryLabels {
-  return { data: "بسته‌های VIP", national: "اینترنت ملی", unlimited: "نامحدود" };
+  return { data: "بسته‌های VIP", national: "اینترنت ملی", unlimited: "نامحدود", offer: "پیشنهاد ویژه" };
 }
 
 export async function getCategoryLabels(): Promise<CategoryLabels> {
