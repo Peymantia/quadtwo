@@ -282,14 +282,11 @@ export function buyWizardKeyboard(opts: {
     if (opts.discountsEnabled) {
       if (opts.discountCode) {
         kb.text(`🎟 ${opts.discountCode}`, "wiz:discount:set")
-          .text("🔍 بررسی", "wiz:discount:check")
           .row()
           .text("✖ حذف کد", "wiz:discount:clear")
           .row();
       } else {
-        kb.text("🎟 وارد کردن کد", "wiz:discount:set")
-          .text("🔍 بررسی کد تخفیف", "wiz:discount:check")
-          .row();
+        kb.text("🎟 کد تخفیف", "wiz:discount:set").row();
       }
     }
   }
@@ -512,14 +509,11 @@ export function renewWizardKeyboard(opts: {
   if (opts.discountsEnabled) {
     if (opts.discountCode) {
       kb.text(`🎟 ${opts.discountCode}`, "renew:discount:set")
-        .text("🔍 بررسی", "renew:discount:check")
         .row()
         .text("✖ حذف کد", "renew:discount:clear")
         .row();
     } else {
-      kb.text("🎟 وارد کردن کد", "renew:discount:set")
-        .text("🔍 بررسی کد تخفیف", "renew:discount:check")
-        .row();
+      kb.text("🎟 کد تخفیف", "renew:discount:set").row();
     }
   }
 
