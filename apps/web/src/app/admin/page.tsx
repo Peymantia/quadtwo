@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DashShell, LoadingScreen, Icon, type ShellTab } from "../../components/DashShell";
 import { Modal } from "../../components/Modal";
 import { ConfirmToast, Toast } from "../../components/Toast";
@@ -238,6 +238,12 @@ type AskConfirm = (message: string) => Promise<boolean>;
 
 function errText(e: unknown) {
   return String(e instanceof Error ? e.message : e);
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /* ---------------- Home ---------------- */
@@ -3132,6 +3138,8 @@ function SettingsTab({
     lastStatus: string;
   } | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
   const [notif, setNotif] = useState<{
     expiryDays: { enabled: boolean; hours: number };
     traffic: { enabled: boolean; megabytes: number };
@@ -3282,27 +3290,47 @@ function SettingsTab({
     }
   }
 
-  async function restoreBackupFile(file: File) {
+  async function restoreBackupFile() {
+    const file = restoreFile;
+    if (!file) {
+      flash(null, "ابتدا فایل پشتیبان را انتخاب کنید");
+      return;
+    }
     const name = file.name.toLowerCase();
     if (!name.endsWith(".db") && !name.endsWith(".sqlite") && !name.endsWith(".sqlite3")) {
       flash(null, "فرمت باید .db باشد");
       return;
     }
-    if (
-      !(await askConfirm(
-        "دیتابیس فعلی با این فایل جایگزین شود؟ قبل از بازیابی یک نسخهٔ ایمنی ساخته می‌شود و سرور ری‌استارت خواهد شد.",
-      ))
-    ) {
+    if (file.size < 4096) {
+      flash(null, "حجم فایل پشتیبان مشکوک / خیلی کوچک است");
       return;
     }
     setBackupBusy(true);
     try {
+      const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+      const magic = "SQLite format 3\0";
+      let okMagic = head.length >= magic.length;
+      for (let i = 0; okMagic && i < magic.length; i++) {
+        if (head[i] !== magic.charCodeAt(i)) okMagic = false;
+      }
+      if (!okMagic) {
+        flash(null, "فایل معتبر SQLite نیست (باید خروجی پشتیبان ربات باشد)");
+        return;
+      }
+      if (
+        !(await askConfirm(
+          `فایل «${file.name}» معتبر است (${formatFileSize(file.size)}).\nدیتابیس فعلی جایگزین شود؟ قبل از بازیابی نسخهٔ ایمنی ساخته می‌شود و سرور ری‌استارت خواهد شد.`,
+        ))
+      ) {
+        return;
+      }
       const fd = new FormData();
       fd.append("file", file);
       const r = await api<{ ok: boolean; safetyName?: string; message?: string }>("/admin/backup/restore", {
         method: "POST",
         rawBody: fd,
       });
+      setRestoreFile(null);
       flash(r.message || `بازیابی شد · ایمنی: ${r.safetyName || "—"}`);
     } catch (e) {
       flash(null, errText(e));
@@ -3624,21 +3652,59 @@ function SettingsTab({
             <button type="button" className="btn primary wide" disabled={backupBusy} onClick={() => void sendBackupNow()}>
               {backupBusy ? "در حال ارسال…" : "ارسال الان به تلگرام"}
             </button>
-            <div className="field" style={{ marginTop: 12 }}>
-              <label>بازیابی از فایل پشتیبان (.db)</label>
+            <div className="backup-restore">
+              <div className="backup-restore__title">بازیابی از فایل پشتیبان</div>
+              <p className="hint" style={{ marginTop: 0 }}>
+                فایل `.db` پشتیبان را انتخاب کنید؛ دکمهٔ بازیابی ابتدا اعتبار فایل را بررسی می‌کند و بعد از تأیید، جایگزین می‌کند.
+              </p>
               <input
+                ref={restoreInputRef}
                 type="file"
                 accept=".db,.sqlite,.sqlite3,application/octet-stream"
+                className="backup-restore__input"
                 disabled={backupBusy}
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
+                  const f = e.target.files?.[0] ?? null;
                   e.target.value = "";
-                  if (f) void restoreBackupFile(f);
+                  setRestoreFile(f);
                 }}
               />
-              <p className="hint" style={{ marginBottom: 0 }}>
-                دیتابیس فعلی جایگزین می‌شود؛ قبلش نسخهٔ ایمنی ساخته می‌شود و سپس سرور ری‌استارت می‌کند.
-              </p>
+              <button
+                type="button"
+                className="backup-restore__pick"
+                disabled={backupBusy}
+                onClick={() => restoreInputRef.current?.click()}
+              >
+                <Icon name="file" size={20} />
+                <span className="backup-restore__pick-text">
+                  <strong>{restoreFile ? "تغییر فایل" : "انتخاب فایل پشتیبان"}</strong>
+                  <small>{restoreFile ? restoreFile.name : "فرمت .db · خروجی پشتیبان ربات"}</small>
+                </span>
+              </button>
+              {restoreFile && (
+                <div className="backup-restore__meta">
+                  <span className="num" dir="ltr">
+                    {restoreFile.name}
+                  </span>
+                  <span className="muted">{formatFileSize(restoreFile.size)}</span>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    disabled={backupBusy}
+                    onClick={() => setRestoreFile(null)}
+                  >
+                    حذف
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                className="btn danger wide"
+                disabled={backupBusy || !restoreFile}
+                onClick={() => void restoreBackupFile()}
+              >
+                {backupBusy ? "در حال بررسی / بازیابی…" : "بازیابی فایل پشتیبان"}
+              </button>
             </div>
           </>
         )}
