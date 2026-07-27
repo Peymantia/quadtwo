@@ -2915,11 +2915,13 @@ function PanelsTab({ flash }: { flash: Flash }) {
               return { key: k, label: catLabel(k, categories), shared: siblings.length > 0 };
             });
             return (
-            <div key={p.id} className="row-card" style={{ cursor: "pointer" }} onClick={() => openEdit(p)}>
-              <div>
-                <strong>{p.name}</strong>
-                <div className="muted num url-break">{p.baseUrl}</div>
-                <div className="muted">
+            <div key={p.id} className="row-card row-card--stack server-card" onClick={() => openEdit(p)}>
+              <div className="server-card__top">
+                <strong className="server-card__name" dir="ltr">
+                  {p.name}
+                </strong>
+                <div className="muted num url-break server-card__url">{p.baseUrl}</div>
+                <div className="muted server-card__meta">
                   اینباند: <span className="num">{p.inboundIds}</span> · توکن {p.hasToken ? "✓" : "✗"}
                   {p.weight != null && (
                     <>
@@ -2929,40 +2931,53 @@ function PanelsTab({ flash }: { flash: Flash }) {
                   )}
                 </div>
                 {cats.length > 0 ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                  <div className="server-card__cats">
                     {catBadges.map(({ key, label, shared }) => (
                       <span
                         key={key}
                         className={`badge ${shared ? "info" : "ok"}`}
                         title={shared ? "لودبالانس — این دسته روی چند سرور است" : "اختصاصی — فقط این سرور"}
                       >
-                        {label} {shared ? "⇄" : "⊕"}
+                        {label}
+                        <span className="server-card__cat-mark" aria-hidden>
+                          {shared ? "⇄" : "⊕"}
+                        </span>
                       </span>
                     ))}
                   </div>
                 ) : (
-                  <span className="badge bad" style={{ marginTop: 5, display: "inline-block" }}>بدون دسته</span>
+                  <span className="badge bad">بدون دسته</span>
                 )}
               </div>
-              <div className="actions" style={{ alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-                <label className="switch" title="فعال">
-                  <input type="checkbox" checked={p.active} onChange={(e) => toggle(p, "active", e.target.checked)} />
-                  <span className="track" />
-                </label>
-                <label className="switch" title="فروش">
-                  <input
-                    type="checkbox"
-                    checked={p.sellEnabled}
-                    onChange={(e) => toggle(p, "sellEnabled", e.target.checked)}
-                  />
-                  <span className="track" />
-                </label>
-                <button type="button" className="btn ghost sm" onClick={() => openEdit(p)}>
-                  ویرایش
-                </button>
-                <button type="button" className="btn ghost sm" onClick={() => test(p.id)}>
-                  تست اتصال
-                </button>
+              <div className="server-card__footer" onClick={(e) => e.stopPropagation()}>
+                <div className="server-card__toggles">
+                  <label className="server-card__toggle">
+                    <span className="server-card__toggle-label">فعال</span>
+                    <span className="switch switch-sm">
+                      <input type="checkbox" checked={p.active} onChange={(e) => toggle(p, "active", e.target.checked)} />
+                      <span className="track" />
+                    </span>
+                  </label>
+                  <label className="server-card__toggle">
+                    <span className="server-card__toggle-label">فروش</span>
+                    <span className="switch switch-sm">
+                      <input
+                        type="checkbox"
+                        checked={p.sellEnabled}
+                        onChange={(e) => toggle(p, "sellEnabled", e.target.checked)}
+                      />
+                      <span className="track" />
+                    </span>
+                  </label>
+                </div>
+                <div className="server-card__btns">
+                  <button type="button" className="btn ghost sm" onClick={() => openEdit(p)}>
+                    ویرایش
+                  </button>
+                  <button type="button" className="btn ghost sm" onClick={() => test(p.id)}>
+                    تست اتصال
+                  </button>
+                </div>
               </div>
             </div>
             );
