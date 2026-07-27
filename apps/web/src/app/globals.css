@@ -3278,6 +3278,37 @@ button.pay-dest-number:active,
   }
 }
 
+.backup-files-modal {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(55dvh, 420px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.backup-files-modal__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.backup-files-modal__name {
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.backup-files-modal__meta {
+  font-size: 0.78rem;
+}
+
 .backup-restore {
   margin-top: 16px;
   padding-top: 14px;

@@ -3142,6 +3142,7 @@ function SettingsTab({
   const [backupFiles, setBackupFiles] = useState<
     Array<{ name: string; sizeLabel: string; mtime: string; kind: string }>
   >([]);
+  const [backupFilesOpen, setBackupFilesOpen] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreInspect, setRestoreInspect] = useState<{
@@ -3702,25 +3703,38 @@ function SettingsTab({
               {backupBusy ? "در حال ارسال…" : "ارسال الان به تلگرام"}
             </button>
             {backupFiles.length > 0 && (
-              <div className="backup-restore" style={{ borderTop: "none", paddingTop: 4, marginTop: 8 }}>
-                <div className="backup-restore__title">فایل‌های اخیر روی سرور</div>
-                <div className="list" style={{ marginTop: 6 }}>
-                  {backupFiles.slice(0, 8).map((f) => (
-                    <div key={f.name} className="row-card" style={{ padding: "8px 10px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                        <span className="num" dir="ltr" style={{ fontSize: "0.82rem" }}>
-                          {f.name}
-                        </span>
-                        <span className="muted" style={{ fontSize: "0.8rem" }}>
-                          {f.kind === "safety" ? "ایمنی" : f.kind === "backup" ? "پشتیبان" : "دیگر"} · {f.sizeLabel} ·{" "}
-                          {new Date(f.mtime).toLocaleString("fa-IR")}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <button
+                type="button"
+                className="btn ghost wide"
+                style={{ marginTop: 8 }}
+                onClick={() => setBackupFilesOpen(true)}
+              >
+                فایل‌های اخیر روی سرور ({backupFiles.length.toLocaleString("fa-IR")})
+              </button>
             )}
+            <Modal
+              open={backupFilesOpen}
+              title="فایل‌های اخیر روی سرور"
+              onClose={() => setBackupFilesOpen(false)}
+            >
+              {backupFiles.length === 0 ? (
+                <p className="muted">فایلی یافت نشد.</p>
+              ) : (
+                <ul className="backup-files-modal">
+                  {backupFiles.map((f) => (
+                    <li key={f.name} className="backup-files-modal__item">
+                      <span className="num backup-files-modal__name" dir="ltr">
+                        {f.name}
+                      </span>
+                      <span className="muted backup-files-modal__meta">
+                        {f.kind === "safety" ? "ایمنی" : f.kind === "backup" ? "پشتیبان" : "دیگر"} · {f.sizeLabel} ·{" "}
+                        {new Date(f.mtime).toLocaleString("fa-IR")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Modal>
             <div className="backup-restore">
               <div className="backup-restore__title">بازیابی از فایل پشتیبان</div>
               <p className="hint" style={{ marginTop: 0 }}>
