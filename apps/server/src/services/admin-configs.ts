@@ -1,4 +1,4 @@
-import { UserRole, SubscriptionStatus, type Subscription } from "@prisma/client";
+import { UserRole, SubscriptionStatus, OrderStatus, OrderKind, type Subscription } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { prisma } from "../db.js";
 import { resolvePanelForSubscription, listPanelServers, createXuiFromPanel, panelInboundIds } from "./panel-servers.js";
@@ -635,6 +635,43 @@ export async function deleteConfig(opts: {
       where: { targetSubId: sub.id, OR: [{ accountName: null }, { accountName: "" }] },
       data: { accountName: email },
     });
+
+    // Drop this account from sales totals — it was not a lasting sale
+    const salesNote = "حذف اکانت توسط ادمین — از فروش کسر شد";
+    if (sub.orderId) {
+      const primary = await prisma.order.findUnique({ where: { id: sub.orderId } });
+      if (primary && primary.status === OrderStatus.completed && !primary.excludedFromSales) {
+        // Bulk orders stay counted unless every linked account is gone (only first sub has orderId)
+        if ((primary.quantity ?? 1) <= 1) {
+          await prisma.order.update({
+            where: { id: primary.id },
+            data: {
+              excludedFromSales: true,
+              adminNote: [primary.adminNote, salesNote].filter(Boolean).join("\n").slice(0, 500),
+            },
+          });
+        }
+      }
+    }
+    const renewals = await prisma.order.findMany({
+      where: {
+        targetSubId: sub.id,
+        status: OrderStatus.completed,
+        kind: { in: [OrderKind.new, OrderKind.renew] },
+        excludedFromSales: false,
+      },
+      select: { id: true, adminNote: true },
+    });
+    for (const o of renewals) {
+      await prisma.order.update({
+        where: { id: o.id },
+        data: {
+          excludedFromSales: true,
+          adminNote: [o.adminNote, salesNote].filter(Boolean).join("\n").slice(0, 500),
+        },
+      });
+    }
+
     await prisma.order.updateMany({
       where: { targetSubId: sub.id },
       data: { targetSubId: null },

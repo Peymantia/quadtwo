@@ -121,6 +121,7 @@ export async function buildSalesStats(opts: {
 
   const orderWhere = {
     status: OrderStatus.completed,
+    excludedFromSales: false,
     kind: { in: [OrderKind.new, OrderKind.renew] as OrderKind[] },
     ...(opts.userId ? { userId: opts.userId } : {}),
     ...(since ? { updatedAt: { gte: since } } : {}),
@@ -271,6 +272,7 @@ export async function agentsSalesLeaderboard(opts: {
       orders: {
         where: {
           status: OrderStatus.completed,
+          excludedFromSales: false,
           kind: { in: [OrderKind.new, OrderKind.renew] },
           ...(since ? { updatedAt: { gte: since } } : {}),
         },
