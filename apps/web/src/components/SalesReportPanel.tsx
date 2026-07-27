@@ -17,6 +17,8 @@ type SalesStats = {
   walletChargeTotal?: number;
   walletChargeCount?: number;
   activeSubs: number;
+  discountTotal?: number;
+  discountOrderCount?: number;
   recent: Array<{
     id: string;
     kind: string;
@@ -259,6 +261,9 @@ export function SalesReportPanel({
           {stats.count > 0 ? ` · میانگین سفارش: ${formatToman(stats.avgOrder)}` : ""}
           {showWallet && stats.walletChargeCount != null
             ? ` · شارژ کیف پول: ${stats.walletChargeCount.toLocaleString("fa-IR")} · ${formatToman(stats.walletChargeTotal ?? 0)}`
+            : ""}
+          {stats.discountOrderCount
+            ? ` · تخفیف: ${stats.discountOrderCount.toLocaleString("fa-IR")} سفارش · ${formatToman(stats.discountTotal ?? 0)}`
             : ""}
         </p>
       )}

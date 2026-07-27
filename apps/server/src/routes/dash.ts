@@ -79,7 +79,7 @@ import {
   type PriceRates,
   type RolePricingModes,
 } from "../services/settings.js";
-import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, type BackupConfig } from "../services/backup.js";
+import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, inspectBackupBuffer, type BackupConfig } from "../services/backup.js";
 import { Bot } from "grammy";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
@@ -443,6 +443,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       category,
       categoryLabel: labels[category] || category,
       maxMonths,
+      discountsEnabled: await isDiscountCodesEnabled(),
       volumeRules: {
         data: { min: 10, max: 50, step: 5 },
         national: { min: 1, max: 20, step: 1 },
@@ -548,26 +549,47 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       category?: string;
       quantity?: number;
       discountCode?: string | null;
+      priceCellId?: string | null;
     }>();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
     const pricedUser = withEffectiveRole(user, c.get("telegramId"));
-    const category = body.category || "data";
-    const trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
+    let category = body.category || "data";
+    let trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
+    let months = Math.max(1, Number(body.months) || 1);
     const qty = Math.max(1, Math.min(50, Number(body.quantity) || 1));
-    const priced = await resolvePrice(
-      pricedUser,
-      trafficGb,
-      Math.max(1, Number(body.months) || 1),
-      category,
-    );
+
+    if (body.priceCellId?.trim()) {
+      const cell = await prisma.priceCell.findFirst({
+        where: { id: body.priceCellId.trim(), active: true },
+      });
+      if (!cell) return c.json({ error: "پلن انتخاب‌شده پیدا نشد" }, 400);
+      trafficGb = cell.trafficGb;
+      months = cell.months;
+      category = cell.category;
+    }
+
+    const offerLocked = isOfferCategory(category);
+    let priced = await resolvePrice(pricedUser, trafficGb, months, category);
+    if (offerLocked && body.priceCellId?.trim()) {
+      const cell = await prisma.priceCell.findFirst({
+        where: { id: body.priceCellId.trim(), active: true },
+      });
+      if (cell) {
+        const { priceFromCell } = await import("../services/pricing.js");
+        priced =
+          pricedUser.role === "admin"
+            ? { cell, price: 0, mode: "matrix" as const }
+            : { cell, price: priceFromCell(pricedUser.role, cell), mode: "matrix" as const };
+        if (priced.price <= 0 && pricedUser.role !== "admin") priced = null;
+      }
+    }
     if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
-    const priceBefore = priced.price * qty;
+    const priceBefore = priced.price * (offerLocked ? 1 : qty);
     let discountAmount = 0;
     let price = priceBefore;
     let discountCode: string | null = null;
     let percentOff: number | null = null;
     let discountError: string | null = null;
-    const offerLocked = isOfferCategory(category);
     if (!offerLocked && body.discountCode?.trim()) {
       const prev = await previewDiscount({
         buyer: pricedUser,
@@ -594,6 +616,10 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       discountError,
       mode: priced.mode,
       trafficGb,
+      months,
+      category,
+      quantity: offerLocked ? 1 : qty,
+      priceCellId: body.priceCellId?.trim() || null,
     });
   });
 
@@ -670,6 +696,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       limitIp?: number;
       note?: string | null;
       discountCode?: string | null;
+      quantity?: number;
+      priceCellId?: string | null;
     }>();
     try {
       const accountName = body.accountName?.trim() || `u${Date.now().toString(36)}`;
@@ -684,6 +712,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         limitIp: body.limitIp,
         note: body.note,
         discountCode: body.discountCode,
+        quantity: body.quantity,
+        priceCellId: body.priceCellId,
       });
       if (c.get("role") === "admin") {
         try {
@@ -945,6 +975,8 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       limitIp?: number;
       note?: string | null;
       discountCode?: string | null;
+      quantity?: number;
+      priceCellId?: string | null;
     }>();
     const order = await createMatrixOrder({
       userId: c.get("userId"),
@@ -956,6 +988,8 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       limitIp: body.limitIp,
       note: body.note,
       discountCode: body.discountCode,
+      quantity: body.quantity,
+      priceCellId: body.priceCellId,
     });
     if (c.get("role") === "admin") {
       try {
@@ -1004,17 +1038,20 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       maxUses?: number | null;
       expiresAt?: string | null;
       note?: string | null;
+      shareable?: boolean;
       ownerUserId?: string | null;
     }>();
     try {
       const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+      const actor = { ...user, role: role as typeof user.role };
       const item = await createDiscountCode({
-        actor: user,
+        actor,
         code: body.code || "",
         percentOff: Number(body.percentOff),
         maxUses: body.maxUses,
         expiresAt: body.expiresAt,
         note: body.note,
+        shareable: body.shareable,
         ownerUserId: role === "admin" ? body.ownerUserId : null,
       });
       return c.json({ ok: true, item });
@@ -1032,13 +1069,20 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       maxUses?: number | null;
       expiresAt?: string | null;
       note?: string | null;
+      shareable?: boolean;
     }>();
     try {
       const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+      const actor = { ...user, role: role as typeof user.role };
       const item = await updateDiscountCode({
-        actor: user,
+        actor,
         id: c.req.param("id"),
-        ...body,
+        active: body.active,
+        percentOff: body.percentOff,
+        maxUses: body.maxUses,
+        expiresAt: body.expiresAt,
+        note: body.note,
+        shareable: body.shareable,
       });
       return c.json({ ok: true, item });
     } catch (err) {
@@ -2192,6 +2236,25 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       });
     }
     return c.json(r);
+  });
+
+  api.post("/admin/backup/inspect", async (c) => {
+    const body = await c.req.parseBody();
+    const file = body["file"];
+    if (!(file instanceof File)) {
+      return c.json({ error: "فایل پشتیبان را انتخاب کنید" }, 400);
+    }
+    const name = (file.name || "").toLowerCase();
+    if (name && !name.endsWith(".db") && !name.endsWith(".sqlite") && !name.endsWith(".sqlite3")) {
+      return c.json({ error: "فرمت باید .db باشد" }, 400);
+    }
+    if (file.size > 80 * 1024 * 1024) {
+      return c.json({ error: "حجم فایل بیش از حد مجاز است" }, 400);
+    }
+    const buf = Buffer.from(await file.arrayBuffer());
+    const result = await inspectBackupBuffer(buf);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json(result);
   });
 
   api.post("/admin/backup/restore", async (c) => {

@@ -124,6 +124,7 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
         limitIp: defaultIp,
         limitIpTouched: false,
         discountCode: null,
+        priceCellId: first?.id ?? null,
       },
     });
   }
@@ -138,6 +139,7 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
       quantity: 1,
       limitIp: defaultIp,
       limitIpTouched: false,
+      priceCellId: null,
     },
   });
 }
@@ -145,7 +147,7 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
 /** Lock draft to a specific offer price cell. */
 export async function setDraftOfferPlan(
   telegramId: bigint,
-  plan: { trafficGb: number | null; months: number },
+  plan: { id: string; trafficGb: number | null; months: number },
 ) {
   await getOrCreateDraft(telegramId);
   const defaultIp = await getDefaultLimitIp();
@@ -160,6 +162,7 @@ export async function setDraftOfferPlan(
       limitIp: defaultIp,
       limitIpTouched: false,
       discountCode: null,
+      priceCellId: plan.id,
     },
   });
 }

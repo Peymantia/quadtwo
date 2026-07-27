@@ -440,6 +440,8 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
           note: payload.note,
           payWithWallet: true,
           discountCode: payload.discountCode,
+          quantity: payload.quantity,
+          priceCellId: payload.priceCellId,
         },
       });
       if (r.provisioned?.code) {
@@ -3139,6 +3141,14 @@ function SettingsTab({
   } | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreInspect, setRestoreInspect] = useState<{
+    sizeLabel: string;
+    users?: number;
+    orders?: number;
+    subscriptions?: number;
+    discountCodes?: number;
+    note?: string;
+  } | null>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [notif, setNotif] = useState<{
     expiryDays: { enabled: boolean; hours: number };
@@ -3290,40 +3300,63 @@ function SettingsTab({
     }
   }
 
+  async function pickRestoreFile(file: File | null) {
+    setRestoreFile(file);
+    setRestoreInspect(null);
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".db") && !name.endsWith(".sqlite") && !name.endsWith(".sqlite3")) {
+      flash(null, "فرمت باید .db باشد");
+      setRestoreFile(null);
+      return;
+    }
+    setBackupBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await api<{
+        ok: boolean;
+        sizeLabel: string;
+        users?: number;
+        orders?: number;
+        subscriptions?: number;
+        discountCodes?: number;
+        note?: string;
+      }>("/admin/backup/inspect", { method: "POST", rawBody: fd });
+      setRestoreInspect(r);
+    } catch (e) {
+      setRestoreFile(null);
+      flash(null, errText(e));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
   async function restoreBackupFile() {
     const file = restoreFile;
     if (!file) {
       flash(null, "ابتدا فایل پشتیبان را انتخاب کنید");
       return;
     }
-    const name = file.name.toLowerCase();
-    if (!name.endsWith(".db") && !name.endsWith(".sqlite") && !name.endsWith(".sqlite3")) {
-      flash(null, "فرمت باید .db باشد");
+    if (!restoreInspect) {
+      flash(null, "ابتدا فایل را بررسی کنید");
       return;
     }
-    if (file.size < 4096) {
-      flash(null, "حجم فایل پشتیبان مشکوک / خیلی کوچک است");
-      return;
-    }
+    const summary = [
+      `فایل «${file.name}» (${restoreInspect.sizeLabel})`,
+      restoreInspect.users != null ? `کاربر: ${restoreInspect.users.toLocaleString("fa-IR")}` : "",
+      restoreInspect.orders != null ? `سفارش: ${restoreInspect.orders.toLocaleString("fa-IR")}` : "",
+      restoreInspect.subscriptions != null
+        ? `سرویس: ${restoreInspect.subscriptions.toLocaleString("fa-IR")}`
+        : "",
+      "",
+      "دیتابیس فعلی جایگزین شود؟ قبل از بازیابی نسخهٔ ایمنی ساخته می‌شود و سرور ری‌استارت خواهد شد.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    if (!(await askConfirm(summary))) return;
     setBackupBusy(true);
     try {
-      const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-      const magic = "SQLite format 3\0";
-      let okMagic = head.length >= magic.length;
-      for (let i = 0; okMagic && i < magic.length; i++) {
-        if (head[i] !== magic.charCodeAt(i)) okMagic = false;
-      }
-      if (!okMagic) {
-        flash(null, "فایل معتبر SQLite نیست (باید خروجی پشتیبان ربات باشد)");
-        return;
-      }
-      if (
-        !(await askConfirm(
-          `فایل «${file.name}» معتبر است (${formatFileSize(file.size)}).\nدیتابیس فعلی جایگزین شود؟ قبل از بازیابی نسخهٔ ایمنی ساخته می‌شود و سرور ری‌استارت خواهد شد.`,
-        ))
-      ) {
-        return;
-      }
       const fd = new FormData();
       fd.append("file", file);
       const r = await api<{ ok: boolean; safetyName?: string; message?: string }>("/admin/backup/restore", {
@@ -3331,6 +3364,7 @@ function SettingsTab({
         rawBody: fd,
       });
       setRestoreFile(null);
+      setRestoreInspect(null);
       flash(r.message || `بازیابی شد · ایمنی: ${r.safetyName || "—"}`);
     } catch (e) {
       flash(null, errText(e));
@@ -3666,7 +3700,7 @@ function SettingsTab({
                 onChange={(e) => {
                   const f = e.target.files?.[0] ?? null;
                   e.target.value = "";
-                  setRestoreFile(f);
+                  void pickRestoreFile(f);
                 }}
               />
               <button
@@ -3691,16 +3725,33 @@ function SettingsTab({
                     type="button"
                     className="btn ghost sm"
                     disabled={backupBusy}
-                    onClick={() => setRestoreFile(null)}
+                    onClick={() => {
+                      setRestoreFile(null);
+                      setRestoreInspect(null);
+                    }}
                   >
                     حذف
                   </button>
                 </div>
               )}
+              {restoreInspect && (
+                <p className="hint" style={{ margin: 0 }}>
+                  {restoreInspect.note || "فایل معتبر است."}
+                  {restoreInspect.users != null
+                    ? ` · کاربر ${restoreInspect.users.toLocaleString("fa-IR")}`
+                    : ""}
+                  {restoreInspect.orders != null
+                    ? ` · سفارش ${restoreInspect.orders.toLocaleString("fa-IR")}`
+                    : ""}
+                  {restoreInspect.subscriptions != null
+                    ? ` · سرویس ${restoreInspect.subscriptions.toLocaleString("fa-IR")}`
+                    : ""}
+                </p>
+              )}
               <button
                 type="button"
                 className="btn danger wide"
-                disabled={backupBusy || !restoreFile}
+                disabled={backupBusy || !restoreFile || !restoreInspect}
                 onClick={() => void restoreBackupFile()}
               >
                 {backupBusy ? "در حال بررسی / بازیابی…" : "بازیابی فایل پشتیبان"}

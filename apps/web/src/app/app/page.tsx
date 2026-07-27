@@ -177,6 +177,8 @@ export default function UserAppPage() {
           note: payload.note,
           payWithWallet: payload.payWithWallet,
           discountCode: payload.discountCode,
+          quantity: payload.quantity,
+          priceCellId: payload.priceCellId,
         },
       });
       if (r.provisioned?.code) {
@@ -219,6 +221,7 @@ export default function UserAppPage() {
     months: number;
     category: string;
     payWithWallet: boolean;
+    discountCode?: string | null;
   }) {
     if (!renewInfo) return;
     setErr(null);
@@ -238,6 +241,7 @@ export default function UserAppPage() {
           category: payload.category,
           accountName: renewInfo.subscription.email,
           payWithWallet: payload.payWithWallet,
+          discountCode: payload.discountCode,
         },
       });
       setRenewInfo(null);

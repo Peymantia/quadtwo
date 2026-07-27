@@ -63,6 +63,9 @@ export type SalesStats = {
   walletChargeTotal: number;
   walletChargeCount: number;
   activeSubs: number;
+  /** Sum of discountAmount on completed orders */
+  discountTotal: number;
+  discountOrderCount: number;
   recent: SalesRecentRow[];
   text: string;
 };
@@ -151,6 +154,9 @@ export async function buildSalesStats(opts: {
   const avgOrder = orders.length ? Math.round(total / orders.length) : 0;
   const walletChargeTotal = walletAgg._sum.price ?? 0;
   const walletChargeCount = typeof walletAgg._count === "number" ? walletAgg._count : 0;
+  const discounted = orders.filter((o) => (o.discountAmount ?? 0) > 0);
+  const discountTotal = discounted.reduce((s, o) => s + (o.discountAmount ?? 0), 0);
+  const discountOrderCount = discounted.length;
 
   const recent: SalesRecentRow[] = orders.slice(0, recentLimit).map((o) => {
     const linked = o.targetSub ?? o.subscription;
@@ -178,6 +184,9 @@ export async function buildSalesStats(opts: {
     `  • تمدید: ${renewCount.toLocaleString("fa-IR")}`,
     `جمع فروش: ${formatToman(total)}`,
     orders.length ? `میانگین سفارش: ${formatToman(avgOrder)}` : "",
+    discountOrderCount
+      ? `تخفیف اعمال‌شده: ${discountOrderCount.toLocaleString("fa-IR")} سفارش · ${formatToman(discountTotal)}`
+      : "",
     `سرویس فعال: ${activeSubs.toLocaleString("fa-IR")}`,
   ].filter(Boolean);
 
@@ -208,6 +217,8 @@ export async function buildSalesStats(opts: {
     walletChargeTotal,
     walletChargeCount,
     activeSubs,
+    discountTotal,
+    discountOrderCount,
     recent,
     text: lines.join("\n"),
   };

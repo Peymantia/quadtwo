@@ -47,6 +47,18 @@ const { startBackupCron } = await import("./services/backup.js");
 startBackupCron(bot.api);
 console.log("backup cron started (checks every 1m)");
 
+const { cancelStalePendingDiscountOrders } = await import("./services/discount-codes.js");
+const runStaleDiscountCleanup = () => {
+  void cancelStalePendingDiscountOrders({ olderThanMs: 30 * 60_000 })
+    .then((n) => {
+      if (n > 0) console.log(`cancelled ${n} stale pending discount order(s)`);
+    })
+    .catch((err) => console.warn("stale discount cleanup", err));
+};
+runStaleDiscountCleanup();
+setInterval(runStaleDiscountCleanup, 15 * 60_000);
+console.log("stale discount-order cleanup started (every 15m)");
+
 if (env.BOT_MODE === "polling") {
   try {
     await bot.api.deleteWebhook({ drop_pending_updates: false });

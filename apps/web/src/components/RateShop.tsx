@@ -38,6 +38,8 @@ export type RateOrderPayload = {
   note?: string | null;
   payWithWallet: boolean;
   discountCode?: string | null;
+  quantity?: number;
+  priceCellId?: string | null;
 };
 
 type Props = {
@@ -199,6 +201,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const [checkingDiscount, setCheckingDiscount] = useState(false);
   const [verifiedDiscount, setVerifiedDiscount] = useState<string | null>(null);
   const [offerIndex, setOfferIndex] = useState(0);
+  const [quantity, setQuantity] = useState(1);
 
   const isOffer = category === "offer";
   const offerCells = useMemo(
@@ -206,6 +209,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     [catalog.cells],
   );
   const selectedOffer = isOffer ? offerCells[Math.min(offerIndex, Math.max(0, offerCells.length - 1))] ?? null : null;
+  const showQty = variant === "agent" && !isOffer;
+  const qty = showQty ? Math.max(1, Math.min(50, quantity)) : 1;
 
   const volumeFixed = category === "unlimited" || (isOffer && selectedOffer?.trafficGb == null);
   const monthsLocked = isOffer || category === "national" || Math.max(1, catalog.maxMonths || 1) <= 1;
@@ -309,7 +314,11 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const monthValue = <SeekValueLabel num={months} unit="ماه" />;
   const ipValue = limitIp <= 0 ? "نامحدود" : <SeekValueLabel num={limitIp} unit="کاربر" />;
 
-  const discountsAllowed = Boolean(catalog.discountsEnabled) && !isOffer;
+  const discountsAllowed = Boolean(catalog.discountsEnabled) && !isOffer && variant !== "admin";
+
+  useEffect(() => {
+    if (isOffer) setQuantity(1);
+  }, [isOffer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -335,6 +344,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           category,
           trafficGb,
           months: category === "national" ? 1 : months,
+          quantity: qty,
+          priceCellId: selectedOffer?.id || null,
           discountCode:
             discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
               ? verifiedDiscount
@@ -365,7 +376,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [category, trafficGb, months, discountsAllowed, isOffer, selectedOffer, verifiedDiscount]);
+  }, [category, trafficGb, months, discountsAllowed, isOffer, selectedOffer, verifiedDiscount, qty, discountCode]);
 
   async function checkDiscountCode() {
     const code = discountCode.trim().toUpperCase();
@@ -391,6 +402,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           category,
           trafficGb,
           months: category === "national" ? 1 : months,
+          quantity: qty,
+          priceCellId: selectedOffer?.id || null,
           discountCode: code,
         },
       });
@@ -444,6 +457,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       accountName: pendingName,
       note: note.trim() || null,
       payWithWallet,
+      quantity: qty,
+      priceCellId: selectedOffer?.id || null,
       discountCode:
         discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
           ? verifiedDiscount
@@ -464,6 +479,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     selectedOffer?.title ? `پلن: ${selectedOffer.title}` : "",
     `حجم: ${trafficGb == null ? "نامحدود" : `${(trafficGb ?? 0).toLocaleString("fa-IR")} گیگابایت`}`,
     `مدت: ${(category === "national" ? 1 : months).toLocaleString("fa-IR")} ماه`,
+    qty > 1 ? `تعداد: ${qty.toLocaleString("fa-IR")}` : "",
     `محدودیت کاربر: ${limitIp <= 0 ? "نامحدود" : `${limitIp.toLocaleString("fa-IR")} کاربر`}`,
     discountAmount > 0 && priceBefore != null
       ? `قبل از تخفیف: ${formatToman(priceBefore)}`
@@ -559,6 +575,43 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
             onChange={setIpIndex}
           />
         </>
+      )}
+
+      {showQty && (
+        <div className="field">
+          <label>تعداد اکانت</label>
+          <div className="rate-stepper">
+            <button
+              type="button"
+              className="rate-step-btn"
+              disabled={busy || qty <= 1}
+              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+              aria-label="کاهش تعداد"
+            >
+              −
+            </button>
+            <input
+              className="rate-step-input num"
+              inputMode="numeric"
+              value={String(qty)}
+              disabled={busy}
+              onChange={(e) => {
+                const n = Number(e.target.value.replace(/[^\d]/g, ""));
+                setQuantity(Number.isFinite(n) ? Math.max(1, Math.min(50, n)) : 1);
+              }}
+              aria-label="تعداد اکانت"
+            />
+            <button
+              type="button"
+              className="rate-step-btn"
+              disabled={busy || qty >= 50}
+              onClick={() => setQuantity((q) => Math.min(50, q + 1))}
+              aria-label="افزایش تعداد"
+            >
+              +
+            </button>
+          </div>
+        </div>
       )}
 
       <div className="seek-price seek-price-live">

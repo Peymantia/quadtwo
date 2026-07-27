@@ -108,7 +108,12 @@ export async function findPriceCell(
   const cat = isOfferCategory(category) ? "offer" : trafficGb === null ? "unlimited" : category;
   return prisma.priceCell.findFirst({
     where: { trafficGb, months, category: cat, active: true },
+    orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
+}
+
+export async function findPriceCellById(id: string) {
+  return prisma.priceCell.findFirst({ where: { id, active: true } });
 }
 
 export function priceFromCell(

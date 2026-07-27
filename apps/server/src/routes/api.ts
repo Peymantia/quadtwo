@@ -2,9 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { parseAndValidateInitData, signSession, verifySession } from "../auth/telegram.js";
 import { prisma } from "../db.js";
-import { markPaid, orderSummaryText } from "../services/orders.js";
+import { orderSummaryText } from "../services/orders.js";
 import { listPriceMatrix, priceFromCell, resolvePrice } from "../services/pricing.js";
-import { provisionOrder } from "../services/provision.js";
 import { getAllSettings, getSetting } from "../services/settings.js";
 import { upsertUserFromTelegram } from "../services/users.js";
 import { corsOrigins } from "../config/env.js";
@@ -168,15 +167,6 @@ export function createApiApp() {
     });
   });
 
-  api.post("/me/quote", async (c) => {
-    const body = await c.req.json<{ trafficGb: number | null; months: number; category?: string }>();
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
-    const pricedUser = withEffectiveRole(user, c.get("telegramId"));
-    const priced = await resolvePrice(pricedUser, body.trafficGb, body.months, body.category || "data");
-    if (!priced) return c.json({ price: null });
-    return c.json({ price: priced.price, mode: priced.mode });
-  });
-
   api.post("/me/orders/:id/receipt", async (c) => {
     const id = c.req.param("id");
     const body = await c.req.json<{ receiptText?: string; receiptFileId?: string }>();
@@ -206,17 +196,6 @@ export function createApiApp() {
         user: { username: o.user.username, telegramId: String(o.user.telegramId) },
       })),
     });
-  });
-
-  api.post("/admin/orders/:id/approve", async (c) => {
-    const id = c.req.param("id");
-    await markPaid(id);
-    const result = await provisionOrder(id);
-    if ("kind" in result && result.kind === "wallet_credit") {
-      return c.json({ type: "wallet_credit", balance: result.balance });
-    }
-    const sub = result as { code: string; subUrl: string; email: string };
-    return c.json({ type: "subscription", code: sub.code, subUrl: sub.subUrl, email: sub.email });
   });
 
   api.post("/admin/orders/:id/reject", async (c) => {

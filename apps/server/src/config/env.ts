@@ -10,6 +10,11 @@ const schema = z.object({
   ADMIN_TELEGRAM_IDS: z.string().default(""),
   /** Demo install: anyone can switch admin/partner/user UX without changing DB role */
   DEMO_MODE: z.string().optional(),
+  /**
+   * Allow DEMO_MODE when NODE_ENV=production (dangerous — never on a real customer host).
+   * Without this, production + DEMO_MODE refuses to start.
+   */
+  DEMO_ALLOW_PROD: z.string().optional(),
   /** Signed license key from seller (Q2.1.…); required in production unless DEMO_MODE */
   LICENSE_KEY: z.string().optional(),
   /** Bound buyer admin Telegram IDs (usually decoded from LICENSE_KEY) */

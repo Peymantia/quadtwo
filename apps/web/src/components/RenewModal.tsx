@@ -10,6 +10,7 @@ export type RenewInfo = {
   category: string;
   categoryLabel: string;
   maxMonths: number;
+  discountsEnabled?: boolean;
   subscription: {
     id: string;
     code: string;
@@ -36,6 +37,7 @@ type Props = {
     months: number;
     category: string;
     payWithWallet: boolean;
+    discountCode?: string | null;
   }) => void | Promise<void>;
 };
 
@@ -61,18 +63,31 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
   const [gbInput, setGbInput] = useState("10");
   const [months, setMonths] = useState(1);
   const [price, setPrice] = useState<number | null>(null);
+  const [priceBefore, setPriceBefore] = useState<number | null>(null);
+  const [discountAmount, setDiscountAmount] = useState(0);
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
   const [quoting, setQuoting] = useState(false);
+  const [discountCode, setDiscountCode] = useState("");
+  const [verifiedDiscount, setVerifiedDiscount] = useState<string | null>(null);
+  const [discountErr, setDiscountErr] = useState<string | null>(null);
+  const [discountOkHint, setDiscountOkHint] = useState<string | null>(null);
+  const [checkingDiscount, setCheckingDiscount] = useState(false);
 
   const rules = useMemo(() => (info ? rulesFor(info.category, info) : null), [info]);
   const monthOptions = useMemo(() => {
     const max = Math.max(1, Math.min(3, info?.maxMonths || 1));
     return Array.from({ length: max }, (_, i) => i + 1);
   }, [info?.maxMonths]);
+  const discountsAllowed = variant === "user" && Boolean(info?.discountsEnabled);
 
   useEffect(() => {
     if (!open || !info || !rules) return;
     setMonths(1);
+    setDiscountCode("");
+    setVerifiedDiscount(null);
+    setDiscountErr(null);
+    setDiscountOkHint(null);
+    setDiscountAmount(0);
     if (rules.kind === "unlimited") {
       setGbInput("");
     } else {
@@ -96,19 +111,34 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
     const t = window.setTimeout(() => {
       setQuoting(true);
       setQuoteErr(null);
-      void api<{ price: number }>("/me/quote", {
+      void api<{
+        price: number;
+        priceBefore?: number;
+        discountAmount?: number;
+        discountError?: string | null;
+      }>("/me/quote", {
         body: {
           category: info.category,
           trafficGb: rules.kind === "unlimited" ? null : trafficGb,
           months: info.category === "national" ? 1 : months,
+          discountCode:
+            discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
+              ? verifiedDiscount
+              : null,
         },
       })
         .then((r) => {
-          if (!cancelled) setPrice(r.price);
+          if (cancelled) return;
+          setPrice(r.price);
+          setPriceBefore(r.priceBefore ?? r.price);
+          setDiscountAmount(r.discountAmount ?? 0);
+          if (!r.discountError && verifiedDiscount) setDiscountErr(null);
         })
         .catch((e) => {
           if (cancelled) return;
           setPrice(null);
+          setPriceBefore(null);
+          setDiscountAmount(0);
           setQuoteErr(String(e instanceof Error ? e.message : e));
         })
         .finally(() => {
@@ -119,12 +149,69 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [open, info, trafficGb, months, rules]);
+  }, [open, info, trafficGb, months, rules, discountsAllowed, verifiedDiscount, discountCode]);
 
   function bumpGb(dir: 1 | -1) {
     if (!rules || rules.kind !== "stepped") return;
     const cur = trafficGb ?? rules.min;
     setGbInput(String(snap(cur + dir * rules.step, rules.min, rules.max, rules.step)));
+  }
+
+  async function checkDiscountCode() {
+    if (!info || !rules) return;
+    const code = discountCode.trim().toUpperCase();
+    if (!code) {
+      setDiscountErr("کد تخفیف را وارد کنید");
+      setDiscountOkHint(null);
+      setVerifiedDiscount(null);
+      return;
+    }
+    setCheckingDiscount(true);
+    setDiscountErr(null);
+    setDiscountOkHint(null);
+    try {
+      const r = await api<{
+        price: number;
+        priceBefore?: number;
+        discountAmount?: number;
+        discountError?: string | null;
+        percentOff?: number | null;
+        discountCode?: string | null;
+      }>("/me/quote", {
+        body: {
+          category: info.category,
+          trafficGb: rules.kind === "unlimited" ? null : trafficGb,
+          months: info.category === "national" ? 1 : months,
+          discountCode: code,
+        },
+      });
+      if (r.discountError) {
+        setVerifiedDiscount(null);
+        setDiscountAmount(0);
+        setDiscountErr(r.discountError);
+        setPrice(r.priceBefore ?? r.price);
+        setPriceBefore(r.priceBefore ?? r.price);
+        return;
+      }
+      if (!r.discountAmount || r.discountAmount <= 0) {
+        setVerifiedDiscount(null);
+        setDiscountErr("کد تخفیف وارد شده صحیح نیست");
+        return;
+      }
+      setVerifiedDiscount(r.discountCode || code);
+      setDiscountCode(r.discountCode || code);
+      setDiscountAmount(r.discountAmount);
+      setPrice(r.price);
+      setPriceBefore(r.priceBefore ?? r.price);
+      setDiscountOkHint(
+        r.percentOff != null ? `کد معتبر است (−${r.percentOff}٪)` : "کد معتبر است و اعمال شد",
+      );
+    } catch (e) {
+      setVerifiedDiscount(null);
+      setDiscountErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setCheckingDiscount(false);
+    }
   }
 
   const canSubmit = !busy && !quoting && price != null && Boolean(info);
@@ -136,6 +223,10 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
       trafficGb: rules.kind === "unlimited" ? null : trafficGb,
       months: info.category === "national" ? 1 : months,
       payWithWallet,
+      discountCode:
+        discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
+          ? verifiedDiscount
+          : null,
     });
   }
 
@@ -191,53 +282,98 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
             </div>
           )}
 
-          <div className="rate-shop-card">
-            <div className="rate-shop-card-label">مدت</div>
-            {info.category === "national" || monthOptions.length <= 1 ? (
-              <div className="rate-shop-fixed">۱ ماه</div>
-            ) : (
+          {info.category !== "national" && monthOptions.length > 1 && (
+            <div className="field">
+              <label>مدت تمدید</label>
               <div className="chip-row">
                 {monthOptions.map((m) => (
                   <button
                     key={m}
                     type="button"
                     className={`chip${months === m ? " on" : ""}`}
+                    disabled={busy}
                     onClick={() => setMonths(m)}
                   >
-                    {m === 1 ? "۱ ماه" : `${m} ماه`}
+                    {m.toLocaleString("fa-IR")} ماه
                   </button>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="rate-shop-price">
-            <span className="muted">قیمت</span>
+          <div className="seek-price seek-price-live">
+            <span className="muted">مبلغ</span>
             <strong className="num">
               {quoting ? "…" : price != null ? formatToman(price) : quoteErr ? "—" : "…"}
             </strong>
           </div>
+          {discountAmount > 0 && priceBefore != null && priceBefore !== price && (
+            <p className="muted" style={{ margin: "0 0 8px" }}>
+              قبل از تخفیف: {formatToman(priceBefore)} · تخفیف −{formatToman(discountAmount)}
+            </p>
+          )}
+          {discountErr && (
+            <p className="muted" style={{ color: "var(--pink)", margin: "0 0 8px" }}>
+              {discountErr}
+            </p>
+          )}
           {quoteErr && (
-            <p className="muted" style={{ color: "var(--pink)", marginTop: 0 }}>
+            <p className="muted" style={{ color: "var(--pink)", margin: 0 }}>
               {quoteErr}
             </p>
           )}
 
-          <div className="actions stack rate-shop-actions">
+          {discountsAllowed && (
+            <div className="field">
+              <label>کد تخفیف (اختیاری)</label>
+              <div className="discount-check-row">
+                <input
+                  value={discountCode}
+                  onChange={(e) => {
+                    setDiscountCode(e.target.value.toUpperCase());
+                    setDiscountErr(null);
+                    setDiscountOkHint(null);
+                    setDiscountAmount(0);
+                    setVerifiedDiscount(null);
+                  }}
+                  placeholder="مثلاً SALE20"
+                  disabled={busy || checkingDiscount}
+                />
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  disabled={busy || checkingDiscount || !discountCode.trim()}
+                  onClick={() => void checkDiscountCode()}
+                >
+                  {checkingDiscount ? "…" : "بررسی کد"}
+                </button>
+              </div>
+              {discountOkHint && !discountErr && (
+                <p className="muted" style={{ color: "var(--ok, #34d399)", margin: "6px 0 0" }}>
+                  {discountOkHint}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="actions stack" style={{ marginTop: 14 }}>
             {variant === "admin" ? (
-              <button type="button" className="btn success wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-                تمدید سرویس
+              <button type="button" className="btn primary wide" disabled={!canSubmit} onClick={() => void submit(true)}>
+                تمدید رایگان
               </button>
             ) : (
               <>
-                <button type="button" className="btn light wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-                  پرداخت با کیف پول و تمدید
+                <button type="button" className="btn primary wide" disabled={!canSubmit} onClick={() => void submit(true)}>
+                  پرداخت از کیف پول
                 </button>
-                <button type="button" className="btn success wide" disabled={!canSubmit} onClick={() => void submit(false)}>
-                  کارت‌به‌کارت و تمدید
+                <button type="button" className="btn ghost wide" disabled={!canSubmit} onClick={() => void submit(false)}>
+                  کارت‌به‌کارت
                 </button>
               </>
             )}
+            <button type="button" className="btn ghost wide" disabled={busy} onClick={onClose}>
+              انصراف
+            </button>
           </div>
         </div>
       )}

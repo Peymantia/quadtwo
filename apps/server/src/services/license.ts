@@ -46,6 +46,27 @@ export function isDemoMode(): boolean {
   return v === "1" || v === "true" || v === "yes";
 }
 
+function truthyEnv(v: string | undefined): boolean {
+  const s = (v || "").toString().trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes";
+}
+
+/** Production must not run with DEMO_MODE unless DEMO_ALLOW_PROD is explicitly set. */
+export function assertDemoModeSafeAtStartup(): void {
+  if (!isDemoMode()) return;
+  if (env.NODE_ENV !== "production") return;
+  if (truthyEnv(env.DEMO_ALLOW_PROD)) {
+    console.warn(
+      "[license] DEMO_MODE + production allowed via DEMO_ALLOW_PROD — restore/backup mutations stay blocked in demo",
+    );
+    return;
+  }
+  console.error(
+    "[license] REFUSED: DEMO_MODE is set while NODE_ENV=production. Unset DEMO_MODE or set DEMO_ALLOW_PROD=1 for a throwaway demo host only.",
+  );
+  process.exit(1);
+}
+
 export function issueLicenseKey(admins: string, host: string): string {
   const cleanAdmins = admins
     .split(",")
@@ -232,6 +253,7 @@ export function getLicenseStatus(): LicenseStatus {
 }
 
 export function assertLicenseAtStartup(): void {
+  assertDemoModeSafeAtStartup();
   const st = getLicenseStatus();
   if (st.demo) {
     console.log("[license] DEMO_MODE enabled — role switcher active, license skipped");

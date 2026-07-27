@@ -8,6 +8,7 @@ type DiscountItem = {
   code: string;
   percentOff: number;
   active: boolean;
+  shareable?: boolean;
   maxUses: number | null;
   usedCount: number;
   expiresAt: string | null;
@@ -61,6 +62,7 @@ export function DiscountCodesPanel({
   const [maxUses, setMaxUses] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [note, setNote] = useState("");
+  const [shareable, setShareable] = useState(false);
   const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
   const expiryMenuRef = useRef<HTMLDivElement>(null);
 
@@ -106,6 +108,7 @@ export function DiscountCodesPanel({
           maxUses: maxUses.trim() ? Number(maxUses) : null,
           expiresAt: expiresAt.trim() || null,
           note: note.trim() || null,
+          shareable,
         },
       });
       setCode("");
@@ -113,6 +116,7 @@ export function DiscountCodesPanel({
       setMaxUses("");
       setExpiresAt("");
       setNote("");
+      setShareable(false);
       setExpiryMenuOpen(false);
       flash("کد تخفیف ساخته شد");
       await load();
@@ -162,7 +166,8 @@ export function DiscountCodesPanel({
     <div className="panel">
       <h2>کدهای تخفیف</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        هر کد فقط روی خریدهای همان سازنده اعمال می‌شود؛ کدهای ادمین برای همه قابل استفاده‌اند. سقف درصد برای نقش شما: {maxPercent}٪.
+        کد ادمین برای همه خریداران معتبر است. کد همکار/عمده‌فروش به‌صورت پیش‌فرض فقط برای خودش است؛ با «قابل‌اشتراک»
+        مشتری‌ها هم می‌توانند استفاده کنند. سقف درصد شما: {maxPercent}٪.
         {!enabled ? " — فعلاً توسط ادمین خاموش است (ادمین همچنان می‌تواند کد بسازد)." : ""}
       </p>
 
@@ -239,6 +244,21 @@ export function DiscountCodesPanel({
           <label>یادداشت</label>
           <input value={note} onChange={(e) => setNote(e.target.value)} disabled={busy} />
         </div>
+        <div className="setting-row" style={{ gridColumn: "1 / -1", margin: 0 }}>
+          <div>
+            <div className="t">قابل‌اشتراک با مشتری</div>
+            <div className="d">اگر روشن باشد، دیگران هم می‌توانند این کد را در خریدشان بزنند.</div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={shareable}
+              disabled={busy}
+              onChange={(e) => setShareable(e.target.checked)}
+            />
+            <span className="track" />
+          </label>
+        </div>
       </div>
       <div className="actions" style={{ marginBottom: 16 }}>
         <button type="button" className="btn primary" disabled={busy || !code.trim()} onClick={() => void create()}>
@@ -260,6 +280,7 @@ export function DiscountCodesPanel({
                     {item.percentOff}٪ · استفاده {item.usedCount.toLocaleString("fa-IR")}
                     {item.maxUses != null ? ` / ${item.maxUses.toLocaleString("fa-IR")}` : " / ∞"}
                     {item.expiresAt ? ` · تا ${new Date(item.expiresAt).toLocaleString("fa-IR")}` : ""}
+                    {item.shareable ? " · قابل‌اشتراک" : ""}
                     {showOwner && item.ownerLabel ? ` · ${item.ownerLabel}` : ""}
                   </div>
                   {item.note && <div className="muted">{item.note}</div>}
@@ -267,6 +288,30 @@ export function DiscountCodesPanel({
                 <div className="actions">
                   <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void toggle(item)}>
                     {item.active ? "غیرفعال" : "فعال"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void (async () => {
+                        setBusy(true);
+                        try {
+                          await api(`/me/discounts/${item.id}`, {
+                            method: "PATCH",
+                            body: { shareable: !item.shareable },
+                          });
+                          flash(!item.shareable ? "کد قابل‌اشتراک شد" : "اشتراک کد برداشته شد");
+                          await load();
+                        } catch (e) {
+                          flash(null, String(e instanceof Error ? e.message : e));
+                        } finally {
+                          setBusy(false);
+                        }
+                      })()
+                    }
+                  >
+                    {item.shareable ? "فقط خودم" : "اشتراک"}
                   </button>
                   <button type="button" className="btn danger sm" disabled={busy} onClick={() => void remove(item)}>
                     حذف

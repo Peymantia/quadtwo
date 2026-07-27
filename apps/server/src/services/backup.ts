@@ -118,6 +118,104 @@ export function isSqliteDatabaseBuffer(buf: Buffer): boolean {
   return buf.length >= SQLITE_MAGIC.length && buf.subarray(0, SQLITE_MAGIC.length).equals(SQLITE_MAGIC);
 }
 
+export type BackupInspectResult =
+  | {
+      ok: true;
+      size: number;
+      sizeLabel: string;
+      users?: number;
+      orders?: number;
+      subscriptions?: number;
+      discountCodes?: number;
+      note?: string;
+    }
+  | { ok: false; error: string };
+
+/** Validate uploaded backup and optionally read table counts (dry-run). */
+export async function inspectBackupBuffer(buf: Buffer): Promise<BackupInspectResult> {
+  if (!buf?.length) return { ok: false, error: "فایل خالی است" };
+  if (!isSqliteDatabaseBuffer(buf)) {
+    return { ok: false, error: "فایل معتبر SQLite نیست (باید خروجی پشتیبان Quadtwo باشد)" };
+  }
+  if (buf.length < 4096) {
+    return { ok: false, error: "حجم فایل پشتیبان مشکوک / خیلی کوچک است" };
+  }
+
+  const base: BackupInspectResult = {
+    ok: true,
+    size: buf.length,
+    sizeLabel: formatBytes(buf.length),
+  };
+
+  try {
+    const { writeFile, unlink } = await import("node:fs/promises");
+    const dir = await backupDir();
+    const tmp = join(dir, `inspect-${stamp()}.db`);
+    await writeFile(tmp, buf);
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(tmp, { readOnly: true });
+      const count = (table: string) => {
+        try {
+          const row = db.prepare(`SELECT COUNT(*) AS n FROM "${table}"`).get() as { n?: number } | undefined;
+          return Number(row?.n ?? 0);
+        } catch {
+          return undefined;
+        }
+      };
+      const users = count("User");
+      const orders = count("Order");
+      const subscriptions = count("Subscription");
+      const discountCodes = count("DiscountCode");
+      db.close();
+      return {
+        ...base,
+        users,
+        orders,
+        subscriptions,
+        discountCodes,
+        note: "فایل معتبر است؛ بازیابی دیتابیس فعلی را جایگزین می‌کند.",
+      };
+    } finally {
+      try {
+        await unlink(tmp);
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    return {
+      ...base,
+      note: "هدر SQLite معتبر است (شمارش جداول در این محیط در دسترس نبود).",
+    };
+  }
+}
+
+/** Keep last N backup files (+ safety snapshots); delete older .db in backups/. */
+export async function pruneOldBackups(keep = 14): Promise<number> {
+  const { readdir, unlink } = await import("node:fs/promises");
+  const dir = await backupDir();
+  const names = (await readdir(dir)).filter((n) => n.endsWith(".db"));
+  const withStat = await Promise.all(
+    names.map(async (name) => {
+      const p = join(dir, name);
+      const s = await stat(p);
+      return { path: p, mtime: s.mtimeMs };
+    }),
+  );
+  withStat.sort((a, b) => b.mtime - a.mtime);
+  let removed = 0;
+  for (const f of withStat.slice(Math.max(1, keep))) {
+    try {
+      await unlink(f.path);
+      removed++;
+    } catch {
+      /* ignore */
+    }
+  }
+  return removed;
+}
+
 /**
  * Replace the live SQLite DB with a backup file buffer.
  * Creates a safety snapshot of the current DB first, then swaps files.
@@ -126,13 +224,12 @@ export function isSqliteDatabaseBuffer(buf: Buffer): boolean {
 export async function restoreDatabaseFromBackupBuffer(
   buf: Buffer,
 ): Promise<{ ok: true; safetyName: string; size: number } | { ok: false; error: string }> {
-  if (!buf?.length) return { ok: false, error: "فایل خالی است" };
-  if (!isSqliteDatabaseBuffer(buf)) {
-    return { ok: false, error: "فایل معتبر SQLite نیست (باید خروجی پشتیبان Quadtwo باشد)" };
+  const { isDemoMode } = await import("./license.js");
+  if (isDemoMode()) {
+    return { ok: false, error: "در حالت دمو بازیابی پشتیبان غیرفعال است" };
   }
-  if (buf.length < 4096) {
-    return { ok: false, error: "حجم فایل پشتیبان مشکوک / خیلی کوچک است" };
-  }
+  const inspected = await inspectBackupBuffer(buf);
+  if (!inspected.ok) return inspected;
 
   const src = resolveDatabaseFilePath();
   const dir = await backupDir();
@@ -174,6 +271,7 @@ export async function restoreDatabaseFromBackupBuffer(
       }
     }
 
+    void pruneOldBackups(20).catch(() => undefined);
     return { ok: true, safetyName, size: buf.length };
   } catch (err) {
     return { ok: false, error: String(err instanceof Error ? err.message : err) };
@@ -244,7 +342,7 @@ export function startBackupCron(api: Api, intervalMs = 60_000) {
       if (now.getHours() !== cfg.hour || now.getMinutes() !== cfg.minute) return;
       const key = dayKey(now);
       if (lastFiredDay === key) return;
-      // also skip if settings say we already did today
+      // also skip if settings say we already did today successfully
       if (cfg.lastAt) {
         const last = new Date(cfg.lastAt);
         if (dayKey(last) === key && cfg.lastStatus.startsWith("ok")) {
@@ -252,10 +350,13 @@ export function startBackupCron(api: Api, intervalMs = 60_000) {
           return;
         }
       }
-      lastFiredDay = key;
       console.log(`backup cron: sending scheduled backup at ${cfg.hour}:${String(cfg.minute).padStart(2, "0")}`);
       const r = await sendBackupToAdmins(api, { reason: "پشتیبان خودکار زمان‌بندی‌شده" });
       console.log("backup cron result", r);
+      if (r.ok) {
+        lastFiredDay = key;
+        void pruneOldBackups(20).catch((err) => console.warn("backup prune", err));
+      }
     } catch (err) {
       console.error("backup cron error", err);
     }

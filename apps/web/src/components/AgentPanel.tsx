@@ -176,6 +176,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           note: payload.note,
           payWithWallet: payload.payWithWallet,
           discountCode: payload.discountCode,
+          quantity: payload.quantity,
+          priceCellId: payload.priceCellId,
         },
       });
       if (r.provisioned?.code) {

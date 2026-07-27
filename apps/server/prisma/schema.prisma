@@ -298,7 +298,7 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
-/// Promo codes: each code only discounts checkouts by its creator (their own sales).
+/// Promo codes: creator-scoped by default; admin codes are global; shareable = customer-facing.
 model DiscountCode {
   id              String    @id @default(cuid())
   /// Normalized uppercase alphanumeric code
@@ -306,6 +306,8 @@ model DiscountCode {
   percentOff      Int
   createdByUserId String
   active          Boolean   @default(true)
+  /// When true, non-admin codes may be used by any buyer (not only the creator)
+  shareable       Boolean   @default(false)
   /// null = unlimited
   maxUses         Int?
   usedCount       Int       @default(0)
@@ -379,5 +381,7 @@ model BuyDraft {
   accountName String?
   /// Optional discount code (normalized uppercase) for checkout
   discountCode String?
+  /// Locked offer / matrix cell id when user picks a specific plan card
+  priceCellId  String?
   updatedAt   DateTime @updatedAt
 }

@@ -47,13 +47,14 @@ async function showDiscountHome(ctx: Context, edit = true) {
     "",
     `وضعیت سیستم: ${enabled ? "فعال 🟢" : "خاموش 🔴"}`,
     `سقف درصد شما: ${maxPercent}٪`,
-    "هر کد فقط روی خریدهای خودتان اعمال می‌شود.",
+    "هر کد فقط روی خریدهای خودتان اعمال می‌شود — مگر «قابل‌اشتراک» باشد.",
+    "کد ادمین برای همه خریداران معتبر است.",
     "",
     items.length ? "کدهای شما:" : "هنوز کدی نساخته‌اید.",
   ];
   for (const it of items.slice(0, 12)) {
     lines.push(
-      `• ${it.active ? "🟢" : "🔴"} ${it.code} — ${it.percentOff}٪ (${it.usedCount}${it.maxUses != null ? `/${it.maxUses}` : ""})`,
+      `• ${it.active ? "🟢" : "🔴"} ${it.code} — ${it.percentOff}٪ (${it.usedCount}${it.maxUses != null ? `/${it.maxUses}` : ""})${it.shareable ? " · اشتراک" : ""}`,
     );
   }
   const kb = new InlineKeyboard().text("➕ ساخت کد جدید", "disc:new").success().row();
@@ -62,7 +63,7 @@ async function showDiscountHome(ctx: Context, edit = true) {
   }
   for (const it of items.slice(0, 8)) {
     kb.text(`${it.active ? "⏸" : "▶️"} ${it.code}`, `disc:tog:${it.id}`)
-      .text(`🗑`, `disc:del:${it.id}`)
+      .text(`🗑`, `disc:delask:${it.id}`)
       .row();
   }
   if (await isControlAdmin(ctx.from?.id)) kb.text("« کنترل سنتر", "cc:home");
@@ -177,7 +178,20 @@ export function registerDiscountBotHandlers(bot: Bot) {
     }
   });
 
-  bot.callbackQuery(/^disc:del:(.+)$/, async (ctx) => {
+  bot.callbackQuery(/^disc:delask:(.+)$/, async (ctx) => {
+    const access = await assertDiscountAccess(ctx);
+    if (!access) return ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
+    await ctx.answerCallbackQuery();
+    const id = ctx.match![1]!;
+    const kb = new InlineKeyboard()
+      .text("✅ بله، حذف شود", `disc:delyes:${id}`)
+      .danger()
+      .text("انصراف", "disc:home")
+      .row();
+    await ctx.reply("این کد تخفیف حذف شود؟", { reply_markup: kb });
+  });
+
+  bot.callbackQuery(/^disc:delyes:(.+)$/, async (ctx) => {
     const access = await assertDiscountAccess(ctx);
     if (!access) return ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
     await ctx.answerCallbackQuery();
@@ -187,5 +201,10 @@ export function registerDiscountBotHandlers(bot: Bot) {
     } catch (err) {
       await ctx.reply(String(err instanceof Error ? err.message : err));
     }
+  });
+
+  bot.callbackQuery("disc:home", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showDiscountHome(ctx, true);
   });
 }

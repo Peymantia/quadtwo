@@ -3,12 +3,12 @@ import { prisma } from "../db.js";
 import { resolvePanelForCategory, resolvePanelForSubscription } from "./panel-servers.js";
 import { checkRenewEligibility, inferRenewCategory } from "./renew-eligibility.js";
 import { canEditLimitIp, getDefaultLimitIp } from "./settings.js";
-import { clampMonths, normalizePurchaseTraffic, resolvePrice, isOfferCategory, findPriceCell, type PlanCategory } from "./pricing.js";
+import { clampMonths, normalizePurchaseTraffic, resolvePrice, isOfferCategory, findPriceCell, priceFromCell, type PlanCategory } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
 import { withEffectiveRole } from "./demo-role.js";
 import { isDemoMode } from "./license.js";
-import { assertAndApplyDiscount, recordDiscountUse } from "./discount-codes.js";
+import { assertAndApplyDiscount, recordDiscountUse, cancelOpenPendingForDiscount } from "./discount-codes.js";
 
 export async function createMatrixOrder(input: {
   userId: string;
@@ -24,8 +24,10 @@ export async function createMatrixOrder(input: {
   note?: string | null;
   /** Admin renew of any account — skip ownership/eligibility checks */
   forceRenew?: boolean;
-  /** Optional discount code (creator-scoped) */
+  /** Optional discount code (creator-scoped / shareable / admin-global) */
   discountCode?: string | null;
+  /** Prefer exact price cell (offer cards with same GB/months) */
+  priceCellId?: string | null;
 }) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
   const pricedUser = withEffectiveRole(user, user.telegramId);
@@ -62,14 +64,44 @@ export async function createMatrixOrder(input: {
     panelServerId = resolved.panel?.id ?? null;
   }
 
-  const trafficGb = normalizePurchaseTraffic(category, input.trafficGb);
-  const months = clampMonths(input.months);
-  const offerLocked = isOfferCategory(category);
-  if (offerLocked) {
-    const cell = await findPriceCell(trafficGb, months, "offer");
-    if (!cell?.active) throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
+  let trafficGb = normalizePurchaseTraffic(category, input.trafficGb);
+  let months = clampMonths(input.months);
+  let offerLocked = isOfferCategory(category);
+  let selectedCell: Awaited<ReturnType<typeof findPriceCell>> = null;
+
+  if (input.priceCellId?.trim()) {
+    selectedCell = await prisma.priceCell.findFirst({
+      where: { id: input.priceCellId.trim(), active: true },
+    });
+    if (!selectedCell) throw new Error("پلن انتخاب‌شده پیدا نشد یا غیرفعال است");
+    if (offerLocked && selectedCell.category !== "offer") {
+      throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
+    }
+    trafficGb = selectedCell.trafficGb;
+    months = clampMonths(selectedCell.months);
+    if (selectedCell.category === "offer") {
+      category = "offer";
+      offerLocked = true;
+    } else if (selectedCell.category === "unlimited") {
+      category = "unlimited";
+      trafficGb = null;
+    } else {
+      category = selectedCell.category as PlanCategory;
+    }
+  } else if (offerLocked) {
+    selectedCell = await findPriceCell(trafficGb, months, "offer");
+    if (!selectedCell?.active) throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
   }
-  const priced = await resolvePrice(pricedUser, trafficGb, months, category);
+
+  const priced =
+    selectedCell && offerLocked
+      ? pricedUser.role === "admin"
+        ? { cell: selectedCell, price: 0, mode: "matrix" as const }
+        : (() => {
+            const price = priceFromCell(pricedUser.role, selectedCell);
+            return price > 0 ? { cell: selectedCell, price, mode: "matrix" as const } : null;
+          })()
+      : await resolvePrice(pricedUser, trafficGb, months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
   const quantity = kind === OrderKind.renew ? 1 : Math.max(1, Math.min(50, input.quantity ?? 1));
   const defaultIp = await getDefaultLimitIp();
@@ -89,6 +121,9 @@ export async function createMatrixOrder(input: {
           code: input.discountCode,
           price: priceBefore,
         });
+  if (applied?.codeId) {
+    await cancelOpenPendingForDiscount(orderUserId, applied.codeId);
+  }
   const finalPrice = applied ? applied.priceAfter : priceBefore;
 
   return prisma.order.create({
@@ -228,6 +263,15 @@ export async function rejectOrder(orderId: string, note: string) {
 }
 
 export async function markPaid(orderId: string) {
+  const existing = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!existing) throw new Error("سفارش پیدا نشد");
+  if (
+    existing.status === OrderStatus.paid ||
+    existing.status === OrderStatus.provisioning ||
+    existing.status === OrderStatus.completed
+  ) {
+    return existing;
+  }
   const order = await prisma.order.update({
     where: { id: orderId },
     data: { status: OrderStatus.paid },

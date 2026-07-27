@@ -390,7 +390,11 @@ async function showOfferPlanPicker(ctx: Context, edit = false) {
   }
   if (plans.length === 1) {
     const p = plans[0]!;
-    await setDraftOfferPlan(BigInt(ctx.from!.id), { trafficGb: p.trafficGb, months: p.months });
+    await setDraftOfferPlan(BigInt(ctx.from!.id), {
+      id: p.id,
+      trafficGb: p.trafficGb,
+      months: p.months,
+    });
     await showBuyWizard(ctx, edit);
     return;
   }
@@ -454,9 +458,10 @@ async function showBuyWizard(ctx: Context, edit = false) {
 
   let offerTitle: string | null = null;
   if (offer) {
-    const match = (await listOfferPlans()).find(
-      (p) => p.months === draft.months && (p.trafficGb ?? null) === (draft.trafficGb ?? null),
-    );
+    const plans = await listOfferPlans();
+    const match =
+      (draft.priceCellId ? plans.find((p) => p.id === draft.priceCellId) : null) ??
+      plans.find((p) => p.months === draft.months && (p.trafficGb ?? null) === (draft.trafficGb ?? null));
     offerTitle = match?.title ?? null;
   }
 
@@ -991,7 +996,11 @@ export function createBot() {
       await ctx.reply("این پیشنهاد ویژه پیدا نشد.");
       return;
     }
-    await setDraftOfferPlan(BigInt(ctx.from!.id), { trafficGb: plan.trafficGb, months: plan.months });
+    await setDraftOfferPlan(BigInt(ctx.from!.id), {
+      id: plan.id,
+      trafficGb: plan.trafficGb,
+      months: plan.months,
+    });
     await showBuyWizard(ctx, true);
   });
 
@@ -1314,8 +1323,13 @@ export function createBot() {
           trafficGb: draft.unlimited ? null : draft.trafficGb,
           months: draft.months,
           quantity: draft.quantity,
+          // Must match discount (and thus price); otherwise a code applied after first tap is ignored
+          ...(draft.discountCode
+            ? { discountCode: { code: draft.discountCode.toUpperCase() } }
+            : { discountCodeId: null }),
         },
         orderBy: { createdAt: "desc" },
+        include: { discountCode: true },
       });
       const order =
         recent ??
@@ -1328,6 +1342,7 @@ export function createBot() {
           category: draft.category,
           limitIp: await resolvePurchaseLimitIp(draft, withEffectiveRole(user, ctx.from!.id).role),
           discountCode: draft.discountCode,
+          priceCellId: draft.priceCellId ?? null,
         }));
       if (!recent) {
         await auditLog({

@@ -50,18 +50,61 @@ const MSG = {
   exhausted: "ظرفیت استفاده از این کد تمام شده است",
 } as const;
 
-/** Buyer already applied this code on an open or completed order. */
+/** Buyer already consumed this code on a paid / in-flight reviewed order (not abandoned pending). */
 async function buyerAlreadyUsedDiscount(buyerId: string, codeId: string): Promise<boolean> {
   const n = await prisma.order.count({
     where: {
       userId: buyerId,
       discountCodeId: codeId,
       status: {
-        notIn: [OrderStatus.rejected, OrderStatus.cancelled],
+        in: [
+          OrderStatus.awaiting_review,
+          OrderStatus.paid,
+          OrderStatus.provisioning,
+          OrderStatus.completed,
+        ],
       },
     },
   });
   return n > 0;
+}
+
+/** Cancel abandoned pending checkouts that hold a discount code (frees one-time codes). */
+export async function cancelStalePendingDiscountOrders(opts?: {
+  olderThanMs?: number;
+  buyerId?: string;
+  discountCodeId?: string;
+}): Promise<number> {
+  const olderThanMs = opts?.olderThanMs ?? 30 * 60_000;
+  const cutoff = new Date(Date.now() - olderThanMs);
+  const result = await prisma.order.updateMany({
+    where: {
+      status: OrderStatus.pending_payment,
+      discountCodeId: opts?.discountCodeId ? opts.discountCodeId : { not: null },
+      createdAt: { lt: cutoff },
+      ...(opts?.buyerId ? { userId: opts.buyerId } : {}),
+    },
+    data: {
+      status: OrderStatus.cancelled,
+      adminNote: "لغو خودکار: سفارش پرداخت‌نشده با کد تخفیف",
+    },
+  });
+  return result.count;
+}
+
+/** Drop other open pending orders for this buyer+code so a fresh checkout can proceed. */
+export async function cancelOpenPendingForDiscount(buyerId: string, discountCodeId: string): Promise<void> {
+  await prisma.order.updateMany({
+    where: {
+      userId: buyerId,
+      discountCodeId,
+      status: OrderStatus.pending_payment,
+    },
+    data: {
+      status: OrderStatus.cancelled,
+      adminNote: "لغو: سفارش جدید با همان کد تخفیف",
+    },
+  });
 }
 
 /**
@@ -93,12 +136,13 @@ export async function previewDiscount(opts: {
   if (!row || !row.active) return { error: MSG.invalid };
 
   if (row.createdByUserId !== opts.buyer.id) {
-    // Admin-created codes are global promos; partner/wholesale codes stay creator-scoped
+    // Admin-created codes are global promos; shareable partner codes are customer-facing;
+    // other partner/wholesale codes stay creator-scoped.
     const creator = await prisma.user.findUnique({
       where: { id: row.createdByUserId },
       select: { role: true },
     });
-    if (creator?.role !== UserRole.admin) {
+    if (creator?.role !== UserRole.admin && !row.shareable) {
       return { error: MSG.creatorOnly };
     }
   }
@@ -142,11 +186,19 @@ export async function assertAndApplyDiscount(opts: {
   return preview;
 }
 
-/** Call after order is successfully paid (wallet or admin approve). */
+/** Call after order successfully transitions into paid (wallet / approve / complimentary). */
 export async function recordDiscountUse(discountCodeId: string | null | undefined): Promise<void> {
   if (!discountCodeId) return;
-  await prisma.discountCode.updateMany({
+  const row = await prisma.discountCode.findUnique({
     where: { id: discountCodeId },
+    select: { maxUses: true },
+  });
+  if (!row) return;
+  await prisma.discountCode.updateMany({
+    where:
+      row.maxUses == null
+        ? { id: discountCodeId }
+        : { id: discountCodeId, usedCount: { lt: row.maxUses } },
     data: { usedCount: { increment: 1 } },
   });
 }
@@ -173,6 +225,7 @@ export function serializeDiscountCode(row: {
   percentOff: number;
   createdByUserId: string;
   active: boolean;
+  shareable?: boolean;
   maxUses: number | null;
   usedCount: number;
   expiresAt: Date | null;
@@ -192,6 +245,7 @@ export function serializeDiscountCode(row: {
     percentOff: row.percentOff,
     createdByUserId: row.createdByUserId,
     active: row.active,
+    shareable: Boolean(row.shareable),
     maxUses: row.maxUses,
     usedCount: row.usedCount,
     expiresAt: row.expiresAt?.toISOString() ?? null,
@@ -213,6 +267,8 @@ export async function createDiscountCode(opts: {
   maxUses?: number | null;
   expiresAt?: string | null;
   note?: string | null;
+  /** When true, any buyer may use this non-admin code */
+  shareable?: boolean;
   /** Admin may create a code owned by another user */
   ownerUserId?: string | null;
 }) {
@@ -256,6 +312,9 @@ export async function createDiscountCode(opts: {
       ? null
       : Math.max(1, Math.floor(Number(opts.maxUses)));
 
+  // Admin codes are already global via creator role; shareable is for partner/wholesale customer codes.
+  const shareable = Boolean(opts.shareable);
+
   try {
     const row = await prisma.discountCode.create({
       data: {
@@ -265,6 +324,7 @@ export async function createDiscountCode(opts: {
         maxUses,
         expiresAt,
         note: opts.note?.trim() ? opts.note.trim().slice(0, 200) : null,
+        shareable,
         active: true,
       },
       include: {
@@ -287,6 +347,7 @@ export async function updateDiscountCode(opts: {
   maxUses?: number | null;
   expiresAt?: string | null;
   note?: string | null;
+  shareable?: boolean;
 }) {
   const row = await prisma.discountCode.findUnique({ where: { id: opts.id } });
   if (!row) throw new Error("کد پیدا نشد");
@@ -300,9 +361,13 @@ export async function updateDiscountCode(opts: {
     maxUses?: number | null;
     expiresAt?: Date | null;
     note?: string | null;
+    shareable?: boolean;
   } = {};
 
   if (opts.active !== undefined) data.active = Boolean(opts.active);
+  if (opts.shareable !== undefined) {
+    data.shareable = Boolean(opts.shareable);
+  }
   if (opts.percentOff !== undefined) {
     const maxPct = await getDiscountMaxPercentForRole(
       opts.actor.role === UserRole.admin ? UserRole.admin : opts.actor.role,
