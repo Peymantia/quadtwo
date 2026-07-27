@@ -189,9 +189,13 @@ export async function updatePanelServer(
 }
 
 export async function deletePanelServer(id: string) {
+  const total = await prisma.panelServer.count();
+  if (total <= 1) {
+    throw new Error("حداقل یک سرور باید در سیستم باقی بماند");
+  }
   const used = await prisma.subscription.count({ where: { panelServerId: id } });
   if (used > 0) {
-    throw new Error(`این سرور ${used} اشتراک دارد. ابتدا غیرفعال کنید، حذف نکنید.`);
+    throw new Error(`این سرور ${used} اشتراک دارد. ابتدا اشتراک‌ها را منتقل یا غیرفعال کنید.`);
   }
   return prisma.panelServer.delete({ where: { id } });
 }

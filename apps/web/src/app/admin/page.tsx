@@ -221,7 +221,7 @@ export default function AdminPage() {
       {tab === "categories" && <CategoriesTab flash={flash} askConfirm={askConfirm} />}
       {tab === "configs" && <ConfigsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "sync" && <SyncTab flash={flash} askConfirm={askConfirm} />}
-      {tab === "panels" && <PanelsTab flash={flash} />}
+      {tab === "panels" && <PanelsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "settings" && (
         <SettingsTab
           flash={flash}
@@ -2727,15 +2727,15 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
 
 /* ---------------- Panels ---------------- */
 
-function PanelsTab({ flash }: { flash: Flash }) {
+function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [panels, setPanels] = useState<PanelRow[]>([]);
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [form, setForm] = useState({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [routingBusy, setRoutingBusy] = useState(false);
-  const [routeAllPanelId, setRouteAllPanelId] = useState("");
-  const [dedicatedCategory, setDedicatedCategory] = useState("national");
-  const [dedicatedPanelId, setDedicatedPanelId] = useState("");
+  const [routeCategory, setRouteCategory] = useState("national");
+  const [routePanelId, setRoutePanelId] = useState("");
+  const [savedRoute, setSavedRoute] = useState<{ category: string; panelId: string } | null>(null);
   const [editing, setEditing] = useState<PanelRow | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -2756,11 +2756,6 @@ function PanelsTab({ flash }: { flash: Flash }) {
   }, [load]);
 
   useEffect(() => {
-    if (!routeAllPanelId && panels[0]?.id) setRouteAllPanelId(panels[0].id);
-    if (!dedicatedPanelId && panels[0]?.id) setDedicatedPanelId(panels[0].id);
-  }, [panels, routeAllPanelId, dedicatedPanelId]);
-
-  useEffect(() => {
     void api<{ categories: CategoryRow[] }>("/admin/categories")
       .then((r) => {
         if (r.categories?.length) {
@@ -2771,6 +2766,25 @@ function PanelsTab({ flash }: { flash: Flash }) {
         /* keep fallback */
       });
   }, []);
+
+  useEffect(() => {
+    if (!panels.length) return;
+    const catKeys = categories.map((c) => c.key);
+    const cat = catKeys.includes(routeCategory) ? routeCategory : catKeys[0] || "national";
+    if (cat !== routeCategory) setRouteCategory(cat);
+
+    const forCat = panels.filter((p) => parseCats(p.categories).includes(cat) && p.active && p.sellEnabled);
+    const preferred = forCat[0]?.id || panels[0]?.id || "";
+    if (!routePanelId || !panels.some((p) => p.id === routePanelId)) {
+      setRoutePanelId(preferred);
+      setSavedRoute({ category: cat, panelId: preferred });
+    } else if (!savedRoute) {
+      setSavedRoute({ category: cat, panelId: routePanelId });
+    }
+  }, [panels, categories, routeCategory, routePanelId, savedRoute]);
+
+  const routeDirty =
+    !!savedRoute && (savedRoute.category !== routeCategory || savedRoute.panelId !== routePanelId);
 
   function openEdit(p: PanelRow) {
     setEditing(p);
@@ -2825,7 +2839,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
       };
       if (editForm.apiToken.trim()) body.apiToken = editForm.apiToken.trim();
       await api(`/admin/panels/${editing.id}`, { method: "PUT", body });
-      flash("پنل ذخیره شد");
+      flash("ذخیره شد");
       setEditing(null);
       await load();
     } catch (e) {
@@ -2836,7 +2850,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
   async function add() {
     try {
       await api("/admin/panels", { body: form });
-      flash("پنل اضافه شد");
+      flash("سرور اضافه شد");
       setForm({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
       setShowAddPanel(false);
       await load();
@@ -2854,18 +2868,50 @@ function PanelsTab({ flash }: { flash: Flash }) {
     });
   }
 
-  async function applyAllCategoriesToPanel() {
-    if (!routeAllPanelId) return;
+  async function removePanel(p: PanelRow) {
+    if (panels.length <= 1) {
+      flash(null, "حداقل یک سرور باید باقی بماند");
+      return;
+    }
+    const ok = await askConfirm(
+      `حذف سرور «${p.name}»؟\nاین کار فقط وقتی ممکن است که هیچ اشتراکی روی این سرور نباشد.`,
+    );
+    if (!ok) return;
+    try {
+      await api(`/admin/panels/${p.id}`, { method: "DELETE" });
+      flash("سرور حذف شد");
+      if (editing?.id === p.id) setEditing(null);
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    }
+  }
+
+  function cancelRoute() {
+    if (!savedRoute) return;
+    setRouteCategory(savedRoute.category);
+    setRoutePanelId(savedRoute.panelId);
+  }
+
+  async function saveRoute() {
+    if (!routePanelId || !routeCategory) {
+      flash(null, "پلن و سرور را انتخاب کنید");
+      return;
+    }
     setRoutingBusy(true);
     try {
-      const allCats = categories.map((c) => c.key);
       for (const p of panels) {
+        const next = new Set(parseCats(p.categories));
+        if (p.id === routePanelId) next.add(routeCategory);
+        else next.delete(routeCategory);
         await api(`/admin/panels/${p.id}`, {
           method: "PUT",
-          body: { categories: p.id === routeAllPanelId ? allCats : [] },
+          body: { categories: [...next] },
         });
       }
-      flash("همه دسته‌ها روی سرور انتخاب‌شده قرار گرفت");
+      const target = panels.find((p) => p.id === routePanelId);
+      setSavedRoute({ category: routeCategory, panelId: routePanelId });
+      flash(`پلن «${catLabel(routeCategory, categories)}» فقط روی «${target?.name || "سرور"}» فعال شد`);
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -2874,28 +2920,7 @@ function PanelsTab({ flash }: { flash: Flash }) {
     }
   }
 
-  async function dedicateCategoryToPanel() {
-    if (!dedicatedPanelId || !dedicatedCategory) return;
-    setRoutingBusy(true);
-    try {
-      for (const p of panels) {
-        const next = new Set(parseCats(p.categories));
-        if (p.id === dedicatedPanelId) next.add(dedicatedCategory);
-        else next.delete(dedicatedCategory);
-        await api(`/admin/panels/${p.id}`, {
-          method: "PUT",
-          body: { categories: [...next] },
-        });
-      }
-      const catName = categories.find((c) => c.key === dedicatedCategory)?.label || dedicatedCategory;
-      flash(`دسته «${catName}» فقط روی سرور انتخاب‌شده قرار گرفت`);
-      await load();
-    } catch (e) {
-      flash(null, errText(e));
-    } finally {
-      setRoutingBusy(false);
-    }
-  }
+  const canDelete = panels.length > 1;
 
   return (
     <>
@@ -2906,150 +2931,143 @@ function PanelsTab({ flash }: { flash: Flash }) {
             افزودن سرور جدید
           </button>
         </div>
+
         {!!panels.length && (
-          <div className="panel-routing">
-            <div className="panel-routing-card">
-              <div className="panel-routing-title">همه دسته‌ها روی یک سرور</div>
-              <p className="panel-routing-desc">
-                همه دسته‌های فروش فقط روی سرور انتخابی فعال می‌شوند و از بقیه سرورها برداشته می‌شوند.
-              </p>
-              <div className="field">
-                <label>سرور مقصد</label>
-                <select value={routeAllPanelId} onChange={(e) => setRouteAllPanelId(e.target.value)}>
-                  {panels.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
+          <div className="panel-route-card">
+            <div className="panel-route-title">اختصاص پلن به سرور</div>
+            <p className="panel-route-desc">
+              پلن را انتخاب کنید و سرور مقصد را مشخص کنید. با ذخیره، آن پلن فقط روی همان سرور فعال می‌ماند.
+            </p>
+            <div className="panel-route-combos">
+              <label className="panel-route-field">
+                <span>پلن</span>
+                <select
+                  className="combo-select"
+                  value={routeCategory}
+                  onChange={(e) => {
+                    const cat = e.target.value;
+                    setRouteCategory(cat);
+                    const forCat = panels.filter((p) => parseCats(p.categories).includes(cat) && p.active && p.sellEnabled);
+                    const nextId = forCat[0]?.id || panels[0]?.id || "";
+                    if (nextId) setRoutePanelId(nextId);
+                  }}
+                >
+                  {categories.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
                     </option>
                   ))}
                 </select>
-              </div>
+              </label>
+              <label className="panel-route-field">
+                <span>سرور</span>
+                <select className="combo-select" value={routePanelId} onChange={(e) => setRoutePanelId(e.target.value)}>
+                  {panels.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {!p.active ? " (غیرفعال)" : ""}
+                      {!p.sellEnabled ? " (فروش خاموش)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="panel-route-actions">
+              <button type="button" className="btn ghost" disabled={!routeDirty || routingBusy} onClick={cancelRoute}>
+                لغو
+              </button>
               <button
                 type="button"
-                className="btn primary wide"
-                disabled={routingBusy || !routeAllPanelId}
-                onClick={() => void applyAllCategoriesToPanel()}
+                className="btn primary"
+                disabled={!routeDirty || routingBusy || !routePanelId}
+                onClick={() => void saveRoute()}
               >
-                همه دسته‌ها را روی این سرور بگذار
+                {routingBusy ? "…" : "ذخیره"}
               </button>
             </div>
-
-            <div className="panel-routing-card">
-              <div className="panel-routing-title">یک دسته فقط روی یک سرور</div>
-              <p className="panel-routing-desc">
-                دسته انتخابی فقط روی سرور مشخص فعال می‌شود و از سرورهای دیگر حذف می‌گردد. بقیه دسته‌ها دست‌نخورده می‌مانند.
-              </p>
-              <div className="panel-routing-fields">
-                <div className="field">
-                  <label>دسته</label>
-                  <select value={dedicatedCategory} onChange={(e) => setDedicatedCategory(e.target.value)}>
-                    {categories.map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>سرور آن دسته</label>
-                  <select value={dedicatedPanelId} onChange={(e) => setDedicatedPanelId(e.target.value)}>
-                    {panels.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn success wide"
-                disabled={routingBusy || !dedicatedPanelId}
-                onClick={() => void dedicateCategoryToPanel()}
-              >
-                این دسته را فقط به این سرور اختصاص بده
-              </button>
-            </div>
-
-            <p className="hint" style={{ margin: 0 }}>
-              وزن فقط بین سرورهایی اعمال می‌شود که همان دسته را دارند. مثلاً «نت ملی» را فقط روی یک سرور بگذارید و بقیه
-              دسته‌ها را بین چند سرور لودبالانس کنید.
-            </p>
           </div>
         )}
+
         <div className="list" style={{ marginTop: 12 }}>
           {panels.map((p) => {
             const cats = parseCats(p.categories);
-            // routing badge: for each category on this panel, how many other panels share it?
             const catBadges = cats.map((k) => {
-              const siblings = panels.filter((x) => x.id !== p.id && parseCats(x.categories).includes(k) && x.active && x.sellEnabled);
+              const siblings = panels.filter(
+                (x) => x.id !== p.id && parseCats(x.categories).includes(k) && x.active && x.sellEnabled,
+              );
               return { key: k, label: catLabel(k, categories), shared: siblings.length > 0 };
             });
             return (
-            <div key={p.id} className="row-card row-card--stack server-card" onClick={() => openEdit(p)}>
-              <div className="server-card__top">
-                <strong className="server-card__name" dir="ltr">
-                  {p.name}
-                </strong>
-                <div className="muted num url-break server-card__url">{p.baseUrl}</div>
-                <div className="muted server-card__meta">
-                  اینباند: <span className="num">{p.inboundIds}</span> · توکن {p.hasToken ? "✓" : "✗"}
-                  {p.weight != null && (
-                    <>
-                      {" "}
-                      · وزن <span className="num">{p.weight}</span>
-                    </>
+              <div key={p.id} className="row-card row-card--stack server-card" onClick={() => openEdit(p)}>
+                <div className="server-card__top">
+                  <strong className="server-card__name" dir="ltr">
+                    {p.name}
+                  </strong>
+                  <div className="muted num url-break server-card__url">{p.baseUrl}</div>
+                  <div className="muted server-card__meta">
+                    اینباند: <span className="num">{p.inboundIds}</span> · توکن {p.hasToken ? "✓" : "✗"}
+                    {p.weight != null && (
+                      <>
+                        {" "}
+                        · وزن <span className="num">{p.weight}</span>
+                      </>
+                    )}
+                  </div>
+                  {cats.length > 0 ? (
+                    <div className="server-card__cats">
+                      {catBadges.map(({ key, label, shared }) => (
+                        <span
+                          key={key}
+                          className={`badge ${shared ? "info" : "ok"}`}
+                          title={shared ? "لودبالانس — این دسته روی چند سرور است" : "اختصاصی — فقط این سرور"}
+                        >
+                          {label}
+                          <span className="server-card__cat-mark" aria-hidden>
+                            {shared ? "⇄" : "⊕"}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="badge bad">بدون دسته</span>
                   )}
                 </div>
-                {cats.length > 0 ? (
-                  <div className="server-card__cats">
-                    {catBadges.map(({ key, label, shared }) => (
-                      <span
-                        key={key}
-                        className={`badge ${shared ? "info" : "ok"}`}
-                        title={shared ? "لودبالانس — این دسته روی چند سرور است" : "اختصاصی — فقط این سرور"}
-                      >
-                        {label}
-                        <span className="server-card__cat-mark" aria-hidden>
-                          {shared ? "⇄" : "⊕"}
-                        </span>
+                <div className="server-card__footer" onClick={(e) => e.stopPropagation()}>
+                  <div className="server-card__toggles">
+                    <label className="server-card__toggle">
+                      <span className="server-card__toggle-label">فعال</span>
+                      <span className="switch switch-sm">
+                        <input type="checkbox" checked={p.active} onChange={(e) => toggle(p, "active", e.target.checked)} />
+                        <span className="track" />
                       </span>
-                    ))}
+                    </label>
+                    <label className="server-card__toggle">
+                      <span className="server-card__toggle-label">فروش</span>
+                      <span className="switch switch-sm">
+                        <input
+                          type="checkbox"
+                          checked={p.sellEnabled}
+                          onChange={(e) => toggle(p, "sellEnabled", e.target.checked)}
+                        />
+                        <span className="track" />
+                      </span>
+                    </label>
                   </div>
-                ) : (
-                  <span className="badge bad">بدون دسته</span>
-                )}
-              </div>
-              <div className="server-card__footer" onClick={(e) => e.stopPropagation()}>
-                <div className="server-card__toggles">
-                  <label className="server-card__toggle">
-                    <span className="server-card__toggle-label">فعال</span>
-                    <span className="switch switch-sm">
-                      <input type="checkbox" checked={p.active} onChange={(e) => toggle(p, "active", e.target.checked)} />
-                      <span className="track" />
-                    </span>
-                  </label>
-                  <label className="server-card__toggle">
-                    <span className="server-card__toggle-label">فروش</span>
-                    <span className="switch switch-sm">
-                      <input
-                        type="checkbox"
-                        checked={p.sellEnabled}
-                        onChange={(e) => toggle(p, "sellEnabled", e.target.checked)}
-                      />
-                      <span className="track" />
-                    </span>
-                  </label>
-                </div>
-                <div className="server-card__btns">
-                  <button type="button" className="btn ghost sm" onClick={() => openEdit(p)}>
-                    ویرایش
-                  </button>
-                  <button type="button" className="btn ghost sm" onClick={() => test(p.id)}>
-                    تست اتصال
-                  </button>
+                  <div className={`server-card__btns${canDelete ? " server-card__btns--3" : ""}`}>
+                    <button type="button" className="btn ghost sm" onClick={() => openEdit(p)}>
+                      ویرایش
+                    </button>
+                    <button type="button" className="btn ghost sm" onClick={() => void test(p.id)}>
+                      تست اتصال
+                    </button>
+                    {canDelete ? (
+                      <button type="button" className="btn danger sm" onClick={() => void removePanel(p)}>
+                        حذف
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
             );
           })}
           {!panels.length && <p className="muted">سروری ثبت نشده — از .env استفاده می‌شود.</p>}
@@ -3139,9 +3157,14 @@ function PanelsTab({ flash }: { flash: Flash }) {
             <button type="button" className="btn primary" disabled={!editForm.name || !editForm.baseUrl} onClick={() => void saveEdit()}>
               ذخیره پنل
             </button>
-            <button type="button" className="btn ghost" onClick={() => test(editing.id)}>
+            <button type="button" className="btn ghost" onClick={() => void test(editing.id)}>
               تست اتصال
             </button>
+            {canDelete ? (
+              <button type="button" className="btn danger" onClick={() => void removePanel(editing)}>
+                حذف سرور
+              </button>
+            ) : null}
             <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
               لغو
             </button>

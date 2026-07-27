@@ -96,6 +96,7 @@ import { adminSalesReport, searchUsersAndOrders, buildSalesStats, parseSalesPeri
 import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays, type ConfigListSort } from "../services/admin-configs.js";
 import {
   createPanelServer,
+  deletePanelServer,
   getPanelServer,
   listPanelServers,
   parsePanelCategories,
@@ -2227,6 +2228,15 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     if (body.categories) patch.categories = body.categories as string[];
     await updatePanelServer(c.req.param("id"), patch);
     return c.json({ ok: true });
+  });
+
+  api.delete("/admin/panels/:id", async (c) => {
+    try {
+      await deletePanelServer(c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
   });
 
   api.post("/admin/panels/:id/test", async (c) => {
