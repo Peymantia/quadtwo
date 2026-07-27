@@ -15,6 +15,7 @@ import { AccountCreatedModal, type CreatedAccount } from "../../components/Accou
 import { SubQrModal } from "../../components/SubQrModal";
 import { DiscountCodesPanel } from "../../components/DiscountCodesPanel";
 import { AgentsLeaderboardPanel, SalesReportPanel, AccountDetailModal } from "../../components/SalesReportPanel";
+import { SettingsAccordion } from "../../components/SettingsAccordion";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -3161,6 +3162,11 @@ function SettingsTab({
     deleted: { enabled: boolean };
   } | null>(null);
   const [notifBusy, setNotifBusy] = useState(false);
+  const [openSection, setOpenSection] = useState<string | null>(null);
+
+  function toggleSection(id: string) {
+    setOpenSection((cur) => (cur === id ? null : id));
+  }
 
   useEffect(() => {
     void api<{ settings: Record<string, string> }>("/admin/settings").then((r) => {
@@ -3395,10 +3401,23 @@ function SettingsTab({
 
   return (
     <>
-      <PasswordSettings hasPassword={hasPassword} onFlash={flash} onSaved={onPasswordSaved} />
+      <SettingsAccordion
+        id="auth"
+        title="ورود و امنیت"
+        icon="shield"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
+        <PasswordSettings hasPassword={hasPassword} onFlash={flash} onSaved={onPasswordSaved} />
+      </SettingsAccordion>
 
-      <div className="panel">
-        <h2>نمایش ایموجی ربات</h2>
+      <SettingsAccordion
+        id="emoji"
+        title="نمایش ایموجی ربات"
+        icon="chat"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
         <p className="muted" style={{ marginTop: 0 }}>
           برای استفاده از ایموجی‌های پریمیوم، تلگرام سازنده ربات باید پریمیوم باشد.
         </p>
@@ -3424,10 +3443,15 @@ function SettingsTab({
           {" · "}
           بعد از تغییر، یک‌بار منوی ربات را با /update یا دکمه منو رفرش کنید.
         </p>
-      </div>
+      </SettingsAccordion>
 
-      <div className="panel">
-        <h2>اعلان‌های ربات</h2>
+      <SettingsAccordion
+        id="notifications"
+        title="اعلان‌های ربات"
+        icon="orders"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
         <p className="muted" style={{ marginTop: 0 }}>
           همان گزینه‌های کنترل‌سنتر تلگرام — هشدار اتمام روز/حجم، قبل از حذف، و حذف نهایی.
         </p>
@@ -3560,10 +3584,15 @@ function SettingsTab({
         ) : (
           <p className="muted">در حال دریافت تنظیمات اعلان…</p>
         )}
-      </div>
+      </SettingsAccordion>
 
-      <div className="panel">
-        <h2>کانال‌های ربات</h2>
+      <SettingsAccordion
+        id="channels"
+        title="کانال‌های ربات"
+        icon="users"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
         <p className="muted" style={{ marginTop: 0 }}>
           کانال‌هایی که کاربر قبل از استفاده از ربات باید عضو شود. عضویت اجباری را می‌توانید کلی یا برای هر کانال جداگانه تنظیم کنید.
         </p>
@@ -3634,10 +3663,15 @@ function SettingsTab({
             افزودن کانال
           </button>
         </div>
-      </div>
+      </SettingsAccordion>
 
-      <div className="panel">
-        <h2>پشتیبان دیتابیس</h2>
+      <SettingsAccordion
+        id="backup"
+        title="پشتیبان دیتابیس"
+        icon="file"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
         <p className="muted" style={{ marginTop: 0 }}>
           فایل SQLite برای همه ادمین‌های تلگرام ارسال می‌شود. زمان‌بندی بر اساس ساعت محلی سرور است.
         </p>
@@ -3809,10 +3843,15 @@ function SettingsTab({
           </>
         )}
         {!backup && <p className="muted">در حال دریافت تنظیمات پشتیبان…</p>}
-      </div>
+      </SettingsAccordion>
 
-      <div className="panel">
-        <h2>قوانین فروش</h2>
+      <SettingsAccordion
+        id="sales"
+        title="قوانین فروش"
+        icon="shop"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
         <div className="setting-row">
           <div>
             <div className="t">فروش اشتراک بیش از یک ماه</div>
@@ -3956,10 +3995,15 @@ function SettingsTab({
             تب قیمت‌ها
           </span>
         </div>
-      </div>
+      </SettingsAccordion>
 
-      <div className="panel">
-        <h2>آموزش اتصال</h2>
+      <SettingsAccordion
+        id="guides"
+        title="آموزش اتصال"
+        icon="wifi"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
         <p className="muted" style={{ marginTop: 0 }}>
           برای هر سیستم‌عامل متن راهنما و لینک دانلود اپ را جداگانه تنظیم کنید.
         </p>
@@ -3970,7 +4014,7 @@ function SettingsTab({
             </button>
           ))}
         </div>
-      </div>
+      </SettingsAccordion>
 
       {guideEdit && (
         <Modal
@@ -4007,8 +4051,13 @@ function SettingsTab({
         </Modal>
       )}
 
-      <div className="panel">
-        <h2>اطلاعات پایه</h2>
+      <SettingsAccordion
+        id="basics"
+        title="اطلاعات پایه"
+        icon="gear"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
         {TEXT_SETTINGS.map((f) => (
           <div className="field" key={f.key}>
             <label>{f.label}</label>
@@ -4036,7 +4085,7 @@ function SettingsTab({
             ذخیره اطلاعات پایه
           </button>
         </div>
-      </div>
+      </SettingsAccordion>
     </>
   );
 }
