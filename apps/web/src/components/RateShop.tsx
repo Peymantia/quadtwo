@@ -611,6 +611,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
               +
             </button>
           </div>
+          <p className="muted rate-shop-hint" style={{ marginTop: 8 }}>
+            حداکثر ۵۰ اکانت در هر سفارش
+          </p>
         </div>
       )}
 

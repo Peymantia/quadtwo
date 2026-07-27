@@ -285,7 +285,7 @@ export function DiscountCodesPanel({
                   </div>
                   {item.note && <div className="muted">{item.note}</div>}
                 </div>
-                <div className="actions">
+                <div className="disc-item-actions">
                   <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void toggle(item)}>
                     {item.active ? "غیرفعال" : "فعال"}
                   </button>

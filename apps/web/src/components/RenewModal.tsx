@@ -341,7 +341,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
                 />
                 <button
                   type="button"
-                  className="btn ghost sm"
+                  className="btn primary sm"
                   disabled={busy || checkingDiscount || !discountCode.trim()}
                   onClick={() => void checkDiscountCode()}
                 >
@@ -349,7 +349,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
                 </button>
               </div>
               {discountOkHint && !discountErr && (
-                <p className="muted" style={{ color: "var(--ok, #34d399)", margin: "6px 0 0" }}>
+                <p className="muted" style={{ color: "var(--green)", margin: "6px 0 0" }}>
                   {discountOkHint}
                 </p>
               )}

@@ -149,20 +149,7 @@ export function AccountDetailModal({
               از آرشیو حذف{data.restoredAt ? " (قبلاً بازگردانی شده)" : ""}
             </p>
           )}
-          <pre
-            style={{
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              fontSize: "0.88rem",
-              lineHeight: 1.55,
-              margin: "0 0 14px",
-              background: "var(--surface-2, rgba(0,0,0,0.04))",
-              padding: "12px 14px",
-              borderRadius: 10,
-            }}
-          >
-            {data?.text}
-          </pre>
+          <pre className="acct-detail-pre">{data?.text}</pre>
           {data?.source === "archive" && data.archiveId && !data.restoredAt && (
             <button type="button" className="btn success" disabled={restoring} onClick={() => void restore()}>
               {restoring ? "در حال بازگردانی…" : "بازگردانی به دیتابیس / پنل"}
@@ -266,10 +253,19 @@ export function SalesReportPanel({
           {stats.discountOrderCount
             ? ` · تخفیف: ${stats.discountOrderCount.toLocaleString("fa-IR")} سفارش · ${formatToman(stats.discountTotal ?? 0)}`
             : ""}
-          {stats.topDiscountCodes?.length
-            ? ` · کدها: ${stats.topDiscountCodes.map((c) => `${c.code}(${c.uses})`).join(" · ")}`
-            : ""}
         </p>
+      )}
+      {stats?.topDiscountCodes && stats.topDiscountCodes.length > 0 && (
+        <div className="discount-top-codes" aria-label="پرکاربردترین کدهای تخفیف">
+          {stats.topDiscountCodes.map((c) => (
+            <span key={c.code} className="chip on">
+              <strong className="num">{c.code}</strong>
+              <span className="muted">
+                {c.uses.toLocaleString("fa-IR")}× · −{formatToman(c.saved)}
+              </span>
+            </span>
+          ))}
+        </div>
       )}
       {stats?.recent?.length ? (
         <div className="list" style={{ marginTop: 12 }}>
