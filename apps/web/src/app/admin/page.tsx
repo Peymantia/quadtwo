@@ -19,19 +19,19 @@ import { SettingsAccordion } from "../../components/SettingsAccordion";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
-  { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true },
-  { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true },
-  { key: "home", label: "داشبورد", icon: "home", pin: true, bubble: true },
-  { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true },
-  { key: "users", label: "کاربران", icon: "users", pin: true },
-  { key: "categories", label: "دسته‌ها", icon: "layers" },
-  { key: "panels", label: "سرورها", icon: "server" },
-  { key: "discounts", label: "کد تخفیف", icon: "tag" },
-  { key: "reports", label: "گزارشات", icon: "chart" },
-  { key: "sync", label: "همگام‌سازی", icon: "sync" },
+  { key: "home", label: "داشبورد", icon: "home", pin: true, pinOrder: 3, bubble: true },
+  { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true, pinOrder: 1 },
+  { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true, pinOrder: 2 },
+  { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true, pinOrder: 4 },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
-  { key: "settings", label: "تنظیمات", icon: "gear" },
+  { key: "discounts", label: "کد تخفیف", icon: "tag" },
+  { key: "users", label: "کاربران", icon: "users", pin: true, pinOrder: 5 },
+  { key: "categories", label: "دسته‌ها", icon: "layers" },
+  { key: "panels", label: "سرورها", icon: "server", gapAfter: true },
+  { key: "sync", label: "همگام‌سازی", icon: "sync" },
+  { key: "reports", label: "گزارشات", icon: "chart" },
   { key: "import", label: "اکسل", icon: "file" },
+  { key: "settings", label: "تنظیمات", icon: "gear", gapAfter: true },
 ];
 
 type PendingOrder = {
@@ -2727,15 +2727,29 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
 
 /* ---------------- Panels ---------------- */
 
+function pickPanelForCategory(panels: PanelRow[], catKey: string): string {
+  const owning = panels.filter((p) => parseCats(p.categories).includes(catKey));
+  const preferred = owning.find((p) => p.active && p.sellEnabled) || owning[0] || panels[0];
+  return preferred?.id || "";
+}
+
+function buildRouteMap(panels: PanelRow[], categories: Array<{ key: string }>): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const c of categories) {
+    map[c.key] = pickPanelForCategory(panels, c.key);
+  }
+  return map;
+}
+
 function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [panels, setPanels] = useState<PanelRow[]>([]);
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [form, setForm] = useState({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [routingBusy, setRoutingBusy] = useState(false);
-  const [routeCategory, setRouteCategory] = useState("national");
-  const [routePanelId, setRoutePanelId] = useState("");
-  const [savedRoute, setSavedRoute] = useState<{ category: string; panelId: string } | null>(null);
+  const [routeMap, setRouteMap] = useState<Record<string, string>>({});
+  const [savedRouteMap, setSavedRouteMap] = useState<Record<string, string>>({});
+  const [routeReady, setRouteReady] = useState(false);
   const [editing, setEditing] = useState<PanelRow | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -2768,23 +2782,26 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   }, []);
 
   useEffect(() => {
-    if (!panels.length) return;
-    const catKeys = categories.map((c) => c.key);
-    const cat = catKeys.includes(routeCategory) ? routeCategory : catKeys[0] || "national";
-    if (cat !== routeCategory) setRouteCategory(cat);
-
-    const forCat = panels.filter((p) => parseCats(p.categories).includes(cat) && p.active && p.sellEnabled);
-    const preferred = forCat[0]?.id || panels[0]?.id || "";
-    if (!routePanelId || !panels.some((p) => p.id === routePanelId)) {
-      setRoutePanelId(preferred);
-      setSavedRoute({ category: cat, panelId: preferred });
-    } else if (!savedRoute) {
-      setSavedRoute({ category: cat, panelId: routePanelId });
+    if (!panels.length || !categories.length) return;
+    const next = buildRouteMap(panels, categories);
+    setRouteMap((prev) => {
+      if (!routeReady) return next;
+      const merged = { ...next };
+      for (const c of categories) {
+        const cur = prev[c.key];
+        if (cur && panels.some((p) => p.id === cur)) merged[c.key] = cur;
+      }
+      return merged;
+    });
+    if (!routeReady) {
+      setSavedRouteMap(next);
+      setRouteReady(true);
     }
-  }, [panels, categories, routeCategory, routePanelId, savedRoute]);
+  }, [panels, categories, routeReady]);
 
   const routeDirty =
-    !!savedRoute && (savedRoute.category !== routeCategory || savedRoute.panelId !== routePanelId);
+    routeReady &&
+    categories.some((c) => (routeMap[c.key] || "") !== (savedRouteMap[c.key] || ""));
 
   function openEdit(p: PanelRow) {
     setEditing(p);
@@ -2888,30 +2905,22 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   }
 
   function cancelRoute() {
-    if (!savedRoute) return;
-    setRouteCategory(savedRoute.category);
-    setRoutePanelId(savedRoute.panelId);
+    setRouteMap({ ...savedRouteMap });
   }
 
   async function saveRoute() {
-    if (!routePanelId || !routeCategory) {
-      flash(null, "پلن و سرور را انتخاب کنید");
-      return;
-    }
+    if (!panels.length || !categories.length) return;
     setRoutingBusy(true);
     try {
       for (const p of panels) {
-        const next = new Set(parseCats(p.categories));
-        if (p.id === routePanelId) next.add(routeCategory);
-        else next.delete(routeCategory);
+        const nextCats = categories.filter((c) => routeMap[c.key] === p.id).map((c) => c.key);
         await api(`/admin/panels/${p.id}`, {
           method: "PUT",
-          body: { categories: [...next] },
+          body: { categories: nextCats },
         });
       }
-      const target = panels.find((p) => p.id === routePanelId);
-      setSavedRoute({ category: routeCategory, panelId: routePanelId });
-      flash(`پلن «${catLabel(routeCategory, categories)}» فقط روی «${target?.name || "سرور"}» فعال شد`);
+      setSavedRouteMap({ ...routeMap });
+      flash("اختصاص پلن‌ها ذخیره شد");
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -2932,56 +2941,38 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           </button>
         </div>
 
-        {!!panels.length && (
+        {!!panels.length && !!categories.length && (
           <div className="panel-route-card">
             <div className="panel-route-title">اختصاص پلن به سرور</div>
-            <p className="panel-route-desc">
-              پلن را انتخاب کنید و سرور مقصد را مشخص کنید. با ذخیره، آن پلن فقط روی همان سرور فعال می‌ماند.
-            </p>
-            <div className="panel-route-combos">
-              <label className="panel-route-field">
-                <span>پلن</span>
-                <select
-                  className="combo-select"
-                  value={routeCategory}
-                  onChange={(e) => {
-                    const cat = e.target.value;
-                    setRouteCategory(cat);
-                    const forCat = panels.filter((p) => parseCats(p.categories).includes(cat) && p.active && p.sellEnabled);
-                    const nextId = forCat[0]?.id || panels[0]?.id || "";
-                    if (nextId) setRoutePanelId(nextId);
-                  }}
-                >
-                  {categories.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="panel-route-field">
-                <span>سرور</span>
-                <select className="combo-select" value={routePanelId} onChange={(e) => setRoutePanelId(e.target.value)}>
-                  {panels.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                      {!p.active ? " (غیرفعال)" : ""}
-                      {!p.sellEnabled ? " (فروش خاموش)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <p className="panel-route-desc">برای هر پلن، سرور مقصد را انتخاب کنید. با ذخیره، هر پلن فقط روی سرور خودش فعال می‌ماند.</p>
+            <div className="panel-route-list">
+              {categories.map((c) => (
+                <div key={c.key} className="panel-route-row">
+                  <div className="panel-route-plan" title={c.label}>
+                    {c.label}
+                  </div>
+                  <select
+                    className="combo-select"
+                    value={routeMap[c.key] || ""}
+                    onChange={(e) => setRouteMap((s) => ({ ...s, [c.key]: e.target.value }))}
+                    disabled={routingBusy}
+                  >
+                    {panels.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {!p.active ? " (غیرفعال)" : ""}
+                        {!p.sellEnabled ? " (فروش خاموش)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
             </div>
             <div className="panel-route-actions">
               <button type="button" className="btn ghost" disabled={!routeDirty || routingBusy} onClick={cancelRoute}>
                 لغو
               </button>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={!routeDirty || routingBusy || !routePanelId}
-                onClick={() => void saveRoute()}
-              >
+              <button type="button" className="btn primary" disabled={!routeDirty || routingBusy} onClick={() => void saveRoute()}>
                 {routingBusy ? "…" : "ذخیره"}
               </button>
             </div>
@@ -3033,7 +3024,7 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                   )}
                 </div>
                 <div className="server-card__footer" onClick={(e) => e.stopPropagation()}>
-                  <div className="server-card__toggles">
+                  <div className="server-card__actions">
                     <label className="server-card__toggle">
                       <span className="server-card__toggle-label">فعال</span>
                       <span className="switch switch-sm">
@@ -3052,13 +3043,11 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                         <span className="track" />
                       </span>
                     </label>
-                  </div>
-                  <div className={`server-card__btns${canDelete ? " server-card__btns--3" : ""}`}>
                     <button type="button" className="btn ghost sm" onClick={() => openEdit(p)}>
                       ویرایش
                     </button>
                     <button type="button" className="btn ghost sm" onClick={() => void test(p.id)}>
-                      تست اتصال
+                      تست
                     </button>
                     {canDelete ? (
                       <button type="button" className="btn danger sm" onClick={() => void removePanel(p)}>

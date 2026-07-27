@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, roleLabel, type Role } from "../lib/api";
 import { lockBodyScroll, unlockBodyScroll } from "../lib/body-scroll-lock";
@@ -230,8 +230,12 @@ export type ShellTab = {
   icon: IconName;
   /** Keep in mobile bottom bar; remaining tabs go to top overflow menu */
   pin?: boolean;
+  /** Order among pinned bottom-nav items (independent of sidebar order) */
+  pinOrder?: number;
   /** Raised center bubble in bottom nav (e.g. wallet / فروش) */
   bubble?: boolean;
+  /** Desktop sidebar: visual spacer after this item */
+  gapAfter?: boolean;
 };
 
 export function DashShell(props: {
@@ -270,7 +274,8 @@ export function DashShell(props: {
   const { left, bubble, right, more } = useMemo(() => {
     const bubbleTab = navTabs.find((t) => t.bubble || t.key === "wallet") ?? null;
     const rest = navTabs.filter((t) => t.key !== bubbleTab?.key);
-    const pinned = rest.filter((t) => t.pin);
+    const byPinOrder = (a: ShellTab, b: ShellTab) => (a.pinOrder ?? 50) - (b.pinOrder ?? 50);
+    const pinned = rest.filter((t) => t.pin).sort(byPinOrder);
     const unpinned = rest.filter((t) => !t.pin);
 
     let primaryRest: ShellTab[];
@@ -287,11 +292,13 @@ export function DashShell(props: {
     }
 
     if (bubbleTab) {
-      // Keep declared tab order: items before bubble → bubble → items after
-      const order = navTabs.map((t) => t.key);
-      const bubbleOrder = order.indexOf(bubbleTab.key);
-      const leftTabs = primaryRest.filter((t) => order.indexOf(t.key) < bubbleOrder);
-      const rightTabs = primaryRest.filter((t) => order.indexOf(t.key) > bubbleOrder);
+      const bubbleOrder = bubbleTab.pinOrder ?? 50;
+      const leftTabs = primaryRest
+        .filter((t) => (t.pinOrder ?? 50) < bubbleOrder)
+        .sort(byPinOrder);
+      const rightTabs = primaryRest
+        .filter((t) => (t.pinOrder ?? 50) > bubbleOrder)
+        .sort(byPinOrder);
       return { left: leftTabs, bubble: bubbleTab, right: rightTabs, more: moreTabs };
     }
 
@@ -388,15 +395,17 @@ export function DashShell(props: {
             </div>
           </div>
           {props.tabs.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              className={`nav-item${props.active === t.key ? " active" : ""}`}
-              onClick={() => props.onTab(t.key)}
-            >
-              <Icon name={t.icon} size={19} />
-              {t.label}
-            </button>
+            <Fragment key={t.key}>
+              <button
+                type="button"
+                className={`nav-item${props.active === t.key ? " active" : ""}`}
+                onClick={() => props.onTab(t.key)}
+              >
+                <Icon name={t.icon} size={19} />
+                {t.label}
+              </button>
+              {t.gapAfter ? <div className="nav-gap" aria-hidden /> : null}
+            </Fragment>
           ))}
           <div style={{ flex: 1 }} />
           <button type="button" className="nav-item" onClick={logout}>
