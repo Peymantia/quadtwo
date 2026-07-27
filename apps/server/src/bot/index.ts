@@ -546,43 +546,9 @@ async function deliverResult(
   trafficGb: number | null,
   mode: "new" | "renew" | "addon" = "new",
 ) {
-  const all = "bulk" in result && result.bulk?.length ? [result, ...result.bulk] : [result];
-  if (all.length > 1) {
-    await api.sendMessage(
-      Number(telegramId),
-      `🎉 ${all.length} اشتراک آماده شد (خرید عمده)\nحجم هر کدام: ${formatTraffic(trafficGb)}`,
-    );
-  }
-  for (const one of all) {
-    const title =
-      mode === "addon"
-        ? "✅ تغییرات سرویس اعمال شد"
-        : mode === "renew"
-          ? "✅ سرویس تمدید شد"
-          : all.length > 1
-            ? "📦 یکی از اکانت‌های عمده"
-            : "🎉 اشتراک شما آماده شد";
-    const exp = one.expiresAt
-      ? new Date(one.expiresAt).toLocaleDateString("fa-IR")
-      : null;
-    const text = [
-      title,
-      "",
-      `کد: <code>${one.code}</code>`,
-      `اکانت: <code>${one.email}</code>`,
-      trafficGb != null || mode === "new" || mode === "renew" ? `حجم: ${formatTraffic(trafficGb)}` : "",
-      exp ? `انقضا (پس از فعال‌سازی): ${exp}` : "",
-      mode === "new" || mode === "renew" ? "⏱ اعتبار: از اولین اتصال شروع می‌شود" : "",
-      "",
-      "از دکمه‌های زیر لینک یا QR را بگیرید:",
-    ]
-      .filter(Boolean)
-      .join("\n");
-    await api.sendMessage(Number(telegramId), text, {
-      parse_mode: "HTML",
-      reply_markup: provisionReadyKeyboard(one.subscriptionId),
-    });
-  }
+  void api;
+  const { deliverProvisionToUser } = await import("../services/provision-notify.js");
+  await deliverProvisionToUser(telegramId, result, trafficGb, mode);
 }
 
 async function notifyAllAdmins(api: Context["api"], send: (adminId: number) => Promise<void>) {

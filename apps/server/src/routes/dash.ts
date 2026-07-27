@@ -1521,7 +1521,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         target: orderId,
       });
       const result = await provisionOrder(orderId);
-      if ("kind" in result && result.kind === "wallet_credit") {
+      if (isWalletCreditResult(result)) {
         await notifyTelegram(
           order.user.telegramId,
           `✅ کیف پول شارژ شد\nموجودی: ${formatToman(result.balance)}`,
@@ -1535,11 +1535,22 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         );
         return c.json({ ok: true, walletBalance: result.balance });
       }
-      const prov = result as { code: string; subUrl: string | null };
-      await notifyTelegram(
-        order.user.telegramId,
-        `✅ سفارش شما تأیید شد\nکد: ${prov.code}${prov.subUrl ? `\nلینک اشتراک:\n${prov.subUrl}` : ""}`,
-      );
+      const { deliverProvisionToUser } = await import("../services/provision-notify.js");
+      const mode =
+        order.kind === "add_days" || order.kind === "add_gb"
+          ? "addon"
+          : order.kind === "renew"
+            ? "renew"
+            : "new";
+      try {
+        await deliverProvisionToUser(order.user.telegramId, result, order.trafficGb, mode);
+      } catch (err) {
+        console.error("deliverProvisionToUser after web approve", err);
+        await notifyTelegram(
+          order.user.telegramId,
+          `✅ سفارش شما تأیید شد\nکد: ${result.code}${result.subUrl ? `\nلینک اشتراک:\n${result.subUrl}` : ""}`,
+        );
+      }
       const { finalizeOrderAdminMessages, orderApprovedAdminStatus } = await import(
         "../services/order-notify.js"
       );
@@ -1548,11 +1559,16 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         orderApprovedAdminStatus({
           kind: order.kind,
           price: order.price,
-          code: prov.code,
+          code: result.code,
           quantity: order.quantity,
         }),
       );
-      return c.json({ ok: true, code: prov.code, subUrl: prov.subUrl });
+      return c.json({
+        ok: true,
+        code: result.code,
+        subUrl: result.subUrl,
+        subscriptionId: result.subscriptionId,
+      });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }

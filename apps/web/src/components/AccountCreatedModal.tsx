@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
-import { SubQrModal } from "./SubQrModal";
+import { SubAddonsBar } from "./SubAddonsBar";
+import type { CryptoPayInfo } from "./CryptoPayModal";
 
 export type CreatedAccount = {
+  subscriptionId?: string;
   code: string;
   email?: string;
   subUrl?: string | null;
@@ -15,6 +17,7 @@ export type CreatedAccount = {
   title?: string | null;
   categoryLabel?: string | null;
   months?: number | null;
+  isTest?: boolean;
 };
 
 function fmtExpiry(iso?: string | null) {
@@ -31,45 +34,42 @@ function trafficLabel(gb?: number | null) {
   return `${gb.toLocaleString("fa-IR")} گیگابایت`;
 }
 
-/** Success dialog after account provision — details, copy sub link, optional QR. */
+/** Success dialog after account provision — details + full service action grid. */
 export function AccountCreatedModal({
   open,
   account,
   onClose,
   onCopied,
+  walletBalance = 0,
+  onPayCard,
+  onPayCrypto,
+  onRefresh,
 }: {
   open: boolean;
   account: CreatedAccount | null;
   onClose: () => void;
   onCopied?: () => void;
+  walletBalance?: number;
+  onPayCard?: (orderId: string, price: number, card: { number: string; holder: string }) => void;
+  onPayCrypto?: (orderId: string, price: number, crypto: CryptoPayInfo) => void;
+  onRefresh?: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const [qrOpen, setQrOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) setQrOpen(false);
+    if (!open) {
+      setFlash(null);
+      setErr(null);
+      setBusy(false);
+    }
   }, [open]);
 
   if (!open || !account) return null;
 
   const acct = account;
-
-  async function copySub() {
-    if (!acct.subUrl) return;
-    try {
-      await navigator.clipboard.writeText(acct.subUrl);
-      setCopied(true);
-      onCopied?.();
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function closeAll() {
-    setQrOpen(false);
-    onClose();
-  }
+  const subId = acct.subscriptionId;
 
   const rows: Array<{ label: string; value: string; ltr?: boolean }> = [
     { label: "کد", value: acct.code, ltr: true },
@@ -85,48 +85,62 @@ export function AccountCreatedModal({
   ];
 
   return (
-    <>
-      <Modal open={open && !qrOpen} title="اکانت ساخته شد" onClose={closeAll} wide>
-        <div className="acct-created">
-          <p className="acct-created-lead">مشخصات اکانت آماده است — لینک اشتراک را کپی کنید یا QR را باز کنید.</p>
+    <Modal open={open} title="اکانت ساخته شد" onClose={onClose} wide>
+      <div className="acct-created">
+        <p className="acct-created-lead">اشتراک آماده است — از دکمه‌های زیر لینک بگیرید یا سرویس را مدیریت کنید.</p>
 
-          <dl className="acct-created-meta">
-            {rows.map((r) => (
-              <div key={r.label} className="acct-created-row">
-                <dt>{r.label}</dt>
-                <dd className={r.ltr ? "num url-break" : undefined}>{r.value}</dd>
-              </div>
-            ))}
-          </dl>
+        <dl className="acct-created-meta">
+          {rows.map((r) => (
+            <div key={r.label} className="acct-created-row">
+              <dt>{r.label}</dt>
+              <dd className={r.ltr ? "num url-break" : undefined}>{r.value}</dd>
+            </div>
+          ))}
+        </dl>
 
-          {acct.subUrl && (
+        {flash && (
+          <p className="muted" style={{ marginTop: 0, color: "var(--teal)" }}>
+            {flash}
+          </p>
+        )}
+        {err && (
+          <p className="muted" style={{ marginTop: 0, color: "var(--pink)" }}>
+            {err}
+          </p>
+        )}
+
+        {subId ? (
+          <SubAddonsBar
+            subId={subId}
+            email={acct.email || acct.code}
+            subUrl={acct.subUrl}
+            isTest={acct.isTest}
+            trafficGb={acct.trafficGb}
+            note={acct.note}
+            busy={busy}
+            walletBalance={walletBalance}
+            showBack
+            onBusy={setBusy}
+            onDone={() => onRefresh?.()}
+            onPayCard={(orderId, price, card) => onPayCard?.(orderId, price, card)}
+            onPayCrypto={(orderId, price, crypto) => onPayCrypto?.(orderId, price, crypto)}
+            onError={(m) => setErr(m || null)}
+            onMsg={(m) => {
+              setFlash(m);
+              if (m.includes("کپی")) onCopied?.();
+            }}
+            onBack={onClose}
+          />
+        ) : (
+          acct.subUrl && (
             <div className="acct-created-link">
               <div className="muted num url-break" dir="ltr">
                 {acct.subUrl}
               </div>
-              <div className="acct-created-btns">
-                <button type="button" className="btn primary" onClick={() => void copySub()}>
-                  {copied ? "کپی شد ✓" : "کپی لینک ساب"}
-                </button>
-                <button type="button" className="btn ghost" onClick={() => setQrOpen(true)}>
-                  📷 QR
-                </button>
-              </div>
             </div>
-          )}
-
-          <button type="button" className="btn ghost wide" onClick={closeAll}>
-            بستن
-          </button>
-        </div>
-      </Modal>
-
-      <SubQrModal
-        open={qrOpen}
-        title={`QR — ${acct.code}`}
-        subUrl={acct.subUrl}
-        onClose={() => setQrOpen(false)}
-      />
-    </>
+          )
+        )}
+      </div>
+    </Modal>
   );
 }

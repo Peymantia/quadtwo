@@ -3791,9 +3791,27 @@ button.pay-dest-number:active,
   border-color: rgba(56, 189, 248, 0.8);
   background: rgba(16, 20, 47, 1);
 }
+.svc-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.svc-actions-grid > .btn {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.svc-actions-spacer {
+  display: block;
+  min-height: 1px;
+}
+
 .sub-addons {
   margin-top: 8px;
-  flex-wrap: wrap;
 }
 
 

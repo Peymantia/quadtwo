@@ -522,6 +522,8 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
         account={created}
         onClose={() => setCreated(null)}
         onCopied={() => flash("لینک اشتراک کپی شد")}
+        walletBalance={0}
+        onRefresh={() => undefined}
       />
       {selected && (
         <Modal open={matrixConfirmOpen} title="تأیید ساخت اکانت" onClose={() => setMatrixConfirmOpen(false)}>

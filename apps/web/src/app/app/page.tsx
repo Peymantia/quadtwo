@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
-import { Toast, ConfirmToast } from "../../components/Toast";
+import { Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { CardPayModal } from "../../components/CardPayModal";
 import { CryptoPayModal, type CryptoPayInfo } from "../../components/CryptoPayModal";
@@ -13,7 +13,6 @@ import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
-import { SubQrModal } from "../../components/SubQrModal";
 import { SubAddonsBar } from "../../components/SubAddonsBar";
 
 type Sub = {
@@ -86,16 +85,13 @@ export default function UserAppPage() {
   const [busy, setBusy] = useState(false);
   const [guide, setGuide] = useState<Record<string, string>>({});
   const [guidePlatform, setGuidePlatform] = useState<"android" | "ios" | "windows" | "macos">("android");
-  const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeNote, setChargeNote] = useState("");
   const [payCard, setPayCard] = useState<PayCard | null>(null);
   const [payModal, setPayModal] = useState<PayModalState>(null);
   const [subSort, setSubSort] = useState<ListSort>("newest");
   const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
-  const [confirmRotateId, setConfirmRotateId] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedAccount | null>(null);
-  const [qrSub, setQrSub] = useState<{ url: string; title: string } | null>(null);
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -358,36 +354,6 @@ export default function UserAppPage() {
       demoMode={Boolean(home.demoMode)}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
-      {confirmRotateId && (
-        <ConfirmToast
-          message="با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟"
-          onYes={() => {
-            const id = confirmRotateId;
-            setConfirmRotateId(null);
-            void (async () => {
-              setBusy(true);
-              setErr(null);
-              try {
-                const r = await api<{ subUrl?: string | null }>(`/me/subscriptions/${id}/rotate-sub`, {
-                  method: "POST",
-                });
-                if (r.subUrl) {
-                  await navigator.clipboard.writeText(r.subUrl);
-                  setMsg("لینک ساب جدید ساخته و کپی شد");
-                } else {
-                  setMsg("لینک اشتراک جدید ساخته شد");
-                }
-                await loadSubs();
-              } catch (e) {
-                setErr(String(e instanceof Error ? e.message : e));
-              } finally {
-                setBusy(false);
-              }
-            })();
-          }}
-          onNo={() => setConfirmRotateId(null)}
-        />
-      )}
 
       {tab === "shop" && (
         <>
@@ -487,83 +453,18 @@ export default function UserAppPage() {
                       </strong>
                     </div>
                     <TrafficProgress usedBytes={used} totalGb={totalGb} />
-                    <div className="note-row">
-                      <div className="field">
-                        <label>یادداشت شخصی</label>
-                        <input
-                          value={noteEdits[s.id] ?? s.note ?? ""}
-                          onChange={(e) => setNoteEdits((m) => ({ ...m, [s.id]: e.target.value }))}
-                          placeholder="یادداشت…"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        onClick={async () => {
-                          await api(`/me/subscriptions/${s.id}/note`, {
-                            method: "PATCH",
-                            body: { note: noteEdits[s.id] ?? s.note },
-                          });
-                          setMsg("یادداشت ذخیره شد");
-                        }}
-                      >
-                        ذخیره
-                      </button>
-                    </div>
                   </div>
                   <div className="config-card-actions">
-                    {!s.isTest && (
-                      <div className="config-card-actions-row">
-                        <button
-                          type="button"
-                          className="btn success sm"
-                          disabled={busy}
-                          onClick={() => void openRenew(s.id)}
-                        >
-                          تمدید
-                        </button>
-                      </div>
-                    )}
-                    <div className="config-card-actions-row sub-links">
-                      {s.subUrl && (
-                        <button
-                          type="button"
-                          className="btn primary sm"
-                          onClick={() => {
-                            void navigator.clipboard.writeText(s.subUrl!);
-                            setMsg("لینک اشتراک کپی شد");
-                          }}
-                        >
-                          کپی لینک
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        disabled={busy}
-                        onClick={() => setConfirmRotateId(s.id)}
-                      >
-                        لینک جدید
-                      </button>
-                      {s.subUrl && (
-                        <button
-                          type="button"
-                          className="btn ghost sm btn-icon"
-                          title="نمایش QR"
-                          aria-label="نمایش QR"
-                          onClick={() => setQrSub({ url: s.subUrl!, title: s.email })}
-                        >
-                          📷
-                        </button>
-                      )}
-                    </div>
                     <SubAddonsBar
                       subId={s.id}
                       email={s.email}
+                      subUrl={s.subUrl}
                       isTest={s.isTest}
                       trafficGb={s.trafficGb}
+                      note={s.note}
                       busy={busy}
                       walletBalance={home.wallet.balance}
+                      showRenew={!s.isTest}
                       onBusy={setBusy}
                       onDone={() => {
                         void reload();
@@ -578,6 +479,7 @@ export default function UserAppPage() {
                       }}
                       onError={(m) => setErr(m || null)}
                       onMsg={setMsg}
+                      onRenew={() => void openRenew(s.id)}
                     />
                   </div>
                 </div>
@@ -754,13 +656,20 @@ export default function UserAppPage() {
         account={created}
         onClose={() => setCreated(null)}
         onCopied={() => setMsg("لینک اشتراک کپی شد")}
-      />
-
-      <SubQrModal
-        open={Boolean(qrSub)}
-        title={qrSub ? `QR — ${qrSub.title}` : "QR اشتراک"}
-        subUrl={qrSub?.url}
-        onClose={() => setQrSub(null)}
+        walletBalance={home.wallet.balance}
+        onPayCard={(orderId, price, card) => {
+          setPayCard(card);
+          setPayModal({ kind: "card", orderId, price, card });
+          setCreated(null);
+        }}
+        onPayCrypto={(orderId, price, crypto) => {
+          setPayModal({ kind: "crypto", orderId, price, crypto });
+          setCreated(null);
+        }}
+        onRefresh={() => {
+          void reload();
+          void loadSubs();
+        }}
       />
 
       {payModal?.kind === "card" && (

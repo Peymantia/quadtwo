@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
+import { SubQrModal } from "./SubQrModal";
 import { api, formatToman } from "../lib/api";
 import type { CryptoPayInfo } from "./CryptoPayModal";
 
@@ -18,42 +19,72 @@ type PayResult = {
   provisioned?: unknown;
 };
 
+/**
+ * Same 2-col action layout as the Telegram bot service keyboard:
+ * لینک اشتراک · لینک امن اشتراک
+ * افزایش روز · افزایش حجم
+ * تغییر لینک کانفیگ · تغییر لینک ساب
+ * تغییر نام دلخواه · نمایش QR Code
+ * یادداشت · بازگشت
+ */
 export function SubAddonsBar({
   subId,
   email,
+  subUrl,
   isTest,
   trafficGb,
+  note,
   busy,
   walletBalance,
+  showBack,
+  showRenew,
   onBusy,
   onDone,
   onPayCard,
   onPayCrypto,
   onError,
   onMsg,
+  onBack,
+  onRenew,
 }: {
   subId: string;
   email: string;
+  subUrl?: string | null;
   isTest?: boolean;
   trafficGb?: number | null;
+  note?: string | null;
   busy: boolean;
   walletBalance: number;
+  showBack?: boolean;
+  showRenew?: boolean;
   onBusy: (v: boolean) => void;
   onDone: () => void;
   onPayCard: (orderId: string, price: number, card: { number: string; holder: string }) => void;
   onPayCrypto: (orderId: string, price: number, crypto: CryptoPayInfo) => void;
   onError: (msg: string) => void;
   onMsg: (msg: string) => void;
+  onBack?: () => void;
+  onRenew?: () => void;
 }) {
   const [info, setInfo] = useState<AddonsInfo | null>(null);
-  const [mode, setMode] = useState<"days" | "gb" | "rename" | "b64" | null>(null);
+  const [mode, setMode] = useState<"days" | "gb" | "rename" | "b64" | "note" | "rotuuid" | "rotsub" | null>(null);
   const [days, setDays] = useState(1);
   const [gb, setGb] = useState(1);
   const [rename, setRename] = useState(email);
+  const [noteDraft, setNoteDraft] = useState(note ?? "");
   const [b64, setB64] = useState<string | null>(null);
+  const [qrOpen, setQrOpen] = useState(false);
 
   useEffect(() => {
-    if (!mode) return;
+    setRename(email);
+  }, [email]);
+
+  useEffect(() => {
+    setNoteDraft(note ?? "");
+  }, [note]);
+
+  useEffect(() => {
+    if (mode !== "days" && mode !== "gb") return;
     void api<AddonsInfo>(`/me/subscriptions/${subId}/addons`)
       .then(setInfo)
       .catch((e) => onError(String(e instanceof Error ? e.message : e)));
@@ -90,6 +121,32 @@ export function SubAddonsBar({
     }
   }
 
+  async function copyText(text: string, okMsg: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      onMsg(okMsg);
+    } catch {
+      onError("کپی ناموفق بود");
+    }
+  }
+
+  async function rotate(kind: "uuid" | "sub") {
+    onBusy(true);
+    onError("");
+    try {
+      const path =
+        kind === "uuid" ? `/me/subscriptions/${subId}/rotate-uuid` : `/me/subscriptions/${subId}/rotate-sub`;
+      await api(path, { method: "POST" });
+      onMsg(kind === "uuid" ? "لینک کانفیگ عوض شد" : "لینک ساب عوض شد");
+      setMode(null);
+      onDone();
+    } catch (e) {
+      onError(String(e instanceof Error ? e.message : e));
+    } finally {
+      onBusy(false);
+    }
+  }
+
   const canDays = !isTest;
   const canGb = !isTest && trafficGb != null && trafficGb > 0;
   const daysPrice = (info?.addDays.perDay ?? 2000) * days;
@@ -97,27 +154,16 @@ export function SubAddonsBar({
 
   return (
     <>
-      <div className="config-card-actions-row sub-addons">
-        {canDays && (
-          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setMode("days")}>
-            افزایش روز
-          </button>
-        )}
-        {canGb && (
-          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setMode("gb")}>
-            افزایش حجم
-          </button>
-        )}
+      <div className="svc-actions-grid">
         <button
           type="button"
-          className="btn ghost sm"
-          disabled={busy}
+          className="btn primary sm"
+          disabled={busy || !subUrl}
           onClick={() => {
-            setRename(email);
-            setMode("rename");
+            if (subUrl) void copyText(subUrl, "لینک اشتراک کپی شد");
           }}
         >
-          تغییر نام
+          لینک اشتراک
         </button>
         <button
           type="button"
@@ -133,8 +179,75 @@ export function SubAddonsBar({
               .finally(() => onBusy(false));
           }}
         >
-          Base64
+          لینک امن اشتراک
         </button>
+
+        <button
+          type="button"
+          className="btn ghost sm"
+          disabled={busy || !canDays}
+          onClick={() => setMode("days")}
+        >
+          افزایش روز
+        </button>
+        <button
+          type="button"
+          className="btn ghost sm"
+          disabled={busy || !canGb}
+          onClick={() => setMode("gb")}
+        >
+          افزایش حجم
+        </button>
+
+        <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setMode("rotuuid")}>
+          تغییر لینک کانفیگ
+        </button>
+        <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setMode("rotsub")}>
+          تغییر لینک ساب
+        </button>
+
+        <button
+          type="button"
+          className="btn ghost sm"
+          disabled={busy}
+          onClick={() => {
+            setRename(email);
+            setMode("rename");
+          }}
+        >
+          تغییر نام دلخواه
+        </button>
+        <button
+          type="button"
+          className="btn ghost sm"
+          disabled={busy || !subUrl}
+          onClick={() => setQrOpen(true)}
+        >
+          نمایش QR Code
+        </button>
+
+        <button
+          type="button"
+          className="btn ghost sm"
+          disabled={busy}
+          onClick={() => {
+            setNoteDraft(note ?? "");
+            setMode("note");
+          }}
+        >
+          یادداشت
+        </button>
+        {showBack ? (
+          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => onBack?.()}>
+            بازگشت
+          </button>
+        ) : showRenew && onRenew ? (
+          <button type="button" className="btn success sm" disabled={busy || !!isTest} onClick={() => onRenew()}>
+            تمدید
+          </button>
+        ) : (
+          <span className="svc-actions-spacer" aria-hidden />
+        )}
       </div>
 
       <Modal open={mode === "days"} title="افزایش روز" onClose={() => setMode(null)}>
@@ -163,9 +276,7 @@ export function SubAddonsBar({
             type="button"
             className="btn success sm"
             disabled={busy || walletBalance < daysPrice}
-            onClick={() =>
-              void checkout(`/me/subscriptions/${subId}/add-days`, { days }, "wallet")
-            }
+            onClick={() => void checkout(`/me/subscriptions/${subId}/add-days`, { days }, "wallet")}
           >
             کیف پول
           </button>
@@ -173,9 +284,7 @@ export function SubAddonsBar({
             type="button"
             className="btn primary sm"
             disabled={busy}
-            onClick={() =>
-              void checkout(`/me/subscriptions/${subId}/add-days`, { days }, "card_to_card")
-            }
+            onClick={() => void checkout(`/me/subscriptions/${subId}/add-days`, { days }, "card_to_card")}
           >
             کارت‌به‌کارت
           </button>
@@ -256,7 +365,37 @@ export function SubAddonsBar({
         </button>
       </Modal>
 
-      <Modal open={mode === "b64"} title="لینک امن کانفیگ (Base64)" onClose={() => setMode(null)}>
+      <Modal open={mode === "note"} title="یادداشت" onClose={() => setMode(null)}>
+        <div className="field">
+          <label>یادداشت شخصی</label>
+          <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} placeholder="یادداشت…" />
+        </div>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={busy}
+          onClick={async () => {
+            onBusy(true);
+            try {
+              await api(`/me/subscriptions/${subId}/note`, {
+                method: "PATCH",
+                body: { note: noteDraft },
+              });
+              onMsg("یادداشت ذخیره شد");
+              setMode(null);
+              onDone();
+            } catch (e) {
+              onError(String(e instanceof Error ? e.message : e));
+            } finally {
+              onBusy(false);
+            }
+          }}
+        >
+          ذخیره
+        </button>
+      </Modal>
+
+      <Modal open={mode === "b64"} title="لینک امن اشتراک" onClose={() => setMode(null)}>
         <p className="muted" style={{ marginTop: 0 }}>
           برای کپی، روی متن بزنید.
         </p>
@@ -265,8 +404,7 @@ export function SubAddonsBar({
             type="button"
             className="tap-copy"
             onClick={() => {
-              void navigator.clipboard.writeText(b64);
-              onMsg("Base64 کپی شد");
+              void copyText(b64, "لینک امن کپی شد");
             }}
           >
             {b64}
@@ -275,6 +413,41 @@ export function SubAddonsBar({
           <p className="muted">در حال آماده‌سازی…</p>
         )}
       </Modal>
+
+      <Modal open={mode === "rotuuid"} title="تغییر لینک کانفیگ" onClose={() => setMode(null)}>
+        <p className="muted" style={{ marginTop: 0 }}>
+          UUID کانفیگ عوض می‌شود و اتصال فعلی قطع خواهد شد.
+        </p>
+        <div className="config-card-actions-row">
+          <button type="button" className="btn danger sm" disabled={busy} onClick={() => void rotate("uuid")}>
+            تأیید تغییر
+          </button>
+          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setMode(null)}>
+            انصراف
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={mode === "rotsub"} title="تغییر لینک ساب" onClose={() => setMode(null)}>
+        <p className="muted" style={{ marginTop: 0 }}>
+          با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟
+        </p>
+        <div className="config-card-actions-row">
+          <button type="button" className="btn danger sm" disabled={busy} onClick={() => void rotate("sub")}>
+            تأیید تغییر
+          </button>
+          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setMode(null)}>
+            انصراف
+          </button>
+        </div>
+      </Modal>
+
+      <SubQrModal
+        open={qrOpen}
+        title={`QR — ${email}`}
+        subUrl={subUrl}
+        onClose={() => setQrOpen(false)}
+      />
     </>
   );
 }

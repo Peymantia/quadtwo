@@ -292,13 +292,23 @@ export function DashShell(props: {
     }
 
     if (bubbleTab) {
-      const bubbleOrder = bubbleTab.pinOrder ?? 50;
-      const leftTabs = primaryRest
-        .filter((t) => (t.pinOrder ?? 50) < bubbleOrder)
-        .sort(byPinOrder);
-      const rightTabs = primaryRest
-        .filter((t) => (t.pinOrder ?? 50) > bubbleOrder)
-        .sort(byPinOrder);
+      // Admin pinned tabs use explicit pinOrder; user/partner keep declared array order.
+      const usePinOrder =
+        bubbleTab.pinOrder != null || primaryRest.some((t) => t.pinOrder != null);
+      if (usePinOrder) {
+        const bubbleOrder = bubbleTab.pinOrder ?? 50;
+        const leftTabs = primaryRest
+          .filter((t) => (t.pinOrder ?? 50) < bubbleOrder)
+          .sort(byPinOrder);
+        const rightTabs = primaryRest
+          .filter((t) => (t.pinOrder ?? 50) > bubbleOrder)
+          .sort(byPinOrder);
+        return { left: leftTabs, bubble: bubbleTab, right: rightTabs, more: moreTabs };
+      }
+      const order = navTabs.map((t) => t.key);
+      const bubbleIdx = order.indexOf(bubbleTab.key);
+      const leftTabs = primaryRest.filter((t) => order.indexOf(t.key) < bubbleIdx);
+      const rightTabs = primaryRest.filter((t) => order.indexOf(t.key) > bubbleIdx);
       return { left: leftTabs, bubble: bubbleTab, right: rightTabs, more: moreTabs };
     }
 

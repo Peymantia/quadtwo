@@ -399,6 +399,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               account={result}
               onClose={() => setResult(null)}
               onCopied={() => setMsg("لینک اشتراک کپی شد")}
+              walletBalance={home.wallet.balance}
+              onRefresh={() => void loadConfigs()}
             />
           )}
         </>
