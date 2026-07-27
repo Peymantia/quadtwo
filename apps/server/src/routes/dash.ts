@@ -1458,7 +1458,13 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/admin/orders/pending", async (c) => {
     const orders = await prisma.order.findMany({
-      where: { status: { in: ["awaiting_review", "pending_payment"] } },
+      where: {
+        OR: [
+          { status: "awaiting_review" },
+          // Stuck after a failed provision attempt — still needs admin action
+          { status: "paid", subscription: null, kind: { not: "wallet_charge" } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
       include: { user: true },
@@ -1468,7 +1474,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       orders: orders.map((o) => ({
         id: o.id,
         kind: o.kind,
-        status: o.status,
+        status: o.status === "paid" ? "awaiting_review" : o.status,
         price: o.price,
         paymentMethod: o.paymentMethod,
         summary: orderSummaryText(o),
@@ -1480,6 +1486,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           telegramId: String(o.user.telegramId),
           firstName: o.user.firstName,
         },
+        provisionError: o.status === "paid" ? o.adminNote : null,
       })),
     });
   });

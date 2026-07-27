@@ -2742,16 +2742,22 @@ export function createBot() {
   bot.command("pending", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     const orders = await prisma.order.findMany({
-      where: { status: OrderStatus.awaiting_review },
+      where: {
+        OR: [
+          { status: OrderStatus.awaiting_review },
+          { status: OrderStatus.paid, subscription: null, kind: { not: OrderKind.wallet_charge } },
+        ],
+      },
       include: { user: true },
       orderBy: { createdAt: "asc" },
       take: 20,
     });
     if (!orders.length) return ctx.reply("موردی نیست.");
+    const { isTelegramReceiptFileId } = await import("../services/order-notify.js");
     for (const order of orders) {
       const text = [`\`${order.id.slice(-8)}\``, orderSummaryText(order), `@${order.user.username ?? "—"}`].join("\n");
-      if (order.receiptFileId) {
-        await ctx.replyWithPhoto(order.receiptFileId, {
+      if (isTelegramReceiptFileId(order.receiptFileId)) {
+        await ctx.replyWithPhoto(order.receiptFileId!, {
           caption: text,
           parse_mode: "Markdown",
           reply_markup: adminOrderKeyboard(order.id),

@@ -35,7 +35,7 @@ export function formatXuiError(err: unknown): string {
     return "ساخت یا افزودن به گروه پنل ناموفق بود. نام گروه را در پنل چک کنید یا دستی گروه Telegram بسازید.";
   }
 
-  if (lower.includes("duplicate") || lower.includes("already exist") || lower.includes("email")) {
+  if (lower.includes("duplicate") || lower.includes("already exist") || lower.includes("تکراری")) {
     return "این نام اکانت در پنل تکراری است. نام دیگری انتخاب کنید.";
   }
 

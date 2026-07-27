@@ -1,6 +1,6 @@
 import type { Bot, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { OrderStatus, UserRole } from "@prisma/client";
+import { OrderKind, OrderStatus, UserRole } from "@prisma/client";
 import { isAdminTelegramId } from "../config/env.js";
 import { prisma } from "../db.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
@@ -1747,7 +1747,12 @@ export function registerControlCenter(bot: Bot) {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
     const orders = await prisma.order.findMany({
-      where: { status: OrderStatus.awaiting_review },
+      where: {
+        OR: [
+          { status: OrderStatus.awaiting_review },
+          { status: OrderStatus.paid, subscription: null, kind: { not: OrderKind.wallet_charge } },
+        ],
+      },
       include: { user: true },
       orderBy: { createdAt: "asc" },
       take: 15,
@@ -1761,10 +1766,11 @@ export function registerControlCenter(bot: Bot) {
     await ctx.editMessageText(`📋 ${orders.length} سفارش باز — جزئیات ارسال شد.`, {
       reply_markup: new InlineKeyboard().text("« کنترل سنتر", "cc:home"),
     });
+    const { isTelegramReceiptFileId } = await import("../services/order-notify.js");
     for (const order of orders) {
       const text = [`\`${order.id.slice(-8)}\``, orderSummaryText(order), `@${order.user.username ?? "—"}`].join("\n");
-      if (order.receiptFileId) {
-        await ctx.replyWithPhoto(order.receiptFileId, {
+      if (isTelegramReceiptFileId(order.receiptFileId)) {
+        await ctx.replyWithPhoto(order.receiptFileId!, {
           caption: text,
           parse_mode: "Markdown",
           reply_markup: adminOrderKeyboard(order.id),

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import QRCode from "qrcode";
 import type { Order, User } from "@prisma/client";
 import { OrderKind, OrderStatus, SubscriptionStatus } from "@prisma/client";
@@ -241,6 +241,44 @@ function sanitizeEmail(name: string) {
   return cleaned || `qt${randomBytes(3).toString("hex")}`;
 }
 
+function isDuplicateClientError(err: unknown): boolean {
+  const raw = String(err instanceof Error ? err.message : err).toLowerCase();
+  return (
+    raw.includes("duplicate") ||
+    raw.includes("already exist") ||
+    raw.includes("تکراری") ||
+    (raw.includes("email") && (raw.includes("exist") || raw.includes("unique") || raw.includes("taken")))
+  );
+}
+
+async function emailExistsInDb(email: string): Promise<boolean> {
+  const row = await prisma.subscription.findFirst({ where: { email }, select: { id: true } });
+  return Boolean(row);
+}
+
+async function emailExistsInPanel(xui: XuiClient, email: string): Promise<boolean> {
+  try {
+    const got = await xui.getClient(email);
+    return Boolean(got.obj?.client);
+  } catch {
+    return false;
+  }
+}
+
+/** Pick an unused account name; append a 3-digit suffix when the desired name is taken. */
+async function allocateUniqueEmail(desired: string, xui: XuiClient | null): Promise<string> {
+  const base = sanitizeEmail(desired).slice(0, 29);
+  let candidate = sanitizeEmail(desired);
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const takenDb = await emailExistsInDb(candidate);
+    const takenPanel = xui ? await emailExistsInPanel(xui, candidate) : false;
+    if (!takenDb && !takenPanel) return candidate;
+    const suffix = String(randomInt(100, 1000));
+    candidate = `${base.slice(0, Math.max(1, 32 - suffix.length))}${suffix}`;
+  }
+  throw new Error("نام‌های مشابه زیاد است؛ نام دیگری انتخاب کنید");
+}
+
 async function qrForSub(subUrl: string) {
   return QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
 }
@@ -336,9 +374,15 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
     });
     return result;
   } catch (err) {
+    // Card/crypto review queue: keep visible until approve/reject succeeds.
+    // Wallet instant pay: stay `paid` so the debit can be retried/reconciled.
+    const backToReview = Boolean(order.receiptFileId || order.receiptText);
     await prisma.order.update({
       where: { id: orderId },
-      data: { status: OrderStatus.paid, adminNote: String(err) },
+      data: {
+        status: backToReview ? OrderStatus.awaiting_review : OrderStatus.paid,
+        adminNote: String(err instanceof Error ? err.message : err).slice(0, 500),
+      },
     });
     throw err;
   }
@@ -353,7 +397,7 @@ async function createDemoLocalClient(
   opts: { email: string; linkOrderId: boolean },
 ): Promise<ProvisionResult> {
   const code = shortCode("DM");
-  const email = sanitizeEmail(opts.email);
+  const email = await allocateUniqueEmail(opts.email, null);
   const subId = randomSubId();
   const months = order.months || 1;
   const expiresAt = new Date(Date.now() + monthsToMs(months));
@@ -410,7 +454,7 @@ async function createOnePanelClient(
   },
 ): Promise<ProvisionResult> {
   const code = shortCode("QT");
-  const email = sanitizeEmail(opts.email);
+  let email = await allocateUniqueEmail(opts.email, opts.xui);
   const subId = randomSubId();
   const months = order.months || 1;
   const panelExpiry = firstConnectExpiryMs(months);
@@ -425,20 +469,32 @@ async function createOnePanelClient(
       ? order.limitIp
       : await getDefaultLimitIp();
 
-  await opts.xui.addClient({
-    client: {
-      id: await newClientUuid(opts.xui),
-      email,
-      enable: true,
-      expiryTime: panelExpiry,
-      totalGB,
-      limitIp,
-      tgId: Number(user.telegramId),
-      subId,
-      comment: email,
-    },
-    inboundIds: opts.inboundIds,
-  });
+  const clientId = await newClientUuid(opts.xui);
+  let created = false;
+  for (let attempt = 0; attempt < 8 && !created; attempt++) {
+    try {
+      await opts.xui.addClient({
+        client: {
+          id: clientId,
+          email,
+          enable: true,
+          expiryTime: panelExpiry,
+          totalGB,
+          limitIp,
+          tgId: Number(user.telegramId),
+          subId,
+          comment: email,
+        },
+        inboundIds: opts.inboundIds,
+      });
+      created = true;
+    } catch (err) {
+      if (!isDuplicateClientError(err) || attempt >= 7) throw err;
+      const suffix = String(randomInt(100, 1000));
+      const base = sanitizeEmail(opts.email).slice(0, 29);
+      email = `${base.slice(0, Math.max(1, 32 - suffix.length))}${suffix}`;
+    }
+  }
 
   const group = resolveClientGroup(user);
   await ensureClientsInGroup(opts.xui, [email], group);
@@ -499,10 +555,10 @@ async function createPanelClientsBulk(user: User, order: Order): Promise<Provisi
   if (isDemoMode()) {
     const results: ProvisionResult[] = [];
     for (let i = 0; i < qty; i++) {
-      const email = qty === 1 ? base : `${base}_${i + 1}`;
+      const desired = qty === 1 ? base : `${base}_${i + 1}`;
       results.push(
         await createDemoLocalClient(user, order, {
-          email,
+          email: desired,
           linkOrderId: i === 0,
         }),
       );
@@ -525,9 +581,9 @@ async function createPanelClientsBulk(user: User, order: Order): Promise<Provisi
   const results: ProvisionResult[] = [];
 
   for (let i = 0; i < qty; i++) {
-    const email = qty === 1 ? base : `${base}_${i + 1}`;
+    const desired = qty === 1 ? base : `${base}_${i + 1}`;
     const one = await createOnePanelClient(user, order, {
-      email,
+      email: desired,
       linkOrderId: i === 0,
       xui: resolved.xui,
       inboundIds: resolved.inboundIds,

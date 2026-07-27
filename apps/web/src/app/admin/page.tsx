@@ -44,6 +44,7 @@ type PendingOrder = {
   receiptText: string | null;
   hasReceiptImage?: boolean;
   createdAt: string;
+  provisionError?: string | null;
   user: { username: string | null; telegramId: string; firstName: string | null };
 };
 
@@ -275,18 +276,18 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
           <div className="label">فروش امروز (تومان)</div>
           <div className="value num">{salesTodayNum}</div>
         </div>
-        <div className="stat">
+        <button type="button" className="stat stat-link" onClick={() => onGo("orders")}>
           <div className="label">سفارش در انتظار</div>
           <div className="value num">{stats?.pendingOrders ?? "—"}</div>
-        </div>
-        <div className="stat">
+        </button>
+        <button type="button" className="stat stat-link" onClick={() => onGo("users")}>
           <div className="label">کاربران</div>
           <div className="value num">{stats?.users ?? "—"}</div>
-        </div>
-        <div className="stat">
+        </button>
+        <button type="button" className="stat stat-link" onClick={() => onGo("configs")}>
           <div className="label">سرویس فعال</div>
           <div className="value num">{stats?.activeSubs ?? "—"}</div>
-        </div>
+        </button>
       </div>
       <div className="panel">
         <h2>دسترسی سریع</h2>
@@ -653,6 +654,11 @@ function OrdersTab({ flash }: { flash: Flash }) {
               <pre className="muted" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", margin: "7px 0 0" }}>
                 {o.summary}
               </pre>
+              {o.provisionError ? (
+                <div className="badge bad" style={{ marginTop: 8, display: "inline-block" }}>
+                  خطای ساخت قبلی: {o.provisionError}
+                </div>
+              ) : null}
               {(o.receiptText || o.hasReceiptImage) && (
                 <div className="order-receipt-box">
                   <div className="order-receipt-box__title">رسید پرداخت</div>

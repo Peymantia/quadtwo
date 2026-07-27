@@ -1388,6 +1388,26 @@ h3 {
   overflow: hidden;
 }
 
+button.stat.stat-link {
+  display: block;
+  width: 100%;
+  text-align: inherit;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+button.stat.stat-link:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+button.stat.stat-link:active {
+  transform: scale(0.99);
+}
+
 .stat::after {
   content: "";
   position: absolute;
