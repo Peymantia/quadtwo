@@ -599,12 +599,20 @@ async function startCardPayment(ctx: Context, orderId: string, summary: string) 
   await assertCheckoutPaymentMethod("card_to_card");
   await setOrderPaymentMethod(orderId, (await upsertUserFromTelegram(ctx.from!)).id, "card_to_card");
   const card = await getPaymentCard();
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { price: true },
+  });
   const text = orderPayText(summary, card, orderId);
+  const markup = payConfirmKeyboard(orderId, {
+    cardNumber: card.number,
+    priceToman: order?.price,
+  });
   // No parse_mode — so Premium custom_emoji entities can be applied by the API transform.
   if (ctx.callbackQuery?.message) {
-    await ctx.editMessageText(text, { reply_markup: payConfirmKeyboard(orderId) });
+    await ctx.editMessageText(text, { reply_markup: markup });
   } else {
-    await ctx.reply(text, { reply_markup: payConfirmKeyboard(orderId) });
+    await ctx.reply(text, { reply_markup: markup });
   }
 }
 
@@ -1797,8 +1805,9 @@ export function createBot() {
             ].join("\n"),
           );
           const who = user.username ? `@${user.username}` : String(user.telegramId);
+          const renameMsgs: Array<{ chatId: number; messageId: number; isPhoto: boolean }> = [];
           await notifyAllAdmins(ctx.api, async (adminId) => {
-            await ctx.api.sendMessage(
+            const msg = await ctx.api.sendMessage(
               adminId,
               [
                 "✏️ درخواست تغییر نام نماینده",
@@ -1815,7 +1824,12 @@ export function createBot() {
                   .danger(),
               },
             );
+            renameMsgs.push({ chatId: adminId, messageId: msg.message_id, isPhoto: false });
           });
+          if (renameMsgs.length) {
+            const { saveAdminReviewMessages } = await import("../services/admin-review-sync.js");
+            await saveAdminReviewMessages("arename", result.requestId, renameMsgs);
+          }
         } else {
           await ctx.reply(
             [
@@ -1935,8 +1949,9 @@ export function createBot() {
           detail: agentLabel,
         });
         await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.");
+        const partnerMsgs: Array<{ chatId: number; messageId: number; isPhoto: boolean }> = [];
         await notifyAllAdmins(ctx.api, async (adminId) => {
-          await ctx.api.sendMessage(
+          const msg = await ctx.api.sendMessage(
             adminId,
             [
               "🤝 درخواست نمایندگی و همکاری",
@@ -1949,7 +1964,12 @@ export function createBot() {
               .join("\n"),
             { reply_markup: partnerRequestKeyboard(req.id) },
           );
+          partnerMsgs.push({ chatId: adminId, messageId: msg.message_id, isPhoto: false });
         });
+        if (partnerMsgs.length) {
+          const { saveAdminReviewMessages } = await import("../services/admin-review-sync.js");
+          await saveAdminReviewMessages("partner", req.id, partnerMsgs);
+        }
         return;
       }
       if (partnerFlow.step === "name") {
@@ -1987,13 +2007,19 @@ export function createBot() {
         await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.", {
           reply_markup: { remove_keyboard: true },
         });
+        const partnerMsgs: Array<{ chatId: number; messageId: number; isPhoto: boolean }> = [];
         await notifyAllAdmins(ctx.api, async (adminId) => {
-          await ctx.api.sendMessage(
+          const msg = await ctx.api.sendMessage(
             adminId,
             `🤝 درخواست همکاری\n${partnerFlow.fullName}\n📱 ${partnerFlow.phone ?? "—"}\n@${user.username ?? "—"}\nTG: ${user.telegramId}`,
             { reply_markup: partnerRequestKeyboard(req.id) },
           );
+          partnerMsgs.push({ chatId: adminId, messageId: msg.message_id, isPhoto: false });
         });
+        if (partnerMsgs.length) {
+          const { saveAdminReviewMessages } = await import("../services/admin-review-sync.js");
+          await saveAdminReviewMessages("partner", req.id, partnerMsgs);
+        }
         return;
       }
     }
@@ -2050,16 +2076,31 @@ export function createBot() {
         target: orderId,
       });
       const result = await provisionOrder(orderId);
+      const { finalizeOrderAdminMessages, orderApprovedAdminStatus } = await import(
+        "../services/order-notify.js"
+      );
       if ("kind" in result && result.kind === "wallet_credit") {
         await ctx.api.sendMessage(
           Number(order.user.telegramId),
           `✅ کیف پول شارژ شد\nموجودی: ${formatToman(result.balance)}`,
         );
-        await ctx.editMessageCaption({ caption: `✅ شارژ کیف پول — ${formatToman(order.price)}` }).catch(() => undefined);
+        const status = orderApprovedAdminStatus({
+          kind: order.kind,
+          price: order.price,
+          wallet: true,
+        });
+        void finalizeOrderAdminMessages(orderId, status);
+        await ctx.editMessageCaption({ caption: status }).catch(() => undefined);
+        await ctx.editMessageText(status).catch(() => undefined);
         return;
       }
       const provisioned = result as ProvisionResultWithBulk;
-      const mode = order.kind === OrderKind.renew ? "renew" : "new";
+      const mode =
+        order.kind === OrderKind.add_days || order.kind === OrderKind.add_gb
+          ? "addon"
+          : order.kind === OrderKind.renew
+            ? "renew"
+            : "new";
       await deliverResult(ctx.api, order.user.telegramId, provisioned, order.trafficGb, mode);
       await auditLog({
         action: "provision_ok",
@@ -2068,16 +2109,15 @@ export function createBot() {
         detail: provisioned.code,
       });
       const qty = order.quantity ?? 1;
-      await ctx
-        .editMessageCaption({
-          caption:
-            order.kind === OrderKind.renew
-              ? `✅ تمدید شد — ${provisioned.code}`
-              : qty > 1
-                ? `✅ Bulk ${qty} اکانت — ${provisioned.code}`
-                : `✅ انجام شد — ${provisioned.code}`,
-        })
-        .catch(() => undefined);
+      const status = orderApprovedAdminStatus({
+        kind: order.kind,
+        price: order.price,
+        code: provisioned.code,
+        quantity: qty,
+      });
+      void finalizeOrderAdminMessages(orderId, status);
+      await ctx.editMessageCaption({ caption: status }).catch(() => undefined);
+      await ctx.editMessageText(status).catch(() => undefined);
     } catch (err) {
       console.error(err);
       await auditLog({
@@ -2103,7 +2143,10 @@ export function createBot() {
       target: order.id,
     });
     await ctx.api.sendMessage(Number(order.user.telegramId), "❌ سفارش شما رد شد.");
+    const { finalizeOrderAdminMessages } = await import("../services/order-notify.js");
+    void finalizeOrderAdminMessages(order.id, "❌ رد شد");
     await ctx.editMessageCaption({ caption: "❌ رد شد" }).catch(() => undefined);
+    await ctx.editMessageText("❌ رد شد").catch(() => undefined);
   });
 
   bot.callbackQuery(/^arename:ok:(.+)$/, async (ctx) => {
@@ -2130,9 +2173,10 @@ export function createBot() {
           ].join("\n"),
         )
         .catch(() => undefined);
-      await ctx.editMessageText(
-        `✅ تغییر نام اعمال شد\n${request.oldName} → ${request.newName}\nگروه: ${request.oldGroup} → ${request.newGroup}`,
-      );
+      const status = `✅ تغییر نام اعمال شد\n${request.oldName} → ${request.newName}\nگروه: ${request.oldGroup} → ${request.newGroup}`;
+      const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
+      void finalizeAdminReviewMessages("arename", request.id, status);
+      await ctx.editMessageText(status).catch(() => undefined);
     } catch (err) {
       await ctx.reply(friendlyBotError(err));
     }
@@ -2149,7 +2193,9 @@ export function createBot() {
       await ctx.api
         .sendMessage(Number(req.user.telegramId), "❌ درخواست تغییر نام نماینده رد شد.")
         .catch(() => undefined);
-      await ctx.editMessageText("❌ درخواست تغییر نام رد شد.");
+      const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
+      void finalizeAdminReviewMessages("arename", req.id, "❌ درخواست تغییر نام رد شد.");
+      await ctx.editMessageText("❌ درخواست تغییر نام رد شد.").catch(() => undefined);
     } catch (err) {
       await ctx.reply(friendlyBotError(err));
     }
@@ -2167,7 +2213,10 @@ export function createBot() {
         detail: "partner",
       });
       await ctx.api.sendMessage(Number(req.user.telegramId), "✅ درخواست همکاری شما تأیید شد (همکار).");
-      await ctx.editMessageText(`همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`);
+      const status = `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
+      const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
+      void finalizeAdminReviewMessages("partner", req.id, status);
+      await ctx.editMessageText(status).catch(() => undefined);
     } catch (err) {
       await ctx.reply(friendlyBotError(err));
     }
@@ -2185,7 +2234,10 @@ export function createBot() {
         detail: "wholesale",
       });
       await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
-      await ctx.editMessageText(`عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`);
+      const status = `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`;
+      const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
+      void finalizeAdminReviewMessages("partner", req.id, status);
+      await ctx.editMessageText(status).catch(() => undefined);
     } catch (err) {
       await ctx.reply(friendlyBotError(err));
     }
@@ -2201,7 +2253,9 @@ export function createBot() {
       target: req.id,
     });
     await ctx.api.sendMessage(Number(req.user.telegramId), "❌ درخواست همکاری رد شد.");
-    await ctx.editMessageText("درخواست رد شد.");
+    const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
+    void finalizeAdminReviewMessages("partner", req.id, "درخواست رد شد.");
+    await ctx.editMessageText("درخواست رد شد.").catch(() => undefined);
   });
 
   bot.hears(hearsBtn(BTN.myServices), async (ctx) => handleMyServices(ctx));
@@ -2310,14 +2364,18 @@ export function createBot() {
     try {
       const { getSecureConfigBase64 } = await import("../services/sub-addons.js");
       const r = await getSecureConfigBase64(user.id, ctx.match![1]!);
+      const kb =
+        r.base64.length <= 256
+          ? new InlineKeyboard().copyText("📋 کپی لینک امن", r.base64)
+          : undefined;
       await ctx.reply(
         [
           "🔒 لینک امن اشتراک (Base64)",
-          "برای کپی، روی متن زیر بزنید:",
+          "همان لینک ساب، به‌صورت Base64 — برای کپی روی متن بزنید:",
           "",
           `<code>${r.base64}</code>`,
         ].join("\n"),
-        { parse_mode: "HTML" },
+        { parse_mode: "HTML", ...(kb ? { reply_markup: kb } : {}) },
       );
     } catch (err) {
       await ctx.reply(friendlyBotError(err));

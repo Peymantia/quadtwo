@@ -39,6 +39,18 @@ export function CardPayModal({
     onCancel();
   }
 
+  function copyCard() {
+    const digits = card.number.replace(/\D/g, "") || card.number;
+    void navigator.clipboard.writeText(digits);
+    onCopied?.();
+  }
+
+  function copyAmountRial() {
+    const rial = String(Math.max(0, Math.floor(Number(amount) || 0)) * 10);
+    void navigator.clipboard.writeText(rial);
+    onCopied?.();
+  }
+
   return (
     <Modal open={open} title={title} onClose={close}>
       <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
@@ -75,16 +87,26 @@ export function CardPayModal({
           </div>
         </div>
       ) : (
-        <div className="actions" style={{ marginTop: 16 }}>
-          <button type="button" className="btn success" disabled={busy} onClick={() => void onPaid()}>
-            پرداخت شد
-          </button>
-          <button type="button" className="btn primary" disabled={busy} onClick={() => setReceiptOpen(true)}>
-            ارسال رسید
-          </button>
-          <button type="button" className="btn ghost" disabled={busy} onClick={close}>
-            لغو
-          </button>
+        <div style={{ marginTop: 16 }}>
+          <div className="actions" style={{ marginBottom: 10 }}>
+            <button type="button" className="btn ghost" disabled={busy} onClick={copyCard}>
+              کپی شماره کارت
+            </button>
+            <button type="button" className="btn ghost" disabled={busy} onClick={copyAmountRial}>
+              کپی مبلغ (ریال)
+            </button>
+          </div>
+          <div className="actions">
+            <button type="button" className="btn success" disabled={busy} onClick={() => void onPaid()}>
+              پرداخت شد
+            </button>
+            <button type="button" className="btn primary" disabled={busy} onClick={() => setReceiptOpen(true)}>
+              ارسال رسید
+            </button>
+            <button type="button" className="btn ghost" disabled={busy} onClick={close}>
+              لغو
+            </button>
+          </div>
         </div>
       )}
     </Modal>

@@ -307,35 +307,25 @@ export async function renameSubscriptionEmail(userId: string, subId: string, des
 }
 
 /**
- * Secure config payload: base64 of panel client links (or sub URL fallback).
- * Tap-to-copy friendly plain string.
+ * Secure sub link: Base64 of the subscription URL only (tap-to-copy friendly).
  */
 export async function getSecureConfigBase64(userId: string, subId: string) {
   const sub = await ownedSub(userId, subId);
-  let links: string[] = [];
-
-  if (!isDemoMode() && sub.panelServerId && !sub.subUrl?.includes("demo.invalid")) {
+  let subUrl = (sub.subUrl || "").trim();
+  if (!subUrl || !subUrl.startsWith("http")) {
     try {
-      const resolved = await resolvePanelForSubscription(sub);
-      const res = await resolved.xui.clientLinks(sub.email);
-      const raw = res.obj;
-      if (Array.isArray(raw)) {
-        links = raw.map((x) => String(x).trim()).filter(Boolean);
-      }
+      const { refreshSubscriptionSubUrl } = await import("./provision.js");
+      subUrl = (await refreshSubscriptionSubUrl(sub.id))?.trim() || subUrl;
     } catch {
-      /* fallback below */
+      /* keep existing */
     }
   }
+  if (!subUrl) throw new Error("لینک اشتراک در دسترس نیست");
 
-  if (!links.length) {
-    if (!sub.subUrl) throw new Error("لینک کانفیگ در دسترس نیست");
-    links = [sub.subUrl];
-  }
-
-  const payload = links.join("\n");
   return {
-    base64: Buffer.from(payload, "utf8").toString("base64"),
-    linkCount: links.length,
+    base64: Buffer.from(subUrl, "utf8").toString("base64"),
+    linkCount: 1,
     email: sub.email,
+    subUrl,
   };
 }

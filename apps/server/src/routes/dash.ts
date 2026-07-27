@@ -1518,12 +1518,31 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           order.user.telegramId,
           `✅ کیف پول شارژ شد\nموجودی: ${formatToman(result.balance)}`,
         );
+        const { finalizeOrderAdminMessages, orderApprovedAdminStatus } = await import(
+          "../services/order-notify.js"
+        );
+        void finalizeOrderAdminMessages(
+          orderId,
+          orderApprovedAdminStatus({ kind: order.kind, price: order.price, wallet: true }),
+        );
         return c.json({ ok: true, walletBalance: result.balance });
       }
       const prov = result as { code: string; subUrl: string | null };
       await notifyTelegram(
         order.user.telegramId,
         `✅ سفارش شما تأیید شد\nکد: ${prov.code}${prov.subUrl ? `\nلینک اشتراک:\n${prov.subUrl}` : ""}`,
+      );
+      const { finalizeOrderAdminMessages, orderApprovedAdminStatus } = await import(
+        "../services/order-notify.js"
+      );
+      void finalizeOrderAdminMessages(
+        orderId,
+        orderApprovedAdminStatus({
+          kind: order.kind,
+          price: order.price,
+          code: prov.code,
+          quantity: order.quantity,
+        }),
       );
       return c.json({ ok: true, code: prov.code, subUrl: prov.subUrl });
     } catch (err) {
@@ -1540,6 +1559,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       target: order.id,
     });
     await notifyTelegram(order.user.telegramId, `❌ سفارش شما رد شد.\n${body.note?.trim() || ""}`.trim());
+    const { finalizeOrderAdminMessages } = await import("../services/order-notify.js");
+    void finalizeOrderAdminMessages(order.id, "❌ رد شد");
     return c.json({ ok: true });
   });
 
@@ -2644,11 +2665,17 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.post("/admin/partners/:id/approve", async (c) => {
     const req = await approvePartner(c.req.param("id"));
+    const status = `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
+    const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
+    void finalizeAdminReviewMessages("partner", req.id, status);
     return c.json({ ok: true, group: req.user.panelGroup });
   });
 
   api.post("/admin/partners/:id/reject", async (c) => {
-    await rejectPartner(c.req.param("id"));
+    const id = c.req.param("id");
+    await rejectPartner(id);
+    const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
+    void finalizeAdminReviewMessages("partner", id, "درخواست رد شد.");
     return c.json({ ok: true });
   });
 }

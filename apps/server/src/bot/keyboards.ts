@@ -387,8 +387,26 @@ export function payMethodKeyboard(
   return kb;
 }
 
-export function payConfirmKeyboard(orderId: string) {
-  return new InlineKeyboard()
+export function payConfirmKeyboard(
+  orderId: string,
+  opts?: { cardNumber?: string; priceToman?: number },
+) {
+  const kb = new InlineKeyboard();
+  const digits = (opts?.cardNumber ?? "").replace(/\D/g, "");
+  const rial =
+    opts?.priceToman != null && Number.isFinite(opts.priceToman)
+      ? String(Math.max(0, Math.floor(Number(opts.priceToman))) * 10)
+      : "";
+
+  if (digits) {
+    kb.copyText("📋 کپی شماره کارت", digits.slice(0, 256));
+  }
+  if (rial) {
+    kb.copyText("💰 کپی مبلغ (ریال)", rial.slice(0, 256));
+  }
+  if (digits || rial) kb.row();
+
+  return kb
     .text("✅ پرداخت کردم — ارسال رسید", `paid:${orderId}`)
     .success()
     .row()
@@ -476,54 +494,39 @@ export function subscriptionDetailKeyboard(opts: {
   canAddDays?: boolean;
   canAddGb?: boolean;
 }) {
-  const kb = new InlineKeyboard()
-    .text("🔗 لینک اشتراک", `sub:link:${opts.subId}`)
-    .text("🔒 لینک امن اشتراک", `sub:b64:${opts.subId}`)
-    .row()
-    .text("📱 نمایش QR Code", `sub:qr:${opts.subId}`)
-    .row();
-
-  if (opts.canRenew !== false) {
-    kb.text("♻️ تمدید سرویس", `sub:renew:${opts.subId}`).success().row();
-  }
-
-  if (opts.canAddDays !== false) {
-    kb.text("📅 افزایش روز", `sub:adddays:${opts.subId}`);
-  }
-  if (opts.canAddGb !== false) {
-    kb.text("📏 افزایش حجم", `sub:addgb:${opts.subId}`);
-  }
-  if (opts.canAddDays !== false || opts.canAddGb !== false) kb.row();
-
-  kb.text("✍️ تغییر نام دلخواه", `sub:rename:${opts.subId}`).row();
-
-  kb.text("🔄 تغییر لینک ساب", `sub:rotsub:${opts.subId}`)
-    .text("🔑 تغییر لینک کانفیگ", `sub:rotuuid:${opts.subId}`)
-    .row();
-
-  if (opts.panelEnabled === false) {
-    kb.text("فعال 🟢", `sub:toggle:${opts.subId}`).success().row();
-  } else if (opts.panelEnabled === true) {
-    kb.text("غیر فعال 🔴", `sub:toggle:${opts.subId}`).danger().row();
-  } else {
-    kb.text("فعال 🟢 / غیر فعال 🔴", `sub:toggle:${opts.subId}`).row();
-  }
-
-  kb.text("📝 یادداشت", `sub:note:${opts.subId}`).row();
-  kb.text("« بازگشت به لیست", "mysvc:list");
-  return kb;
+  return userServiceActionsKeyboard(opts.subId);
 }
 
-/** After create / renew / rotate — specs in message, links & QR on demand. */
-export function provisionReadyKeyboard(subId: string) {
+/**
+ * User-facing service actions (after buy / my-services detail).
+ * Layout (2 cols):
+ * لینک اشتراک | لینک امن اشتراک
+ * افزایش روز | افزایش حجم
+ * تغییر لینک کانفیگ | تغییر لینک ساب
+ * تغییر نام دلخواه | نمایش QR Code
+ * یادداشت | بازگشت
+ */
+export function userServiceActionsKeyboard(subId: string) {
   return new InlineKeyboard()
     .text("🔗 لینک اشتراک", `sub:link:${subId}`)
-    .row()
     .text("🔒 لینک امن اشتراک", `sub:b64:${subId}`)
     .row()
+    .text("📅 افزایش روز", `sub:adddays:${subId}`)
+    .text("📏 افزایش حجم", `sub:addgb:${subId}`)
+    .row()
+    .text("🔑 تغییر لینک کانفیگ", `sub:rotuuid:${subId}`)
+    .text("🔄 تغییر لینک ساب", `sub:rotsub:${subId}`)
+    .row()
+    .text("✍️ تغییر نام دلخواه", `sub:rename:${subId}`)
     .text("📱 نمایش QR Code", `sub:qr:${subId}`)
     .row()
-    .text("📦 جزئیات سرویس", `mysvc:open:${subId}`);
+    .text("📝 یادداشت", `sub:note:${subId}`)
+    .text("« بازگشت", "mysvc:list");
+}
+
+/** After create / renew / rotate — same actions as my-services detail. */
+export function provisionReadyKeyboard(subId: string) {
+  return userServiceActionsKeyboard(subId);
 }
 
 export function addDaysWizardKeyboard(opts: { subId: string; days: number; price: number }) {
