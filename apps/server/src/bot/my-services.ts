@@ -16,6 +16,12 @@ export const myServicesQuery = new Map<number, string>();
 export const waitingMyServicesSearch = new Set<number>();
 /** telegramId → subscriptionId waiting for note text */
 export const waitingServiceNote = new Map<number, string>();
+/** telegramId → subscriptionId waiting for rename */
+export const waitingServiceRename = new Map<number, string>();
+/** telegramId → add-days wizard */
+export const addDaysState = new Map<number, { subId: string; days: number }>();
+/** telegramId → add-gb wizard */
+export const addGbState = new Map<number, { subId: string; gb: number }>();
 
 /** Button label: Sanaei panel name only (email/title), no QT-code prefix. */
 function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest" | "note">) {
@@ -132,6 +138,8 @@ export async function showSubscriptionDetail(ctx: Context, subId: string, edit =
     subId: sub.id,
     panelEnabled,
     canRenew: renew.ok,
+    canAddDays: !sub.isTest,
+    canAddGb: !sub.isTest && sub.trafficGb != null && sub.trafficGb > 0,
   });
 
   if (edit && ctx.callbackQuery?.message) {
@@ -264,5 +272,38 @@ export async function handleServiceNoteText(ctx: Context, text: string): Promise
 export function clearMyServicesWaits(tid: number) {
   waitingMyServicesSearch.delete(tid);
   waitingServiceNote.delete(tid);
+  waitingServiceRename.delete(tid);
+  addDaysState.delete(tid);
+  addGbState.delete(tid);
   myServicesQuery.delete(tid);
+}
+
+/** Handle rename text while waiting. Returns true if consumed. */
+export async function handleServiceRenameText(ctx: Context, text: string): Promise<boolean> {
+  const tid = ctx.from?.id;
+  if (!tid) return false;
+  const subId = waitingServiceRename.get(tid);
+  if (!subId) return false;
+
+  if ((Object.values(BTN) as string[]).includes(text.trim())) {
+    waitingServiceRename.delete(tid);
+    return false;
+  }
+
+  const user = await upsertUserFromTelegram(ctx.from!);
+  waitingServiceRename.delete(tid);
+  try {
+    const { renameSubscriptionEmail } = await import("../services/sub-addons.js");
+    const result = await renameSubscriptionEmail(user.id, subId, text.trim());
+    await ctx.reply(
+      result.changed
+        ? `✅ نام جدید: <code>${result.email}</code>`
+        : `نام بدون تغییر ماند: <code>${result.email}</code>`,
+      { parse_mode: "HTML" },
+    );
+    await showSubscriptionDetail(ctx, subId, false);
+  } catch (err) {
+    await ctx.reply(friendlyBotError(err));
+  }
+  return true;
 }

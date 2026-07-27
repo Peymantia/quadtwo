@@ -331,17 +331,32 @@ export function orderSummaryText(order: {
     return [`نوع: ➕ شارژ کیف پول`, `مبلغ: ${order.price.toLocaleString("fa-IR")} تومان`].join("\n");
   }
   const qty = order.quantity ?? 1;
-  const vol = order.trafficGb === null ? "نامحدود" : `${order.trafficGb} گیگ`;
   const kindLabel =
     order.kind === OrderKind.renew
       ? "تمدید"
-      : order.kind === OrderKind.rotate_sub
-        ? "تغییر لینک ساب"
-        : order.kind === OrderKind.rotate_uuid
-          ? "تغییر لینک کانفیگ"
-          : qty > 1
-            ? "خرید عمده (Bulk)"
-            : "خرید جدید";
+      : order.kind === OrderKind.add_days
+        ? `افزایش ${order.months} روز`
+        : order.kind === OrderKind.add_gb
+          ? `افزایش ${order.trafficGb ?? 0} گیگ`
+          : order.kind === OrderKind.rotate_sub
+            ? "تغییر لینک ساب"
+            : order.kind === OrderKind.rotate_uuid
+              ? "تغییر لینک کانفیگ"
+              : qty > 1
+                ? "خرید عمده (Bulk)"
+                : "خرید جدید";
+  const vol =
+    order.kind === OrderKind.add_days
+      ? `${order.months} روز`
+      : order.kind === OrderKind.add_gb
+        ? `${order.trafficGb ?? 0} گیگ (اضافه)`
+        : order.trafficGb === null
+          ? "نامحدود"
+          : `${order.trafficGb} گیگ`;
+  const durationLine =
+    order.kind === OrderKind.add_days || order.kind === OrderKind.add_gb || !(order.months > 0)
+      ? ""
+      : `مدت: ${order.months} ماه`;
   const ip =
     order.limitIp === undefined
       ? ""
@@ -363,8 +378,8 @@ export function orderSummaryText(order: {
   return [
     `نوع: ${kindLabel}`,
     `حجم: ${vol}`,
-    order.months > 0 ? `مدت: ${order.months} ماه` : "",
-    `تعداد: ${qty}`,
+    durationLine,
+    order.kind === OrderKind.add_days || order.kind === OrderKind.add_gb ? "" : `تعداد: ${qty}`,
     ip,
     order.accountName ? `نام پایه: ${order.accountName}` : "",
     ...discountLines,

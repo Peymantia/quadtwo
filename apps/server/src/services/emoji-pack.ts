@@ -95,7 +95,8 @@ export type EmojiKey =
   | "dash_web"
   | "login_id"
   | "demo_role"
-  | "discount";
+  | "discount"
+  | "crypto";
 
 /** Current bot Unicode glyphs (Universal style). */
 export const UNIVERSAL: Record<EmojiKey, string> = {
@@ -192,6 +193,7 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   login_id: "👤",
   demo_role: "🎭",
   discount: "🎟",
+  crypto: "🪙",
 };
 
 /**
@@ -295,6 +297,8 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   demo_role: "5318990544221775177",
   /** Discount codes / ticket */
   discount: "5229064374403998351",
+  /** Crypto payment method */
+  crypto: "5314431908883488060",
 };
 
 /** When several keys share a glyph, pick ID from surrounding label text. */
@@ -334,6 +338,22 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
   if (glyph === "📝") {
     if (after.includes("یادداشت")) return PREMIUM_IDS.sub_note;
     return PREMIUM_IDS.note;
+  }
+  if (glyph === "📅") {
+    if (after.includes("افزایش")) return PREMIUM_IDS.calendar;
+    return PREMIUM_IDS.calendar;
+  }
+  if (glyph === "📏") {
+    if (after.includes("افزایش") || after.includes("گیگ")) return PREMIUM_IDS.ruler_threshold;
+    return PREMIUM_IDS.ruler_threshold;
+  }
+  if (glyph === "🔒") {
+    if (after.includes("امن") || after.includes("Base64")) return PREMIUM_IDS.lock_closed;
+    return PREMIUM_IDS.lock_closed;
+  }
+  if (glyph === "✍️") {
+    if (after.includes("نام")) return PREMIUM_IDS.write_custom;
+    return PREMIUM_IDS.write_custom;
   }
   if (glyph === "▶️") {
     if (after.includes("بعدی")) return PREMIUM_IDS.next_page;

@@ -35,6 +35,8 @@ export type ConfigListItem = {
   status: string | null;
   title?: string | null;
   note?: string | null;
+  /** Extra searchable text (username, first/last name, telegram id, …) */
+  searchText?: string | null;
   trafficGb?: number | null;
   expiresAt?: string | null;
   createdAt?: string | null;
@@ -267,12 +269,72 @@ async function emailsInPanelGroup(groupName: string): Promise<string[]> {
 
 function ownerFromUser(user: {
   username: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
   agentName: string | null;
   telegramId: bigint;
 }) {
-  return user.username
-    ? `@${user.username}`
-    : user.agentName || String(user.telegramId);
+  const handle = user.username ? `@${user.username}` : null;
+  const name =
+    [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+    user.agentName ||
+    null;
+  if (handle && name) return `${handle} · ${name}`;
+  return handle || name || String(user.telegramId);
+}
+
+/** Fields used for partial search (email, note, name, …). */
+function ownerSearchText(user: {
+  username: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  agentName: string | null;
+  telegramId: bigint;
+}) {
+  return [
+    user.username,
+    user.username ? `@${user.username}` : null,
+    user.firstName,
+    user.lastName,
+    user.agentName,
+    String(user.telegramId),
+  ]
+    .filter((x): x is string => Boolean(x && String(x).trim()))
+    .join(" ");
+}
+
+function listItemFromSub(s: {
+  id: string;
+  email: string;
+  code: string;
+  status: string;
+  title: string | null;
+  note: string | null;
+  trafficGb: number | null;
+  expiresAt: Date;
+  createdAt: Date;
+  user: {
+    username: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    agentName: string | null;
+    telegramId: bigint;
+  };
+}): ConfigListItem {
+  return {
+    email: s.email,
+    subId: s.id,
+    code: s.code,
+    ownerLabel: ownerFromUser(s.user),
+    searchText: ownerSearchText(s.user),
+    inDb: true,
+    status: s.status,
+    title: s.title,
+    note: s.note,
+    trafficGb: s.trafficGb,
+    expiresAt: s.expiresAt.toISOString(),
+    createdAt: s.createdAt.toISOString(),
+  };
 }
 
 function mergePanelOnly(
@@ -293,18 +355,28 @@ function mergePanelOnly(
   }
 }
 
+function configMatchesSearch(item: ConfigListItem, q: string): boolean {
+  const hay = [
+    item.email,
+    item.code,
+    item.ownerLabel,
+    item.title,
+    item.note,
+    item.searchText,
+  ]
+    .filter((x): x is string => Boolean(x && String(x).trim()))
+    .join("\n")
+    .toLowerCase();
+  return hay.includes(q);
+}
+
 function filterConfigItems(items: ConfigListItem[], search: string): ConfigListItem[] {
   const q = search.trim().toLowerCase();
   if (!q) return items;
-  return items.filter(
-    (x) =>
-      x.email.toLowerCase().includes(q) ||
-      (x.code?.toLowerCase().includes(q) ?? false) ||
-      x.ownerLabel.toLowerCase().includes(q),
-  );
+  return items.filter((x) => configMatchesSearch(x, q));
 }
 
-export type ConfigListSort = "newest" | "oldest" | "ending";
+export type ConfigListSort = "newest" | "oldest" | "ending" | "ending_date" | "ending_traffic";
 
 /** Days until done — lower = more urgent (expired ≤ 0). */
 export function endingUrgencyDays(opts: {
@@ -350,9 +422,18 @@ function sortConfigItems(items: ConfigListItem[], sort: ConfigListSort): ConfigL
       if (a.inDb !== b.inDb) return a.inDb ? -1 : 1;
       return created(a) - created(b) || a.email.localeCompare(b.email);
     });
+  } else if (sort === "ending_date") {
+    copy.sort((a, b) => expires(a) - expires(b) || a.email.localeCompare(b.email));
+  } else if (sort === "ending_traffic") {
+    // Traffic applied after enrich in the route; here fall back to expiry-ish via totalGb only.
+    copy.sort((a, b) => {
+      const ua = endingUrgencyDays({ expiresAt: null, totalGb: a.trafficGb, usedBytes: 0 });
+      const ub = endingUrgencyDays({ expiresAt: null, totalGb: b.trafficGb, usedBytes: 0 });
+      if (ua !== ub) return ua - ub;
+      return a.email.localeCompare(b.email);
+    });
   } else {
     // Ending: by expiry urgency only here (traffic applied after enrich in the route).
-    // Do not prefer inDb — that scrambled date order.
     copy.sort((a, b) => {
       const ua = endingUrgencyDays({ expiresAt: a.expiresAt, totalGb: a.trafficGb, usedBytes: 0 });
       const ub = endingUrgencyDays({ expiresAt: b.expiresAt, totalGb: b.trafficGb, usedBytes: 0 });
@@ -406,19 +487,7 @@ export async function listConfigsForGroup(
 
     const byEmail = new Map<string, ConfigListItem>();
     for (const s of dbSubs) {
-      byEmail.set(s.email.toLowerCase(), {
-        email: s.email,
-        subId: s.id,
-        code: s.code,
-        ownerLabel: ownerFromUser(s.user),
-        inDb: true,
-        status: s.status,
-        title: s.title,
-        note: s.note,
-        trafficGb: s.trafficGb,
-        expiresAt: s.expiresAt.toISOString(),
-        createdAt: s.createdAt.toISOString(),
-      });
+      byEmail.set(s.email.toLowerCase(), listItemFromSub(s));
     }
     mergePanelOnly(byEmail, panelEmails);
 
@@ -458,19 +527,7 @@ export async function listConfigsForGroup(
     ) {
       continue;
     }
-    byEmail.set(s.email.toLowerCase(), {
-      email: s.email,
-      subId: s.id,
-      code: s.code,
-      ownerLabel: ownerFromUser(s.user),
-      inDb: true,
-      status: s.status,
-      title: s.title,
-      note: s.note,
-      trafficGb: s.trafficGb,
-      expiresAt: s.expiresAt.toISOString(),
-      createdAt: s.createdAt.toISOString(),
-    });
+    byEmail.set(s.email.toLowerCase(), listItemFromSub(s));
   }
 
   mergePanelOnly(byEmail, panelEmails);

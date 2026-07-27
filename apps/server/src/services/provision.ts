@@ -296,6 +296,32 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
     let result: ProvisionResultWithBulk | ProvisionResult;
     if (order.kind === OrderKind.renew && order.targetSub) {
       result = await renewSubscription(order, order.targetSub.id);
+    } else if (order.kind === OrderKind.add_days && order.targetSub) {
+      const { applyAddDays } = await import("./sub-addons.js");
+      const updated = await applyAddDays(order.targetSub.id, order.months);
+      const subUrl = updated.subUrl || (await refreshSubscriptionSubUrl(updated.id)) || `sub://${updated.panelSubId || updated.code}`;
+      result = {
+        subscriptionId: updated.id,
+        code: updated.code,
+        email: updated.email,
+        subUrl,
+        expiresAt: updated.expiresAt,
+        qrPng: await qrForSub(subUrl),
+      };
+    } else if (order.kind === OrderKind.add_gb && order.targetSub) {
+      const { applyAddGb } = await import("./sub-addons.js");
+      const addGb = order.trafficGb;
+      if (addGb == null || addGb <= 0) throw new Error("حجم افزایش نامعتبر است");
+      const updated = await applyAddGb(order.targetSub.id, addGb);
+      const subUrl = updated.subUrl || (await refreshSubscriptionSubUrl(updated.id)) || `sub://${updated.panelSubId || updated.code}`;
+      result = {
+        subscriptionId: updated.id,
+        code: updated.code,
+        email: updated.email,
+        subUrl,
+        expiresAt: updated.expiresAt,
+        qrPng: await qrForSub(subUrl),
+      };
     } else if (order.kind === OrderKind.rotate_sub && order.targetSub) {
       result = await rotateSubId(order.targetSub.id);
     } else if (order.kind === OrderKind.rotate_uuid && order.targetSub) {

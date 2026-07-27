@@ -93,7 +93,7 @@ import { claimTestService } from "../services/test-service.js";
 import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman, persianMonthName } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders, buildSalesStats, parseSalesPeriod, agentsSalesLeaderboard } from "../services/admin-reports.js";
-import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays } from "../services/admin-configs.js";
+import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays, type ConfigListSort } from "../services/admin-configs.js";
 import {
   createPanelServer,
   getPanelServer,
@@ -427,6 +427,187 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({ code: result.code, subUrl: result.subUrl, expiresAt: result.expiresAt.toISOString() });
   });
 
+  api.get("/me/subscriptions/:id/addons", async (c) => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+    const sub = await prisma.subscription.findFirst({
+      where: { id: c.req.param("id"), userId: c.get("userId") },
+    });
+    if (!sub) return c.json({ error: "Not found" }, 404);
+    const { ADD_DAY_MAX, ADD_DAY_PRICE_TOMAN, ADD_GB_MAX, quoteAddGb } = await import("../services/sub-addons.js");
+    let addGb: { perGb: number; maxGb: number; allowed: boolean; reason?: string } = {
+      perGb: 0,
+      maxGb: ADD_GB_MAX,
+      allowed: false,
+      reason: "سرویس نامحدود است",
+    };
+    if (!sub.isTest && sub.trafficGb != null && sub.trafficGb > 0) {
+      try {
+        const q = await quoteAddGb(user, sub.id, 1);
+        addGb = { perGb: q.perGb, maxGb: ADD_GB_MAX, allowed: true };
+      } catch (err) {
+        addGb = {
+          perGb: 0,
+          maxGb: ADD_GB_MAX,
+          allowed: false,
+          reason: err instanceof Error ? err.message : String(err),
+        };
+      }
+    } else if (sub.isTest) {
+      addGb = { perGb: 0, maxGb: ADD_GB_MAX, allowed: false, reason: "سرویس تست" };
+    }
+    return c.json({
+      subscription: {
+        id: sub.id,
+        email: sub.email,
+        trafficGb: sub.trafficGb,
+        expiresAt: sub.expiresAt.toISOString(),
+        isTest: sub.isTest,
+      },
+      addDays: {
+        allowed: !sub.isTest,
+        maxDays: ADD_DAY_MAX,
+        perDay: ADD_DAY_PRICE_TOMAN,
+        reason: sub.isTest ? "سرویس تست" : undefined,
+      },
+      addGb,
+      rename: { allowed: true },
+      secureBase64: { allowed: true },
+    });
+  });
+
+  api.post("/me/subscriptions/:id/add-days", async (c) => {
+    const body = await c.req.json<{
+      days?: number;
+      paymentMethod?: "wallet" | "card_to_card" | "crypto";
+      payWithWallet?: boolean;
+    }>();
+    try {
+      const { createAddDaysOrder } = await import("../services/sub-addons.js");
+      const order = await createAddDaysOrder({
+        userId: c.get("userId"),
+        subId: c.req.param("id"),
+        days: Number(body.days),
+      });
+      if (c.get("role") === "admin" || order.price <= 0) {
+        const result =
+          c.get("role") === "admin"
+            ? await provisionAdminComplimentary(order.id, c.get("userId"))
+            : await payOrderWithWallet(order.id, c.get("userId"));
+        return c.json({
+          order: { id: order.id, price: order.price, months: order.months, kind: order.kind },
+          provisioned: await provisionedJson(result),
+        });
+      }
+      const method =
+        body.paymentMethod === "crypto"
+          ? "crypto"
+          : body.paymentMethod === "wallet" || body.payWithWallet
+            ? "wallet"
+            : "card_to_card";
+      await assertCheckoutPaymentMethod(method);
+      if (method === "wallet") {
+        const result = await payOrderWithWallet(order.id, c.get("userId"));
+        return c.json({
+          order: { id: order.id, price: order.price, months: order.months, kind: order.kind },
+          provisioned: await provisionedJson(result),
+        });
+      }
+      if (method === "crypto") {
+        await setOrderPaymentMethod(order.id, c.get("userId"), "crypto");
+        const methods = await getPublicPaymentMethods();
+        return c.json({
+          order: { id: order.id, price: order.price, summary: orderSummaryText(order), kind: order.kind },
+          crypto: methods.crypto,
+        });
+      }
+      await setOrderPaymentMethod(order.id, c.get("userId"), "card_to_card");
+      const card = await getPaymentCard();
+      return c.json({
+        order: { id: order.id, price: order.price, summary: orderSummaryText(order), kind: order.kind },
+        card,
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/me/subscriptions/:id/add-gb", async (c) => {
+    const body = await c.req.json<{
+      gb?: number;
+      paymentMethod?: "wallet" | "card_to_card" | "crypto";
+      payWithWallet?: boolean;
+    }>();
+    try {
+      const { createAddGbOrder } = await import("../services/sub-addons.js");
+      const order = await createAddGbOrder({
+        userId: c.get("userId"),
+        subId: c.req.param("id"),
+        gb: Number(body.gb),
+      });
+      if (c.get("role") === "admin" || order.price <= 0) {
+        const result =
+          c.get("role") === "admin"
+            ? await provisionAdminComplimentary(order.id, c.get("userId"))
+            : await payOrderWithWallet(order.id, c.get("userId"));
+        return c.json({
+          order: { id: order.id, price: order.price, trafficGb: order.trafficGb, kind: order.kind },
+          provisioned: await provisionedJson(result),
+        });
+      }
+      const method =
+        body.paymentMethod === "crypto"
+          ? "crypto"
+          : body.paymentMethod === "wallet" || body.payWithWallet
+            ? "wallet"
+            : "card_to_card";
+      await assertCheckoutPaymentMethod(method);
+      if (method === "wallet") {
+        const result = await payOrderWithWallet(order.id, c.get("userId"));
+        return c.json({
+          order: { id: order.id, price: order.price, trafficGb: order.trafficGb, kind: order.kind },
+          provisioned: await provisionedJson(result),
+        });
+      }
+      if (method === "crypto") {
+        await setOrderPaymentMethod(order.id, c.get("userId"), "crypto");
+        const methods = await getPublicPaymentMethods();
+        return c.json({
+          order: { id: order.id, price: order.price, summary: orderSummaryText(order), kind: order.kind },
+          crypto: methods.crypto,
+        });
+      }
+      await setOrderPaymentMethod(order.id, c.get("userId"), "card_to_card");
+      const card = await getPaymentCard();
+      return c.json({
+        order: { id: order.id, price: order.price, summary: orderSummaryText(order), kind: order.kind },
+        card,
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/me/subscriptions/:id/rename", async (c) => {
+    const body = await c.req.json<{ name?: string }>();
+    try {
+      const { renameSubscriptionEmail } = await import("../services/sub-addons.js");
+      const result = await renameSubscriptionEmail(c.get("userId"), c.req.param("id"), String(body.name ?? ""));
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.get("/me/subscriptions/:id/secure-base64", async (c) => {
+    try {
+      const { getSecureConfigBase64 } = await import("../services/sub-addons.js");
+      const result = await getSecureConfigBase64(c.get("userId"), c.req.param("id"));
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
   api.get("/me/subscriptions/:id/renew", async (c) => {
     const sub = await prisma.subscription.findFirst({
       where: { id: c.req.param("id"), userId: c.get("userId") },
@@ -680,6 +861,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         where: { id: order.id },
         data: {
           receiptText: body.note?.trim() ? body.note.trim().slice(0, 500) : "درخواست شارژ از داشبورد وب",
+          receiptFileId: "dashboard",
           status: "awaiting_review",
         },
       });
@@ -690,6 +872,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         target: order.id,
         detail: String(amount),
       });
+      const { notifyAdminsOrderAwaitingReview } = await import("../services/order-notify.js");
+      void notifyAdminsOrderAwaitingReview(order.id);
       return c.json({ order: { id: order.id, price: order.price }, card });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
@@ -1278,14 +1462,17 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       take: 100,
       include: { user: true },
     });
+    const { isTelegramReceiptFileId } = await import("../services/order-notify.js");
     return c.json({
       orders: orders.map((o) => ({
         id: o.id,
         kind: o.kind,
         status: o.status,
         price: o.price,
+        paymentMethod: o.paymentMethod,
         summary: orderSummaryText(o),
         receiptText: o.receiptText,
+        hasReceiptImage: isTelegramReceiptFileId(o.receiptFileId),
         createdAt: o.createdAt.toISOString(),
         user: {
           username: o.user.username,
@@ -1293,6 +1480,23 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           firstName: o.user.firstName,
         },
       })),
+    });
+  });
+
+  api.get("/admin/orders/:id/receipt-file", async (c) => {
+    const order = await prisma.order.findUnique({ where: { id: c.req.param("id") } });
+    if (!order) return c.json({ error: "Not found" }, 404);
+    const { fetchTelegramFileById, isTelegramReceiptFileId } = await import("../services/order-notify.js");
+    if (!isTelegramReceiptFileId(order.receiptFileId)) {
+      return c.json({ error: "عکس رسید موجود نیست" }, 404);
+    }
+    const file = await fetchTelegramFileById(order.receiptFileId!);
+    if (!file) return c.json({ error: "دریافت فایل از تلگرام ناموفق بود" }, 502);
+    return new Response(new Uint8Array(file.buffer), {
+      headers: {
+        "Content-Type": file.contentType,
+        "Cache-Control": "private, max-age=300",
+      },
     });
   });
 
@@ -1858,8 +2062,14 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     const pageSize = Math.max(1, Math.min(100, Number(c.req.query("pageSize") ?? 30) || 30));
     const q = String(c.req.query("q") ?? "");
     const sortRaw = String(c.req.query("sort") ?? "newest");
-    const sort =
-      sortRaw === "oldest" || sortRaw === "ending" || sortRaw === "newest" ? sortRaw : "newest";
+    const sort: ConfigListSort =
+      sortRaw === "oldest" ||
+      sortRaw === "ending" ||
+      sortRaw === "ending_date" ||
+      sortRaw === "ending_traffic" ||
+      sortRaw === "newest"
+        ? sortRaw
+        : "newest";
 
     async function enrich(item: Awaited<ReturnType<typeof listConfigsForGroup>>["items"][number]) {
       let usedTrafficBytes = 0;
@@ -1884,7 +2094,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       return { ...item, usedTrafficBytes, trafficGb, subUrl };
     }
 
-    if (sort === "ending") {
+    if (sort === "ending" || sort === "ending_traffic") {
       // Need traffic on every row before sorting, then paginate
       const all = await listConfigsForGroup(c.req.param("groupKey"), 0, 0, q, "newest");
       const enriched: Awaited<ReturnType<typeof enrich>>[] = new Array(all.items.length);
@@ -1900,6 +2110,20 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         }),
       );
       enriched.sort((a, b) => {
+        if (sort === "ending_traffic") {
+          const ua = endingUrgencyDays({
+            expiresAt: null,
+            usedBytes: a.usedTrafficBytes,
+            totalGb: a.trafficGb,
+          });
+          const ub = endingUrgencyDays({
+            expiresAt: null,
+            usedBytes: b.usedTrafficBytes,
+            totalGb: b.trafficGb,
+          });
+          if (ua !== ub) return ua - ub;
+          return a.email.localeCompare(b.email);
+        }
         const ua = endingUrgencyDays({
           expiresAt: a.expiresAt,
           usedBytes: a.usedTrafficBytes,

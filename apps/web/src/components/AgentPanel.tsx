@@ -132,8 +132,15 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   }, [home, tab, loadConfigs]);
 
   const filteredSorted = useMemo(() => {
-    const base = filter.trim()
-      ? configs.filter((c) => (c.code || "").includes(filter) || c.email.includes(filter) || (c.title || "").includes(filter))
+    const q = filter.trim().toLowerCase();
+    const base = q
+      ? configs.filter((c) => {
+          const hay = [c.code, c.email, c.title, c.note]
+            .filter(Boolean)
+            .join("\n")
+            .toLowerCase();
+          return hay.includes(q);
+        })
       : configs;
     return sortByMode(base, configSort, {
       createdAt: (c) => (c.createdAt ? new Date(c.createdAt).getTime() : 0),
@@ -142,6 +149,12 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       endingUrgencyDays: (c) =>
         endingUrgencyDays({
           expiresAt: c.expiresAt,
+          usedBytes: c.usedTrafficBytes ?? 0,
+          totalGb: c.trafficGb,
+        }),
+      endingTrafficDays: (c) =>
+        endingUrgencyDays({
+          expiresAt: null,
           usedBytes: c.usedTrafficBytes ?? 0,
           totalGb: c.trafficGb,
         }),
@@ -396,7 +409,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           <h2>کانفیگ‌های گروه شما</h2>
           <div className="field">
             <label>جستجو</label>
-            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="کد، ایمیل یا عنوان" />
+            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="کد، ایمیل، عنوان یا نوت" />
           </div>
           <SortSelect id="partner-config-sort" value={configSort} onChange={setConfigSort} />
           <div className="list">

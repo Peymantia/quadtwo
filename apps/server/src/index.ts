@@ -44,8 +44,13 @@ startPanelReconcileCron();
 console.log("panel reconcile cron started (every 10m)");
 
 const { startBackupCron } = await import("./services/backup.js");
-startBackupCron(bot.api);
-console.log("backup cron started (checks every 1m)");
+const { isDemoMode } = await import("./services/license.js");
+if (isDemoMode()) {
+  console.log("backup cron skipped (DEMO_MODE — scheduled backups only on main bot)");
+} else {
+  startBackupCron(bot.api);
+  console.log("backup cron started (checks every 1m)");
+}
 
 const { cancelStalePendingDiscountOrders } = await import("./services/discount-codes.js");
 const runStaleDiscountCleanup = () => {

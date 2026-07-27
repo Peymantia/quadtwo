@@ -1,4 +1,3 @@
-import QRCode from "qrcode";
 import { randomBytes } from "node:crypto";
 import { SubscriptionStatus } from "@prisma/client";
 import { prisma } from "../db.js";
@@ -13,11 +12,11 @@ const TEST_MB = 250;
 const TEST_MS = 24 * 60 * 60 * 1000;
 
 export type TestProvisionResult = {
+  subscriptionId: string;
   code: string;
   email: string;
   subUrl: string;
   expiresHint: string;
-  qrPng: Buffer;
 };
 
 /**
@@ -54,8 +53,7 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
       .toString("hex")
       .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
     const subUrl = `https://demo.invalid/sub/${subId}`;
-    const qrPng = await QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
-    await prisma.$transaction([
+    const [subscription] = await prisma.$transaction([
       prisma.subscription.create({
         data: {
           code,
@@ -81,11 +79,11 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
       }),
     ]);
     return {
+      subscriptionId: subscription.id,
       code,
       email,
       subUrl,
       expiresHint: "۱ روز از اولین اتصال · ۲۵۰ مگابایت (نمایشی)",
-      qrPng,
     };
   }
 
@@ -136,9 +134,8 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
   }
 
   const subUrl = await resolveSubUrl(panelSubId, resolved.xui, resolved.subBase);
-  const qrPng = await QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
 
-  await prisma.$transaction([
+  const [subscription] = await prisma.$transaction([
     prisma.subscription.create({
       data: {
         code,
@@ -164,10 +161,10 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
   ]);
 
   return {
+    subscriptionId: subscription.id,
     code,
     email,
     subUrl,
     expiresHint: "۱ روز از اولین اتصال · ۲۵۰ مگابایت",
-    qrPng,
   };
 }

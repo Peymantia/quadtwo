@@ -1500,6 +1500,40 @@ h3 {
   background: rgba(56, 189, 248, 0.08);
 }
 
+.order-receipt-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.order-receipt-box__title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.order-receipt-box__text {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.order-receipt-img {
+  display: block;
+  margin-top: 10px;
+  max-width: min(100%, 320px);
+  max-height: 360px;
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.25);
+}
+
 /* Plan card (shop) */
 .plan-card {
   border: 1px solid var(--line);
@@ -3643,18 +3677,30 @@ button.pay-dest-number:active,
   }
 }
 
-.acct-detail-pre {
+.tap-copy {
+  display: block;
+  width: 100%;
+  text-align: left;
+  direction: ltr;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  word-break: break-all;
   white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 0.88rem;
-  line-height: 1.55;
-  margin: 0 0 14px;
-  background: var(--elev);
-  border: 1px solid var(--line);
   padding: 12px 14px;
   border-radius: 12px;
-  color: var(--text);
-  max-height: min(55vh, 420px);
-  overflow: auto;
+  border: 1px dashed rgba(56, 189, 248, 0.45);
+  background: rgba(16, 20, 47, 0.85);
+  color: #dbeafe;
+  cursor: pointer;
 }
+.tap-copy:hover {
+  border-color: rgba(56, 189, 248, 0.8);
+  background: rgba(16, 20, 47, 1);
+}
+.sub-addons {
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
 

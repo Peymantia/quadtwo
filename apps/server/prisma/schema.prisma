@@ -37,6 +37,10 @@ enum OrderKind {
   rotate_sub
   rotate_uuid
   wallet_charge
+  /// Add calendar days to an existing subscription (order.months = days)
+  add_days
+  /// Add GB to an existing volume subscription (order.trafficGb = added GB)
+  add_gb
 }
 
 enum WalletTxType {

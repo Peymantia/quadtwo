@@ -6,7 +6,7 @@ import { Modal } from "../../components/Modal";
 import { ConfirmToast, Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { TrafficProgress } from "../../components/PaymentCard";
-import { api, formatToman } from "../../lib/api";
+import { api, apiBase, formatToman, getDemoRole, getToken } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 import { SortSelect, type ListSort } from "../../components/SortSelect";
@@ -19,9 +19,9 @@ import { SettingsAccordion } from "../../components/SettingsAccordion";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
-  { key: "home", label: "داشبورد", icon: "home", pin: true },
+  { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true },
   { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true },
-  { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true, bubble: true },
+  { key: "home", label: "داشبورد", icon: "home", pin: true, bubble: true },
   { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true },
   { key: "users", label: "کاربران", icon: "users", pin: true },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
@@ -39,8 +39,10 @@ type PendingOrder = {
   kind: string;
   status: string;
   price: number;
+  paymentMethod?: string;
   summary: string;
   receiptText: string | null;
+  hasReceiptImage?: boolean;
   createdAt: string;
   user: { username: string | null; telegramId: string; firstName: string | null };
 };
@@ -550,6 +552,42 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
 
 /* ---------------- Orders ---------------- */
 
+function OrderReceiptImage({ orderId }: { orderId: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const demoRole = getDemoRole();
+    if (demoRole) headers["X-Demo-Role"] = demoRole;
+
+    void fetch(`${apiBase()}/api/admin/orders/${orderId}/receipt-file`, { headers })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("fail");
+        const blob = await res.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [orderId]);
+
+  if (failed) return <p className="muted" style={{ margin: "8px 0 0" }}>بارگذاری عکس رسید ناموفق بود</p>;
+  if (!src) return <p className="muted" style={{ margin: "8px 0 0" }}>در حال بارگذاری عکس رسید…</p>;
+  return <img src={src} alt="رسید پرداخت" className="order-receipt-img" />;
+}
+
 function OrdersTab({ flash }: { flash: Flash }) {
   const [orders, setOrders] = useState<PendingOrder[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -588,6 +626,14 @@ function OrdersTab({ flash }: { flash: Flash }) {
     }
   }
 
+  const payMethodLabel = (m?: string) => {
+    if (m === "wallet") return "کیف پول";
+    if (m === "crypto") return "کریپتو";
+    if (m === "online") return "آنلاین";
+    if (m === "card_to_card") return "کارت‌به‌کارت";
+    return null;
+  };
+
   return (
     <div className="panel">
       <h2>سفارش‌های در انتظار بررسی</h2>
@@ -599,10 +645,32 @@ function OrdersTab({ flash }: { flash: Flash }) {
               <span className={`badge ${o.status === "awaiting_review" ? "warn" : "info"}`}>
                 {o.status === "awaiting_review" ? "منتظر تأیید" : "منتظر پرداخت"}
               </span>
+              {payMethodLabel(o.paymentMethod) && (
+                <span className="badge info" style={{ marginInlineStart: 6 }}>
+                  {payMethodLabel(o.paymentMethod)}
+                </span>
+              )}
               <pre className="muted" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", margin: "7px 0 0" }}>
                 {o.summary}
               </pre>
-              {o.receiptText && <div className="muted">رسید: {o.receiptText}</div>}
+              {(o.receiptText || o.hasReceiptImage) && (
+                <div className="order-receipt-box">
+                  <div className="order-receipt-box__title">رسید پرداخت</div>
+                  {o.receiptText ? (
+                    <div className="order-receipt-box__text" dir="auto">
+                      {o.receiptText}
+                    </div>
+                  ) : (
+                    <div className="muted">عکس رسید ارسال شده</div>
+                  )}
+                  {o.hasReceiptImage && <OrderReceiptImage orderId={o.id} />}
+                </div>
+              )}
+              {o.status === "awaiting_review" && !o.receiptText && !o.hasReceiptImage && (
+                <div className="muted" style={{ marginTop: 8 }}>
+                  رسید ثبت نشده
+                </div>
+              )}
               <div className="muted" style={{ marginTop: 4 }}>
                 {o.user.username ? `@${o.user.username}` : o.user.firstName || o.user.telegramId} ·{" "}
                 {new Date(o.createdAt).toLocaleString("fa-IR")}
@@ -2374,32 +2442,34 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   return (
     <>
       <div className="panel">
-        <h2>اکانت‌ها بر اساس گروه پنل</h2>
+        <h2>اکانت‌ها</h2>
         <p className="muted" style={{ marginTop: 0 }}>
           اکانت‌های دیتابیس ربات به‌همراه کلاینت‌های زنده‌ی 3x-ui. اگر فقط روی پنل ساخته شده باشند با برچسب «فقط پنل» دیده می‌شوند.
         </p>
-        <div className="chip-row" style={{ marginBottom: 13 }}>
-          {groups.map((g) => (
-            <button
-              key={g.key}
-              type="button"
-              className={`chip${groupKey === g.key ? " on" : ""}`}
-              onClick={() => {
-                setGroupKey(g.key);
-                setPage(0);
-              }}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
         <div className="field" style={{ marginBottom: 12 }}>
-          <label>جستجو (ایمیل، کد، مالک)</label>
+          <label>جستجو (ایمیل، کد، مالک، نوت، عنوان)</label>
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="مثلاً email یا کد سرویس"
+            placeholder="مثلاً Liv یا email یا نوت"
           />
+        </div>
+        <div className="sort-bar">
+          <label htmlFor="admin-config-group">گروه پنل</label>
+          <select
+            id="admin-config-group"
+            value={groupKey}
+            onChange={(e) => {
+              setGroupKey(e.target.value);
+              setPage(0);
+            }}
+          >
+            {groups.map((g) => (
+              <option key={g.key} value={g.key}>
+                {g.label}
+              </option>
+            ))}
+          </select>
         </div>
         <SortSelect
           id="admin-config-sort"

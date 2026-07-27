@@ -1,6 +1,6 @@
 "use client";
 
-export type ListSort = "newest" | "oldest" | "ending";
+export type ListSort = "newest" | "oldest" | "ending" | "ending_date" | "ending_traffic";
 
 export function SortSelect({
   value,
@@ -18,6 +18,8 @@ export function SortSelect({
         <option value="newest">از جدید به قدیم</option>
         <option value="oldest">از قدیم به جدید</option>
         <option value="ending">اتمام حجم یا تاریخ</option>
+        <option value="ending_date">نزدیک‌ترین انقضا</option>
+        <option value="ending_traffic">کمترین حجم باقی‌مانده</option>
       </select>
     </div>
   );
@@ -80,6 +82,7 @@ export function sortByMode<T>(
     remainingRatio: (item: T) => number;
     /** Optional; when present, «ending» uses this instead of remainingRatio */
     endingUrgencyDays?: (item: T) => number;
+    endingTrafficDays?: (item: T) => number;
   },
 ): T[] {
   const copy = [...items];
@@ -87,6 +90,20 @@ export function sortByMode<T>(
     copy.sort((a, b) => getters.createdAt(b) - getters.createdAt(a));
   } else if (mode === "oldest") {
     copy.sort((a, b) => getters.createdAt(a) - getters.createdAt(b));
+  } else if (mode === "ending_date") {
+    copy.sort((a, b) => {
+      const ea = getters.expiresAt(a);
+      const eb = getters.expiresAt(b);
+      if (ea !== eb) return ea - eb;
+      return 0;
+    });
+  } else if (mode === "ending_traffic") {
+    copy.sort((a, b) => {
+      const ua = getters.endingTrafficDays?.(a) ?? getters.endingUrgencyDays?.(a) ?? getters.remainingRatio(a);
+      const ub = getters.endingTrafficDays?.(b) ?? getters.endingUrgencyDays?.(b) ?? getters.remainingRatio(b);
+      if (ua !== ub) return ua - ub;
+      return 0;
+    });
   } else {
     copy.sort((a, b) => {
       const ua = getters.endingUrgencyDays?.(a) ?? getters.remainingRatio(a);

@@ -91,8 +91,13 @@ import {
   clearMyServicesWaits,
   handleMyServicesSearch,
   handleServiceNoteText,
+  handleServiceRenameText,
+  addDaysState,
+  addGbState,
+  waitingServiceRename,
   registerMyServicesHandlers,
   showMyServicesList,
+  showSubscriptionDetail,
 } from "./my-services.js";
 import {
   adminOrderKeyboard,
@@ -101,6 +106,8 @@ import {
   buyCategoryKeyboard,
   buyDraftText,
   buyWizardKeyboard,
+  applyInlineButtonStyle,
+  shuffledButtonStyles,
   guidePlatformPickerKeyboard,
   guideDownloadKeyboard,
   type GuidePlatform,
@@ -115,6 +122,9 @@ import {
   removeReplyKeyboard,
   renewPickKeyboard,
   renewWizardKeyboard,
+  addDaysWizardKeyboard,
+  addGbWizardKeyboard,
+  provisionReadyKeyboard,
   showMenuInlineKeyboard,
   walletChargeAmountsKeyboard,
   walletMenuKeyboard,
@@ -403,7 +413,9 @@ async function showOfferPlanPicker(ctx: Context, edit = false) {
   }
 
   const kb = new InlineKeyboard();
-  for (const p of plans) {
+  const styles = shuffledButtonStyles(plans.length);
+  for (let i = 0; i < plans.length; i++) {
+    const p = plans[i]!;
     const priced = await draftPrice(
       user,
       { trafficGb: p.trafficGb, months: p.months, unlimited: p.trafficGb == null, category: "offer" },
@@ -412,7 +424,9 @@ async function showOfferPlanPicker(ctx: Context, edit = false) {
     const vol = p.trafficGb == null ? "نامحدود" : formatTraffic(p.trafficGb);
     const title = p.title?.trim() || `${vol} · ${p.months} ماه`;
     const price = priced ? formatToman(priced.price) : "—";
-    kb.text(`⭐ ${title} · ${price}`.slice(0, 64), `buy:offer:${p.id}`).row();
+    kb.text(`⭐ ${title} · ${price}`.slice(0, 64), `buy:offer:${p.id}`);
+    applyInlineButtonStyle(kb, styles[i]!);
+    kb.row();
   }
   kb.text("◀️ بازگشت", "buy:back:cat").text("❌ انصراف", "buy:cat:cancel");
   const text = "⭐ پیشنهاد ویژه\n\nیکی از پلن‌های ثابت را انتخاب کنید:";
@@ -530,7 +544,7 @@ async function deliverResult(
   telegramId: bigint | number,
   result: ProvisionResultWithBulk | ProvisionResult,
   trafficGb: number | null,
-  mode: "new" | "renew" = "new",
+  mode: "new" | "renew" | "addon" = "new",
 ) {
   const all = "bulk" in result && result.bulk?.length ? [result, ...result.bulk] : [result];
   if (all.length > 1) {
@@ -540,20 +554,33 @@ async function deliverResult(
     );
   }
   for (const one of all) {
+    const title =
+      mode === "addon"
+        ? "✅ تغییرات سرویس اعمال شد"
+        : mode === "renew"
+          ? "✅ سرویس تمدید شد"
+          : all.length > 1
+            ? "📦 یکی از اکانت‌های عمده"
+            : "🎉 اشتراک شما آماده شد";
+    const exp = one.expiresAt
+      ? new Date(one.expiresAt).toLocaleDateString("fa-IR")
+      : null;
     const text = [
-      mode === "renew" ? "✅ سرویس تمدید شد" : all.length > 1 ? "📦 یکی از اکانت‌های عمده" : "🎉 اشتراک شما آماده شد",
+      title,
       "",
       `کد: <code>${one.code}</code>`,
       `اکانت: <code>${one.email}</code>`,
-      `حجم: ${formatTraffic(trafficGb)}`,
-      "⏱ اعتبار: از اولین اتصال شروع می‌شود",
+      trafficGb != null || mode === "new" || mode === "renew" ? `حجم: ${formatTraffic(trafficGb)}` : "",
+      exp ? `انقضا (پس از فعال‌سازی): ${exp}` : "",
+      mode === "new" || mode === "renew" ? "⏱ اعتبار: از اولین اتصال شروع می‌شود" : "",
       "",
-      "🔗 لینک اشتراک:",
-      `<code>${one.subUrl}</code>`,
-    ].join("\n");
-    await api.sendMessage(Number(telegramId), text, { parse_mode: "HTML" });
-    await api.sendPhoto(Number(telegramId), new InputFile(one.qrPng, "qr.png"), {
-      caption: `QR — ${one.email}`,
+      "از دکمه‌های زیر لینک یا QR را بگیرید:",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await api.sendMessage(Number(telegramId), text, {
+      parse_mode: "HTML",
+      reply_markup: provisionReadyKeyboard(one.subscriptionId),
     });
   }
 }
@@ -645,17 +672,17 @@ async function handleTest(ctx: Context) {
       [
         "🧪 سرویس تست آماده شد",
         "",
-        `کد: ${result.code}`,
-        `اکانت: ${result.email}`,
+        `کد: <code>${result.code}</code>`,
+        `اکانت: <code>${result.email}</code>`,
         `مشخصات: ${result.expiresHint}`,
         "",
-        "🔗 لینک اشتراک:",
-        result.subUrl,
+        "از دکمه‌های زیر لینک یا QR را بگیرید:",
       ].join("\n"),
+      {
+        parse_mode: "HTML",
+        reply_markup: provisionReadyKeyboard(result.subscriptionId),
+      },
     );
-    await ctx.replyWithPhoto(new InputFile(result.qrPng, "qr.png"), {
-      caption: "QR سرویس تست — اسکن کنید",
-    });
   } catch (err) {
     await ctx.reply(friendlyBotError(err));
   }
@@ -1498,7 +1525,12 @@ export function createBot() {
         } catch {
           /* already edited */
         }
-        const mode = order?.kind === OrderKind.renew ? "renew" : "new";
+        const mode =
+          order?.kind === OrderKind.add_days || order?.kind === OrderKind.add_gb
+            ? "addon"
+            : order?.kind === OrderKind.renew
+              ? "renew"
+              : "new";
         await deliverResult(ctx.api, user.telegramId, result as ProvisionResultWithBulk, order?.trafficGb ?? null, mode);
       } catch (err) {
         await ctx.reply(friendlyBotError(err));
@@ -1641,21 +1673,8 @@ export function createBot() {
     });
     await ctx.reply("رسید دریافت شد ✅\nمنتظر تأیید ادمین بمانید.");
 
-    const caption = [
-      "🔔 سفارش جدید",
-      "",
-      `کاربر: ${order.user.firstName ?? ""} @${order.user.username ?? "—"}`,
-      orderSummaryText(order),
-      `سفارش: \`${order.id}\``,
-    ].join("\n");
-
-    await notifyAllAdmins(ctx.api, async (adminId) => {
-      await ctx.api.sendPhoto(adminId, fileId, {
-        caption,
-        parse_mode: "Markdown",
-        reply_markup: adminOrderKeyboard(order.id),
-      });
-    });
+    const { notifyAdminsOrderAwaitingReview } = await import("../services/order-notify.js");
+    void notifyAdminsOrderAwaitingReview(order.id);
   });
 
   bot.on("message:contact", async (ctx) => {
@@ -1716,20 +1735,8 @@ export function createBot() {
           target: order.id,
         });
         await ctx.reply("هش/رسید دریافت شد ✅\nمنتظر تأیید ادمین بمانید.");
-        const caption = [
-          "🔔 سفارش کریپتو",
-          "",
-          `کاربر: ${order.user.firstName ?? ""} @${order.user.username ?? "—"}`,
-          orderSummaryText(order),
-          `هش/رسید: ${text.slice(0, 200)}`,
-          `سفارش: \`${order.id}\``,
-        ].join("\n");
-        await notifyAllAdmins(ctx.api, async (adminId) => {
-          await ctx.api.sendMessage(adminId, caption, {
-            parse_mode: "Markdown",
-            reply_markup: adminOrderKeyboard(order.id),
-          });
-        });
+        const { notifyAdminsOrderAwaitingReview } = await import("../services/order-notify.js");
+        void notifyAdminsOrderAwaitingReview(order.id);
         return;
       }
     }
@@ -1738,6 +1745,7 @@ export function createBot() {
     if (await handleDiscountCreateText(ctx, text)) return;
     if (await handleMyServicesSearch(ctx, text)) return;
     if (await handleServiceNoteText(ctx, text)) return;
+    if (await handleServiceRenameText(ctx, text)) return;
 
     if (waitingConfigLookup.has(tid)) {
       if ((Object.values(BTN) as string[]).includes(text)) {
@@ -2288,12 +2296,32 @@ export function createBot() {
   });
 
   bot.callbackQuery(/^sub:qr:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery();
+    await ctx.answerCallbackQuery({ text: "در حال ساخت QR…" });
     const subUrl = await refreshSubscriptionSubUrl(ctx.match![1]!);
     if (!subUrl) return ctx.reply("لینک موجود نیست.");
     const { default: QRCode } = await import("qrcode");
     const png = await QRCode.toBuffer(subUrl, { type: "png", width: 512, margin: 2 });
-    await ctx.replyWithPhoto(new InputFile(png, "qr.png"));
+    await ctx.replyWithPhoto(new InputFile(png, "qr.png"), { caption: "📱 QR Code" });
+  });
+
+  bot.callbackQuery(/^sub:b64:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery({ text: "در حال آماده‌سازی…" });
+    const user = await upsertUserFromTelegram(ctx.from!);
+    try {
+      const { getSecureConfigBase64 } = await import("../services/sub-addons.js");
+      const r = await getSecureConfigBase64(user.id, ctx.match![1]!);
+      await ctx.reply(
+        [
+          "🔒 لینک امن اشتراک (Base64)",
+          "برای کپی، روی متن زیر بزنید:",
+          "",
+          `<code>${r.base64}</code>`,
+        ].join("\n"),
+        { parse_mode: "HTML" },
+      );
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
   });
 
   bot.callbackQuery(/^sub:rotsub:(.+)$/, async (ctx) => {
@@ -2328,6 +2356,178 @@ export function createBot() {
     if (!eligibility.ok) return ctx.reply(eligibility.message);
     renewState.delete(ctx.from!.id);
     await showRenewWizard(ctx, sub.id, {});
+  });
+
+  bot.callbackQuery(/^sub:rename:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const sub = await prisma.subscription.findFirst({
+      where: { id: ctx.match![1], userId: user.id },
+    });
+    if (!sub) return ctx.reply("سرویس پیدا نشد.");
+    waitingServiceRename.set(ctx.from!.id, sub.id);
+    await ctx.reply(
+      [
+        "✍️ تغییر نام دلخواه",
+        "",
+        `نام فعلی: <code>${sub.email}</code>`,
+        "",
+        "نام جدید را بفرستید (حروف انگلیسی، عدد، . _ -).",
+        "اگر تکراری باشد یک عدد سه‌رقمی به انتها اضافه می‌شود.",
+        "لغو: انصراف",
+      ].join("\n"),
+      { parse_mode: "HTML" },
+    );
+  });
+
+  bot.callbackQuery(/^sub:adddays:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const subId = ctx.match![1]!;
+    const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
+    if (!sub) return ctx.reply("سرویس پیدا نشد.");
+    if (sub.isTest) return ctx.reply("سرویس تست قابل افزایش روز نیست.");
+    const { quoteAddDays } = await import("../services/sub-addons.js");
+    addDaysState.set(ctx.from!.id, { subId, days: 1 });
+    const q = quoteAddDays(1);
+    await ctx.editMessageText(
+      [
+        "📅 افزایش روز",
+        "",
+        `سرویس: ${sub.email}`,
+        `حداکثر: ${q.maxDays} روز`,
+        `هر روز: ${formatToman(q.perDay)}`,
+        "",
+        "تعداد روز را با +/− انتخاب کنید.",
+      ].join("\n"),
+      { reply_markup: addDaysWizardKeyboard({ subId, days: q.days, price: q.price }) },
+    );
+  });
+
+  bot.callbackQuery(/^adddays:n:([^:]+):([+-])$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const subId = ctx.match![1]!;
+    const dir = ctx.match![2] === "+" ? 1 : -1;
+    const cur = addDaysState.get(ctx.from!.id);
+    const days = Math.min(10, Math.max(1, (cur?.subId === subId ? cur.days : 1) + dir));
+    addDaysState.set(ctx.from!.id, { subId, days });
+    const { quoteAddDays } = await import("../services/sub-addons.js");
+    const q = quoteAddDays(days);
+    try {
+      await ctx.editMessageReplyMarkup({
+        reply_markup: addDaysWizardKeyboard({ subId, days: q.days, price: q.price }),
+      });
+    } catch {
+      /* unchanged */
+    }
+  });
+
+  bot.callbackQuery(/^adddays:pay:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const subId = ctx.match![1]!;
+    const days = addDaysState.get(ctx.from!.id)?.subId === subId ? addDaysState.get(ctx.from!.id)!.days : 1;
+    try {
+      const { createAddDaysOrder } = await import("../services/sub-addons.js");
+      const order = await createAddDaysOrder({ userId: user.id, subId, days });
+      addDaysState.delete(ctx.from!.id);
+      if (order.price <= 0) {
+        await ctx.editMessageText(`${orderSummaryText(order)}\n\n✅ رایگان — در حال اعمال…`);
+        const result = await payOrderWithWallet(order.id, user.id);
+        if ("kind" in result && result.kind === "wallet_credit") return;
+        await deliverResult(ctx.api, ctx.from!.id, result as ProvisionResultWithBulk, null, "addon");
+        return;
+      }
+      const wallet = await getWallet(user.id);
+      await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
+        reply_markup: await buildPayMethodKeyboard(order.id, wallet.balance),
+      });
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery(/^sub:addgb:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const subId = ctx.match![1]!;
+    const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
+    if (!sub) return ctx.reply("سرویس پیدا نشد.");
+    try {
+      const { quoteAddGb } = await import("../services/sub-addons.js");
+      const q = await quoteAddGb(user, subId, 1);
+      addGbState.set(ctx.from!.id, { subId, gb: 1 });
+      await ctx.editMessageText(
+        [
+          "📏 افزایش حجم",
+          "",
+          `سرویس: ${sub.email}`,
+          `حجم فعلی: ${q.currentGb} GB`,
+          `هر گیگ: ${formatToman(q.perGb)}`,
+          "",
+          "حجم اضافه را با +/− انتخاب کنید.",
+        ].join("\n"),
+        {
+          reply_markup: addGbWizardKeyboard({
+            subId,
+            gb: q.gb,
+            price: q.price,
+            perGb: q.perGb,
+          }),
+        },
+      );
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery(/^addgb:n:([^:]+):([+-])$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const subId = ctx.match![1]!;
+    const dir = ctx.match![2] === "+" ? 1 : -1;
+    const cur = addGbState.get(ctx.from!.id);
+    const gb = Math.min(100, Math.max(1, (cur?.subId === subId ? cur.gb : 1) + dir));
+    addGbState.set(ctx.from!.id, { subId, gb });
+    try {
+      const { quoteAddGb } = await import("../services/sub-addons.js");
+      const q = await quoteAddGb(user, subId, gb);
+      await ctx.editMessageReplyMarkup({
+        reply_markup: addGbWizardKeyboard({
+          subId,
+          gb: q.gb,
+          price: q.price,
+          perGb: q.perGb,
+        }),
+      });
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery(/^addgb:pay:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const subId = ctx.match![1]!;
+    const gb = addGbState.get(ctx.from!.id)?.subId === subId ? addGbState.get(ctx.from!.id)!.gb : 1;
+    try {
+      const { createAddGbOrder } = await import("../services/sub-addons.js");
+      const order = await createAddGbOrder({ userId: user.id, subId, gb });
+      addGbState.delete(ctx.from!.id);
+      if (order.price <= 0) {
+        await ctx.editMessageText(`${orderSummaryText(order)}\n\n✅ رایگان — در حال اعمال…`);
+        const result = await payOrderWithWallet(order.id, user.id);
+        if ("kind" in result && result.kind === "wallet_credit") return;
+        await deliverResult(ctx.api, ctx.from!.id, result as ProvisionResultWithBulk, order.trafficGb, "addon");
+        return;
+      }
+      const wallet = await getWallet(user.id);
+      await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
+        reply_markup: await buildPayMethodKeyboard(order.id, wallet.balance),
+      });
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
   });
 
   bot.callbackQuery(/^renew:vol:([^:]+):([+-])$/, async (ctx) => {

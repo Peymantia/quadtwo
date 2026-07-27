@@ -4,6 +4,7 @@ import { env } from "../config/env.js";
 import { prisma } from "../db.js";
 import { getSetting, setSetting } from "./settings.js";
 import { listNotifyAdminTelegramIds } from "./users.js";
+import { isDemoMode } from "./license.js";
 import type { Api } from "grammy";
 import { InputFile } from "grammy";
 
@@ -252,7 +253,6 @@ export async function pruneOldBackups(keep = 14): Promise<number> {
 export async function restoreDatabaseFromBackupBuffer(
   buf: Buffer,
 ): Promise<{ ok: true; safetyName: string; size: number } | { ok: false; error: string }> {
-  const { isDemoMode } = await import("./license.js");
   if (isDemoMode()) {
     return { ok: false, error: "در حالت دمو بازیابی پشتیبان غیرفعال است" };
   }
@@ -358,12 +358,19 @@ function dayKey(d = new Date()) {
 
 /**
  * Poll every minute; when local time matches configured hour:minute and not yet run today, send backup.
+ * No-op in DEMO_MODE so admins only get scheduled files from the main bot.
  */
 export function startBackupCron(api: Api, intervalMs = 60_000) {
+  if (isDemoMode()) {
+    console.log("backup cron: skipped (DEMO_MODE)");
+    return null;
+  }
+
   let lastFiredDay = "";
 
   const tick = async () => {
     try {
+      if (isDemoMode()) return;
       const cfg = await getBackupConfig();
       if (!cfg.enabled) return;
       const now = new Date();

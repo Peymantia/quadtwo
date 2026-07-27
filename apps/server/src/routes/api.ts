@@ -131,19 +131,33 @@ export function createApiApp() {
   registerDashPartnerRoutes(api);
   registerDashAdminRoutes(api);
 
-  // Kept for web receipt uploads (not registered in dash)
+  // Web receipt uploads — notify admins on Telegram (same queue as bot receipts)
   api.post("/me/orders/:id/receipt", async (c) => {
     const id = c.req.param("id");
     const body = await c.req.json<{ receiptText?: string; receiptFileId?: string }>();
+    const receiptText = (body.receiptText ?? "رسید از داشبورد وب").trim().slice(0, 500);
     const order = await prisma.order.updateMany({
-      where: { id, userId: c.get("userId") },
+      where: {
+        id,
+        userId: c.get("userId"),
+        status: { in: ["pending_payment", "awaiting_review"] },
+      },
       data: {
-        receiptText: body.receiptText ?? "uploaded-via-dashboard",
-        receiptFileId: body.receiptFileId ?? "dashboard",
+        receiptText,
+        receiptFileId: body.receiptFileId?.trim() || "dashboard",
         status: "awaiting_review",
       },
     });
     if (!order.count) return c.json({ error: "Not found" }, 404);
+    const { auditLog } = await import("../services/audit.js");
+    await auditLog({
+      action: "receipt_uploaded",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: id,
+      detail: "web",
+    });
+    const { notifyAdminsOrderAwaitingReview } = await import("../services/order-notify.js");
+    void notifyAdminsOrderAwaitingReview(id);
     return c.json({ ok: true });
   });
 

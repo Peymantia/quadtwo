@@ -149,16 +149,40 @@ export function showMenuInlineKeyboard() {
   return new InlineKeyboard().text("📌 نمایش منوی اصلی", "menu:show").primary();
 }
 
-/** Inline category picker inside buy flow */
+/** Inline category picker inside buy flow — random Telegram button colors each open. */
 export function buyCategoryKeyboard(cats: Array<{ key: string; label: string }>) {
   const kb = new InlineKeyboard();
-  for (const c of cats) {
-    const style = c.key === "unlimited" ? "primary" : "success";
-    if (style === "primary") kb.text(c.label, `buy:cat:${c.key}`).primary().row();
-    else kb.text(c.label, `buy:cat:${c.key}`).success().row();
+  const styles = shuffledButtonStyles(cats.length);
+  for (let i = 0; i < cats.length; i++) {
+    const c = cats[i]!;
+    kb.text(c.label, `buy:cat:${c.key}`);
+    applyInlineButtonStyle(kb, styles[i]!);
+    kb.row();
   }
   kb.text("⏸ انصراف", "buy:cat:cancel");
   return kb;
+}
+
+/** Telegram Bot API styles only: primary=blue, success=green, danger=red, null=neutral. */
+export type TgBtnStyle = "primary" | "success" | "danger" | null;
+
+/** Random styles for plan buttons (reshuffled each time the keyboard is built). */
+export function shuffledButtonStyles(n: number): TgBtnStyle[] {
+  const palette: TgBtnStyle[] = ["primary", "success", "danger", null];
+  const out: TgBtnStyle[] = [];
+  for (let i = 0; i < n; i++) {
+    const prev = out[i - 1];
+    const choices = palette.filter((s) => s !== prev);
+    const pool = choices.length ? choices : palette;
+    out.push(pool[Math.floor(Math.random() * pool.length)]!);
+  }
+  return out;
+}
+
+export function applyInlineButtonStyle(kb: InlineKeyboard, style: TgBtnStyle) {
+  if (style === "primary") kb.primary();
+  else if (style === "success") kb.success();
+  else if (style === "danger") kb.danger();
 }
 
 /** @deprecated inline main menu — use mainMenuReply */
@@ -449,15 +473,29 @@ export function subscriptionDetailKeyboard(opts: {
   subId: string;
   panelEnabled?: boolean | null;
   canRenew?: boolean;
+  canAddDays?: boolean;
+  canAddGb?: boolean;
 }) {
   const kb = new InlineKeyboard()
-    .text("🔗 لینک ساب", `sub:link:${opts.subId}`)
-    .text("📱 QR Code", `sub:qr:${opts.subId}`)
+    .text("🔗 لینک اشتراک", `sub:link:${opts.subId}`)
+    .text("🔒 لینک امن اشتراک", `sub:b64:${opts.subId}`)
+    .row()
+    .text("📱 نمایش QR Code", `sub:qr:${opts.subId}`)
     .row();
 
   if (opts.canRenew !== false) {
     kb.text("♻️ تمدید سرویس", `sub:renew:${opts.subId}`).success().row();
   }
+
+  if (opts.canAddDays !== false) {
+    kb.text("📅 افزایش روز", `sub:adddays:${opts.subId}`);
+  }
+  if (opts.canAddGb !== false) {
+    kb.text("📏 افزایش حجم", `sub:addgb:${opts.subId}`);
+  }
+  if (opts.canAddDays !== false || opts.canAddGb !== false) kb.row();
+
+  kb.text("✍️ تغییر نام دلخواه", `sub:rename:${opts.subId}`).row();
 
   kb.text("🔄 تغییر لینک ساب", `sub:rotsub:${opts.subId}`)
     .text("🔑 تغییر لینک کانفیگ", `sub:rotuuid:${opts.subId}`)
@@ -473,6 +511,51 @@ export function subscriptionDetailKeyboard(opts: {
 
   kb.text("📝 یادداشت", `sub:note:${opts.subId}`).row();
   kb.text("« بازگشت به لیست", "mysvc:list");
+  return kb;
+}
+
+/** After create / renew / rotate — specs in message, links & QR on demand. */
+export function provisionReadyKeyboard(subId: string) {
+  return new InlineKeyboard()
+    .text("🔗 لینک اشتراک", `sub:link:${subId}`)
+    .row()
+    .text("🔒 لینک امن اشتراک", `sub:b64:${subId}`)
+    .row()
+    .text("📱 نمایش QR Code", `sub:qr:${subId}`)
+    .row()
+    .text("📦 جزئیات سرویس", `mysvc:open:${subId}`);
+}
+
+export function addDaysWizardKeyboard(opts: { subId: string; days: number; price: number }) {
+  const kb = new InlineKeyboard()
+    .text("−", `adddays:n:${opts.subId}:-`)
+    .text(`📅 ${opts.days} روز`, "wiz:noop")
+    .text("+", `adddays:n:${opts.subId}:+`)
+    .row()
+    .text(`💳 پرداخت · ${formatToman(opts.price)}`, `adddays:pay:${opts.subId}`)
+    .success()
+    .row()
+    .text("« بازگشت", `mysvc:open:${opts.subId}`);
+  return kb;
+}
+
+export function addGbWizardKeyboard(opts: {
+  subId: string;
+  gb: number;
+  price: number;
+  perGb: number;
+}) {
+  const kb = new InlineKeyboard()
+    .text("−", `addgb:n:${opts.subId}:-`)
+    .text(`📏 ${opts.gb} گیگ`, "wiz:noop")
+    .text("+", `addgb:n:${opts.subId}:+`)
+    .row()
+    .text(`هر گیگ: ${formatToman(opts.perGb)}`, "wiz:noop")
+    .row()
+    .text(`💳 پرداخت · ${formatToman(opts.price)}`, `addgb:pay:${opts.subId}`)
+    .success()
+    .row()
+    .text("« بازگشت", `mysvc:open:${opts.subId}`);
   return kb;
 }
 

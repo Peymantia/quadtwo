@@ -14,6 +14,7 @@ import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../com
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
 import { SubQrModal } from "../../components/SubQrModal";
+import { SubAddonsBar } from "../../components/SubAddonsBar";
 
 type Sub = {
   id: string;
@@ -432,6 +433,12 @@ export default function UserAppPage() {
                   usedBytes: s.usedTrafficBytes ?? 0,
                   totalGb: s.isTest ? 0.25 : s.trafficGb,
                 }),
+              endingTrafficDays: (s) =>
+                endingUrgencyDays({
+                  expiresAt: null,
+                  usedBytes: s.usedTrafficBytes ?? 0,
+                  totalGb: s.isTest ? 0.25 : s.trafficGb,
+                }),
             }).map((s) => {
               const expired = new Date(s.expiresAt) < new Date();
               const totalGb = s.isTest ? 0.25 : s.trafficGb;
@@ -550,6 +557,28 @@ export default function UserAppPage() {
                         </button>
                       )}
                     </div>
+                    <SubAddonsBar
+                      subId={s.id}
+                      email={s.email}
+                      isTest={s.isTest}
+                      trafficGb={s.trafficGb}
+                      busy={busy}
+                      walletBalance={home.wallet.balance}
+                      onBusy={setBusy}
+                      onDone={() => {
+                        void reload();
+                        void loadSubs();
+                      }}
+                      onPayCard={(orderId, price, card) => {
+                        setPayCard(card);
+                        setPayModal({ kind: "card", orderId, price, card });
+                      }}
+                      onPayCrypto={(orderId, price, crypto) => {
+                        setPayModal({ kind: "crypto", orderId, price, crypto });
+                      }}
+                      onError={(m) => setErr(m || null)}
+                      onMsg={setMsg}
+                    />
                   </div>
                 </div>
               );
