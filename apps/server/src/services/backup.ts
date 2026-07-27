@@ -191,7 +191,35 @@ export async function inspectBackupBuffer(buf: Buffer): Promise<BackupInspectRes
   }
 }
 
-/** Keep last N backup files (+ safety snapshots); delete older .db in backups/. */
+/** List recent backup / safety files in the backups directory. */
+export async function listBackupFiles(limit = 15): Promise<
+  Array<{ name: string; size: number; sizeLabel: string; mtime: string; kind: "backup" | "safety" | "other" }>
+> {
+  const { readdir } = await import("node:fs/promises");
+  const dir = await backupDir();
+  const names = (await readdir(dir)).filter((n) => n.endsWith(".db"));
+  const withStat = await Promise.all(
+    names.map(async (name) => {
+      const p = join(dir, name);
+      const s = await stat(p);
+      const kind: "backup" | "safety" | "other" = name.startsWith("pre-restore-")
+        ? "safety"
+        : name.startsWith("quadtwo-backup-")
+          ? "backup"
+          : "other";
+      return {
+        name,
+        size: s.size,
+        sizeLabel: formatBytes(s.size),
+        mtime: new Date(s.mtimeMs).toISOString(),
+        kind,
+      };
+    }),
+  );
+  withStat.sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
+  return withStat.slice(0, Math.max(1, limit));
+}
+
 export async function pruneOldBackups(keep = 14): Promise<number> {
   const { readdir, unlink } = await import("node:fs/promises");
   const dir = await backupDir();

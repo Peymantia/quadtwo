@@ -25,7 +25,7 @@ import {
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
 import { claimTestService } from "../services/test-service.js";
-import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, canEditLimitIp, resolvePurchaseLimitIp, setSetting } from "../services/settings.js";
+import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, canEditLimitIp, resolvePurchaseLimitIp, setSetting, isSalesCategoryEnabled } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
@@ -457,12 +457,17 @@ async function showBuyWizard(ctx: Context, edit = false) {
   }
 
   let offerTitle: string | null = null;
+  let offerDeepLink: string | null = null;
   if (offer) {
     const plans = await listOfferPlans();
     const match =
       (draft.priceCellId ? plans.find((p) => p.id === draft.priceCellId) : null) ??
       plans.find((p) => p.months === draft.months && (p.trafficGb ?? null) === (draft.trafficGb ?? null));
     offerTitle = match?.title ?? null;
+    if (match && (await isControlAdmin(ctx.from?.id))) {
+      const uname = ctx.me?.username;
+      if (uname) offerDeepLink = `https://t.me/${uname}?start=offer_${match.id}`;
+    }
   }
 
   let text = buyDraftText({
@@ -483,6 +488,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
       "⭐ پیشنهاد ویژه (پلن ثابت)",
       offerTitle ? `📌 ${offerTitle}` : "",
       "حجم، مدت و قیمت قابل تغییر نیست — فقط نام اکانت را مشخص کنید.",
+      offerDeepLink ? `🔗 لینک مستقیم:\n${offerDeepLink}` : "",
       "",
       text,
     ]
@@ -875,6 +881,25 @@ export function createBot() {
 
   bot.command("start", async (ctx) => {
     if (!(await requireChannel(ctx))) return;
+    const payload = String(ctx.match || "").trim();
+    if (payload.startsWith("offer_")) {
+      const id = payload.slice("offer_".length);
+      const plan = (await listOfferPlans()).find((p) => p.id === id);
+      if (!plan) {
+        await ctx.reply("این پیشنهاد ویژه پیدا نشد یا غیرفعال است.");
+      } else if (!(await isSalesCategoryEnabled("offer"))) {
+        await ctx.reply("فروش پیشنهاد ویژه فعلاً غیرفعال است.");
+      } else {
+        await setDraftOfferPlan(BigInt(ctx.from!.id), {
+          id: plan.id,
+          trafficGb: plan.trafficGb,
+          months: plan.months,
+        });
+        await ctx.reply("⭐ پیشنهاد ویژه انتخاب شد — ادامه خرید:");
+        await showBuyWizard(ctx, false);
+        return;
+      }
+    }
     const welcome = await getSetting("welcome_text");
     const user = await upsertUserFromTelegram(ctx.from!);
     const role = effectiveRole(ctx.from!.id, user.role);

@@ -79,7 +79,7 @@ import {
   type PriceRates,
   type RolePricingModes,
 } from "../services/settings.js";
-import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, inspectBackupBuffer, type BackupConfig } from "../services/backup.js";
+import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, inspectBackupBuffer, listBackupFiles, type BackupConfig } from "../services/backup.js";
 import { Bot } from "grammy";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
@@ -2201,7 +2201,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/admin/backup", async (c) => {
     const config = await getBackupConfig();
-    return c.json({ config });
+    const files = await listBackupFiles(12);
+    return c.json({ config, files });
   });
 
   api.put("/admin/backup", async (c) => {
@@ -2221,7 +2222,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       actorTelegramId: BigInt(c.get("telegramId")),
       detail: `backup enabled=${next.enabled} at ${next.hour}:${next.minute}`,
     });
-    return c.json({ config: next });
+    const files = await listBackupFiles(12);
+    return c.json({ config: next, files });
   });
 
   api.post("/admin/backup/send", async (c) => {

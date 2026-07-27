@@ -211,6 +211,23 @@ npm run dev -w @quadtwo/web
 
 اگر از ایران به `api.telegram.org` وصل نمی‌شوید، روی VPS اجرا کنید یا `TELEGRAM_PROXY` بگذارید.
 
+### ⚠️ دمو و لایسنس
+
+| متغیر | توضیح |
+|:--|:--|
+| `DEMO_MODE` | نقش‌سوئیچر دمو؛ لایسنس را رد می‌کند |
+| `DEMO_ALLOW_PROD` | فقط اگر عمداً دمو روی `NODE_ENV=production` لازم است — وگرنه سرور استارت نمی‌شود |
+| `LICENSE_KEY` | لایسنس خریدار (`Q2.1.…`) |
+
+در حالت دمو، **بازیابی پشتیبان** عمداً غیرفعال است.
+
+بعد از آپدیت‌هایی که فیلد Prisma جدید دارند:
+
+```bash
+npm run db:push -w @quadtwo/server
+# یا روی سرور: q2 update / prisma db push
+```
+
 ### 🌐 داشبورد وب (`dash.anthropics.ir`)
 
 راهنمای کامل نصب: [`deploy/README.md`](deploy/README.md)

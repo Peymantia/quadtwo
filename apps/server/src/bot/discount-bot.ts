@@ -12,13 +12,22 @@ import {
   deleteDiscountCode,
   setDiscountCodesEnabled,
 } from "../services/discount-codes.js";
+import type { User } from "@prisma/client";
 
-type CreateWait = { step: "code" | "percent"; code?: string };
+type CreateWait =
+  | { step: "code" }
+  | { step: "percent"; code: string }
+  | { step: "maxUses"; code: string; percentOff: number }
+  | { step: "shareable"; code: string; percentOff: number; maxUses: number | null };
 
 const waitingCreate = new Map<number, CreateWait>();
 
 export function clearDiscountBotWaits(tid: number) {
   waitingCreate.delete(tid);
+}
+
+function actorFromAccess(access: { user: User; role: string }): Pick<User, "id" | "role"> {
+  return { id: access.user.id, role: access.role as User["role"] };
 }
 
 async function assertDiscountAccess(ctx: Context): Promise<{
@@ -63,7 +72,8 @@ async function showDiscountHome(ctx: Context, edit = true) {
   }
   for (const it of items.slice(0, 8)) {
     kb.text(`${it.active ? "⏸" : "▶️"} ${it.code}`, `disc:tog:${it.id}`)
-      .text(`🗑`, `disc:delask:${it.id}`)
+      .text(it.shareable ? "🔓" : "🔒", `disc:share:${it.id}`)
+      .text("🗑", `disc:delask:${it.id}`)
       .row();
   }
   if (await isControlAdmin(ctx.from?.id)) kb.text("« کنترل سنتر", "cc:home");
@@ -97,30 +107,86 @@ export async function handleDiscountCreateText(ctx: Context, text: string): Prom
     waitingCreate.delete(tid);
     return false;
   }
+  const actor = actorFromAccess(access);
+
   if (wait.step === "code") {
     waitingCreate.set(tid, { step: "percent", code: text });
     const max = await getDiscountMaxPercentForRole(access.role);
     await ctx.reply(`درصد تخفیف را بفرستید (۱ تا ${max}):`);
     return true;
   }
-  if (wait.step === "percent" && wait.code) {
-    waitingCreate.delete(tid);
+
+  if (wait.step === "percent") {
     const percentOff = Number(text.replace(/[^\d]/g, ""));
-    try {
-      const item = await createDiscountCode({
-        actor: access.user,
-        code: wait.code,
-        percentOff,
-      });
-      await ctx.reply(`✅ کد ${item.code} با ${item.percentOff}٪ ساخته شد.`, {
-        reply_markup: new InlineKeyboard().text("🎟 مدیریت کدها", "disc:home"),
-      });
-    } catch (err) {
-      await ctx.reply(`❌ ${String(err instanceof Error ? err.message : err)}`);
+    if (!Number.isFinite(percentOff) || percentOff < 1) {
+      await ctx.reply("درصد نامعتبر است. دوباره بفرستید یا /cancel");
+      return true;
     }
+    waitingCreate.set(tid, { step: "maxUses", code: wait.code, percentOff });
+    await ctx.reply(
+      "حداکثر تعداد استفاده را بفرستید:\n`0` یا `نامحدود` = بدون سقف\n`1` = یک‌بارمصرف\nلغو: /cancel",
+      { parse_mode: "Markdown" },
+    );
     return true;
   }
+
+  if (wait.step === "maxUses") {
+    const raw = text.trim().toLowerCase();
+    let maxUses: number | null = null;
+    if (raw === "0" || raw === "نامحدود" || raw === "u" || raw === "unlimited") {
+      maxUses = null;
+    } else {
+      const n = Number(raw.replace(/[^\d]/g, ""));
+      if (!Number.isFinite(n) || n < 1) {
+        await ctx.reply("عدد نامعتبر است. مثلاً ۱ یا ۰ برای نامحدود. /cancel");
+        return true;
+      }
+      maxUses = Math.floor(n);
+    }
+    waitingCreate.set(tid, {
+      step: "shareable",
+      code: wait.code,
+      percentOff: wait.percentOff,
+      maxUses,
+    });
+    const kb = new InlineKeyboard()
+      .text("🔒 فقط خودم", "disc:new:share:0")
+      .text("🔓 قابل‌اشتراک", "disc:new:share:1")
+      .row()
+      .text("انصراف", "disc:new:cancel");
+    await ctx.reply("این کد برای مشتری‌ها هم قابل استفاده باشد؟", { reply_markup: kb });
+    return true;
+  }
+
   return false;
+}
+
+async function finishCreate(
+  ctx: Context,
+  access: { user: User; role: string },
+  wait: Extract<CreateWait, { step: "shareable" }>,
+  shareable: boolean,
+) {
+  waitingCreate.delete(ctx.from!.id);
+  try {
+    const item = await createDiscountCode({
+      actor: actorFromAccess(access),
+      code: wait.code,
+      percentOff: wait.percentOff,
+      maxUses: wait.maxUses,
+      shareable,
+    });
+    await ctx.reply(
+      [
+        `✅ کد ${item.code} با ${item.percentOff}٪ ساخته شد`,
+        item.maxUses == null ? "سقف استفاده: نامحدود" : `سقف استفاده: ${item.maxUses}`,
+        item.shareable ? "وضعیت: قابل‌اشتراک با مشتری" : "وضعیت: فقط سازنده",
+      ].join("\n"),
+      { reply_markup: new InlineKeyboard().text("🎟 مدیریت کدها", "disc:home") },
+    );
+  } catch (err) {
+    await ctx.reply(`❌ ${String(err instanceof Error ? err.message : err)}`);
+  }
 }
 
 export function registerDiscountBotHandlers(bot: Bot) {
@@ -152,7 +218,27 @@ export function registerDiscountBotHandlers(bot: Bot) {
     }
     await ctx.answerCallbackQuery();
     waitingCreate.set(ctx.from!.id, { step: "code" });
-    await ctx.reply("کد را بفرستید (انگلیسی/عدد، ۳ تا ۳۲ کاراکتر). لغو: /cancel");
+    await ctx.reply(
+      "کد را بفرستید (انگلیسی/عدد، ۳ تا ۳۲ کاراکتر).\nبعداً درصد، سقف استفاده و اشتراک پرسیده می‌شود.\nلغو: /cancel",
+    );
+  });
+
+  bot.callbackQuery("disc:new:cancel", async (ctx) => {
+    waitingCreate.delete(ctx.from!.id);
+    await ctx.answerCallbackQuery({ text: "لغو شد" });
+    await showDiscountHome(ctx, true);
+  });
+
+  bot.callbackQuery(/^disc:new:share:([01])$/, async (ctx) => {
+    const access = await assertDiscountAccess(ctx);
+    if (!access) return ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
+    const wait = waitingCreate.get(ctx.from!.id);
+    if (!wait || wait.step !== "shareable") {
+      await ctx.answerCallbackQuery({ text: "منقضی شد", show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await finishCreate(ctx, access, wait, ctx.match![1] === "1");
   });
 
   bot.callbackQuery(/^disc:tog:(.+)$/, async (ctx) => {
@@ -168,9 +254,32 @@ export function registerDiscountBotHandlers(bot: Bot) {
     }
     try {
       await updateDiscountCode({
-        actor: access.user,
+        actor: actorFromAccess(access),
         id,
         active: !row.active,
+      });
+      await showDiscountHome(ctx, true);
+    } catch (err) {
+      await ctx.reply(String(err instanceof Error ? err.message : err));
+    }
+  });
+
+  bot.callbackQuery(/^disc:share:(.+)$/, async (ctx) => {
+    const access = await assertDiscountAccess(ctx);
+    if (!access) return ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
+    await ctx.answerCallbackQuery();
+    const id = ctx.match![1]!;
+    const items = await listDiscountCodesForUser(access.user.id, access.role);
+    const row = items.find((i) => i.id === id);
+    if (!row) {
+      await ctx.reply("کد پیدا نشد.");
+      return;
+    }
+    try {
+      await updateDiscountCode({
+        actor: actorFromAccess(access),
+        id,
+        shareable: !row.shareable,
       });
       await showDiscountHome(ctx, true);
     } catch (err) {
@@ -196,15 +305,10 @@ export function registerDiscountBotHandlers(bot: Bot) {
     if (!access) return ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
     await ctx.answerCallbackQuery();
     try {
-      await deleteDiscountCode({ actor: access.user, id: ctx.match![1]! });
+      await deleteDiscountCode({ actor: actorFromAccess(access), id: ctx.match![1]! });
       await showDiscountHome(ctx, true);
     } catch (err) {
       await ctx.reply(String(err instanceof Error ? err.message : err));
     }
-  });
-
-  bot.callbackQuery("disc:home", async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await showDiscountHome(ctx, true);
   });
 }

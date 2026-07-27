@@ -19,6 +19,7 @@ type SalesStats = {
   activeSubs: number;
   discountTotal?: number;
   discountOrderCount?: number;
+  topDiscountCodes?: Array<{ code: string; uses: number; saved: number }>;
   recent: Array<{
     id: string;
     kind: string;
@@ -264,6 +265,9 @@ export function SalesReportPanel({
             : ""}
           {stats.discountOrderCount
             ? ` · تخفیف: ${stats.discountOrderCount.toLocaleString("fa-IR")} سفارش · ${formatToman(stats.discountTotal ?? 0)}`
+            : ""}
+          {stats.topDiscountCodes?.length
+            ? ` · کدها: ${stats.topDiscountCodes.map((c) => `${c.code}(${c.uses})`).join(" · ")}`
             : ""}
         </p>
       )}

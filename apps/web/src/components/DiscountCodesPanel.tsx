@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, formatToman } from "../lib/api";
+import { api } from "../lib/api";
 
 type DiscountItem = {
   id: string;
@@ -324,9 +324,4 @@ export function DiscountCodesPanel({
       )}
     </div>
   );
-}
-
-/** Compact hint for price lines — unused helper kept for formatToman import stability if needed */
-export function discountSavedLabel(amount: number) {
-  return amount > 0 ? `تخفیف: −${formatToman(amount)}` : "";
 }

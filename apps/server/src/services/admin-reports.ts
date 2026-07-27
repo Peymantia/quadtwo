@@ -51,6 +51,12 @@ export type SalesRecentRow = {
   trafficGb: number | null;
 };
 
+export type SalesTopDiscount = {
+  code: string;
+  uses: number;
+  saved: number;
+};
+
 export type SalesStats = {
   period: SalesPeriod;
   periodLabel: string;
@@ -66,6 +72,7 @@ export type SalesStats = {
   /** Sum of discountAmount on completed orders */
   discountTotal: number;
   discountOrderCount: number;
+  topDiscountCodes: SalesTopDiscount[];
   recent: SalesRecentRow[];
   text: string;
 };
@@ -126,6 +133,7 @@ export async function buildSalesStats(opts: {
         user: { select: { username: true, firstName: true, telegramId: true, agentName: true } },
         targetSub: { select: { id: true, email: true, title: true, trafficGb: true } },
         subscription: { select: { id: true, email: true, title: true, trafficGb: true } },
+        discountCode: { select: { code: true } },
       },
       orderBy: { updatedAt: "desc" },
     }),
@@ -157,6 +165,18 @@ export async function buildSalesStats(opts: {
   const discounted = orders.filter((o) => (o.discountAmount ?? 0) > 0);
   const discountTotal = discounted.reduce((s, o) => s + (o.discountAmount ?? 0), 0);
   const discountOrderCount = discounted.length;
+  const codeAgg = new Map<string, { uses: number; saved: number }>();
+  for (const o of discounted) {
+    const code = o.discountCode?.code || "—";
+    const cur = codeAgg.get(code) ?? { uses: 0, saved: 0 };
+    cur.uses += 1;
+    cur.saved += o.discountAmount ?? 0;
+    codeAgg.set(code, cur);
+  }
+  const topDiscountCodes: SalesTopDiscount[] = [...codeAgg.entries()]
+    .map(([code, v]) => ({ code, uses: v.uses, saved: v.saved }))
+    .sort((a, b) => b.saved - a.saved || b.uses - a.uses)
+    .slice(0, 5);
 
   const recent: SalesRecentRow[] = orders.slice(0, recentLimit).map((o) => {
     const linked = o.targetSub ?? o.subscription;
@@ -186,6 +206,9 @@ export async function buildSalesStats(opts: {
     orders.length ? `میانگین سفارش: ${formatToman(avgOrder)}` : "",
     discountOrderCount
       ? `تخفیف اعمال‌شده: ${discountOrderCount.toLocaleString("fa-IR")} سفارش · ${formatToman(discountTotal)}`
+      : "",
+    topDiscountCodes.length
+      ? `پرکاربردترین کدها: ${topDiscountCodes.map((c) => `${c.code}(${c.uses})`).join(" · ")}`
       : "",
     `سرویس فعال: ${activeSubs.toLocaleString("fa-IR")}`,
   ].filter(Boolean);
@@ -219,6 +242,7 @@ export async function buildSalesStats(opts: {
     activeSubs,
     discountTotal,
     discountOrderCount,
+    topDiscountCodes,
     recent,
     text: lines.join("\n"),
   };

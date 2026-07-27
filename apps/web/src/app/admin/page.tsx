@@ -3139,6 +3139,9 @@ function SettingsTab({
     lastAt: string;
     lastStatus: string;
   } | null>(null);
+  const [backupFiles, setBackupFiles] = useState<
+    Array<{ name: string; sizeLabel: string; mtime: string; kind: string }>
+  >([]);
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreInspect, setRestoreInspect] = useState<{
@@ -3171,7 +3174,11 @@ function SettingsTab({
     );
     void api<{
       config: { enabled: boolean; hour: number; minute: number; lastAt: string; lastStatus: string };
-    }>("/admin/backup").then((r) => setBackup(r.config));
+      files?: Array<{ name: string; sizeLabel: string; mtime: string; kind: string }>;
+    }>("/admin/backup").then((r) => {
+      setBackup(r.config);
+      setBackupFiles(r.files ?? []);
+    });
     void api<{ config: NonNullable<typeof notif> }>("/admin/notifications").then((r) => setNotif(r.config));
   }, []);
 
@@ -3243,11 +3250,15 @@ function SettingsTab({
     if (!backup) return;
     setBackupBusy(true);
     try {
-      const r = await api<{ config: typeof backup }>("/admin/backup", {
+      const r = await api<{
+        config: typeof backup;
+        files?: Array<{ name: string; sizeLabel: string; mtime: string; kind: string }>;
+      }>("/admin/backup", {
         method: "PUT",
         body: { ...backup, ...patch },
       });
       setBackup(r.config);
+      if (r.files) setBackupFiles(r.files);
       flash("تنظیمات پشتیبان ذخیره شد");
     } catch (e) {
       flash(null, errText(e));
@@ -3288,8 +3299,12 @@ function SettingsTab({
       });
       if (r.ok) {
         flash(`پشتیبان برای ${r.sent} ادمین ارسال شد`);
-        const refreshed = await api<{ config: NonNullable<typeof backup> }>("/admin/backup");
+        const refreshed = await api<{
+          config: NonNullable<typeof backup>;
+          files?: Array<{ name: string; sizeLabel: string; mtime: string; kind: string }>;
+        }>("/admin/backup");
         setBackup(refreshed.config);
+        setBackupFiles(refreshed.files ?? []);
       } else {
         flash(null, r.error || "ارسال پشتیبان ناموفق بود");
       }
@@ -3686,6 +3701,26 @@ function SettingsTab({
             <button type="button" className="btn primary wide" disabled={backupBusy} onClick={() => void sendBackupNow()}>
               {backupBusy ? "در حال ارسال…" : "ارسال الان به تلگرام"}
             </button>
+            {backupFiles.length > 0 && (
+              <div className="backup-restore" style={{ borderTop: "none", paddingTop: 4, marginTop: 8 }}>
+                <div className="backup-restore__title">فایل‌های اخیر روی سرور</div>
+                <div className="list" style={{ marginTop: 6 }}>
+                  {backupFiles.slice(0, 8).map((f) => (
+                    <div key={f.name} className="row-card" style={{ padding: "8px 10px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                        <span className="num" dir="ltr" style={{ fontSize: "0.82rem" }}>
+                          {f.name}
+                        </span>
+                        <span className="muted" style={{ fontSize: "0.8rem" }}>
+                          {f.kind === "safety" ? "ایمنی" : f.kind === "backup" ? "پشتیبان" : "دیگر"} · {f.sizeLabel} ·{" "}
+                          {new Date(f.mtime).toLocaleString("fa-IR")}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="backup-restore">
               <div className="backup-restore__title">بازیابی از فایل پشتیبان</div>
               <p className="hint" style={{ marginTop: 0 }}>
