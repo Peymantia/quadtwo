@@ -4091,10 +4091,10 @@ function SettingsTab({
             )}
           </div>
         ))}
-        <div className="save-bar">
+        <div className="settings-acc__save">
           <button
             type="button"
-            className="btn primary"
+            className="btn primary wide"
             onClick={() => save(Object.fromEntries(TEXT_SETTINGS.map((f) => [f.key, settings[f.key] ?? ""])))}
           >
             ذخیره اطلاعات پایه
