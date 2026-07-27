@@ -679,6 +679,27 @@ h3 {
   box-shadow: none;
 }
 
+.pay-method-block {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pay-method-block:first-of-type {
+  margin-top: 8px;
+}
+
+.pay-method-block .setting-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .settings-acc__body .panel {
   margin-bottom: 0;
   background: rgba(255, 255, 255, 0.02);

@@ -3115,12 +3115,47 @@ function PanelsTab({ flash }: { flash: Flash }) {
 
 const TEXT_SETTINGS: Array<{ key: string; label: string; ltr?: boolean; multiline?: boolean }> = [
   { key: "brand_name", label: "نام برند" },
-  { key: "card_number", label: "شماره کارت", ltr: true },
-  { key: "card_holder", label: "نام صاحب کارت" },
   { key: "support_username", label: "یوزرنیم پشتیبانی (بدون @)", ltr: true },
   { key: "miniapp_url", label: "آدرس مینی‌اپ", ltr: true },
   { key: "welcome_text", label: "متن خوش‌آمد ربات", multiline: true },
 ];
+
+type PayMethodsState = {
+  card: { enabled: boolean };
+  wallet: { enabled: boolean };
+  online: { enabled: boolean; provider: string | null };
+  crypto: { enabled: boolean; asset: string; network: string; address: string; note: string };
+};
+
+function defaultPayMethods(): PayMethodsState {
+  return {
+    card: { enabled: true },
+    wallet: { enabled: true },
+    online: { enabled: false, provider: null },
+    crypto: { enabled: false, asset: "USDT", network: "TRC20", address: "", note: "" },
+  };
+}
+
+function parsePayMethods(raw: string | undefined): PayMethodsState {
+  const base = defaultPayMethods();
+  try {
+    const p = JSON.parse(raw || "{}") as Partial<PayMethodsState>;
+    return {
+      card: { enabled: p.card?.enabled !== false },
+      wallet: { enabled: p.wallet?.enabled !== false },
+      online: { enabled: Boolean(p.online?.enabled), provider: p.online?.provider ?? null },
+      crypto: {
+        enabled: Boolean(p.crypto?.enabled),
+        asset: p.crypto?.asset || "USDT",
+        network: p.crypto?.network || "TRC20",
+        address: p.crypto?.address || "",
+        note: p.crypto?.note || "",
+      },
+    };
+  } catch {
+    return base;
+  }
+}
 
 const GUIDE_PLATFORMS = [
   { id: "android", label: "اندروید", textKey: "guide_android_text", urlKey: "guide_android_url" },
@@ -3178,6 +3213,8 @@ function SettingsTab({
   } | null>(null);
   const [notifBusy, setNotifBusy] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
+  const [payMethods, setPayMethods] = useState<PayMethodsState>(defaultPayMethods);
+  const [payBusy, setPayBusy] = useState(false);
 
   function toggleSection(id: string) {
     setOpenSection((cur) => (cur === id ? null : id));
@@ -3186,6 +3223,7 @@ function SettingsTab({
   useEffect(() => {
     void api<{ settings: Record<string, string> }>("/admin/settings").then((r) => {
       setSettings(r.settings);
+      setPayMethods(parsePayMethods(r.settings.payment_methods_json));
       setLoaded(true);
     });
     void api<{ channels: Array<{ username: string; required: boolean }>; forceMembership: boolean }>("/admin/channels").then(
@@ -3222,9 +3260,30 @@ function SettingsTab({
     try {
       await api("/admin/settings", { method: "PUT", body: patch });
       setSettings((s) => ({ ...s, ...patch }));
+      if (patch.payment_methods_json) {
+        setPayMethods(parsePayMethods(patch.payment_methods_json));
+      }
       flash("تنظیمات ذخیره شد");
     } catch (e) {
       flash(null, errText(e));
+    }
+  }
+
+  async function savePayMethods(
+    next: PayMethodsState,
+    cardPatch?: { card_number?: string; card_holder?: string },
+  ) {
+    setPayBusy(true);
+    try {
+      const patch: Record<string, string> = {
+        payment_methods_json: JSON.stringify(next),
+      };
+      if (cardPatch?.card_number != null) patch.card_number = cardPatch.card_number;
+      if (cardPatch?.card_holder != null) patch.card_holder = cardPatch.card_holder;
+      await save(patch);
+      setPayMethods(next);
+    } finally {
+      setPayBusy(false);
     }
   }
 
@@ -3424,6 +3483,206 @@ function SettingsTab({
         onToggle={toggleSection}
       >
         <PasswordSettings hasPassword={hasPassword} onFlash={flash} onSaved={onPasswordSaved} />
+      </SettingsAccordion>
+
+      <SettingsAccordion
+        id="payments"
+        title="روش‌های پرداخت"
+        icon="wallet"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
+        <p className="muted" style={{ marginTop: 0 }}>
+          فقط روش‌های فعال در خرید و تمدید نمایش داده می‌شوند. پرداخت آنلاین فعلاً اسکلت است و تا اتصال درگاه قابل انتخاب نیست.
+        </p>
+
+        <div className="pay-method-block">
+          <div className="setting-row">
+            <div>
+              <div className="t">کارت به کارت</div>
+              <div className="d">واریز به شماره کارت و تأیید دستی رسید</div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={payMethods.card.enabled}
+                disabled={payBusy}
+                onChange={(e) =>
+                  void savePayMethods({ ...payMethods, card: { enabled: e.target.checked } })
+                }
+              />
+              <span className="track" />
+            </label>
+          </div>
+          {payMethods.card.enabled && (
+            <>
+              <div className="field">
+                <label>شماره کارت</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  value={settings.card_number ?? ""}
+                  disabled={payBusy}
+                  onChange={(e) => setSettings((s) => ({ ...s, card_number: e.target.value }))}
+                  onBlur={() =>
+                    void savePayMethods(payMethods, { card_number: settings.card_number ?? "" })
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>نام صاحب کارت</label>
+                <input
+                  value={settings.card_holder ?? ""}
+                  disabled={payBusy}
+                  onChange={(e) => setSettings((s) => ({ ...s, card_holder: e.target.value }))}
+                  onBlur={() =>
+                    void savePayMethods(payMethods, { card_holder: settings.card_holder ?? "" })
+                  }
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="pay-method-block">
+          <div className="setting-row">
+            <div>
+              <div className="t">کیف پول داخلی</div>
+              <div className="d">پرداخت آنی از موجودی داشبورد / ربات</div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={payMethods.wallet.enabled}
+                disabled={payBusy}
+                onChange={(e) =>
+                  void savePayMethods({ ...payMethods, wallet: { enabled: e.target.checked } })
+                }
+              />
+              <span className="track" />
+            </label>
+          </div>
+        </div>
+
+        <div className="pay-method-block">
+          <div className="setting-row">
+            <div>
+              <div className="t">پرداخت آنلاین</div>
+              <div className="d">درگاه بانکی — اتصال بعداً؛ الان فقط اسکلت و سوییچ</div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={payMethods.online.enabled}
+                disabled={payBusy}
+                onChange={(e) =>
+                  void savePayMethods({
+                    ...payMethods,
+                    online: { ...payMethods.online, enabled: e.target.checked },
+                  })
+                }
+              />
+              <span className="track" />
+            </label>
+          </div>
+          {payMethods.online.enabled && (
+            <p className="hint" style={{ margin: 0 }}>
+              در checkout با برچسب «به‌زودی» دیده می‌شود و تا اتصال درگاه قابل انتخاب نیست.
+            </p>
+          )}
+        </div>
+
+        <div className="pay-method-block">
+          <div className="setting-row">
+            <div>
+              <div className="t">پرداخت کریپتو</div>
+              <div className="d">نمایش آدرس کیف + هش/رسید و تأیید دستی ادمین</div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={payMethods.crypto.enabled}
+                disabled={payBusy}
+                onChange={(e) =>
+                  void savePayMethods({
+                    ...payMethods,
+                    crypto: { ...payMethods.crypto, enabled: e.target.checked },
+                  })
+                }
+              />
+              <span className="track" />
+            </label>
+          </div>
+          {payMethods.crypto.enabled && (
+            <>
+              <div className="bulk-price-row" style={{ marginTop: 4 }}>
+                <div className="field" style={{ margin: 0, flex: "1 1 120px" }}>
+                  <label>دارایی</label>
+                  <input
+                    dir="ltr"
+                    value={payMethods.crypto.asset}
+                    disabled={payBusy}
+                    onChange={(e) =>
+                      setPayMethods((m) => ({
+                        ...m,
+                        crypto: { ...m.crypto, asset: e.target.value },
+                      }))
+                    }
+                    onBlur={() => void savePayMethods(payMethods)}
+                  />
+                </div>
+                <div className="field" style={{ margin: 0, flex: "1 1 120px" }}>
+                  <label>شبکه</label>
+                  <input
+                    dir="ltr"
+                    value={payMethods.crypto.network}
+                    disabled={payBusy}
+                    onChange={(e) =>
+                      setPayMethods((m) => ({
+                        ...m,
+                        crypto: { ...m.crypto, network: e.target.value },
+                      }))
+                    }
+                    onBlur={() => void savePayMethods(payMethods)}
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label>آدرس کیف پول</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  value={payMethods.crypto.address}
+                  disabled={payBusy}
+                  placeholder="T… / 0x…"
+                  onChange={(e) =>
+                    setPayMethods((m) => ({
+                      ...m,
+                      crypto: { ...m.crypto, address: e.target.value },
+                    }))
+                  }
+                  onBlur={() => void savePayMethods(payMethods)}
+                />
+              </div>
+              <div className="field">
+                <label>یادداشت برای کاربر (اختیاری)</label>
+                <textarea
+                  rows={2}
+                  value={payMethods.crypto.note}
+                  disabled={payBusy}
+                  placeholder="مثلاً فقط USDT روی شبکه TRC20"
+                  onChange={(e) =>
+                    setPayMethods((m) => ({
+                      ...m,
+                      crypto: { ...m.crypto, note: e.target.value },
+                    }))
+                  }
+                  onBlur={() => void savePayMethods(payMethods)}
+                />
+              </div>
+            </>
+          )}
+        </div>
       </SettingsAccordion>
 
       <SettingsAccordion

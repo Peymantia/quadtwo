@@ -9,7 +9,7 @@ export type OrderStatus =
   | "rejected"
   | "cancelled";
 
-export type PaymentMethod = "card_to_card" | "wallet" | "online_soon" | "crypto_soon";
+export type PaymentMethod = "card_to_card" | "wallet" | "online" | "crypto";
 
 export interface PlanDto {
   id: string;

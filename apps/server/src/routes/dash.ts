@@ -30,6 +30,7 @@ import {
   payOrderWithWallet,
   provisionAdminComplimentary,
   rejectOrder,
+  setOrderPaymentMethod,
 } from "../services/orders.js";
 import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, rotateUuid, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
@@ -49,6 +50,12 @@ import {
   getChannels,
   getMaxPurchaseMonths,
   getPaymentCard,
+  getPublicPaymentMethods,
+  getPaymentMethodsConfig,
+  savePaymentMethodsConfig,
+  assertCheckoutPaymentMethod,
+  defaultPaymentMethodsConfig,
+  type PaymentMethodsConfig,
   getPriceRates,
   getPricingModeForRole,
   getPricingModes,
@@ -351,6 +358,10 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/me/payment-card", async (c) => {
     return c.json({ card: await getPaymentCard() });
+  });
+
+  api.get("/me/payment-methods", async (c) => {
+    return c.json({ methods: await getPublicPaymentMethods() });
   });
 
   api.get("/me/subscriptions", async (c) => {
@@ -662,6 +673,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const amount = Math.floor(Number(body.amount ?? 0));
     if (!amount || amount < 10_000) return c.json({ error: "حداقل شارژ ۱۰٬۰۰۰ تومان است" }, 400);
     try {
+      await assertCheckoutPaymentMethod("card_to_card");
       const order = await createWalletChargeOrder(c.get("userId"), amount);
       // Dashboard flow: receipt info is text-only; goes straight to admin review
       await prisma.order.update({
@@ -693,6 +705,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       kind?: OrderKind;
       targetSubId?: string;
       payWithWallet?: boolean;
+      paymentMethod?: "wallet" | "card_to_card" | "crypto";
       limitIp?: number;
       note?: string | null;
       discountCode?: string | null;
@@ -726,7 +739,14 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
         }
       }
-      if (body.payWithWallet) {
+      const method =
+        body.paymentMethod === "crypto"
+          ? "crypto"
+          : body.paymentMethod === "wallet" || body.payWithWallet
+            ? "wallet"
+            : "card_to_card";
+      await assertCheckoutPaymentMethod(method);
+      if (method === "wallet") {
         try {
           const result = await payOrderWithWallet(order.id, c.get("userId"));
           return c.json({
@@ -737,6 +757,22 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
         }
       }
+      if (method === "crypto") {
+        await setOrderPaymentMethod(order.id, c.get("userId"), "crypto");
+        const methods = await getPublicPaymentMethods();
+        return c.json({
+          order: {
+            id: order.id,
+            price: order.price,
+            summary: orderSummaryText(order),
+            trafficGb: order.trafficGb,
+            months: order.months,
+            paymentMethod: "crypto",
+          },
+          crypto: methods.crypto,
+        });
+      }
+      await setOrderPaymentMethod(order.id, c.get("userId"), "card_to_card");
       const card = await getPaymentCard();
       return c.json({
         order: {
@@ -745,6 +781,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           summary: orderSummaryText(order),
           trafficGb: order.trafficGb,
           months: order.months,
+          paymentMethod: "card_to_card",
         },
         card,
       });
@@ -972,52 +1009,73 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       category?: string;
       accountName?: string;
       payWithWallet?: boolean;
+      paymentMethod?: "wallet" | "card_to_card" | "crypto";
       limitIp?: number;
       note?: string | null;
       discountCode?: string | null;
       quantity?: number;
       priceCellId?: string | null;
     }>();
-    const order = await createMatrixOrder({
-      userId: c.get("userId"),
-      trafficGb: body.trafficGb,
-      months: body.months ?? 1,
-      category: body.category,
-      accountName: body.accountName?.trim() || `p${Date.now().toString(36)}`,
-      kind: OrderKind.new,
-      limitIp: body.limitIp,
-      note: body.note,
-      discountCode: body.discountCode,
-      quantity: body.quantity,
-      priceCellId: body.priceCellId,
-    });
-    if (c.get("role") === "admin") {
-      try {
-        const result = await provisionAdminComplimentary(order.id, c.get("userId"));
-        return c.json({
-          order: { id: order.id, price: order.price },
-          provisioned: await provisionedJson(result),
-        });
-      } catch (err) {
-        return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+    try {
+      const order = await createMatrixOrder({
+        userId: c.get("userId"),
+        trafficGb: body.trafficGb,
+        months: body.months ?? 1,
+        category: body.category,
+        accountName: body.accountName?.trim() || `p${Date.now().toString(36)}`,
+        kind: OrderKind.new,
+        limitIp: body.limitIp,
+        note: body.note,
+        discountCode: body.discountCode,
+        quantity: body.quantity,
+        priceCellId: body.priceCellId,
+      });
+      if (c.get("role") === "admin") {
+        try {
+          const result = await provisionAdminComplimentary(order.id, c.get("userId"));
+          return c.json({
+            order: { id: order.id, price: order.price },
+            provisioned: await provisionedJson(result),
+          });
+        } catch (err) {
+          return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+        }
       }
-    }
-    if (body.payWithWallet) {
-      try {
-        const result = await payOrderWithWallet(order.id, c.get("userId"));
-        return c.json({
-          order: { id: order.id, price: order.price },
-          provisioned: await provisionedJson(result),
-        });
-      } catch (err) {
-        return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+      const method =
+        body.paymentMethod === "crypto"
+          ? "crypto"
+          : body.paymentMethod === "wallet" || body.payWithWallet
+            ? "wallet"
+            : "card_to_card";
+      await assertCheckoutPaymentMethod(method);
+      if (method === "wallet") {
+        try {
+          const result = await payOrderWithWallet(order.id, c.get("userId"));
+          return c.json({
+            order: { id: order.id, price: order.price },
+            provisioned: await provisionedJson(result),
+          });
+        } catch (err) {
+          return c.json({ error: String(err instanceof Error ? err.message : err), orderId: order.id }, 400);
+        }
       }
+      if (method === "crypto") {
+        await setOrderPaymentMethod(order.id, c.get("userId"), "crypto");
+        const methods = await getPublicPaymentMethods();
+        return c.json({
+          order: { id: order.id, price: order.price, summary: orderSummaryText(order), paymentMethod: "crypto" },
+          crypto: methods.crypto,
+        });
+      }
+      await setOrderPaymentMethod(order.id, c.get("userId"), "card_to_card");
+      const card = await getPaymentCard();
+      return c.json({
+        order: { id: order.id, price: order.price, summary: orderSummaryText(order), paymentMethod: "card_to_card" },
+        card,
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }
-    const card = await getPaymentCard();
-    return c.json({
-      order: { id: order.id, price: order.price, summary: orderSummaryText(order) },
-      card,
-    });
   });
 
   api.get("/me/discounts", async (c) => {
@@ -2319,6 +2377,31 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           partner: v === "rate" ? "rate" : "matrix",
           wholesale: v === "rate" ? "rate" : "matrix",
         });
+        continue;
+      }
+      if (k === "payment_methods_json") {
+        try {
+          const parsed = JSON.parse(String(v)) as PaymentMethodsConfig;
+          await savePaymentMethodsConfig({
+            ...defaultPaymentMethodsConfig(),
+            ...parsed,
+            card: { enabled: parsed.card?.enabled !== false },
+            wallet: { enabled: parsed.wallet?.enabled !== false },
+            online: {
+              enabled: Boolean(parsed.online?.enabled),
+              provider: parsed.online?.provider ?? null,
+            },
+            crypto: {
+              enabled: Boolean(parsed.crypto?.enabled),
+              asset: parsed.crypto?.asset || "USDT",
+              network: parsed.crypto?.network || "TRC20",
+              address: parsed.crypto?.address || "",
+              note: parsed.crypto?.note || "",
+            },
+          });
+        } catch {
+          /* ignore bad json */
+        }
         continue;
       }
       if (k === "price_rates_json") {

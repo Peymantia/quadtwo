@@ -332,17 +332,35 @@ export function salesCategoriesAdminText(cats: SalesCategories, maxMonths: numbe
   return lines.join("\n");
 }
 
-export function payMethodKeyboard(orderId: string, walletBalance: number) {
-  return new InlineKeyboard()
-    .text("💳 کارت‌به‌کارت", `pay:card:${orderId}`)
-    .primary()
-    .row()
-    .text(`💰 کیف پول (${walletBalance.toLocaleString("fa-IR")})`, `pay:wallet:${orderId}`)
-    .success()
-    .row()
-    .text("« بازگشت", `pay:back:${orderId}`)
-    .text("❌ انصراف", `cancel:${orderId}`)
-    .danger();
+export function payMethodKeyboard(
+  orderId: string,
+  walletBalance: number,
+  opts?: {
+    card?: boolean;
+    wallet?: boolean;
+    crypto?: boolean;
+    online?: boolean;
+  },
+) {
+  const card = opts?.card !== false;
+  const wallet = opts?.wallet !== false;
+  const crypto = Boolean(opts?.crypto);
+  const online = Boolean(opts?.online);
+  const kb = new InlineKeyboard();
+  if (card) {
+    kb.text("💳 کارت‌به‌کارت", `pay:card:${orderId}`).primary().row();
+  }
+  if (wallet) {
+    kb.text(`💰 کیف پول (${walletBalance.toLocaleString("fa-IR")})`, `pay:wallet:${orderId}`).success().row();
+  }
+  if (crypto) {
+    kb.text("🪙 کریپتو", `pay:crypto:${orderId}`).row();
+  }
+  if (online) {
+    kb.text("🌐 آنلاین — به‌زودی", `pay:online:${orderId}`).row();
+  }
+  kb.text("« بازگشت", `pay:back:${orderId}`).text("❌ انصراف", `cancel:${orderId}`).danger();
+  return kb;
 }
 
 export function payConfirmKeyboard(orderId: string) {
@@ -612,6 +630,29 @@ export function orderPayText(summary: string, card: { number: string; holder: st
     "پس از واریز، روی دکمه زیر بزنید و عکس رسید را بفرستید.",
     `کد سفارش: ${ltrIsolate(orderId.slice(-8))}`,
   ].join("\n");
+}
+
+export function orderCryptoPayText(
+  summary: string,
+  crypto: { asset: string; network: string; address: string; note: string },
+  orderId: string,
+) {
+  const lines = [
+    "✅ سفارش ثبت شد",
+    "",
+    summary,
+    "",
+    `🪙 پرداخت ${crypto.asset} (${crypto.network})`,
+    "آدرس:",
+    crypto.address,
+  ];
+  if (crypto.note) lines.push("", crypto.note);
+  lines.push(
+    "",
+    "پس از واریز، روی دکمه زیر بزنید و عکس رسید یا هش تراکنش را بفرستید.",
+    `کد سفارش: ${ltrIsolate(orderId.slice(-8))}`,
+  );
+  return lines.join("\n");
 }
 
 export function notifSettingsText(cfg: NotifConfig) {

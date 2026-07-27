@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, formatToman } from "../lib/api";
 import { Modal } from "./Modal";
+import type { PublicPaymentMethods } from "./RateShop";
 
 export type RenewInfo = {
   ok: true;
@@ -37,6 +38,7 @@ type Props = {
     months: number;
     category: string;
     payWithWallet: boolean;
+    paymentMethod?: "wallet" | "card_to_card" | "crypto";
     discountCode?: string | null;
   }) => void | Promise<void>;
 };
@@ -72,6 +74,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
   const [discountErr, setDiscountErr] = useState<string | null>(null);
   const [discountOkHint, setDiscountOkHint] = useState<string | null>(null);
   const [checkingDiscount, setCheckingDiscount] = useState(false);
+  const [payMethods, setPayMethods] = useState<PublicPaymentMethods | null>(null);
 
   const rules = useMemo(() => (info ? rulesFor(info.category, info) : null), [info]);
   const monthOptions = useMemo(() => {
@@ -79,6 +82,13 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
     return Array.from({ length: max }, (_, i) => i + 1);
   }, [info?.maxMonths]);
   const discountsAllowed = variant === "user" && Boolean(info?.discountsEnabled);
+
+  useEffect(() => {
+    if (!open || variant === "admin") return;
+    void api<{ methods: PublicPaymentMethods }>("/me/payment-methods")
+      .then((r) => setPayMethods(r.methods))
+      .catch(() => setPayMethods(null));
+  }, [open, variant]);
 
   useEffect(() => {
     if (!open || !info || !rules) return;
@@ -216,13 +226,14 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
 
   const canSubmit = !busy && !quoting && price != null && Boolean(info);
 
-  async function submit(payWithWallet: boolean) {
+  async function submit(method: "wallet" | "card_to_card" | "crypto") {
     if (!info || !rules) return;
     await onSubmit({
       category: info.category,
       trafficGb: rules.kind === "unlimited" ? null : trafficGb,
       months: info.category === "national" ? 1 : months,
-      payWithWallet,
+      payWithWallet: method === "wallet",
+      paymentMethod: method,
       discountCode:
         discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
           ? verifiedDiscount
@@ -358,17 +369,36 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
 
           <div className="actions stack" style={{ marginTop: 14 }}>
             {variant === "admin" ? (
-              <button type="button" className="btn primary wide" disabled={!canSubmit} onClick={() => void submit(true)}>
+              <button type="button" className="btn primary wide" disabled={!canSubmit} onClick={() => void submit("wallet")}>
                 تمدید رایگان
               </button>
             ) : (
               <>
-                <button type="button" className="btn primary wide" disabled={!canSubmit} onClick={() => void submit(true)}>
-                  پرداخت از کیف پول
-                </button>
-                <button type="button" className="btn ghost wide" disabled={!canSubmit} onClick={() => void submit(false)}>
-                  کارت‌به‌کارت
-                </button>
+                {(payMethods?.wallet.enabled ?? true) && (
+                  <button type="button" className="btn primary wide" disabled={!canSubmit} onClick={() => void submit("wallet")}>
+                    پرداخت از کیف پول
+                  </button>
+                )}
+                {(payMethods?.card.enabled ?? true) && (
+                  <button type="button" className="btn ghost wide" disabled={!canSubmit} onClick={() => void submit("card_to_card")}>
+                    کارت‌به‌کارت
+                  </button>
+                )}
+                {payMethods?.crypto.enabled && (
+                  <button
+                    type="button"
+                    className="btn ghost wide"
+                    disabled={!canSubmit || !payMethods.crypto.configured}
+                    onClick={() => void submit("crypto")}
+                  >
+                    کریپتو{!payMethods.crypto.configured ? " (آدرس تنظیم نشده)" : ""}
+                  </button>
+                )}
+                {payMethods?.online.enabled && (
+                  <button type="button" className="btn ghost wide" disabled title="به‌زودی">
+                    پرداخت آنلاین — به‌زودی
+                  </button>
+                )}
               </>
             )}
             <button type="button" className="btn ghost wide" disabled={busy} onClick={onClose}>

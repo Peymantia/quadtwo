@@ -233,14 +233,49 @@ export async function attachReceipt(orderId: string, userId: string, fileId: str
   });
 }
 
+/** Text-only receipt (e.g. crypto tx hash from bot/web). */
+export async function attachTextReceipt(orderId: string, userId: string, receiptText: string) {
+  const text = receiptText.trim().slice(0, 500);
+  if (!text) throw new Error("متن رسید خالی است");
+  const order = await prisma.order.findFirst({
+    where: {
+      id: orderId,
+      userId,
+      status: { in: [OrderStatus.pending_payment, OrderStatus.awaiting_review] },
+    },
+  });
+  if (!order) throw new Error("سفارش فعال برای ثبت رسید پیدا نشد");
+
+  return prisma.order.update({
+    where: { id: order.id },
+    data: {
+      receiptFileId: order.receiptFileId || "text",
+      receiptText: text,
+      status: OrderStatus.awaiting_review,
+    },
+    include: { user: true, targetSub: true },
+  });
+}
+
 export async function findPendingPaymentOrder(userId: string) {
   return prisma.order.findFirst({
     where: {
       userId,
       status: OrderStatus.pending_payment,
-      paymentMethod: PaymentMethod.card_to_card,
+      paymentMethod: { in: [PaymentMethod.card_to_card, PaymentMethod.crypto] },
     },
     orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function setOrderPaymentMethod(orderId: string, userId: string, method: PaymentMethod) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId, status: OrderStatus.pending_payment },
+  });
+  if (!order) throw new Error("سفارش پیدا نشد");
+  return prisma.order.update({
+    where: { id: order.id },
+    data: { paymentMethod: method },
   });
 }
 

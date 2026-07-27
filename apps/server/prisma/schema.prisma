@@ -27,8 +27,8 @@ enum OrderStatus {
 enum PaymentMethod {
   card_to_card
   wallet
-  online_soon
-  crypto_soon
+  online
+  crypto
 }
 
 enum OrderKind {

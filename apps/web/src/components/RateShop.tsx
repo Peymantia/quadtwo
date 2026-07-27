@@ -36,10 +36,26 @@ export type RateOrderPayload = {
   limitIp: number;
   accountName?: string;
   note?: string | null;
+  /** @deprecated prefer paymentMethod */
   payWithWallet: boolean;
+  paymentMethod?: "wallet" | "card_to_card" | "crypto";
   discountCode?: string | null;
   quantity?: number;
   priceCellId?: string | null;
+};
+
+export type PublicPaymentMethods = {
+  card: { enabled: boolean };
+  wallet: { enabled: boolean };
+  online: { enabled: boolean; ready: boolean; label: string };
+  crypto: {
+    enabled: boolean;
+    configured: boolean;
+    asset: string;
+    network: string;
+    address: string;
+    note: string;
+  };
 };
 
 type Props = {
@@ -202,6 +218,14 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const [verifiedDiscount, setVerifiedDiscount] = useState<string | null>(null);
   const [offerIndex, setOfferIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
+  const [payMethods, setPayMethods] = useState<PublicPaymentMethods | null>(null);
+
+  useEffect(() => {
+    if (variant === "admin") return;
+    void api<{ methods: PublicPaymentMethods }>("/me/payment-methods")
+      .then((r) => setPayMethods(r.methods))
+      .catch(() => setPayMethods(null));
+  }, [variant]);
 
   const isOffer = category === "offer";
   const offerCells = useMemo(
@@ -447,7 +471,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     setConfirmOpen(true);
   }
 
-  async function confirmPay(payWithWallet: boolean) {
+  async function confirmPay(method: "wallet" | "card_to_card" | "crypto") {
     setConfirmOpen(false);
     await onSubmit({
       category,
@@ -456,7 +480,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       limitIp,
       accountName: pendingName,
       note: note.trim() || null,
-      payWithWallet,
+      payWithWallet: method === "wallet",
+      paymentMethod: method,
       quantity: qty,
       priceCellId: selectedOffer?.id || null,
       discountCode:
@@ -746,26 +771,46 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         <div className="actions order-confirm-actions">
           {variant !== "admin" && (
             <>
-              <button
-                type="button"
-                className="btn seek-pay-wallet"
-                disabled={busy}
-                onClick={() => void confirmPay(true)}
-              >
-                تأیید و پرداخت از کیف پول
-              </button>
-              <button
-                type="button"
-                className="btn seek-pay-card"
-                disabled={busy}
-                onClick={() => void confirmPay(false)}
-              >
-                تأیید و پرداخت کارت به کارت
-              </button>
+              {(payMethods?.wallet.enabled ?? true) && (
+                <button
+                  type="button"
+                  className="btn seek-pay-wallet"
+                  disabled={busy}
+                  onClick={() => void confirmPay("wallet")}
+                >
+                  تأیید و پرداخت از کیف پول
+                </button>
+              )}
+              {(payMethods?.card.enabled ?? true) && (
+                <button
+                  type="button"
+                  className="btn seek-pay-card"
+                  disabled={busy}
+                  onClick={() => void confirmPay("card_to_card")}
+                >
+                  تأیید و پرداخت کارت به کارت
+                </button>
+              )}
+              {payMethods?.crypto.enabled && (
+                <button
+                  type="button"
+                  className="btn seek-pay-card"
+                  disabled={busy || !payMethods.crypto.configured}
+                  onClick={() => void confirmPay("crypto")}
+                >
+                  تأیید و پرداخت کریپتو
+                  {!payMethods.crypto.configured ? " (آدرس تنظیم نشده)" : ""}
+                </button>
+              )}
+              {payMethods?.online.enabled && (
+                <button type="button" className="btn ghost" disabled title="به‌زودی">
+                  پرداخت آنلاین — به‌زودی
+                </button>
+              )}
             </>
           )}
           {variant === "admin" && (
-            <button type="button" className="btn success" disabled={busy} onClick={() => void confirmPay(true)}>
+            <button type="button" className="btn success" disabled={busy} onClick={() => void confirmPay("wallet")}>
               تأیید و ساخت
             </button>
           )}

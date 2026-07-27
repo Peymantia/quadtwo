@@ -115,6 +115,12 @@ const defaults: Record<string, string> = {
     lastAt: "",
     lastStatus: "",
   }),
+  payment_methods_json: JSON.stringify({
+    card: { enabled: true },
+    wallet: { enabled: true },
+    online: { enabled: false, provider: null },
+    crypto: { enabled: false, asset: "USDT", network: "TRC20", address: "", note: "" },
+  }),
   notif_config: JSON.stringify(defaultNotifConfig()),
   /** Which plan categories customers can buy (admin toggles) */
   sales_categories_json: JSON.stringify({
@@ -576,4 +582,119 @@ export async function listEnabledSalesCategories(): Promise<string[]> {
   const order = await getCategoryOrder();
   const keys = new Set([...Object.keys(cats), ...Object.keys(labels), ...BUILTIN_CATEGORY_KEYS]);
   return sortKeysByCategoryOrder([...keys].filter((k) => cats[k] === true), order);
+}
+
+export type PaymentMethodsConfig = {
+  card: { enabled: boolean };
+  wallet: { enabled: boolean };
+  online: { enabled: boolean; provider: string | null };
+  crypto: {
+    enabled: boolean;
+    asset: string;
+    network: string;
+    address: string;
+    note: string;
+  };
+};
+
+export function defaultPaymentMethodsConfig(): PaymentMethodsConfig {
+  return {
+    card: { enabled: true },
+    wallet: { enabled: true },
+    online: { enabled: false, provider: null },
+    crypto: { enabled: false, asset: "USDT", network: "TRC20", address: "", note: "" },
+  };
+}
+
+export async function getPaymentMethodsConfig(): Promise<PaymentMethodsConfig> {
+  const base = defaultPaymentMethodsConfig();
+  try {
+    const raw = JSON.parse(await getSetting("payment_methods_json")) as Partial<PaymentMethodsConfig>;
+    return {
+      card: { enabled: raw.card?.enabled !== false },
+      wallet: { enabled: raw.wallet?.enabled !== false },
+      online: {
+        enabled: Boolean(raw.online?.enabled),
+        provider: raw.online?.provider ?? null,
+      },
+      crypto: {
+        enabled: Boolean(raw.crypto?.enabled),
+        asset: (raw.crypto?.asset || "USDT").trim() || "USDT",
+        network: (raw.crypto?.network || "TRC20").trim() || "TRC20",
+        address: (raw.crypto?.address || "").trim(),
+        note: (raw.crypto?.note || "").trim(),
+      },
+    };
+  } catch {
+    return base;
+  }
+}
+
+export async function savePaymentMethodsConfig(cfg: PaymentMethodsConfig) {
+  const normalized: PaymentMethodsConfig = {
+    card: { enabled: Boolean(cfg.card?.enabled) },
+    wallet: { enabled: Boolean(cfg.wallet?.enabled) },
+    online: {
+      enabled: Boolean(cfg.online?.enabled),
+      provider: cfg.online?.provider?.trim() || null,
+    },
+    crypto: {
+      enabled: Boolean(cfg.crypto?.enabled),
+      asset: (cfg.crypto?.asset || "USDT").trim() || "USDT",
+      network: (cfg.crypto?.network || "TRC20").trim() || "TRC20",
+      address: (cfg.crypto?.address || "").trim(),
+      note: (cfg.crypto?.note || "").trim().slice(0, 500),
+    },
+  };
+  await setSetting("payment_methods_json", JSON.stringify(normalized));
+  return normalized;
+}
+
+/** Public checkout payload — no gateway secrets. */
+export async function getPublicPaymentMethods() {
+  const cfg = await getPaymentMethodsConfig();
+  const card = await getPaymentCard();
+  return {
+    card: {
+      enabled: cfg.card.enabled,
+      number: card.number,
+      holder: card.holder,
+    },
+    wallet: { enabled: cfg.wallet.enabled },
+    online: {
+      enabled: cfg.online.enabled,
+      ready: Boolean(cfg.online.provider),
+      label: "به‌زودی",
+    },
+    crypto: {
+      enabled: cfg.crypto.enabled && Boolean(cfg.crypto.address),
+      configured: Boolean(cfg.crypto.address),
+      asset: cfg.crypto.asset,
+      network: cfg.crypto.network,
+      address: cfg.crypto.address,
+      note: cfg.crypto.note,
+    },
+  };
+}
+
+export async function assertCheckoutPaymentMethod(
+  method: "wallet" | "card_to_card" | "crypto" | "online",
+): Promise<void> {
+  const cfg = await getPaymentMethodsConfig();
+  if (method === "wallet") {
+    if (!cfg.wallet.enabled) throw new Error("پرداخت از کیف پول غیرفعال است");
+    return;
+  }
+  if (method === "card_to_card") {
+    if (!cfg.card.enabled) throw new Error("پرداخت کارت‌به‌کارت غیرفعال است");
+    return;
+  }
+  if (method === "crypto") {
+    if (!cfg.crypto.enabled) throw new Error("پرداخت کریپتو غیرفعال است");
+    if (!cfg.crypto.address.trim()) throw new Error("آدرس کیف پول کریپتو تنظیم نشده است");
+    return;
+  }
+  if (method === "online") {
+    throw new Error("پرداخت آنلاین هنوز فعال نشده است");
+  }
 }

@@ -6,6 +6,7 @@ import { Toast, ConfirmToast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
 import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
 import { CardPayModal } from "./CardPayModal";
+import { CryptoPayModal, type CryptoPayInfo } from "./CryptoPayModal";
 import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "./SortSelect";
 import { api, formatToman, type Role } from "../lib/api";
 import { useDashAuth } from "../lib/useDashAuth";
@@ -16,7 +17,10 @@ import { DiscountCodesPanel } from "./DiscountCodesPanel";
 import { SalesReportPanel } from "./SalesReportPanel";
 
 type PayCard = { number: string; holder: string };
-type PayModalState = { orderId: string; price: number; card: PayCard } | null;
+type PayModalState =
+  | { kind: "card"; orderId: string; price: number; card: PayCard }
+  | { kind: "crypto"; orderId: string; price: number; crypto: CryptoPayInfo }
+  | null;
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 
@@ -165,6 +169,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         provisioned?: CreatedAccount;
         order?: { id: string; price: number };
         card?: PayCard;
+        crypto?: CryptoPayInfo;
         error?: string;
       }>("/partner/create", {
         body: {
@@ -175,6 +180,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           limitIp: payload.limitIp,
           note: payload.note,
           payWithWallet: payload.payWithWallet,
+          paymentMethod: payload.paymentMethod,
           discountCode: payload.discountCode,
           quantity: payload.quantity,
           priceCellId: payload.priceCellId,
@@ -189,9 +195,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           note: r.provisioned.note ?? payload.note,
         });
         await reload();
+      } else if (r.order && r.crypto?.address) {
+        setPayModal({ kind: "crypto", orderId: r.order.id, price: r.order.price, crypto: r.crypto });
       } else if (r.order && r.card) {
         setPayCard(r.card);
-        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
+        setPayModal({ kind: "card", orderId: r.order.id, price: r.order.price, card: r.card });
       } else {
         setMsg(`سفارش ${formatToman(r.order!.price)} ثبت شد`);
       }
@@ -588,7 +596,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         />
       )}
 
-      {payModal && (
+      {payModal?.kind === "card" && (
         <CardPayModal
           open
           amount={payModal.price}
@@ -598,6 +606,18 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           onSendReceipt={submitOrderReceipt}
           onCancel={() => setPayModal(null)}
           onCopied={() => setMsg("شماره کارت کپی شد")}
+        />
+      )}
+      {payModal?.kind === "crypto" && (
+        <CryptoPayModal
+          open
+          amount={payModal.price}
+          crypto={payModal.crypto}
+          busy={busy}
+          onPaid={() => void submitOrderReceipt("پرداخت کریپتو — اعلام از داشبورد")}
+          onSendReceipt={submitOrderReceipt}
+          onCancel={() => setPayModal(null)}
+          onCopied={() => setMsg("آدرس کیف پول کپی شد")}
         />
       )}
 

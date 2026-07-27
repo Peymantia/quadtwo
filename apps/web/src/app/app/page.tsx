@@ -5,6 +5,7 @@ import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashSh
 import { Toast, ConfirmToast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { CardPayModal } from "../../components/CardPayModal";
+import { CryptoPayModal, type CryptoPayInfo } from "../../components/CryptoPayModal";
 import { PaymentCardBlock, TrafficProgress } from "../../components/PaymentCard";
 import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "../../components/SortSelect";
 import { api, formatToman } from "../../lib/api";
@@ -50,11 +51,10 @@ type OrderRow = {
 
 type PayCard = { number: string; holder: string };
 
-type PayModalState = {
-  orderId: string;
-  price: number;
-  card: PayCard;
-} | null;
+type PayModalState =
+  | { kind: "card"; orderId: string; price: number; card: PayCard }
+  | { kind: "crypto"; orderId: string; price: number; crypto: CryptoPayInfo }
+  | null;
 
 const TABS: ShellTab[] = [
   { key: "shop", label: "خرید", icon: "shop" },
@@ -166,6 +166,7 @@ export default function UserAppPage() {
       const r = await api<{
         order?: { id: string; price: number };
         card?: PayCard;
+        crypto?: CryptoPayInfo;
         provisioned?: CreatedAccount;
       }>("/me/orders", {
         body: {
@@ -176,6 +177,7 @@ export default function UserAppPage() {
           limitIp: payload.limitIp,
           note: payload.note,
           payWithWallet: payload.payWithWallet,
+          paymentMethod: payload.paymentMethod,
           discountCode: payload.discountCode,
           quantity: payload.quantity,
           priceCellId: payload.priceCellId,
@@ -191,9 +193,11 @@ export default function UserAppPage() {
         });
         await reload();
         await loadSubs();
+      } else if (r.order && r.crypto?.address) {
+        setPayModal({ kind: "crypto", orderId: r.order.id, price: r.order.price, crypto: r.crypto });
       } else if (r.order && r.card) {
         setPayCard(r.card);
-        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
+        setPayModal({ kind: "card", orderId: r.order.id, price: r.order.price, card: r.card });
       }
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
@@ -221,6 +225,7 @@ export default function UserAppPage() {
     months: number;
     category: string;
     payWithWallet: boolean;
+    paymentMethod?: "wallet" | "card_to_card" | "crypto";
     discountCode?: string | null;
   }) {
     if (!renewInfo) return;
@@ -231,6 +236,7 @@ export default function UserAppPage() {
       const r = await api<{
         order?: { id: string; price: number };
         card?: PayCard;
+        crypto?: CryptoPayInfo;
         provisioned?: CreatedAccount;
       }>("/me/orders", {
         body: {
@@ -241,6 +247,7 @@ export default function UserAppPage() {
           category: payload.category,
           accountName: renewInfo.subscription.email,
           payWithWallet: payload.payWithWallet,
+          paymentMethod: payload.paymentMethod,
           discountCode: payload.discountCode,
         },
       });
@@ -254,9 +261,11 @@ export default function UserAppPage() {
         });
         await reload();
         await loadSubs();
+      } else if (r.order && r.crypto?.address) {
+        setPayModal({ kind: "crypto", orderId: r.order.id, price: r.order.price, crypto: r.crypto });
       } else if (r.order && r.card) {
         setPayCard(r.card);
-        setPayModal({ orderId: r.order.id, price: r.order.price, card: r.card });
+        setPayModal({ kind: "card", orderId: r.order.id, price: r.order.price, card: r.card });
       } else if (r.order) {
         setMsg(`سفارش تمدید ${formatToman(r.order.price)} ثبت شد`);
         await reload();
@@ -725,7 +734,7 @@ export default function UserAppPage() {
         onClose={() => setQrSub(null)}
       />
 
-      {payModal && (
+      {payModal?.kind === "card" && (
         <CardPayModal
           open
           title="پرداخت سفارش"
@@ -734,6 +743,19 @@ export default function UserAppPage() {
           busy={busy}
           onCopied={() => setMsg("شماره کارت کپی شد")}
           onPaid={() => void submitBuyReceipt("پرداخت شد — اعلام از داشبورد")}
+          onSendReceipt={(note) => void submitBuyReceipt(note)}
+          onCancel={() => setPayModal(null)}
+        />
+      )}
+      {payModal?.kind === "crypto" && (
+        <CryptoPayModal
+          open
+          title="پرداخت کریپتو"
+          amount={payModal.price}
+          crypto={payModal.crypto}
+          busy={busy}
+          onCopied={() => setMsg("آدرس کیف پول کپی شد")}
+          onPaid={() => void submitBuyReceipt("پرداخت کریپتو — اعلام از داشبورد")}
           onSendReceipt={(note) => void submitBuyReceipt(note)}
           onCancel={() => setPayModal(null)}
         />

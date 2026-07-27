@@ -6,6 +6,8 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "../db.js";
 import {
   attachReceipt,
+  attachTextReceipt,
+  setOrderPaymentMethod,
   createMatrixOrder,
   createWalletChargeOrder,
   findPendingPaymentOrder,
@@ -25,7 +27,7 @@ import {
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
 import { claimTestService } from "../services/test-service.js";
-import { getChannels, getPaymentCard, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, canEditLimitIp, resolvePurchaseLimitIp, setSetting, isSalesCategoryEnabled } from "../services/settings.js";
+import { getChannels, getPaymentCard, getPaymentMethodsConfig, getPublicPaymentMethods, assertCheckoutPaymentMethod, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, canEditLimitIp, resolvePurchaseLimitIp, setSetting, isSalesCategoryEnabled } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
@@ -105,6 +107,7 @@ import {
   mainMenuReply,
   demoRoleInlineKeyboard,
   orderPayText,
+  orderCryptoPayText,
   partnerContactKeyboard,
   partnerRequestKeyboard,
   payConfirmKeyboard,
@@ -566,6 +569,8 @@ async function notifyAllAdmins(api: Context["api"], send: (adminId: number) => P
 }
 
 async function startCardPayment(ctx: Context, orderId: string, summary: string) {
+  await assertCheckoutPaymentMethod("card_to_card");
+  await setOrderPaymentMethod(orderId, (await upsertUserFromTelegram(ctx.from!)).id, "card_to_card");
   const card = await getPaymentCard();
   const text = orderPayText(summary, card, orderId);
   // No parse_mode — so Premium custom_emoji entities can be applied by the API transform.
@@ -574,6 +579,28 @@ async function startCardPayment(ctx: Context, orderId: string, summary: string) 
   } else {
     await ctx.reply(text, { reply_markup: payConfirmKeyboard(orderId) });
   }
+}
+
+async function startCryptoPayment(ctx: Context, orderId: string, summary: string) {
+  await assertCheckoutPaymentMethod("crypto");
+  await setOrderPaymentMethod(orderId, (await upsertUserFromTelegram(ctx.from!)).id, "crypto");
+  const methods = await getPublicPaymentMethods();
+  const text = orderCryptoPayText(summary, methods.crypto, orderId);
+  if (ctx.callbackQuery?.message) {
+    await ctx.editMessageText(text, { reply_markup: payConfirmKeyboard(orderId) });
+  } else {
+    await ctx.reply(text, { reply_markup: payConfirmKeyboard(orderId) });
+  }
+}
+
+async function buildPayMethodKeyboard(orderId: string, walletBalance: number) {
+  const cfg = await getPaymentMethodsConfig();
+  return payMethodKeyboard(orderId, walletBalance, {
+    card: cfg.card.enabled,
+    wallet: cfg.wallet.enabled,
+    crypto: cfg.crypto.enabled && Boolean(cfg.crypto.address.trim()),
+    online: cfg.online.enabled,
+  });
 }
 
 async function handleMyServices(ctx: Context) {
@@ -1395,13 +1422,14 @@ export function createBot() {
         return;
       }
       const wallet = await getWallet(user.id);
+      const payKb = await buildPayMethodKeyboard(order.id, wallet.balance);
       try {
         await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
-          reply_markup: payMethodKeyboard(order.id, wallet.balance),
+          reply_markup: payKb,
         });
       } catch {
         await ctx.reply(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
-          reply_markup: payMethodKeyboard(order.id, wallet.balance),
+          reply_markup: payKb,
         });
       }
     } finally {
@@ -1416,7 +1444,29 @@ export function createBot() {
       await ctx.reply("سفارش پیدا نشد.");
       return;
     }
-    await startCardPayment(ctx, order.id, orderSummaryText(order));
+    try {
+      await startCardPayment(ctx, order.id, orderSummaryText(order));
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery(/^pay:crypto:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const order = await getOrderForAdmin(ctx.match![1]);
+    if (!order || order.userId !== (await upsertUserFromTelegram(ctx.from!)).id) {
+      await ctx.reply("سفارش پیدا نشد.");
+      return;
+    }
+    try {
+      await startCryptoPayment(ctx, order.id, orderSummaryText(order));
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery(/^pay:online:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery({ text: "پرداخت آنلاین به‌زودی فعال می‌شود" });
   });
 
   bot.callbackQuery(/^pay:wallet:(.+)$/, async (ctx) => {
@@ -1428,6 +1478,12 @@ export function createBot() {
     }
     walletPayLocks.add(lockKey);
     try {
+      try {
+        await assertCheckoutPaymentMethod("wallet");
+      } catch (err) {
+        await ctx.answerCallbackQuery({ text: friendlyBotError(err).slice(0, 180) });
+        return;
+      }
       await ctx.answerCallbackQuery({ text: "پرداخت از کیف پول..." });
       const user = await upsertUserFromTelegram(ctx.from!);
       try {
@@ -1453,10 +1509,17 @@ export function createBot() {
   });
 
   bot.callbackQuery(/^paid:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery({ text: "عکس رسید را بفرستید" });
-    await ctx.reply(`سفارش \`${ctx.match![1].slice(-8)}\`\nالان عکس رسید را بفرستید.`, {
-      parse_mode: "Markdown",
+    const order = await getOrderForAdmin(ctx.match![1]);
+    const isCrypto = order?.paymentMethod === "crypto";
+    await ctx.answerCallbackQuery({
+      text: isCrypto ? "عکس رسید یا هش تراکنش را بفرستید" : "عکس رسید را بفرستید",
     });
+    await ctx.reply(
+      isCrypto
+        ? `سفارش \`${ctx.match![1].slice(-8)}\`\nعکس رسید یا هش تراکنش را بفرستید.`
+        : `سفارش \`${ctx.match![1].slice(-8)}\`\nالان عکس رسید را بفرستید.`,
+      { parse_mode: "Markdown" },
+    );
   });
 
   bot.callbackQuery(/^cancel:(.+)$/, async (ctx) => {
@@ -1520,7 +1583,7 @@ export function createBot() {
     }
     const wallet = await getWallet(user.id);
     await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
-      reply_markup: payMethodKeyboard(order.id, wallet.balance),
+      reply_markup: await buildPayMethodKeyboard(order.id, wallet.balance),
     });
   });
 
@@ -1636,6 +1699,41 @@ export function createBot() {
       return;
     }
 
+    // Crypto: accept tx hash / receipt text while order is pending payment
+    if (!(Object.values(BTN) as string[]).includes(text) && text.length >= 6) {
+      const user = await upsertUserFromTelegram(ctx.from!);
+      const pending = await findPendingPaymentOrder(user.id);
+      if (pending?.paymentMethod === "crypto") {
+        const rl = limitReceipt(ctx.from!.id);
+        if (!rl.ok) {
+          await ctx.reply(`ارسال رسید زیاد است. ${rl.retryAfterSec} ثانیه صبر کنید.`);
+          return;
+        }
+        const order = await attachTextReceipt(pending.id, user.id, text);
+        await auditLog({
+          action: "receipt_uploaded",
+          actorTelegramId: ctx.from!.id,
+          target: order.id,
+        });
+        await ctx.reply("هش/رسید دریافت شد ✅\nمنتظر تأیید ادمین بمانید.");
+        const caption = [
+          "🔔 سفارش کریپتو",
+          "",
+          `کاربر: ${order.user.firstName ?? ""} @${order.user.username ?? "—"}`,
+          orderSummaryText(order),
+          `هش/رسید: ${text.slice(0, 200)}`,
+          `سفارش: \`${order.id}\``,
+        ].join("\n");
+        await notifyAllAdmins(ctx.api, async (adminId) => {
+          await ctx.api.sendMessage(adminId, caption, {
+            parse_mode: "Markdown",
+            reply_markup: adminOrderKeyboard(order.id),
+          });
+        });
+        return;
+      }
+    }
+
     if (await handleControlCenterText(ctx, text)) return;
     if (await handleDiscountCreateText(ctx, text)) return;
     if (await handleMyServicesSearch(ctx, text)) return;
@@ -1665,8 +1763,13 @@ export function createBot() {
       }
       waitingWalletAmount.delete(tid);
       const user = await upsertUserFromTelegram(ctx.from!);
-      const order = await createWalletChargeOrder(user.id, amount);
-      await startCardPayment(ctx, order.id, orderSummaryText(order));
+      try {
+        await assertCheckoutPaymentMethod("card_to_card");
+        const order = await createWalletChargeOrder(user.id, amount);
+        await startCardPayment(ctx, order.id, orderSummaryText(order));
+      } catch (err) {
+        await ctx.reply(friendlyBotError(err));
+      }
       return;
     }
 
@@ -2345,7 +2448,7 @@ export function createBot() {
       }
       const wallet = await getWallet(user.id);
       await ctx.editMessageText(`${orderSummaryText(order)}\n\nروش پرداخت را انتخاب کنید:`, {
-        reply_markup: payMethodKeyboard(order.id, wallet.balance),
+        reply_markup: await buildPayMethodKeyboard(order.id, wallet.balance),
       });
     } catch (err) {
       await ctx.reply(friendlyBotError(err));
@@ -2369,8 +2472,13 @@ export function createBot() {
     }
     const amount = Number(raw);
     const user = await upsertUserFromTelegram(ctx.from!);
-    const order = await createWalletChargeOrder(user.id, amount);
-    await startCardPayment(ctx, order.id, orderSummaryText(order));
+    try {
+      await assertCheckoutPaymentMethod("card_to_card");
+      const order = await createWalletChargeOrder(user.id, amount);
+      await startCardPayment(ctx, order.id, orderSummaryText(order));
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
   });
 
   bot.command("pending", async (ctx) => {
