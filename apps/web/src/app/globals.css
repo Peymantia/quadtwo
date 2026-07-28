@@ -2657,6 +2657,18 @@ button.pay-dest-number:active,
   width: 100%;
 }
 
+.config-card-actions-row.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.config-card-actions-row.cols-3 > .btn {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 6px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
 .config-card-actions-row > .btn {
   width: 100%;
   min-width: 0;

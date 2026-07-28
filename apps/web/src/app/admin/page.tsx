@@ -907,7 +907,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                   </div>
                 </div>
                 <div className="config-card-actions">
-                  <div className="config-card-actions-row">
+                  <div className="config-card-actions-row cols-3">
                     <button
                       type="button"
                       className="btn success sm"
