@@ -602,83 +602,6 @@ h3 {
   }
 }
 
-.settings-acc {
-  padding: 0;
-  overflow: hidden;
-}
-
-.settings-acc__head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px 16px;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  text-align: right;
-  font: inherit;
-}
-
-.settings-acc__head:hover {
-  background: rgba(148, 163, 255, 0.05);
-}
-
-.settings-acc.is-open .settings-acc__head {
-  border-bottom: 1px solid var(--line);
-}
-
-.settings-acc__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.95rem;
-  font-weight: 800;
-  min-width: 0;
-}
-
-.settings-acc__icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  border: 1px solid var(--line);
-  background: rgba(125, 211, 252, 0.08);
-  color: var(--cyan);
-}
-
-.settings-acc__chev {
-  flex-shrink: 0;
-  color: var(--mute);
-  font-size: 0.95rem;
-  line-height: 1;
-  transition: transform 0.2s ease;
-}
-
-.settings-acc__chev.open {
-  transform: rotate(180deg);
-}
-
-.settings-acc__body {
-  padding: 14px 18px 18px;
-}
-
-.settings-acc__save {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-}
-
-.settings-acc__save .btn {
-  width: 100%;
-  box-shadow: none;
-}
-
 .pay-method-block {
   margin-top: 12px;
   padding: 12px 14px;
@@ -698,19 +621,6 @@ h3 {
   margin: 0;
   padding: 0;
   border: 0;
-}
-
-.settings-acc__body .panel {
-  margin-bottom: 0;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.settings-acc__body .settings-auth-grid {
-  margin: 0;
-}
-
-.settings-acc__body .settings-auth-grid .panel > h2 {
-  font-size: 0.95rem;
 }
 
 .settings-auth-grid {
@@ -1441,6 +1351,100 @@ button.stat.stat-link:active {
   padding: 19px 18px;
   margin-bottom: 15px;
   backdrop-filter: blur(12px);
+}
+
+/* Must follow .panel so padding:0 wins over panel padding. */
+.panel.settings-acc {
+  padding: 0;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.settings-acc__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: right;
+  font: inherit;
+  line-height: 1.25;
+}
+
+.settings-acc__head:hover {
+  background: rgba(148, 163, 255, 0.05);
+}
+
+.settings-acc.is-open .settings-acc__head {
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-acc__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.settings-acc__icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: rgba(125, 211, 252, 0.08);
+  color: var(--cyan);
+}
+
+.settings-acc__chev {
+  flex-shrink: 0;
+  color: var(--mute);
+  font-size: 0.8rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.settings-acc__chev.open {
+  transform: rotate(180deg);
+}
+
+.settings-acc__body {
+  padding: 12px 14px 14px;
+}
+
+.settings-acc__save {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-acc__save .btn {
+  width: 100%;
+  box-shadow: none;
+}
+
+.settings-acc__body .panel {
+  margin-bottom: 0;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.settings-acc__body .settings-auth-grid {
+  margin: 0;
+}
+
+.settings-acc__body .settings-auth-grid .panel > h2 {
+  font-size: 0.95rem;
 }
 
 .panel > h2 {

@@ -27,7 +27,7 @@ export function SettingsAccordion({ id, title, icon, openId, onToggle, children 
       >
         <span className="settings-acc__title">
           <span className="settings-acc__icon" aria-hidden>
-            <Icon name={icon} size={18} />
+            <Icon name={icon} size={14} />
           </span>
           {title}
         </span>
