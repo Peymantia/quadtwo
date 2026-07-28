@@ -514,6 +514,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
   }
   const maxMonths = await getMaxPurchaseMonths();
   const isAgent = canEditLimitIp(roleUser.role);
+  const canEditDraftIp = isAgent && draft.category !== "unlimited";
   const kb = buyWizardKeyboard({
     trafficGb: draft.trafficGb,
     months: draft.months,
@@ -524,6 +525,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     category: draft.category,
     maxMonths,
     canEditAgentOptions: isAgent,
+    canEditIp: canEditDraftIp,
     discountsEnabled: discountsOn,
     discountCode: draft.discountCode,
     offerTitle,
@@ -1257,6 +1259,11 @@ export function createBot() {
       await ctx.answerCallbackQuery({ text: "محدودیت دستگاه از تنظیمات سیستم اعمال می‌شود", show_alert: true });
       return;
     }
+    const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
+    if (draft.category === "unlimited") {
+      await ctx.answerCallbackQuery({ text: "برای سرویس نامحدود، محدودیت کاربر روی ۲ قفل است", show_alert: true });
+      return;
+    }
     await ctx.answerCallbackQuery();
     await adjustDraftLimitIp(BigInt(ctx.from!.id), 1);
     await showBuyWizard(ctx, true);
@@ -1265,6 +1272,11 @@ export function createBot() {
     const user = await upsertUserFromTelegram(ctx.from!);
     if (!canEditLimitIp(withEffectiveRole(user, ctx.from!.id).role)) {
       await ctx.answerCallbackQuery({ text: "محدودیت دستگاه از تنظیمات سیستم اعمال می‌شود", show_alert: true });
+      return;
+    }
+    const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
+    if (draft.category === "unlimited") {
+      await ctx.answerCallbackQuery({ text: "برای سرویس نامحدود، محدودیت کاربر روی ۲ قفل است", show_alert: true });
       return;
     }
     await ctx.answerCallbackQuery();

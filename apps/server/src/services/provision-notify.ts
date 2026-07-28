@@ -71,8 +71,10 @@ export async function deliverProvisionToUser(
       trafficGb != null || mode === "new" || mode === "renew" ? `حجم: ${formatTraffic(trafficGb)}` : "",
       exp ? `انقضا (پس از فعال‌سازی): ${exp}` : "",
       mode === "new" || mode === "renew" ? "⏱ اعتبار: از اولین اتصال شروع می‌شود" : "",
+      one.subUrl ? "🔗 لینک اشتراک:" : "",
+      one.subUrl ? `<code>${one.subUrl}</code>` : "",
       "",
-      "از دکمه‌های زیر لینک یا QR را بگیرید:",
+      "دکمه‌های زیر هم برای مدیریت سریع سرویس در دسترس هستند:",
     ]
       .filter(Boolean)
       .join("\n");

@@ -252,6 +252,9 @@ export async function getDefaultLimitIp(): Promise<number> {
   return Math.min(10, Math.floor(raw));
 }
 
+/** Unlimited plans are always locked to 2 users/devices. */
+export const UNLIMITED_LIMIT_IP = 2;
+
 /** Admin / partner / wholesale may change IP limit at purchase; regular users use settings default. */
 export function canEditLimitIp(role: string): boolean {
   return role === "admin" || role === "partner" || role === "wholesale";
@@ -262,9 +265,13 @@ export async function resolvePurchaseLimitIp(
   draft: {
     limitIp: number;
     limitIpTouched: boolean;
+    category?: string;
+    trafficGb?: number | null;
+    unlimited?: boolean;
   },
   role?: string,
 ): Promise<number> {
+  if (draft.category === "unlimited" || draft.unlimited === true) return UNLIMITED_LIMIT_IP;
   if (role && !canEditLimitIp(role)) return getDefaultLimitIp();
   if (draft.limitIpTouched) return draft.limitIp;
   if (draft.limitIp > 0) return draft.limitIp;

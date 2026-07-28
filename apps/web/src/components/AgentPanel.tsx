@@ -376,6 +376,12 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               <button type="button" className="btn light wide" onClick={() => setTab("reports")}>
                 گزارش فروش
               </button>
+              <button type="button" className="btn ghost wide" onClick={() => setTab("discounts")}>
+                کد تخفیف
+              </button>
+              <button type="button" className="btn light wide" onClick={() => setTab("settings")}>
+                تنظیمات
+              </button>
             </div>
           </div>
         </>

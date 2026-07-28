@@ -8,6 +8,8 @@ import {
   type PanelCategories,
 } from "./panel-servers.js";
 import {
+  getAllSettings,
+  getChannels,
   getPriceRates,
   getSalesCategories,
   saveChannels,
@@ -26,6 +28,19 @@ export type ImportResult = {
   pricesCleared: boolean;
   rates: boolean;
   salesCategories: boolean;
+  promos: number;
+  guides: number;
+  panels: number;
+  warnings: string[];
+};
+
+export type WorkbookInspect = {
+  sheetNames: string[];
+  settings: number;
+  channels: number;
+  prices: number;
+  rates: number;
+  salesCategories: number;
   promos: number;
   guides: number;
   panels: number;
@@ -93,12 +108,170 @@ const GUIDE_KEYS = new Set([
   "guide_macos_url",
 ]);
 
+const EXPORTED_SETTING_KEYS = [
+  "brand_name",
+  "welcome_text",
+  "card_number",
+  "card_holder",
+  "support_username",
+  "support_telegram_id",
+  "miniapp_url",
+  "default_limit_ip",
+  "pricing_mode",
+  "max_purchase_months",
+  "test_service_enabled",
+  "xui_inbound_ids",
+  "national_service_note",
+] as const;
+
 export function readWorkbookFromBuffer(buf: Buffer): XLSX.WorkBook {
   return XLSX.read(buf, { type: "buffer" });
 }
 
 export function readWorkbookFromPath(path: string): XLSX.WorkBook {
   return XLSX.read(readFileSync(path), { type: "buffer" });
+}
+
+export function inspectWorkbook(wb: XLSX.WorkBook): WorkbookInspect {
+  return {
+    sheetNames: wb.SheetNames,
+    settings: sheetRows(wb, "تنظیمات").length,
+    channels: sheetRows(wb, "کانال‌ها").length,
+    prices: sheetRows(wb, "قیمت‌ها").length,
+    rates: sheetRows(wb, "نرخ‌ها").length,
+    salesCategories: sheetRows(wb, "دسته‌های فروش").length,
+    promos: sheetRows(wb, "پیام‌های تبلیغ").length,
+    guides: sheetRows(wb, "لینک‌های آموزش").length,
+    panels: sheetRows(wb, "سرورهای پنل").length,
+    warnings: [],
+  };
+}
+
+export async function exportWorkbookBuffer(): Promise<Buffer> {
+  const wb = XLSX.utils.book_new();
+  const settings = await getAllSettings();
+  const channels = await getChannels();
+  const salesCategories = await getSalesCategories();
+  const rates = await getPriceRates();
+  const panels = await listPanelServers();
+  const prices = await prisma.priceCell.findMany({
+    orderBy: [{ category: "asc" }, { trafficGb: "asc" }, { months: "asc" }],
+  });
+
+  const settingsRows = [
+    { key: "replace_prices", value: "false", note: "true = پاک‌سازی کامل قیمت‌ها قبل از ورود، false = فقط افزودن/به‌روزرسانی" },
+    ...EXPORTED_SETTING_KEYS.map((key) => ({
+      key,
+      value: settings[key] ?? "",
+      note: "",
+    })),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(settingsRows), "تنظیمات");
+
+  const guideRows = [...GUIDE_KEYS].map((key) => ({
+    key,
+    value: settings[key] ?? "",
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(guideRows), "لینک‌های آموزش");
+
+  const promoRows = Object.entries(settings)
+    .filter(([key]) => key.startsWith("promo_"))
+    .map(([key, raw]) => {
+      let title = "";
+      let text = raw ?? "";
+      try {
+        const parsed = JSON.parse(String(raw)) as { title?: string; text?: string };
+        title = parsed?.title ?? "";
+        text = parsed?.text ?? "";
+      } catch {
+        /* keep raw text */
+      }
+      return { key, title, text };
+    });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(promoRows.length ? promoRows : [{ key: "", title: "", text: "" }]), "پیام‌های تبلیغ");
+
+  const channelRows = channels.map((c: ChannelConfig) => ({
+    username: c.username,
+    required: c.required ? "true" : "false",
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(channelRows.length ? channelRows : [{ username: "", required: "" }]), "کانال‌ها");
+
+  const salesCategoryRows = Object.entries(salesCategories).map(([category, enabled]) => ({
+    category,
+    enabled: enabled ? "true" : "false",
+  }));
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(salesCategoryRows.length ? salesCategoryRows : [{ category: "", enabled: "" }]),
+    "دسته‌های فروش",
+  );
+
+  const rateRows: Array<Record<string, string | number>> = [];
+  for (const role of ["user", "partner", "wholesale"] as const) {
+    rateRows.push({
+      role,
+      category: "unlimited",
+      perGb: rates[role].perGb,
+      perMonth: rates[role].perMonth,
+      unlimitedPerMonth: rates[role].unlimitedPerMonth,
+    });
+    for (const [category, roleRates] of Object.entries(rates.categories ?? {})) {
+      const item = roleRates?.[role];
+      if (!item) continue;
+      rateRows.push({
+        role,
+        category,
+        perGb: item.perGb ?? "",
+        perMonth: item.perMonth ?? "",
+        unlimitedPerMonth: "",
+      });
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rateRows.length ? rateRows : [{ role: "", category: "", perGb: "", perMonth: "", unlimitedPerMonth: "" }]), "نرخ‌ها");
+
+  const priceRows = prices.map((row) => ({
+    category: row.category,
+    trafficGb: row.trafficGb ?? "",
+    months: row.months,
+    priceUser: row.priceUser,
+    pricePartner: row.pricePartner,
+    priceWholesale: row.priceWholesale,
+    isGolden: row.isGolden ? "true" : "false",
+    active: row.active ? "true" : "false",
+    title: row.title ?? "",
+  }));
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      priceRows.length
+        ? priceRows
+        : [{ category: "", trafficGb: "", months: "", priceUser: "", pricePartner: "", priceWholesale: "", isGolden: "", active: "", title: "" }],
+    ),
+    "قیمت‌ها",
+  );
+
+  const panelRows = panels.map((p) => ({
+    name: p.name,
+    baseUrl: p.baseUrl,
+    apiToken: p.apiToken,
+    inboundIds: p.inboundIds,
+    subBase: p.subBase ?? "",
+    categories: Array.isArray(p.categories) ? p.categories.join(",") : "",
+    weight: p.weight,
+    active: p.active ? "true" : "false",
+    sellEnabled: p.sellEnabled ? "true" : "false",
+  }));
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      panelRows.length
+        ? panelRows
+        : [{ name: "", baseUrl: "", apiToken: "", inboundIds: "", subBase: "", categories: "", weight: "", active: "", sellEnabled: "" }],
+    ),
+    "سرورهای پنل",
+  );
+
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
 export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {

@@ -228,6 +228,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   }, [variant]);
 
   const isOffer = category === "offer";
+  const unlimitedIpLocked = category === "unlimited";
   const offerCells = useMemo(
     () => (catalog.cells ?? []).filter((c) => c.category === "offer" && c.price != null),
     [catalog.cells],
@@ -238,7 +239,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
   const volumeFixed = category === "unlimited" || (isOffer && selectedOffer?.trafficGb == null);
   const monthsLocked = isOffer || category === "national" || Math.max(1, catalog.maxMonths || 1) <= 1;
-  const ipLocked = isOffer || !allowIpEdit;
+  const ipLocked = isOffer || unlimitedIpLocked || !allowIpEdit;
 
   const volumeSteps = useMemo((): SeekStep[] => {
     if (isOffer && selectedOffer) {
@@ -280,6 +281,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   }, [category, catalog, isOffer, selectedOffer]);
 
   const ipSteps = useMemo((): SeekStep[] => {
+    if (unlimitedIpLocked) {
+      return [{ value: 2, label: "2" }];
+    }
     const def = Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0));
     if (ipLocked) {
       return [{ value: def, label: def <= 0 ? "∞" : String(def) }];
@@ -288,7 +292,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       value: i,
       label: i === 0 ? "∞" : String(i),
     }));
-  }, [catalog.defaultLimitIp, ipLocked]);
+  }, [catalog.defaultLimitIp, ipLocked, unlimitedIpLocked]);
 
   useEffect(() => {
     if (!cats.includes(category)) setCategory(cats[0] || "data");
@@ -328,6 +332,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const months = isOffer ? selectedOffer?.months ?? 1 : monthSteps[monthIndex]?.value ?? 1;
   const limitIp = isOffer
     ? Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0))
+    : unlimitedIpLocked
+      ? 2
     : ipSteps[ipIndex]?.value ?? catalog.defaultLimitIp ?? 0;
 
   const volumeValue = volumeFixed || trafficGb == null ? (

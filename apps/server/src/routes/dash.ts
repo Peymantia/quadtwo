@@ -111,7 +111,13 @@ import {
   resolveAccountDetailForReport,
 } from "../services/account-archive.js";
 import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
-import { importWorkbook, readWorkbookFromBuffer, formatImportResult } from "../services/bulk-import.js";
+import {
+  exportWorkbookBuffer,
+  formatImportResult,
+  importWorkbook,
+  inspectWorkbook,
+  readWorkbookFromBuffer,
+} from "../services/bulk-import.js";
 import { getSubscriptionTrafficBytes } from "../services/live-status.js";
 import { checkRenewEligibility, inferRenewCategory } from "../services/renew-eligibility.js";
 import { dashBaseUrl, env } from "../config/env.js";
@@ -2276,6 +2282,20 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     const buf = Buffer.from(await c.req.arrayBuffer());
     const result = await importWorkbook(readWorkbookFromBuffer(buf));
     return c.json({ result, text: formatImportResult(result) });
+  });
+
+  api.post("/admin/import/inspect", async (c) => {
+    const buf = Buffer.from(await c.req.arrayBuffer());
+    const inspect = inspectWorkbook(readWorkbookFromBuffer(buf));
+    return c.json({ inspect });
+  });
+
+  api.get("/admin/export.xlsx", async (c) => {
+    const buf = await exportWorkbookBuffer();
+    const stamp = new Date().toISOString().slice(0, 10);
+    c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    c.header("Content-Disposition", `attachment; filename="quadtwo-export-${stamp}.xlsx"`);
+    return c.body(new Uint8Array(buf));
   });
 
   api.get("/admin/users", async (c) => {

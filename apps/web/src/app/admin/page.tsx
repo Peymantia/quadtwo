@@ -4605,37 +4605,181 @@ function ReportsTab() {
 function ImportTab({ flash }: { flash: Flash }) {
   const [busy, setBusy] = useState(false);
   const [resultText, setResultText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [inspect, setInspect] = useState<{
+    sheetNames: string[];
+    settings: number;
+    channels: number;
+    prices: number;
+    rates: number;
+    salesCategories: number;
+    promos: number;
+    guides: number;
+    panels: number;
+  } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  async function pickFile(next: File | null) {
+    setFile(next);
+    setInspect(null);
+    setResultText("");
+  }
+
+  async function inspectFile() {
+    if (!file) {
+      flash(null, "ابتدا فایل اکسل را انتخاب کنید");
+      return;
+    }
+    setBusy(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const r = await api<{ inspect: NonNullable<typeof inspect> }>("/admin/import/inspect", {
+        rawBody: buf,
+        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      });
+      setInspect(r.inspect);
+      flash("فایل اکسل بررسی شد");
+    } catch (ex) {
+      flash(null, errText(ex));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importFile() {
+    if (!file) {
+      flash(null, "ابتدا فایل اکسل را انتخاب کنید");
+      return;
+    }
+    if (!inspect) {
+      flash(null, "ابتدا فایل را بررسی کنید");
+      return;
+    }
+    setBusy(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const r = await api<{ text: string }>("/admin/import", {
+        rawBody: buf,
+        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      });
+      setResultText(r.text);
+      flash("فایل پردازش شد");
+    } catch (ex) {
+      flash(null, errText(ex));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function downloadCurrentExcel() {
+    setBusy(true);
+    try {
+      const headers: Record<string, string> = {};
+      const token = getToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const demoRole = getDemoRole();
+      if (demoRole) headers["X-Demo-Role"] = demoRole;
+      const res = await fetch(`${apiBase()}/api/admin/export.xlsx`, { headers });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `quadtwo-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      flash("خروجی اکسل دانلود شد");
+    } catch (ex) {
+      flash(null, errText(ex));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="panel">
       <h2>ورود قیمت و تنظیمات از اکسل</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        فایل xlsx را انتخاب کنید — همان قالبی که در ربات استفاده می‌شود.
+        می‌توانید اول از وضعیت فعلی دیتابیس خروجی اکسل بگیرید، تغییرات را اعمال کنید و دوباره همان فایل را وارد کنید.
       </p>
-      <input
-        type="file"
-        accept=".xlsx,.xls"
-        disabled={busy}
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          setBusy(true);
-          try {
-            const buf = await file.arrayBuffer();
-            const r = await api<{ text: string }>("/admin/import", {
-              rawBody: buf,
-              headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-            });
-            setResultText(r.text);
-            flash("فایل پردازش شد");
-          } catch (ex) {
-            flash(null, errText(ex));
-          } finally {
-            setBusy(false);
+      <div className="actions" style={{ marginBottom: 14 }}>
+        <button type="button" className="btn primary" disabled={busy} onClick={() => void downloadCurrentExcel()}>
+          دانلود خروجی اکسل فعلی
+        </button>
+      </div>
+      <div className="backup-restore">
+        <div className="backup-restore__title">انتخاب و ورود فایل اکسل</div>
+        <p className="hint" style={{ marginTop: 0 }}>
+          فایل `.xlsx` یا `.xls` را انتخاب کنید؛ قبل از ورود نهایی، ساختار فایل بررسی می‌شود.
+        </p>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="backup-restore__input"
+          disabled={busy}
+          onChange={(e) => {
+            const next = e.target.files?.[0] ?? null;
             e.target.value = "";
-          }
-        }}
-      />
+            void pickFile(next);
+          }}
+        />
+        <button
+          type="button"
+          className="backup-restore__pick"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          <Icon name="file" size={20} />
+          <span className="backup-restore__pick-text">
+            <strong>{file ? "تغییر فایل" : "انتخاب فایل اکسل"}</strong>
+            <small>{file ? file.name : "فرمت .xlsx / .xls · قابل import مجدد"}</small>
+          </span>
+        </button>
+        {file && (
+          <div className="backup-restore__meta">
+            <span className="num" dir="ltr">
+              {file.name}
+            </span>
+            <span className="muted">{formatFileSize(file.size)}</span>
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={busy}
+              onClick={() => {
+                setFile(null);
+                setInspect(null);
+                setResultText("");
+              }}
+            >
+              حذف
+            </button>
+          </div>
+        )}
+        {inspect && (
+          <p className="hint" style={{ margin: 0 }}>
+            شیت‌ها: {inspect.sheetNames.join("، ") || "—"}
+            {` · تنظیمات ${inspect.settings.toLocaleString("fa-IR")}`}
+            {` · کانال ${inspect.channels.toLocaleString("fa-IR")}`}
+            {` · قیمت ${inspect.prices.toLocaleString("fa-IR")}`}
+            {` · نرخ ${inspect.rates.toLocaleString("fa-IR")}`}
+            {` · دسته ${inspect.salesCategories.toLocaleString("fa-IR")}`}
+            {` · پیام ${inspect.promos.toLocaleString("fa-IR")}`}
+            {` · آموزش ${inspect.guides.toLocaleString("fa-IR")}`}
+            {` · سرور ${inspect.panels.toLocaleString("fa-IR")}`}
+          </p>
+        )}
+        <div className="actions">
+          <button type="button" className="btn ghost" disabled={busy || !file} onClick={() => void inspectFile()}>
+            بررسی فایل اکسل
+          </button>
+          <button type="button" className="btn success" disabled={busy || !file || !inspect} onClick={() => void importFile()}>
+            {busy ? "در حال بررسی / ورود…" : "ورود فایل اکسل"}
+          </button>
+        </div>
+      </div>
       {resultText && (
         <pre className="muted" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", marginTop: 13 }}>
           {resultText}

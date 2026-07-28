@@ -613,7 +613,7 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 18px;
+  padding: 11px 16px;
   margin: 0;
   border: 0;
   background: transparent;
@@ -634,8 +634,8 @@ h3 {
 .settings-acc__title {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 1.02rem;
+  gap: 8px;
+  font-size: 0.95rem;
   font-weight: 800;
   min-width: 0;
 }
@@ -644,9 +644,9 @@ h3 {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
   border: 1px solid var(--line);
   background: rgba(125, 211, 252, 0.08);
   color: var(--cyan);

@@ -2,7 +2,7 @@ import { OrderKind, OrderStatus, PaymentMethod } from "@prisma/client";
 import { prisma } from "../db.js";
 import { resolvePanelForCategory, resolvePanelForSubscription } from "./panel-servers.js";
 import { checkRenewEligibility, inferRenewCategory } from "./renew-eligibility.js";
-import { canEditLimitIp, getDefaultLimitIp } from "./settings.js";
+import { canEditLimitIp, getDefaultLimitIp, UNLIMITED_LIMIT_IP } from "./settings.js";
 import { clampMonths, normalizePurchaseTraffic, resolvePrice, isOfferCategory, findPriceCell, priceFromCell, type PlanCategory } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
@@ -105,11 +105,12 @@ export async function createMatrixOrder(input: {
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
   const quantity = kind === OrderKind.renew ? 1 : Math.max(1, Math.min(50, input.quantity ?? 1));
   const defaultIp = await getDefaultLimitIp();
-  const limitIp = !canEditLimitIp(pricedUser.role)
+  const baseLimitIp = !canEditLimitIp(pricedUser.role)
     ? defaultIp
     : input.limitIp === undefined
       ? defaultIp
       : Math.max(0, Math.min(10, Math.floor(input.limitIp)));
+  const limitIp = category === "unlimited" ? UNLIMITED_LIMIT_IP : baseLimitIp;
   const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;
 
   const priceBefore = priced.price * (offerLocked ? 1 : quantity);

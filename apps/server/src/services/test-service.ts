@@ -44,7 +44,9 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
   }
 
   const code = shortCode("TST");
-  const email = `test${String(user.telegramId).slice(-8)}${code.slice(-4)}`.toLowerCase();
+  const tgTail = String(user.telegramId).slice(-4);
+  const codeTail = code.replace(/^TST-/i, "").slice(-2).toLowerCase();
+  const email = `t${tgTail}${codeTail}`;
   const subId = randomSubId();
   const expiresAt = new Date(Date.now() + TEST_MS);
 

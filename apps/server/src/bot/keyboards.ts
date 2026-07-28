@@ -109,12 +109,11 @@ export function mainMenuReply(opts: MainMenuOpts) {
     .row()
     .text(BTN.support)
     .text(BTN.hideKeyboard)
-    .row()
-    .text(BTN.guide)
-    .success()
-    .text(BTN.test)
-    .success()
     .row();
+
+  if (!isAgent) {
+    kb.text(BTN.guide).success().text(BTN.test).success().row();
+  }
 
   if (isAgent) {
     kb.text(BTN.agentPanel).primary().text(BTN.configLookup).primary().row();
@@ -218,12 +217,11 @@ export function mainMenuInline(opts: MainMenuOpts) {
     .row()
     .text(BTN.support, "m:support")
     .text(BTN.hideKeyboard, "m:hidekb")
-    .row()
-    .text(BTN.guide, "m:guide")
-    .success()
-    .text(BTN.test, "m:test")
-    .success()
     .row();
+
+  if (!isAgent) {
+    kb.text(BTN.guide, "m:guide").success().text(BTN.test, "m:test").success().row();
+  }
 
   if (isAgent) {
     kb.text(BTN.agentPanel, "m:partnerpanel").primary().text(BTN.configLookup, "m:cfglookup").primary().row();
@@ -248,8 +246,10 @@ export function buyWizardKeyboard(opts: {
   price: number | null;
   category?: string;
   maxMonths?: number;
-  /** Admin / partner / wholesale: quantity + IP limit steppers */
+  /** Admin / partner / wholesale: quantity controls */
   canEditAgentOptions?: boolean;
+  /** Whether IP limit is editable in this draft */
+  canEditIp?: boolean;
   discountsEnabled?: boolean;
   discountCode?: string | null;
   /** Offer title when category is offer */
@@ -265,6 +265,7 @@ export function buyWizardKeyboard(opts: {
   const maxMonths = opts.maxMonths ?? 1;
   const showMonthStepper = !isOffer && maxMonths > 1 && opts.category !== "national";
   const isAgent = opts.canEditAgentOptions === true;
+  const canEditIp = opts.canEditIp === true;
 
   const kb = new InlineKeyboard();
 
@@ -295,9 +296,9 @@ export function buyWizardKeyboard(opts: {
         .text(`${opts.quantity} عدد`, "wiz:noop")
         .text("+", "wiz:qty:+")
         .row()
-        .text("−", "wiz:ip:-")
+        .text(canEditIp ? "−" : "🔒", canEditIp ? "wiz:ip:-" : "wiz:noop")
         .text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop")
-        .text("+", "wiz:ip:+")
+        .text(canEditIp ? "+" : "🔒", canEditIp ? "wiz:ip:+" : "wiz:noop")
         .row();
     }
 
