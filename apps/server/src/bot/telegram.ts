@@ -2,18 +2,23 @@ import { Bot } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { env } from "../config/env.js";
 
-export function createTelegramBot() {
-  const proxy = process.env.TELEGRAM_PROXY?.trim() || process.env.HTTPS_PROXY?.trim();
+export function getTelegramProxyUrl(): string | undefined {
+  const proxy =
+    process.env.TELEGRAM_PROXY?.trim() ||
+    process.env.HTTPS_PROXY?.trim() ||
+    process.env.HTTP_PROXY?.trim();
 
   if (proxy && !/^https?:\/\//i.test(proxy)) {
-    // allow host:port form
-    process.env.TELEGRAM_PROXY = `http://${proxy}`;
+    return `http://${proxy}`;
   }
+  return proxy || undefined;
+}
 
-  const proxyUrl = process.env.TELEGRAM_PROXY?.trim();
+export function createTelegramBot(token = env.BOT_TOKEN) {
+  const proxyUrl = getTelegramProxyUrl();
   const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
 
-  return new Bot(env.BOT_TOKEN, {
+  return new Bot(token, {
     client: agent
       ? {
           baseFetchConfig: {

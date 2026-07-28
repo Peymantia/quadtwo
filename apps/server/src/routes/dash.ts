@@ -87,7 +87,6 @@ import {
   type RolePricingModes,
 } from "../services/settings.js";
 import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, inspectBackupBuffer, listBackupFiles, type BackupConfig } from "../services/backup.js";
-import { Bot } from "grammy";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
@@ -122,6 +121,7 @@ import { getSubscriptionTrafficBytes } from "../services/live-status.js";
 import { checkRenewEligibility, inferRenewCategory } from "../services/renew-eligibility.js";
 import { dashBaseUrl, env } from "../config/env.js";
 import { clearEmojiStyleCache, attachPremiumTextEntities, getEmojiStyle } from "../services/emoji-transform.js";
+import { createTelegramBot } from "../bot/telegram.js";
 
 type Vars = { userId: string; role: string; telegramId: string };
 
@@ -2583,7 +2583,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.post("/admin/backup/send", async (c) => {
-    const bot = new Bot(env.BOT_TOKEN);
+    const bot = createTelegramBot(env.BOT_TOKEN);
     const r = await sendBackupToAdmins(bot.api, { reason: "درخواست دستی از پنل وب" });
     if (r.ok) {
       await auditLog({
