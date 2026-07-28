@@ -108,23 +108,29 @@ async function showConfigDetail(ctx: Context, rawId: string) {
   const lines = ["📄 جزئیات کانفیگ", ""];
   if (sub) {
     lines.push(
-      `کد: ${sub.code}`,
-      `اکانت: ${sub.email}`,
-      `مالک: ${sub.user.username ? `@${sub.user.username}` : sub.user.telegramId}`,
-      `وضعیت: ${sub.status}`,
-      `حجم: ${sub.trafficGb === null ? "نامحدود" : `${sub.trafficGb} گیگ`}`,
-      `انقضا: ${sub.expiresAt.toLocaleDateString("fa-IR")}`,
-      sub.note?.trim() ? `📝 یادداشت:\n${sub.note.trim()}` : "📝 یادداشت: —",
-      "",
-      "در دیتابیس ربات: بله",
+      ...[
+        `کد: ${sub.code}`,
+        `اکانت: ${sub.email}`,
+        sub.title?.trim() && sub.title !== sub.email ? `عنوان: ${sub.title}` : "",
+        `مالک: ${sub.user.username ? `@${sub.user.username}` : sub.user.telegramId}`,
+        `وضعیت: ${sub.status}`,
+        `حجم: ${sub.trafficGb === null ? "نامحدود" : `${sub.trafficGb} گیگ`}`,
+        `انقضا: ${sub.expiresAt.toLocaleDateString("fa-IR")}`,
+        sub.note?.trim() ? `📝 یادداشت:\n${sub.note.trim()}` : "📝 یادداشت: —",
+        "",
+        "در دیتابیس ربات: بله",
+      ].filter(Boolean),
     );
   } else {
     lines.push(`اکانت: ${target.email}`, "", "فقط در پنل ثبت شده (بدون ردیف دیتابیس).");
   }
 
   const viewKey = rawId;
-  const kb = new InlineKeyboard()
-    .text("🗑 حذف کانفیگ", `cfg:delask:${viewKey}`)
+  const kb = new InlineKeyboard();
+  if (sub) {
+    kb.text("🔄 بروزرسانی از پنل", `cfg:refresh:${sub.id}`).row();
+  }
+  kb.text("🗑 حذف کانفیگ", `cfg:delask:${viewKey}`)
     .danger()
     .row()
     .text("« گروه‌ها", "cfg:home");
@@ -158,6 +164,29 @@ export function registerAdminConfigs(bot: Bot) {
     try {
       await showConfigDetail(ctx, ctx.match![1]!);
     } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery(/^cfg:refresh:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    try {
+      const { refreshSubscriptionFromPanel } = await import("../services/admin-configs.js");
+      const r = await refreshSubscriptionFromPanel(ctx.match![1]!);
+      const summary =
+        r.changed.length > 0
+          ? `بروزرسانی شد: ${r.changed.join("، ")}`
+          : "اطلاعات با پنل یکسان بود";
+      await auditLog({
+        action: "admin_config_refresh",
+        actorTelegramId: ctx.from!.id,
+        target: r.email,
+        detail: summary,
+      });
+      await ctx.answerCallbackQuery({ text: summary.slice(0, 180), show_alert: true });
+      await showConfigDetail(ctx, ctx.match![1]!);
+    } catch (err) {
+      await ctx.answerCallbackQuery({ text: "خطا", show_alert: true }).catch(() => undefined);
       await ctx.reply(friendlyBotError(err));
     }
   });

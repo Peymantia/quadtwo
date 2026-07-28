@@ -44,6 +44,7 @@ export function AccountCreatedModal({
   onPayCard,
   onPayCrypto,
   onRefresh,
+  isAdmin,
 }: {
   open: boolean;
   account: CreatedAccount | null;
@@ -53,6 +54,7 @@ export function AccountCreatedModal({
   onPayCard?: (orderId: string, price: number, card: { number: string; holder: string }) => void;
   onPayCrypto?: (orderId: string, price: number, crypto: CryptoPayInfo) => void;
   onRefresh?: () => void;
+  isAdmin?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
@@ -120,6 +122,7 @@ export function AccountCreatedModal({
             busy={busy}
             walletBalance={walletBalance}
             showBack
+            isAdmin={isAdmin}
             onBusy={setBusy}
             onDone={() => onRefresh?.()}
             onPayCard={(orderId, price, card) => onPayCard?.(orderId, price, card)}

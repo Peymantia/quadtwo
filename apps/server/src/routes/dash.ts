@@ -33,7 +33,7 @@ import {
   setOrderPaymentMethod,
 } from "../services/orders.js";
 import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, type PlanCategory } from "../services/pricing.js";
-import { provisionOrder, rotateSubId, rotateUuid, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
+import { provisionOrder, rotateSubId, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
 import {
   createDiscountCode,
   deleteDiscountCode,
@@ -92,7 +92,7 @@ import { claimTestService } from "../services/test-service.js";
 import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman, persianMonthName } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders, buildSalesStats, parseSalesPeriod, agentsSalesLeaderboard } from "../services/admin-reports.js";
-import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays, type ConfigListSort } from "../services/admin-configs.js";
+import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, refreshSubscriptionFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays, type ConfigListSort } from "../services/admin-configs.js";
 import {
   createPanelServer,
   deletePanelServer,
@@ -425,13 +425,24 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({ code: result.code, subUrl: result.subUrl, expiresAt: result.expiresAt.toISOString() });
   });
 
-  api.post("/me/subscriptions/:id/rotate-uuid", async (c) => {
+  api.post("/me/subscriptions/:id/refresh-from-panel", async (c) => {
+    if (c.get("role") !== "admin") return c.json({ error: "فقط ادمین" }, 403);
     const sub = await prisma.subscription.findFirst({
-      where: { id: c.req.param("id"), userId: c.get("userId") },
+      where: { id: c.req.param("id") },
     });
     if (!sub) return c.json({ error: "Not found" }, 404);
-    const result = await rotateUuid(sub.id);
-    return c.json({ code: result.code, subUrl: result.subUrl, expiresAt: result.expiresAt.toISOString() });
+    try {
+      const result = await refreshSubscriptionFromPanel(sub.id);
+      await auditLog({
+        action: "admin_config_refresh",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: result.email,
+        detail: result.changed.length ? result.changed.join(",") : "no_change",
+      });
+      return c.json({ ok: true, ...result });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
   });
 
   api.get("/me/subscriptions/:id/addons", async (c) => {
@@ -2038,6 +2049,30 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         target: sub.email,
       });
       return c.json({ code: result.code, subUrl: result.subUrl, expiresAt: result.expiresAt.toISOString() });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/configs/refresh-from-panel", async (c) => {
+    const body = await c.req.json<{ email?: string; subId?: string | null }>();
+    const sub =
+      (body.subId
+        ? await prisma.subscription.findUnique({ where: { id: body.subId } })
+        : null) ||
+      (body.email
+        ? await prisma.subscription.findFirst({ where: { email: body.email.trim() } })
+        : null);
+    if (!sub) return c.json({ error: "اکانت در دیتابیس ربات پیدا نشد" }, 404);
+    try {
+      const result = await refreshSubscriptionFromPanel(sub.id);
+      await auditLog({
+        action: "admin_config_refresh",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: result.email,
+        detail: result.changed.length ? result.changed.join(",") : "no_change",
+      });
+      return c.json({ ok: true, ...result });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }

@@ -494,40 +494,65 @@ export function subscriptionDetailKeyboard(opts: {
   canRenew?: boolean;
   canAddDays?: boolean;
   canAddGb?: boolean;
+  isAdmin?: boolean;
 }) {
-  return userServiceActionsKeyboard(opts.subId);
+  return userServiceActionsKeyboard(opts.subId, { isAdmin: opts.isAdmin });
 }
 
 /**
- * User-facing service actions (after buy / my-services detail).
- * Layout (2 cols):
- * لینک اشتراک | لینک امن اشتراک
+ * Service actions (after buy / my-services detail).
+ *
+ * Admin:
+ * لینک اشتراک | لینک Base64 کانفیگ
  * افزایش روز | افزایش حجم
- * تغییر لینک کانفیگ | تغییر لینک ساب
+ * بروزرسانی | تغییر لینک ساب
  * تغییر نام دلخواه | نمایش QR Code
  * یادداشت | بازگشت
+ *
+ * Other roles:
+ * لینک اشتراک | لینک Base64 کانفیگ
+ * افزایش روز | افزایش حجم
+ * تغییر لینک ساب | تغییر نام دلخواه
+ * نمایش QR Code | یادداشت
+ * بازگشت
  */
-export function userServiceActionsKeyboard(subId: string) {
-  return new InlineKeyboard()
+export function userServiceActionsKeyboard(
+  subId: string,
+  opts?: { isAdmin?: boolean },
+) {
+  const kb = new InlineKeyboard()
     .text("🔗 لینک اشتراک", `sub:link:${subId}`)
-    .text("🔒 لینک امن اشتراک", `sub:b64:${subId}`)
+    .text("📦 لینک Base64 کانفیگ", `sub:b64:${subId}`)
     .row()
     .text("📅 افزایش روز", `sub:adddays:${subId}`)
     .text("📏 افزایش حجم", `sub:addgb:${subId}`)
-    .row()
-    .text("🔑 تغییر لینک کانفیگ", `sub:rotuuid:${subId}`)
-    .text("🔄 تغییر لینک ساب", `sub:rotsub:${subId}`)
-    .row()
-    .text("✍️ تغییر نام دلخواه", `sub:rename:${subId}`)
-    .text("📱 نمایش QR Code", `sub:qr:${subId}`)
-    .row()
-    .text("📝 یادداشت", `sub:note:${subId}`)
-    .text("« بازگشت", "mysvc:list");
+    .row();
+
+  if (opts?.isAdmin) {
+    kb.text("🔄 بروزرسانی", `sub:refresh:${subId}`)
+      .text("🔀 تغییر لینک ساب", `sub:rotsub:${subId}`)
+      .row()
+      .text("✍️ تغییر نام دلخواه", `sub:rename:${subId}`)
+      .text("📱 نمایش QR Code", `sub:qr:${subId}`)
+      .row()
+      .text("📝 یادداشت", `sub:note:${subId}`)
+      .text("« بازگشت", "mysvc:list");
+  } else {
+    kb.text("🔀 تغییر لینک ساب", `sub:rotsub:${subId}`)
+      .text("✍️ تغییر نام دلخواه", `sub:rename:${subId}`)
+      .row()
+      .text("📱 نمایش QR Code", `sub:qr:${subId}`)
+      .text("📝 یادداشت", `sub:note:${subId}`)
+      .row()
+      .text("« بازگشت", "mysvc:list");
+  }
+
+  return kb;
 }
 
 /** After create / renew / rotate — same actions as my-services detail. */
-export function provisionReadyKeyboard(subId: string) {
-  return userServiceActionsKeyboard(subId);
+export function provisionReadyKeyboard(subId: string, opts?: { isAdmin?: boolean }) {
+  return userServiceActionsKeyboard(subId, opts);
 }
 
 export function addDaysWizardKeyboard(opts: { subId: string; days: number; price: number }) {

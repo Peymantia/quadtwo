@@ -1508,6 +1508,233 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
   return result;
 }
 
+export type RefreshFromPanelResult = {
+  email: string;
+  trafficGb: number | null;
+  title: string | null;
+  note: string | null;
+  limitIp: number;
+  expiresAt: string;
+  status: string;
+  changed: string[];
+};
+
+type PanelClientSnap = {
+  email: string;
+  uuid: string | null;
+  panelSubId: string | null;
+  trafficGb: number | null;
+  expiryTime: number;
+  enable: boolean;
+  limitIp: number;
+  comment: string | null;
+};
+
+async function loadPanelClientForSubscription(sub: Subscription): Promise<{
+  client: PanelClientSnap;
+  xui: XuiClient;
+  subBase: string | null;
+  panelServerId: string | null;
+}> {
+  const resolved = await resolvePanelForSubscription(sub);
+  const xui = resolved.xui;
+  const subBase = resolved.subBase;
+  const panelServerId = resolved.panel?.id ?? sub.panelServerId ?? null;
+
+  const fromRaw = (c: {
+    email?: string;
+    uuid?: string | null;
+    id?: string | null;
+    subId?: string | null;
+    totalGB?: number;
+    expiryTime?: number;
+    enable?: boolean;
+    limitIp?: number;
+    comment?: string | null;
+  }): PanelClientSnap => ({
+    email: String(c.email || sub.email),
+    uuid: c.uuid || (c.id != null ? String(c.id) : null),
+    panelSubId: c.subId ?? null,
+    trafficGb: bytesToGb(c.totalGB),
+    expiryTime: Number(c.expiryTime ?? 0),
+    enable: c.enable !== false,
+    limitIp: Number(c.limitIp ?? 0),
+    comment: typeof c.comment === "string" ? c.comment.trim() || null : null,
+  });
+
+  try {
+    const got = await xui.getClient(sub.email);
+    if (got.obj?.client) {
+      return { client: fromRaw(got.obj.client), xui, subBase, panelServerId };
+    }
+  } catch {
+    /* try uuid / list */
+  }
+
+  if (sub.clientUuid) {
+    try {
+      const listed = await xui.listClients();
+      const rows = Array.isArray(listed.obj) ? listed.obj : [];
+      const hit = rows.find((c) => {
+        const id = String(c.uuid ?? c.id ?? "");
+        return id && id === sub.clientUuid;
+      });
+      if (hit?.email) {
+        try {
+          const got = await xui.getClient(hit.email);
+          if (got.obj?.client) {
+            return { client: fromRaw(got.obj.client), xui, subBase, panelServerId };
+          }
+        } catch {
+          return { client: fromRaw(hit), xui, subBase, panelServerId };
+        }
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  throw new Error("این کانفیگ در پنل سنایی پیدا نشد");
+}
+
+/**
+ * Pull latest traffic / name / expiry / limit / comment from 3x-ui into the bot DB for one subscription.
+ * Used by admin «بروزرسانی» after manual panel edits.
+ */
+export async function refreshSubscriptionFromPanel(
+  subscriptionId: string,
+): Promise<RefreshFromPanelResult> {
+  const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+  if (!sub) throw new Error("سرویس پیدا نشد");
+
+  const { client, xui, subBase, panelServerId } = await loadPanelClientForSubscription(sub);
+  const changed: string[] = [];
+  const data: {
+    email?: string;
+    trafficGb?: number | null;
+    expiresAt?: Date;
+    activatedAt?: Date | null;
+    startsOnConnect?: boolean;
+    panelExpiryTime?: bigint;
+    clientUuid?: string | null;
+    panelSubId?: string | null;
+    panelServerId?: string | null;
+    title?: string | null;
+    note?: string | null;
+    limitIp?: number;
+    status?: SubscriptionStatus;
+    subUrl?: string | null;
+  } = {};
+
+  if (client.email && client.email !== sub.email) {
+    data.email = client.email;
+    changed.push("نام اکانت");
+  }
+  if (client.trafficGb !== sub.trafficGb) {
+    data.trafficGb = client.trafficGb;
+    changed.push("حجم");
+  }
+  if (panelExpiryDiffersFromBot(client.expiryTime, sub)) {
+    const next = applyPanelExpiryToBotData(client.expiryTime, sub);
+    data.expiresAt = next.expiresAt;
+    data.startsOnConnect = next.startsOnConnect;
+    data.activatedAt = next.activatedAt;
+    data.panelExpiryTime = next.panelExpiryTime;
+    changed.push("انقضا");
+  }
+  if (client.uuid && client.uuid !== sub.clientUuid) {
+    data.clientUuid = client.uuid;
+    changed.push("UUID");
+  }
+  if (client.panelSubId && client.panelSubId !== sub.panelSubId) {
+    data.panelSubId = client.panelSubId;
+    changed.push("ساب");
+  }
+  if (panelServerId && panelServerId !== sub.panelServerId) {
+    data.panelServerId = panelServerId;
+  }
+  if (client.limitIp !== (sub.limitIp ?? 0)) {
+    data.limitIp = Math.max(0, Math.min(100, Math.floor(client.limitIp || 0)));
+    changed.push("محدودیت کاربر");
+  }
+
+  const panelComment = (client.comment || "").trim();
+  if (panelComment) {
+    const parsed = parsePanelComment(panelComment);
+    const composed = composePanelComment(sub.title, sub.note);
+    if (panelComment !== composed) {
+      if (panelComment.includes("|")) {
+        if (parsed.title !== sub.title) {
+          data.title = parsed.title;
+          changed.push("عنوان");
+        }
+        if (parsed.note !== sub.note) {
+          data.note = parsed.note;
+          changed.push("یادداشت");
+        }
+      } else {
+        // Whole comment as display title when it looks like a name; otherwise as note.
+        if (panelComment.length <= 80 && panelComment !== (sub.title ?? "").trim()) {
+          data.title = panelComment.slice(0, 80);
+          changed.push("عنوان");
+        } else if (panelComment !== (sub.note ?? "").trim()) {
+          data.note = panelComment.slice(0, 500);
+          changed.push("یادداشت");
+        }
+      }
+    }
+  }
+
+  const now = Date.now();
+  if (!client.enable) {
+    if (sub.status === SubscriptionStatus.active) {
+      data.status = SubscriptionStatus.disabled;
+      changed.push("وضعیت");
+    }
+  } else {
+    const nextExpiry = data.expiresAt ?? sub.expiresAt;
+    if (sub.status === SubscriptionStatus.disabled && nextExpiry.getTime() > now) {
+      data.status = SubscriptionStatus.active;
+      changed.push("وضعیت");
+    } else if (
+      (data.status ?? sub.status) === SubscriptionStatus.active &&
+      nextExpiry.getTime() <= now
+    ) {
+      data.status = SubscriptionStatus.expired;
+      changed.push("وضعیت");
+    }
+  }
+
+  const panelSubId = data.panelSubId ?? client.panelSubId ?? sub.panelSubId;
+  if (panelSubId) {
+    try {
+      const subUrl = await resolveSubUrl(panelSubId, xui, subBase);
+      if (subUrl && subUrl !== sub.subUrl) {
+        data.subUrl = subUrl;
+        if (!changed.includes("ساب")) changed.push("لینک ساب");
+      }
+    } catch {
+      /* keep previous subUrl */
+    }
+  }
+
+  const updated =
+    Object.keys(data).length > 0
+      ? await prisma.subscription.update({ where: { id: sub.id }, data })
+      : sub;
+
+  return {
+    email: updated.email,
+    trafficGb: updated.trafficGb,
+    title: updated.title,
+    note: updated.note,
+    limitIp: updated.limitIp ?? 0,
+    expiresAt: updated.expiresAt.toISOString(),
+    status: updated.status,
+    changed,
+  };
+}
+
 export type SyncDirection = "panel_to_bot" | "bot_to_panel";
 
 export type SyncOption =

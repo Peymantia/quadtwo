@@ -22,7 +22,6 @@ import {
   provisionOrder,
   refreshSubscriptionSubUrl,
   rotateSubId,
-  rotateUuid,
   type ProvisionResult,
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
@@ -550,7 +549,8 @@ async function deliverResult(
 ) {
   void api;
   const { deliverProvisionToUser } = await import("../services/provision-notify.js");
-  await deliverProvisionToUser(telegramId, result, trafficGb, mode);
+  const isAdmin = await isControlAdmin(Number(telegramId));
+  await deliverProvisionToUser(telegramId, result, trafficGb, mode, { isAdmin });
 }
 
 async function notifyAllAdmins(api: Context["api"], send: (adminId: number) => Promise<void>) {
@@ -656,7 +656,9 @@ async function handleTest(ctx: Context) {
       ].join("\n"),
       {
         parse_mode: "HTML",
-        reply_markup: provisionReadyKeyboard(result.subscriptionId),
+        reply_markup: provisionReadyKeyboard(result.subscriptionId, {
+          isAdmin: await isControlAdmin(ctx.from?.id),
+        }),
       },
     );
   } catch (err) {
@@ -2344,11 +2346,11 @@ export function createBot() {
       const r = await getSecureConfigBase64(user.id, ctx.match![1]!);
       const kb =
         r.base64.length <= 256
-          ? new InlineKeyboard().copyText("📋 کپی لینک امن", r.base64)
+          ? new InlineKeyboard().copyText("📋 کپی لینک Base64", r.base64)
           : undefined;
       await ctx.reply(
         [
-          "🔒 لینک امن اشتراک (Base64)",
+          "📦 لینک Base64 کانفیگ",
           "همان لینک ساب، به‌صورت Base64 — برای کپی روی متن بزنید:",
           "",
           `<code>${r.base64}</code>`,
@@ -2370,11 +2372,31 @@ export function createBot() {
     }
   });
 
-  bot.callbackQuery(/^sub:rotuuid:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery({ text: "در حال تغییر..." });
+  bot.callbackQuery(/^sub:refresh:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) {
+      await ctx.answerCallbackQuery({ text: "فقط ادمین می‌تواند بروزرسانی کند", show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery({ text: "در حال بروزرسانی از پنل…" });
     try {
-      const result = await rotateUuid(ctx.match![1]);
-      await deliverResult(ctx.api, ctx.from!.id, result, null);
+      const { refreshSubscriptionFromPanel } = await import("../services/admin-configs.js");
+      const r = await refreshSubscriptionFromPanel(ctx.match![1]!);
+      const summary =
+        r.changed.length > 0
+          ? `بروزرسانی شد:\n• ${r.changed.join("\n• ")}`
+          : "اطلاعات ربات با پنل یکسان بود — تغییری نبود.";
+      await ctx.reply(
+        [
+          "🔄 بروزرسانی از پنل سنایی",
+          "",
+          `اکانت: ${r.email}`,
+          `حجم: ${r.trafficGb == null ? "نامحدود" : `${r.trafficGb} GB`}`,
+          `انقضا: ${new Date(r.expiresAt).toLocaleDateString("fa-IR")}`,
+          "",
+          summary,
+        ].join("\n"),
+      );
+      await showSubscriptionDetail(ctx, ctx.match![1]!, false);
     } catch (err) {
       await ctx.reply(friendlyBotError(err));
     }

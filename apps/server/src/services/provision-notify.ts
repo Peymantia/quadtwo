@@ -42,6 +42,7 @@ export async function deliverProvisionToUser(
   result: ProvisionResultWithBulk | ProvisionResult,
   trafficGb: number | null,
   mode: "new" | "renew" | "addon" = "new",
+  opts?: { isAdmin?: boolean },
 ): Promise<void> {
   const all = "bulk" in result && result.bulk?.length ? [result, ...result.bulk] : [result];
   const chatId = Number(telegramId);
@@ -80,7 +81,7 @@ export async function deliverProvisionToUser(
       .join("\n");
 
     await sendTelegramMessage(chatId, text, {
-      replyMarkup: userServiceActionsKeyboard(one.subscriptionId),
+      replyMarkup: userServiceActionsKeyboard(one.subscriptionId, { isAdmin: opts?.isAdmin }),
       parseMode: "HTML",
     });
   }

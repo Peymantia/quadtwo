@@ -524,6 +524,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
         onCopied={() => flash("لینک اشتراک کپی شد")}
         walletBalance={0}
         onRefresh={() => undefined}
+        isAdmin
       />
       {selected && (
         <Modal open={matrixConfirmOpen} title="تأیید ساخت اکانت" onClose={() => setMatrixConfirmOpen(false)}>
@@ -2403,6 +2404,30 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     }
   }
 
+  async function refreshFromPanel(email: string, subId: string | null) {
+    if (!subId) {
+      flash(null, "این اکانت در دیتابیس ربات نیست");
+      return;
+    }
+    setEditBusy(true);
+    try {
+      const r = await api<{ changed: string[]; email: string }>("/admin/configs/refresh-from-panel", {
+        method: "POST",
+        body: { email, subId },
+      });
+      flash(
+        r.changed.length
+          ? `بروزرسانی شد: ${r.changed.join("، ")}`
+          : "اطلاعات با پنل یکسان بود",
+      );
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   async function openRenew(subId: string | null) {
     if (!subId) {
       flash(null, "این اکانت در دیتابیس ربات نیست");
@@ -2556,6 +2581,14 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                     <div className="config-card-actions-row sub-links">
                       <button type="button" className="btn primary sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
                         کپی لینک
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost sm"
+                        disabled={editBusy}
+                        onClick={() => void refreshFromPanel(c.email, c.subId)}
+                      >
+                        بروزرسانی
                       </button>
                       <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
                         لینک جدید

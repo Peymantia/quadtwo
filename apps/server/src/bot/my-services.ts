@@ -8,6 +8,7 @@ import { checkRenewEligibility } from "../services/renew-eligibility.js";
 import { upsertUserFromTelegram } from "../services/users.js";
 import { friendlyBotError } from "../panel/xui-errors.js";
 import { myServicesListKeyboard, subscriptionDetailKeyboard, BTN } from "./keyboards.js";
+import { isControlAdmin } from "./admin-center.js";
 
 const PAGE_SIZE = 20;
 const NOTE_MAX = 500;
@@ -134,12 +135,14 @@ export async function showSubscriptionDetail(ctx: Context, subId: string, edit =
 
   const panelEnabled = live?.panelEnabled;
   const renew = sub.isTest ? { ok: false } : await checkRenewEligibility(sub.id);
+  const isAdmin = await isControlAdmin(ctx.from?.id);
   const kb = subscriptionDetailKeyboard({
     subId: sub.id,
     panelEnabled,
     canRenew: renew.ok,
     canAddDays: !sub.isTest,
     canAddGb: !sub.isTest && sub.trafficGb != null && sub.trafficGb > 0,
+    isAdmin,
   });
 
   if (edit && ctx.callbackQuery?.message) {
