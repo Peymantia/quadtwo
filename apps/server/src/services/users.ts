@@ -113,6 +113,26 @@ export async function submitPartnerRequest(userId: string, fullName: string, pho
   });
 }
 
+/** Pending partner / reseller applications for admin review. */
+export async function listPendingPartnerRequests() {
+  return prisma.partnerRequest.findMany({
+    where: { status: "pending" },
+    include: {
+      user: {
+        select: {
+          id: true,
+          telegramId: true,
+          username: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 export async function approvePartner(requestId: string, asRole: "partner" | "wholesale" = "partner") {
   const req = await prisma.partnerRequest.findUniqueOrThrow({
     where: { id: requestId },

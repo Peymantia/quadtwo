@@ -96,7 +96,9 @@ export type EmojiKey =
   | "login_id"
   | "demo_role"
   | "discount"
-  | "crypto";
+  | "crypto"
+  | "rotate_sub"
+  | "base64_link";
 
 /** Current bot Unicode glyphs (Universal style). */
 export const UNIVERSAL: Record<EmojiKey, string> = {
@@ -194,6 +196,9 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   demo_role: "🎭",
   discount: "🎟",
   crypto: "🪙",
+  rotate_sub: "🔀",
+  /** Same glyph as my_services — disambiguated by label via resolvePremiumId */
+  base64_link: "📦",
 };
 
 /**
@@ -202,7 +207,7 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
  */
 export const PREMIUM_IDS: Record<EmojiKey, string> = {
   buy: "5406683434124859552",
-  renew: "5391079723449209646",
+  renew: "5377336227533969892",
   my_services: "6008334538986492961",
   wallet: "5409048419211682843",
   account: "5334756265358798915",
@@ -282,7 +287,7 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   ok_light: "6255902733170116708",
   show_menu: "5974098293813152457",
   sub_note: "5807923947546614298",
-  qr_code: "5422814644093868925",
+  qr_code: "5440410042773824003",
   iphone: "6296514655430903710",
   download: "5406745015365943482",
   sales_cats: "5837018635830302155",
@@ -299,6 +304,10 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   discount: "5229064374403998351",
   /** Crypto payment method */
   crypto: "5314431908883488060",
+  /** Change subscription link */
+  rotate_sub: "5292122921035133343",
+  /** Base64 config link button */
+  base64_link: "5208962449989988262",
 };
 
 /** When several keys share a glyph, pick ID from surrounding label text. */
@@ -323,9 +332,16 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
     return PREMIUM_IDS.download;
   }
   if (glyph === "📱") {
-    if (/^\s*QR/i.test(after)) return PREMIUM_IDS.qr_code;
+    if (/^\s*QR/i.test(after) || after.includes("نمایش QR")) return PREMIUM_IDS.qr_code;
     if (after.includes("آیفون") || after.includes("iOS") || after.includes("iPhone")) return PREMIUM_IDS.iphone;
     return PREMIUM_IDS.phone_device;
+  }
+  if (glyph === "📦") {
+    if (after.includes("Base64")) return PREMIUM_IDS.base64_link;
+    return PREMIUM_IDS.my_services;
+  }
+  if (glyph === "🔀") {
+    return PREMIUM_IDS.rotate_sub;
   }
   if (glyph === "📥") {
     if (after.includes("اکسل")) return PREMIUM_IDS.import_excel;

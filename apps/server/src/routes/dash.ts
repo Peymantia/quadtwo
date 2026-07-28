@@ -89,7 +89,7 @@ import {
 import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, inspectBackupBuffer, listBackupFiles, type BackupConfig } from "../services/backup.js";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
-import { approvePartner, demoteToUser, rejectPartner, submitPartnerRequest } from "../services/users.js";
+import { approvePartner, demoteToUser, listPendingPartnerRequests, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman, persianMonthName } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders, buildSalesStats, parseSalesPeriod, agentsSalesLeaderboard } from "../services/admin-reports.js";
 import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, refreshSubscriptionFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays, type ConfigListSort } from "../services/admin-configs.js";
@@ -2751,17 +2751,60 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({ ok: true, settings: await getAllSettings() });
   });
 
+  api.get("/admin/partners/pending", async (c) => {
+    const rows = await listPendingPartnerRequests();
+    return c.json({
+      requests: rows.map((r) => ({
+        id: r.id,
+        fullName: r.fullName,
+        phone: r.phone,
+        note: r.note,
+        createdAt: r.createdAt.toISOString(),
+        user: {
+          id: r.user.id,
+          telegramId: String(r.user.telegramId),
+          username: r.user.username,
+          firstName: r.user.firstName,
+          role: r.user.role,
+        },
+      })),
+    });
+  });
+
   api.post("/admin/partners/:id/approve", async (c) => {
-    const req = await approvePartner(c.req.param("id"));
-    const status = `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
+    const body = (await c.req.json().catch(() => ({}))) as { asRole?: string };
+    const asRole = body.asRole === "wholesale" ? "wholesale" : "partner";
+    const req = await approvePartner(c.req.param("id"), asRole);
+    await auditLog({
+      action: "partner_approved",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: req.id,
+      detail: asRole,
+    });
+    const status =
+      asRole === "wholesale"
+        ? `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`
+        : `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
+    void notifyTelegram(
+      req.user.telegramId,
+      asRole === "wholesale"
+        ? "✅ به‌عنوان عمده‌فروش تأیید شدید."
+        : "✅ درخواست همکاری شما تأیید شد (همکار).",
+    );
     const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
     void finalizeAdminReviewMessages("partner", req.id, status);
-    return c.json({ ok: true, group: req.user.panelGroup });
+    return c.json({ ok: true, group: req.user.panelGroup, role: asRole });
   });
 
   api.post("/admin/partners/:id/reject", async (c) => {
     const id = c.req.param("id");
-    await rejectPartner(id);
+    const req = await rejectPartner(id);
+    await auditLog({
+      action: "partner_rejected",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: req.id,
+    });
+    void notifyTelegram(req.user.telegramId, "❌ درخواست همکاری رد شد.");
     const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
     void finalizeAdminReviewMessages("partner", id, "درخواست رد شد.");
     return c.json({ ok: true });

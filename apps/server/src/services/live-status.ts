@@ -242,7 +242,7 @@ export function liveStatusText(live: LiveSubStatus): string {
   return [
     live.isTest ? "🧪 سرویس تست" : "📦 سرویس شما",
     "",
-    `🆔 ${live.code}`,
+    `🔑 ${live.code}`,
     `اکانت: ${live.email}`,
     live.panelName ? `🖥 سرور: ${live.panelName}` : "",
     `حجم کل: ${live.trafficLabel}`,

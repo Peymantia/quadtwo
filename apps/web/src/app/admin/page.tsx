@@ -718,10 +718,30 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [walletAmount, setWalletAmount] = useState("");
   const [walletNote, setWalletNote] = useState("");
+  const [partnerReqs, setPartnerReqs] = useState<
+    Array<{
+      id: string;
+      fullName: string;
+      phone: string | null;
+      note: string | null;
+      createdAt: string;
+      user: { id: string; telegramId: string; username: string | null; firstName: string | null; role: string };
+    }>
+  >([]);
+  const [partnerBusy, setPartnerBusy] = useState<string | null>(null);
   const [detail, setDetail] = useState<{
     txs: Array<{ id: string; amount: number; type: string; note: string | null; createdAt: string }>;
     subscriptions: Array<{ id: string; code: string; status: string; expiresAt: string }>;
   } | null>(null);
+
+  const loadPartners = useCallback(async () => {
+    try {
+      const r = await api<{ requests: typeof partnerReqs }>("/admin/partners/pending");
+      setPartnerReqs(r.requests);
+    } catch {
+      setPartnerReqs([]);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     const r = await api<{ users: AdminUser[] }>(`/admin/users${roleFilter ? `?role=${roleFilter}` : ""}`);
@@ -731,6 +751,10 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadPartners();
+  }, [loadPartners]);
 
   useEffect(() => {
     if (!selected) {
@@ -751,6 +775,35 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
           (u.agentName || "").includes(q),
       )
     : users;
+
+  async function decidePartner(id: string, action: "approve" | "reject", asRole?: "partner" | "wholesale") {
+    const label = asRole === "wholesale" ? "عمده‌فروش" : asRole === "partner" ? "همکار" : "رد";
+    if (
+      !(await askConfirm(
+        action === "reject"
+          ? "این درخواست همکاری رد شود؟"
+          : `تأیید به‌عنوان ${label}؟`,
+      ))
+    ) {
+      return;
+    }
+    setPartnerBusy(id);
+    try {
+      if (action === "reject") {
+        await api(`/admin/partners/${id}/reject`, { body: {} });
+        flash("درخواست رد شد");
+      } else {
+        await api(`/admin/partners/${id}/approve`, { body: { asRole: asRole ?? "partner" } });
+        flash(asRole === "wholesale" ? "به‌عنوان عمده‌فروش تأیید شد" : "به‌عنوان همکار تأیید شد");
+      }
+      await loadPartners();
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setPartnerBusy(null);
+    }
+  }
 
   async function changeRole(u: AdminUser, role: string) {
     if (!(await askConfirm(`نقش ${u.username ? "@" + u.username : u.telegramId} به «${ROLE_FA[role]}» تغییر کند؟`))) return;
@@ -828,6 +881,65 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
 
   return (
     <>
+      <div className="panel">
+        <h2>درخواست‌های همکاری در انتظار</h2>
+        {!partnerReqs.length ? (
+          <p className="muted">درخواستی در صف نیست.</p>
+        ) : (
+          <div className="list">
+            {partnerReqs.map((r) => (
+              <div key={r.id} className="row-card row-card--stack">
+                <div>
+                  <strong>{r.fullName}</strong>{" "}
+                  <span className="badge warn">در انتظار</span>
+                  <div className="muted">
+                    {r.user.username ? `@${r.user.username}` : r.user.firstName || "—"} · TG{" "}
+                    <span className="num">{r.user.telegramId}</span>
+                    {r.phone ? ` · 📱 ${r.phone}` : ""}
+                  </div>
+                  {r.note?.trim() && (
+                    <div className="muted" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>
+                      {r.note.trim()}
+                    </div>
+                  )}
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    ثبت: {new Date(r.createdAt).toLocaleString("fa-IR")}
+                  </div>
+                </div>
+                <div className="config-card-actions">
+                  <div className="config-card-actions-row">
+                    <button
+                      type="button"
+                      className="btn success sm"
+                      disabled={partnerBusy === r.id}
+                      onClick={() => void decidePartner(r.id, "approve", "partner")}
+                    >
+                      تأیید همکار
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary sm"
+                      disabled={partnerBusy === r.id}
+                      onClick={() => void decidePartner(r.id, "approve", "wholesale")}
+                    >
+                      تأیید عمده
+                    </button>
+                    <button
+                      type="button"
+                      className="btn danger sm"
+                      disabled={partnerBusy === r.id}
+                      onClick={() => void decidePartner(r.id, "reject")}
+                    >
+                      رد
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="panel">
         <h2>کاربران</h2>
         <div className="actions" style={{ marginBottom: 12 }}>
@@ -2519,12 +2631,28 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             return (
               <div key={c.email} className="row-card row-card--stack">
                 <div>
-                  <strong className="num">{c.email}</strong>{" "}
-                  {!c.inDb && <span className="badge warn">فقط پنل</span>}
-                  {c.status === "active" && !expired && <span className="badge ok">فعال</span>}
-                  {(c.status === "disabled" || expired) && (
-                    <span className="badge warn">{expired ? "منقضی" : "غیرفعال"}</span>
-                  )}
+                  <div className="config-card-head">
+                    <div className="config-card-head__meta">
+                      <strong className="num">{c.email}</strong>{" "}
+                      {!c.inDb && <span className="badge warn">فقط پنل</span>}
+                      {c.status === "active" && !expired && <span className="badge ok">فعال</span>}
+                      {(c.status === "disabled" || expired) && (
+                        <span className="badge warn">{expired ? "منقضی" : "غیرفعال"}</span>
+                      )}
+                    </div>
+                    {c.inDb && c.subUrl && (
+                      <button
+                        type="button"
+                        className="btn ghost sm config-qr-btn"
+                        disabled={editBusy}
+                        title="نمایش QR"
+                        aria-label="نمایش QR"
+                        onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
+                      >
+                        QR
+                      </button>
+                    )}
+                  </div>
                   {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
                   {c.note && (
                     <div className="muted" style={{ marginTop: 4 }}>
@@ -2592,16 +2720,6 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       </button>
                       <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
                         لینک جدید
-                      </button>
-                      <button
-                        type="button"
-                        className="btn ghost sm btn-icon"
-                        disabled={editBusy || !c.subUrl}
-                        title="نمایش QR"
-                        aria-label="نمایش QR"
-                        onClick={() => c.subUrl && setQrSub({ url: c.subUrl, title: c.email })}
-                      >
-                        📷
                       </button>
                     </div>
                   )}

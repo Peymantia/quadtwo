@@ -104,6 +104,12 @@ function transformReplyMarkup(markup: unknown): unknown {
   return markup;
 }
 
+/** For raw fetch sendMessage (outside grammy) — premium button icons. */
+export async function applyPremiumReplyMarkup(markup: unknown): Promise<unknown> {
+  if ((await getEmojiStyle()) !== "premium") return markup;
+  return transformReplyMarkup(markup);
+}
+
 /** Attach custom_emoji entities for known Universal glyphs (UTF-16 offsets). */
 export function attachPremiumTextEntities(text: string, existing?: TgEntity[]): TgEntity[] {
   const entities: TgEntity[] = existing ? [...existing] : [];

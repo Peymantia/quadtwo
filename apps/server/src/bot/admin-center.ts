@@ -41,7 +41,7 @@ import {
   type RolePricingModes,
   type SalesCategories,
 } from "../services/settings.js";
-import { demoteToUser, listNotifyAdminTelegramIds } from "../services/users.js";
+import { demoteToUser, listNotifyAdminTelegramIds, listPendingPartnerRequests } from "../services/users.js";
 import { formatToman } from "../utils/format.js";
 import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer } from "../services/backup.js";
 import {
@@ -77,6 +77,7 @@ import {
   controlCenterKeyboard,
   notifSettingsKeyboard,
   notifSettingsText,
+  partnerRequestKeyboard,
   salesCategoriesAdminKeyboard,
   salesCategoriesAdminText,
 } from "./keyboards.js";
@@ -284,7 +285,7 @@ export async function showControlCenter(ctx: Context, edit = true) {
     `🤝 درخواست همکار: ${partners}`,
     `👑 ادمین‌های اعلان: ${admins.length}`,
   ].join("\n");
-  const kb = controlCenterKeyboard();
+  const kb = controlCenterKeyboard({ pendingPartners: partners });
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });
   } else {
@@ -932,6 +933,60 @@ async function showDemote(ctx: Context) {
   );
 }
 
+async function showPartnerRequests(ctx: Context) {
+  const rows = await listPendingPartnerRequests();
+  if (!rows.length) {
+    await ctx.editMessageText("درخواست همکاری در انتظاری نیست.", {
+      reply_markup: new InlineKeyboard().text("« کنترل سنتر", "cc:home"),
+    });
+    return;
+  }
+  const kb = new InlineKeyboard();
+  for (const r of rows.slice(0, 25)) {
+    const who = r.user.username ? `@${r.user.username}` : String(r.user.telegramId);
+    const label = `${r.fullName} · ${who}`.slice(0, 60);
+    kb.text(label, `cc:prt:view:${r.id}`).row();
+  }
+  kb.text("« کنترل سنتر", "cc:home");
+  await ctx.editMessageText(
+    [
+      "🤝 درخواست‌های همکاری در انتظار",
+      "",
+      `تعداد: ${rows.length}`,
+      "یکی را انتخاب کنید تا تأیید / رد کنید:",
+    ].join("\n"),
+    { reply_markup: kb },
+  );
+}
+
+async function showPartnerRequestDetail(ctx: Context, requestId: string) {
+  const r = await prisma.partnerRequest.findUnique({
+    where: { id: requestId },
+    include: { user: true },
+  });
+  if (!r || r.status !== "pending") {
+    await ctx.answerCallbackQuery({ text: "این درخواست دیگر در انتظار نیست", show_alert: true });
+    await showPartnerRequests(ctx);
+    return;
+  }
+  const text = [
+    "🤝 درخواست همکاری",
+    "",
+    `نام: ${r.fullName}`,
+    `📱 ${r.phone ?? "—"}`,
+    `@${r.user.username ?? "—"}`,
+    `TG: ${r.user.telegramId}`,
+    r.note?.trim() ? `\n${r.note.trim().slice(0, 2000)}` : "",
+    "",
+    `ثبت: ${r.createdAt.toLocaleString("fa-IR")}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const kb = partnerRequestKeyboard(r.id);
+  kb.row().text("« لیست درخواست‌ها", "cc:partners");
+  await ctx.editMessageText(text, { reply_markup: kb });
+}
+
 async function showReport(ctx: Context, role: "partner" | "wholesale", period: SalesPeriod = "jalali_month") {
   const { text } = await agentsSalesLeaderboard({ role, period });
   const p = (key: SalesPeriod, label: string) => (period === key ? `• ${label}` : label);
@@ -1429,6 +1484,18 @@ export function registerControlCenter(bot: Bot) {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
     await showDemote(ctx);
+  });
+
+  bot.callbackQuery("cc:partners", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showPartnerRequests(ctx);
+  });
+
+  bot.callbackQuery(/^cc:prt:view:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showPartnerRequestDetail(ctx, ctx.match![1]!);
   });
 
   bot.callbackQuery(/^cc:demote:do:(.+)$/, async (ctx) => {

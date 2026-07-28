@@ -1530,16 +1530,56 @@ type PanelClientSnap = {
   comment: string | null;
 };
 
+function normalizeInboundIds(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  return [
+    ...new Set(
+      raw
+        .map((n) => Number(n))
+        .filter((n) => Number.isFinite(n) && n > 0)
+        .map((n) => Math.trunc(n)),
+    ),
+  ].sort((a, b) => a - b);
+}
+
+function sameInboundIds(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
+}
+
+/** Attach/detach so the client matches the target inbound set. */
+async function syncClientInbounds(
+  xui: XuiClient,
+  email: string,
+  current: number[],
+  target: number[],
+): Promise<boolean> {
+  const cur = new Set(normalizeInboundIds(current));
+  const tgt = new Set(normalizeInboundIds(target));
+  if (!tgt.size) return false;
+  const toAttach = [...tgt].filter((id) => !cur.has(id));
+  const toDetach = [...cur].filter((id) => !tgt.has(id));
+  if (!toAttach.length && !toDetach.length) return false;
+  if (toAttach.length) await xui.attachClient(email, toAttach);
+  if (toDetach.length) await xui.detachClient(email, toDetach);
+  return true;
+}
+
 async function loadPanelClientForSubscription(sub: Subscription): Promise<{
   client: PanelClientSnap;
   xui: XuiClient;
   subBase: string | null;
   panelServerId: string | null;
+  /** Inbound IDs configured for this panel (provision targets). */
+  configuredInboundIds: number[];
+  /** Current attachments on the panel for this client. */
+  currentInboundIds: number[];
 }> {
   const resolved = await resolvePanelForSubscription(sub);
   const xui = resolved.xui;
   const subBase = resolved.subBase;
   const panelServerId = resolved.panel?.id ?? sub.panelServerId ?? null;
+  const configuredInboundIds = normalizeInboundIds(resolved.inboundIds);
 
   const fromRaw = (c: {
     email?: string;
@@ -1565,7 +1605,14 @@ async function loadPanelClientForSubscription(sub: Subscription): Promise<{
   try {
     const got = await xui.getClient(sub.email);
     if (got.obj?.client) {
-      return { client: fromRaw(got.obj.client), xui, subBase, panelServerId };
+      return {
+        client: fromRaw(got.obj.client),
+        xui,
+        subBase,
+        panelServerId,
+        configuredInboundIds,
+        currentInboundIds: normalizeInboundIds(got.obj.inboundIds),
+      };
     }
   } catch {
     /* try uuid / list */
@@ -1583,10 +1630,24 @@ async function loadPanelClientForSubscription(sub: Subscription): Promise<{
         try {
           const got = await xui.getClient(hit.email);
           if (got.obj?.client) {
-            return { client: fromRaw(got.obj.client), xui, subBase, panelServerId };
+            return {
+              client: fromRaw(got.obj.client),
+              xui,
+              subBase,
+              panelServerId,
+              configuredInboundIds,
+              currentInboundIds: normalizeInboundIds(got.obj.inboundIds ?? hit.inboundIds),
+            };
           }
         } catch {
-          return { client: fromRaw(hit), xui, subBase, panelServerId };
+          return {
+            client: fromRaw(hit),
+            xui,
+            subBase,
+            panelServerId,
+            configuredInboundIds,
+            currentInboundIds: normalizeInboundIds(hit.inboundIds),
+          };
         }
       }
     } catch {
@@ -1598,7 +1659,8 @@ async function loadPanelClientForSubscription(sub: Subscription): Promise<{
 }
 
 /**
- * Pull latest traffic / name / expiry / limit / comment from 3x-ui into the bot DB for one subscription.
+ * Pull latest traffic / name / expiry / limit / comment from 3x-ui into the bot DB,
+ * and sync the client's inbound attachments to the panel's active/configured inbounds.
  * Used by admin «بروزرسانی» after manual panel edits.
  */
 export async function refreshSubscriptionFromPanel(
@@ -1607,7 +1669,14 @@ export async function refreshSubscriptionFromPanel(
   const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
   if (!sub) throw new Error("سرویس پیدا نشد");
 
-  const { client, xui, subBase, panelServerId } = await loadPanelClientForSubscription(sub);
+  const {
+    client,
+    xui,
+    subBase,
+    panelServerId,
+    configuredInboundIds,
+    currentInboundIds,
+  } = await loadPanelClientForSubscription(sub);
   const changed: string[] = [];
   const data: {
     email?: string;
@@ -1716,6 +1785,30 @@ export async function refreshSubscriptionFromPanel(
     } catch {
       /* keep previous subUrl */
     }
+  }
+
+  // Sync inbound attachments → configured IDs ∩ enabled inbounds (or all enabled).
+  const emailForPanel = data.email ?? client.email ?? sub.email;
+  try {
+    let target = configuredInboundIds;
+    try {
+      const enabled = normalizeInboundIds(await xui.listEnabledInboundIds());
+      if (target.length && enabled.length) {
+        const filtered = target.filter((id) => enabled.includes(id));
+        target = filtered.length ? filtered : target;
+      } else if (!target.length) {
+        target = enabled;
+      }
+    } catch {
+      /* keep configured */
+    }
+    if (target.length && !sameInboundIds(currentInboundIds, target)) {
+      const did = await syncClientInbounds(xui, emailForPanel, currentInboundIds, target);
+      if (did) changed.push("اینباندها");
+    }
+  } catch (err) {
+    console.warn("refresh: inbound sync failed", emailForPanel, err);
+    changed.push("اینباندها (خطا)");
   }
 
   const updated =

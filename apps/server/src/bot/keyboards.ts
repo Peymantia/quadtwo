@@ -808,7 +808,11 @@ export function notifSettingsKeyboard(cfg: NotifConfig) {
     .text("« کنترل سنتر", "cc:home");
 }
 
-export function controlCenterKeyboard() {
+export function controlCenterKeyboard(opts?: { pendingPartners?: number }) {
+  const partnerLabel =
+    opts?.pendingPartners && opts.pendingPartners > 0
+      ? `🤝 درخواست همکار (${opts.pendingPartners})`
+      : "🤝 درخواست همکار";
   return new InlineKeyboard()
     .text("📝 متن خوش‌آمد", "cc:welcome")
     .primary()
@@ -845,6 +849,9 @@ export function controlCenterKeyboard() {
     .primary()
     .row()
     .text("📜 لاگ عملیات", "cc:audit")
+    .row()
+    .text(partnerLabel, "cc:partners")
+    .primary()
     .row()
     .text("✖️ حذف همکار / عمده‌فروش", "cc:demote")
     .danger()

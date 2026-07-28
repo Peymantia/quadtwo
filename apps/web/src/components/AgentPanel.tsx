@@ -436,10 +436,26 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               return (
                 <div key={c.email} className="row-card row-card--stack">
                   <div>
-                    <strong className="num">{c.email}</strong>{" "}
-                    <span className={`badge ${active ? "ok" : "bad"}`}>
-                      {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
-                    </span>
+                    <div className="config-card-head">
+                      <div className="config-card-head__meta">
+                        <strong className="num">{c.email}</strong>{" "}
+                        <span className={`badge ${active ? "ok" : "bad"}`}>
+                          {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
+                        </span>
+                      </div>
+                      {c.subUrl && (
+                        <button
+                          type="button"
+                          className="btn ghost sm config-qr-btn"
+                          disabled={busy}
+                          title="نمایش QR"
+                          aria-label="نمایش QR"
+                          onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
+                        >
+                          QR
+                        </button>
+                      )}
+                    </div>
                     {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
                     {c.code && (
                       <div className="muted num" style={{ marginTop: 4 }}>
@@ -474,22 +490,12 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   {c.note && <div className="muted" style={{ marginTop: 6 }}>نوت: {c.note}</div>}
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                   <div className="config-card-actions">
-                    <div className="config-card-actions-row sub-links">
+                    <div className="config-card-actions-row">
                       <button type="button" className="btn primary sm" disabled={busy || !c.subUrl} onClick={() => void copySubLink(c)}>
                         کپی لینک
                       </button>
                       <button type="button" className="btn ghost sm" disabled={busy || !c.subId} onClick={() => setConfirmRotate(c)}>
                         لینک جدید
-                      </button>
-                      <button
-                        type="button"
-                        className="btn ghost sm btn-icon"
-                        disabled={busy || !c.subUrl}
-                        title="نمایش QR"
-                        aria-label="نمایش QR"
-                        onClick={() => c.subUrl && setQrSub({ url: c.subUrl, title: c.email })}
-                      >
-                        📷
                       </button>
                     </div>
                   </div>

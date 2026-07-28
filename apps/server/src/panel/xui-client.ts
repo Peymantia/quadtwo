@@ -152,6 +152,32 @@ export class XuiClient {
     });
   }
 
+  /** Attach client to extra inbounds (multi-inbound panels). */
+  attachClient(email: string, inboundIds: number[]) {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: اتصال اینباند روی پنل غیرفعال است");
+    }
+    const ids = [...new Set(inboundIds.map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+    if (!ids.length) return Promise.resolve({ success: true } as ApiResult);
+    return this.request(`panel/api/clients/${encodeURIComponent(email)}/attach`, {
+      method: "POST",
+      body: JSON.stringify({ inboundIds: ids }),
+    });
+  }
+
+  /** Detach client from inbounds. */
+  detachClient(email: string, inboundIds: number[]) {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: قطع اینباند روی پنل غیرفعال است");
+    }
+    const ids = [...new Set(inboundIds.map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+    if (!ids.length) return Promise.resolve({ success: true } as ApiResult);
+    return this.request(`panel/api/clients/${encodeURIComponent(email)}/detach`, {
+      method: "POST",
+      body: JSON.stringify({ inboundIds: ids }),
+    });
+  }
+
   /**
    * Zero up/down usage for a client. UpdateClient alone often ignores traffic counters;
    * 3x-ui exposes dedicated reset / updateTraffic endpoints.

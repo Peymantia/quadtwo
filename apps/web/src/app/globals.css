@@ -2613,6 +2613,35 @@ button.pay-dest-number:active,
 }
 
 /* Account card actions: even grid, full width, no dead space */
+.config-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.config-card-head__meta {
+  min-width: 0;
+  flex: 1;
+  line-height: 1.45;
+}
+
+.config-qr-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0 !important;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  border-radius: 8px;
+  line-height: 1;
+}
+
 .config-card-actions {
   display: flex;
   flex-direction: column;
@@ -2635,12 +2664,6 @@ button.pay-dest-number:active,
   box-sizing: border-box;
 }
 
-.config-card-actions-row > .btn.btn-icon {
-  padding-inline: 10px;
-  font-size: 1.05rem;
-  line-height: 1;
-}
-
 @media (min-width: 720px) {
   .config-card-actions-row {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2654,10 +2677,6 @@ button.pay-dest-number:active,
 @media (max-width: 719px) {
   .config-card-actions-row.sub-links {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .config-card-actions-row.sub-links > .btn:not(.btn-icon) {
-    grid-column: span 1;
   }
 }
 
