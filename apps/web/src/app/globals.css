@@ -2620,6 +2620,12 @@ button.pay-dest-number:active,
   margin-bottom: 12px;
 }
 
+@media (min-width: 520px) {
+  .price-plan-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .price-plan-fields .field {
   margin: 0;
 }
@@ -3368,17 +3374,195 @@ button.pay-dest-number:active,
   gap: 12px;
 }
 
-.rate-cat-card {
-  margin-top: 14px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
+.prices-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.rate-cat-card > strong {
-  display: block;
-  margin-bottom: 2px;
+.prices-page > .panel {
+  margin: 0;
+}
+
+.prices-section-head {
+  margin-bottom: 14px;
+}
+
+.prices-section-head h2 {
+  margin: 0 0 4px;
+}
+
+.prices-section-head .muted {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.pricing-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 0;
+}
+
+.pricing-mode-card label {
+  font-size: 0.8rem;
+  color: var(--mute);
+  font-weight: 650;
+}
+
+.pricing-mode-card select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  background: rgba(10, 13, 35, 0.65);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  outline: none;
+}
+
+.prices-add-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.prices-add-grid .field {
+  margin: 0;
+}
+
+.prices-add-gold {
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 4px;
+}
+
+.prices-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.prices-bulk-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rate-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.rate-cat-card {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.rate-cat-card__title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  margin-bottom: 10px;
+}
+
+.rate-cat-card__note {
+  margin: -4px 0 12px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.rate-cat-card--unlimited {
+  border-color: rgba(56, 189, 248, 0.28);
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.rate-role-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rate-role-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.rate-role-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--mute);
+  padding-bottom: 12px;
+}
+
+.rate-role-row .field {
+  margin: 0;
+}
+
+.rate-role-row .field label {
+  font-size: 0.72rem;
+}
+
+.rate-role-row .field input,
+.rate-unlimited-fields .field input {
+  box-sizing: border-box;
+  height: 42px;
+  padding: 0 10px;
+  font-size: 0.88rem;
+}
+
+.rate-unlimited-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rate-unlimited-fields .field {
+  margin: 0;
+}
+
+@media (min-width: 900px) {
+  .rate-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .rate-cards-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .rate-role-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .rate-role-label {
+    padding-bottom: 0;
+  }
+
+  .rate-unlimited-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* —— Rate shop (گیگ + ماه) —— */

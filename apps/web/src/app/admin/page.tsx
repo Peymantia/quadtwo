@@ -1400,12 +1400,12 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   }
 
   return (
-    <>
-      <div className="panel">
-        <h2>حالت قیمت‌گذاری هر نقش</h2>
-        <p className="muted" style={{ marginTop: 0 }}>
-          ماتریکس = پلن‌های ثابت جدول زیر · نرخی = فرمول (گیگ × قیمت هر گیگ) + (ماه × قیمت هر ماه)
-        </p>
+    <div className="prices-page">
+      <section className="panel prices-section">
+        <div className="prices-section-head">
+          <h2>حالت قیمت‌گذاری هر نقش</h2>
+          <p className="muted">ماتریکس = پلن‌های ثابت · نرخی = (گیگ × نرخ گیگ) + (ماه × نرخ ماه)</p>
+        </div>
         <div className="pricing-mode-grid">
           {(
             [
@@ -1414,7 +1414,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
               ["wholesale", "عمده‌فروش"],
             ] as const
           ).map(([key, label]) => (
-            <div key={key} className="field" style={{ margin: 0 }}>
+            <div key={key} className="pricing-mode-card">
               <label>{label}</label>
               <select
                 value={modes[key]}
@@ -1426,95 +1426,128 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="panel">
-        <h2>قیمت ثابت هر گیگ / هر ماه</h2>
-        <p className="muted" style={{ marginTop: 0 }}>
-          برای نقش‌هایی که حالت «نرخی» دارند استفاده می‌شود. هر دسته می‌تواند نرخ جدا داشته باشد.
-        </p>
-        {rateCategories.map((cat) => (
-          <div key={cat.key} className="rate-cat-card">
-            <strong>{cat.label}</strong>
-            <div className="price-plan-fields" style={{ marginTop: 10 }}>
-              {(
-                [
-                  ["user", "کاربر"],
-                  ["partner", "همکار"],
-                  ["wholesale", "عمده"],
-                ] as const
-              ).map(([role, roleLabel]) => (
-                <div key={role} className="field">
-                  <label>{roleLabel} — هر گیگ</label>
-                  <input
-                    className="num"
-                    inputMode="numeric"
-                    dir="ltr"
-                    value={formatPriceInput(catUnit(cat.key, role, "perGb"))}
-                    onChange={(e) => setCatUnit(cat.key, role, "perGb", parsePriceInput(e.target.value))}
-                  />
-                  <label style={{ marginTop: 8 }}>{roleLabel} — هر ماه</label>
-                  <input
-                    className="num"
-                    inputMode="numeric"
-                    dir="ltr"
-                    value={formatPriceInput(catUnit(cat.key, role, "perMonth"))}
-                    onChange={(e) => setCatUnit(cat.key, role, "perMonth", parsePriceInput(e.target.value))}
-                  />
-                </div>
+      <section className="panel prices-section">
+        <div className="prices-section-head">
+          <h2>افزودن پلن جدید</h2>
+          <p className="muted">پلن ماتریکس جدید به جدول قیمت‌ها اضافه می‌شود.</p>
+        </div>
+        <div className="prices-add-grid">
+          <div className="field">
+            <label>دسته</label>
+            <select value={newCell.category} onChange={(e) => setNewCell((s) => ({ ...s, category: e.target.value }))}>
+              {categories.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
               ))}
-            </div>
+            </select>
           </div>
-        ))}
-        <div className="rate-cat-card">
-          <strong>نامحدود (قیمت هر ماه)</strong>
-          <p className="muted" style={{ marginTop: 6, marginBottom: 0, fontSize: "0.82rem" }}>
-            این نرخ همیشه برای اکانت نامحدود استفاده می‌شود (حتی اگر نقش روی ماتریکس باشد). قیمت N ماهه = N × این عدد.
-          </p>
-          <div className="price-plan-fields" style={{ marginTop: 10 }}>
-            {(
-              [
-                ["user", "کاربر"],
-                ["partner", "همکار"],
-                ["wholesale", "عمده"],
-              ] as const
-            ).map(([role, roleLabel]) => (
-              <div key={role} className="field">
-                <label>{roleLabel}</label>
-                <input
-                  className="num"
-                  inputMode="numeric"
-                  dir="ltr"
-                  value={formatPriceInput(rates[role].unlimitedPerMonth)}
-                  onChange={(e) =>
-                    setRates((s) => ({
-                      ...s,
-                      [role]: { ...s[role], unlimitedPerMonth: parsePriceInput(e.target.value) },
-                    }))
-                  }
-                />
-              </div>
-            ))}
+          <div className="field">
+            <label>
+              {newCell.category === "unlimited"
+                ? "حجم (نامحدود)"
+                : newCell.category === "offer"
+                  ? "حجم GB (خالی = نامحدود)"
+                  : "حجم GB"}
+            </label>
+            <input
+              className="num"
+              inputMode="numeric"
+              disabled={newCell.category === "unlimited"}
+              placeholder={newCell.category === "unlimited" ? "∞" : newCell.category === "offer" ? "مثلاً 50 یا خالی" : "مثلاً 25"}
+              value={newCell.category === "unlimited" ? "" : newCell.trafficGb}
+              onChange={(e) => setNewCell((s) => ({ ...s, trafficGb: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>مدت (ماه)</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              value={newCell.months}
+              onChange={(e) => setNewCell((s) => ({ ...s, months: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>قیمت کاربر</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              dir="ltr"
+              value={formatPriceInput(newCell.priceUser)}
+              onChange={(e) => setNewCell((s) => ({ ...s, priceUser: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
+            />
+          </div>
+          <div className="field">
+            <label>قیمت همکار</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              dir="ltr"
+              value={formatPriceInput(newCell.pricePartner)}
+              onChange={(e) => setNewCell((s) => ({ ...s, pricePartner: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
+            />
+          </div>
+          <div className="field">
+            <label>قیمت عمده</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              dir="ltr"
+              value={formatPriceInput(newCell.priceWholesale)}
+              onChange={(e) => setNewCell((s) => ({ ...s, priceWholesale: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
+            />
+          </div>
+          <div className="field">
+            <label>عنوان (اختیاری)</label>
+            <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
+          </div>
+          <div className="field prices-add-gold">
+            <label className="price-plan-gold">
+              <input
+                type="checkbox"
+                checked={newCell.isGolden}
+                onChange={(e) => setNewCell((s) => ({ ...s, isGolden: e.target.checked }))}
+              />
+              <span>پیشنهاد ویژه ⭐</span>
+            </label>
           </div>
         </div>
-        <div className="actions" style={{ marginTop: 12 }}>
-          <button type="button" className="btn primary" disabled={ratesBusy} onClick={() => void saveRates()}>
-            ذخیره نرخ‌ها
+        <div className="prices-section-actions">
+          <button
+            type="button"
+            className="btn success"
+            disabled={
+              !newCell.months ||
+              !newCell.priceUser ||
+              !newCell.pricePartner ||
+              (newCell.category !== "unlimited" && newCell.category !== "offer" && !newCell.trafficGb)
+            }
+            onClick={addCell}
+          >
+            افزودن پلن
           </button>
         </div>
-        <p className="hint">
-          حجمی نرخی: ۵۰ گیگ ۲ ماهه = (۵۰ × هر گیگ) + (۲ × هر ماه). نامحدود همیشه از نرخ بالا محاسبه می‌شود و به پلن ماتریکس نیاز ندارد.
-        </p>
-      </div>
+      </section>
 
-      <div className="panel">
-        <h2>ویرایش گروهی قیمت‌ها</h2>
-        <div className="actions" style={{ marginBottom: 12 }}>
+      <section className="panel prices-section">
+        <div className="prices-section-head">
+          <h2>ویرایش گروهی قیمت‌ها</h2>
+          <p className="muted">افزایش یا کاهش یکجا روی پلن‌های ماتریکس. مقدار منفی = کاهش.</p>
+        </div>
+        <div className="prices-bulk-cats">
           <button key="all" type="button" className={`chip${catFilter === "" ? " on" : ""}`} onClick={() => setCatFilter("")}>
             همه
           </button>
           {categories.map((c) => (
-            <button key={c.key} type="button" className={`chip${catFilter === c.key ? " on" : ""}`} onClick={() => setCatFilter(c.key)}>
+            <button
+              key={c.key}
+              type="button"
+              className={`chip${catFilter === c.key ? " on" : ""}`}
+              onClick={() => setCatFilter(c.key)}
+            >
               {c.label}
             </button>
           ))}
@@ -1535,14 +1568,116 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             اعمال روی {catFilter ? "این دسته" : "همه"}
           </button>
         </div>
-        <p className="hint">مقدار منفی = کاهش قیمت. نتیجه به نزدیک‌ترین ۱٬۰۰۰ تومان گرد می‌شود و روی هر سه ستون قیمت اعمال می‌شود.</p>
-      </div>
+        <p className="hint">نتیجه به نزدیک‌ترین ۱٬۰۰۰ تومان گرد می‌شود و روی هر سه ستون قیمت اعمال می‌شود.</p>
+      </section>
 
-      <div className="panel">
-        <h2>پلن‌ها و قیمت‌ها</h2>
+      <section className="panel prices-section">
+        <div className="prices-section-head">
+          <h2>قیمت ثابت هر گیگ / هر ماه</h2>
+          <p className="muted">برای نقش‌های «نرخی». هر دسته نرخ جدا دارد؛ نامحدود همیشه از نرخ ماهانه محاسبه می‌شود.</p>
+        </div>
+        <div className="rate-cards-grid">
+          {rateCategories.map((cat) => (
+            <div key={cat.key} className="rate-cat-card">
+              <div className="rate-cat-card__title">{cat.label}</div>
+              <div className="rate-role-rows">
+                {(
+                  [
+                    ["user", "کاربر"],
+                    ["partner", "همکار"],
+                    ["wholesale", "عمده"],
+                  ] as const
+                ).map(([role, roleLabel]) => (
+                  <div key={role} className="rate-role-row">
+                    <span className="rate-role-label">{roleLabel}</span>
+                    <div className="field">
+                      <label>هر گیگ</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={formatPriceInput(catUnit(cat.key, role, "perGb"))}
+                        onChange={(e) => setCatUnit(cat.key, role, "perGb", parsePriceInput(e.target.value))}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>هر ماه</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={formatPriceInput(catUnit(cat.key, role, "perMonth"))}
+                        onChange={(e) => setCatUnit(cat.key, role, "perMonth", parsePriceInput(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="rate-cat-card rate-cat-card--unlimited">
+            <div className="rate-cat-card__title">نامحدود (قیمت هر ماه)</div>
+            <p className="muted rate-cat-card__note">حتی اگر نقش روی ماتریکس باشد. N ماهه = N × این عدد.</p>
+            <div className="rate-unlimited-fields">
+              {(
+                [
+                  ["user", "کاربر"],
+                  ["partner", "همکار"],
+                  ["wholesale", "عمده"],
+                ] as const
+              ).map(([role, roleLabel]) => (
+                <div key={role} className="field">
+                  <label>{roleLabel}</label>
+                  <input
+                    className="num"
+                    inputMode="numeric"
+                    dir="ltr"
+                    value={formatPriceInput(rates[role].unlimitedPerMonth)}
+                    onChange={(e) =>
+                      setRates((s) => ({
+                        ...s,
+                        [role]: { ...s[role], unlimitedPerMonth: parsePriceInput(e.target.value) },
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="prices-section-actions">
+          <button type="button" className="btn primary" disabled={ratesBusy} onClick={() => void saveRates()}>
+            ذخیره نرخ‌ها
+          </button>
+          <p className="hint" style={{ margin: 0 }}>
+            مثال حجمی: ۵۰ گیگ ۲ ماهه = (۵۰ × هر گیگ) + (۲ × هر ماه)
+          </p>
+        </div>
+      </section>
+
+      <section className="panel prices-section">
+        <div className="prices-section-head">
+          <h2>پلن‌ها و قیمت‌ها</h2>
+          <p className="muted">ویرایش قیمت ماتریکس، پیشنهاد ویژه و فعال/غیرفعال.</p>
+        </div>
+        <div className="prices-bulk-cats" style={{ marginBottom: 14 }}>
+          <button key="all" type="button" className={`chip${catFilter === "" ? " on" : ""}`} onClick={() => setCatFilter("")}>
+            همه
+          </button>
+          {categories.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              className={`chip${catFilter === c.key ? " on" : ""}`}
+              onClick={() => setCatFilter(c.key)}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
         {catFilter === "unlimited" && (
           <p className="hint">
-            قیمت نامحدود از «نرخ هر ماه» بالا (و در صورت نبود نرخ، از پلن ماتریکس همین دسته) محاسبه می‌شود. دستهٔ فروش «نامحدود» باید در تنظیمات فروش فعال باشد.
+            قیمت نامحدود از «نرخ هر ماه» بالا (و در صورت نبود نرخ، از پلن ماتریکس همین دسته) محاسبه می‌شود.
           </p>
         )}
         <div className="price-plan-list">
@@ -1642,102 +1777,8 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             ذخیره همه تغییرات قیمت‌ها ({Object.keys(edits).length})
           </button>
         </div>
-      </div>
-
-      <div className="panel">
-        <h2>افزودن پلن جدید</h2>
-        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
-          <div className="field">
-            <label>دسته</label>
-            <select value={newCell.category} onChange={(e) => setNewCell((s) => ({ ...s, category: e.target.value }))}>
-              {categories.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>
-              {newCell.category === "unlimited"
-                ? "حجم (نامحدود)"
-                : newCell.category === "offer"
-                  ? "حجم GB (خالی = نامحدود)"
-                  : "حجم GB"}
-            </label>
-            <input
-              className="num"
-              inputMode="numeric"
-              disabled={newCell.category === "unlimited"}
-              placeholder={newCell.category === "unlimited" ? "∞" : newCell.category === "offer" ? "مثلاً 50 یا خالی" : "مثلاً 25"}
-              value={newCell.category === "unlimited" ? "" : newCell.trafficGb}
-              onChange={(e) => setNewCell((s) => ({ ...s, trafficGb: e.target.value }))}
-            />
-          </div>
-          <div className="field">
-            <label>مدت (ماه)</label>
-            <input className="num" inputMode="numeric" value={newCell.months} onChange={(e) => setNewCell((s) => ({ ...s, months: e.target.value }))} />
-          </div>
-          <div className="field">
-            <label>قیمت کاربر</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              dir="ltr"
-              value={formatPriceInput(newCell.priceUser)}
-              onChange={(e) => setNewCell((s) => ({ ...s, priceUser: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
-            />
-          </div>
-          <div className="field">
-            <label>قیمت همکار</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              dir="ltr"
-              value={formatPriceInput(newCell.pricePartner)}
-              onChange={(e) => setNewCell((s) => ({ ...s, pricePartner: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
-            />
-          </div>
-          <div className="field">
-            <label>قیمت عمده</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              dir="ltr"
-              value={formatPriceInput(newCell.priceWholesale)}
-              onChange={(e) => setNewCell((s) => ({ ...s, priceWholesale: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
-            />
-          </div>
-          <div className="field">
-            <label>عنوان (اختیاری)</label>
-            <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
-          </div>
-          <div className="field" style={{ justifyContent: "flex-end" }}>
-            <label className="price-plan-gold" style={{ marginTop: 22 }}>
-              <input
-                type="checkbox"
-                checked={newCell.isGolden}
-                onChange={(e) => setNewCell((s) => ({ ...s, isGolden: e.target.checked }))}
-              />
-              <span>پیشنهاد ویژه ⭐</span>
-            </label>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="btn success"
-          disabled={
-            !newCell.months ||
-            !newCell.priceUser ||
-            !newCell.pricePartner ||
-            (newCell.category !== "unlimited" && newCell.category !== "offer" && !newCell.trafficGb)
-          }
-          onClick={addCell}
-        >
-          افزودن پلن
-        </button>
-      </div>
-    </>
+      </section>
+    </div>
   );
 }
 
