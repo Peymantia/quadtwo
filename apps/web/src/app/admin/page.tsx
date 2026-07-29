@@ -2303,7 +2303,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
   const [result, setResult] = useState<Result | null>(null);
 
   const [doInbounds, setDoInbounds] = useState(false);
-  const [inboundIdsRaw, setInboundIdsRaw] = useState("1-10");
+  const [inboundIdsRaw, setInboundIdsRaw] = useState("1,2,3,4,5,6,7,8,9,10");
 
   const [doLimitIp, setDoLimitIp] = useState(false);
   const [limitIpValue, setLimitIpValue] = useState("2");
@@ -2490,7 +2490,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
                 disabled={!doInbounds}
                 value={inboundIdsRaw}
                 onChange={(e) => setInboundIdsRaw(e.target.value)}
-                placeholder="1-10"
+                placeholder="1,2,3,4,5,6,7,8,9,10"
               />
             </div>
           </div>
@@ -2501,6 +2501,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
               <span>محدودیت کاربر (IP Limit)</span>
             </label>
             <BulkNumStepper value={limitIpValue} onChange={setLimitIpValue} disabled={!doLimitIp} />
+            <p className="muted bulk-op-hint">مقدار ۰ = نامحدود (دستگاه)</p>
           </div>
 
           <div className={`bulk-op bulk-op--clear${clearExpiry ? " is-on" : ""}`}>
