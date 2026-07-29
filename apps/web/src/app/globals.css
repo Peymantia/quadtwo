@@ -2814,12 +2814,20 @@ button.pay-dest-number:active,
   }
 }
 
+.bulk-adjust-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
 .bulk-op {
-  margin-bottom: 10px;
+  margin: 0;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.025);
+  min-width: 0;
 }
 
 .bulk-op > .sync-opt {
@@ -2827,6 +2835,25 @@ button.pay-dest-number:active,
   box-sizing: border-box;
   font-size: 0.88rem;
   padding: 10px 12px;
+}
+
+.bulk-scope-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.bulk-scope-row .field {
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+}
+
+.bulk-scope-run {
+  flex-shrink: 0;
+  height: 46px;
+  padding-inline: 16px;
+  white-space: nowrap;
 }
 
 .bulk-op-fields {
@@ -2850,9 +2877,50 @@ button.pay-dest-number:active,
   font-size: 0.78rem;
 }
 
+/* Match select vs input height inside bulk adjust */
+.bulk-adjust-grid .field input,
+.bulk-adjust-grid .field select {
+  box-sizing: border-box;
+  height: 46px;
+  min-height: 46px;
+  padding: 0 14px;
+  line-height: 1.25;
+  font-size: 0.92rem;
+}
+
+.bulk-adjust-grid .field select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2394a3b8' d='M1.2 1.5L6 6.3l4.8-4.8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-inline-start: 14px;
+  padding-inline-end: 32px;
+}
+
+[dir="rtl"] .bulk-adjust-grid .field select {
+  background-position: left 12px center;
+  padding-inline-start: 32px;
+  padding-inline-end: 14px;
+}
+
+@media (min-width: 960px) {
+  .bulk-adjust-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   .bulk-op-fields {
     grid-template-columns: 1fr;
+  }
+
+  .bulk-scope-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bulk-scope-run {
+    width: 100%;
   }
 }
 
