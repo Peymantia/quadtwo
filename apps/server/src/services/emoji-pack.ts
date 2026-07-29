@@ -217,9 +217,9 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   web_dashboard: "5447410659077661506",
   dash_otp: "5303479226882603449",
   config_lookup: "6318752565865482087",
-  partner_request: "5352795355635276043",
-  all_configs: "5386367538735104399",
-  agent_panel: "5231012545799666522",
+  partner_request: "6296508771325707891",
+  all_configs: "5319153143093665867",
+  agent_panel: "5269402556924180806",
   control_center: "5361741454685256344",
   hide_keyboard: "5193202823411546657",
   referral: "5256143829672672750",
@@ -257,7 +257,7 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   speaker_channel: "5458603043203327669",
   inbox_import: "5253742260054409879",
   outbox_send: "5253742260054409879",
-  floppy_backup: "5890849007139296140",
+  floppy_backup: "6156513311585211842",
   desktop_server: "5193177581888755275",
   antenna_inbounds: "5764775314521593432",
   plug_test: "5384503132086625813",
@@ -290,7 +290,7 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   qr_code: "5440410042773824003",
   iphone: "6296514655430903710",
   download: "5406745015365943482",
-  sales_cats: "5837018635830302155",
+  sales_cats: "6168111153508519591",
   broadcast: "5458603043203327669",
   panels: "5456312597273923475",
   import_excel: "5321221045292638119",
@@ -342,6 +342,23 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
   }
   if (glyph === "🔀") {
     return PREMIUM_IDS.rotate_sub;
+  }
+  if (glyph === "🤝") {
+    return PREMIUM_IDS.partner_request;
+  }
+  if (glyph === "🏷") {
+    if (after.includes("فروش") || after.includes("دسته‌")) return PREMIUM_IDS.sales_cats;
+    if (after.includes("نماینده")) return PREMIUM_IDS.agent_name;
+    return PREMIUM_IDS.label_tag;
+  }
+  if (glyph === "💾") {
+    return PREMIUM_IDS.floppy_backup;
+  }
+  if (glyph === "💼") {
+    return PREMIUM_IDS.agent_panel;
+  }
+  if (glyph === "📋") {
+    return PREMIUM_IDS.all_configs;
   }
   if (glyph === "📥") {
     if (after.includes("اکسل")) return PREMIUM_IDS.import_excel;

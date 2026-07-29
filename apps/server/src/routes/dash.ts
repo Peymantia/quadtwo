@@ -94,6 +94,12 @@ import { formatTraffic, formatToman, persianMonthName } from "../utils/format.js
 import { adminSalesReport, searchUsersAndOrders, buildSalesStats, parseSalesPeriod, agentsSalesLeaderboard } from "../services/admin-reports.js";
 import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, refreshSubscriptionFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays, type ConfigListSort } from "../services/admin-configs.js";
 import {
+  bulkAdjustAllPanelClients,
+  parseBulkInboundIds,
+  previewBulkAdjust,
+  type BulkAdjustInput,
+} from "../services/bulk-adjust.js";
+import {
   createPanelServer,
   deletePanelServer,
   getPanelServer,
@@ -1975,6 +1981,62 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         action: "admin_panel_sync_undo",
         actorTelegramId: BigInt(c.get("telegramId")),
         detail: result.message,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.get("/admin/configs/bulk-adjust/preview", async (c) => {
+    try {
+      const panelServerId = c.req.query("panelServerId")?.trim() || null;
+      return c.json(await previewBulkAdjust(panelServerId));
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/configs/bulk-adjust", async (c) => {
+    try {
+      const body = (await c.req.json().catch(() => ({}))) as {
+        panelServerId?: string | null;
+        inbounds?: { mode?: string; ids?: number[]; idsRaw?: string };
+        limitIp?: { mode?: string; value?: number };
+        addGb?: number;
+        addDays?: number;
+        clearExpiry?: boolean;
+      };
+
+      const input: BulkAdjustInput = {
+        panelServerId: body.panelServerId?.trim() || null,
+        clearExpiry: Boolean(body.clearExpiry),
+      };
+
+      if (body.inbounds) {
+        const ids =
+          Array.isArray(body.inbounds.ids) && body.inbounds.ids.length
+            ? body.inbounds.ids
+            : parseBulkInboundIds(String(body.inbounds.idsRaw ?? ""));
+        input.inbounds = {
+          mode: body.inbounds.mode === "add" ? "add" : "set",
+          ids,
+        };
+      }
+      if (body.limitIp && body.limitIp.value != null) {
+        input.limitIp = {
+          mode: body.limitIp.mode === "add" ? "add" : "set",
+          value: Number(body.limitIp.value),
+        };
+      }
+      if (body.addGb != null && Number(body.addGb) > 0) input.addGb = Number(body.addGb);
+      if (body.addDays != null && Number(body.addDays) > 0) input.addDays = Number(body.addDays);
+
+      const result = await bulkAdjustAllPanelClients(input);
+      await auditLog({
+        action: "admin_bulk_adjust",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        detail: `updated:${result.updated} skipped:${result.skipped} errors:${result.errors} total:${result.clientCount}`,
       });
       return c.json(result);
     } catch (err) {

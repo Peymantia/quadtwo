@@ -29,6 +29,7 @@ const TABS: ShellTab[] = [
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server", gapAfter: true },
   { key: "sync", label: "همگام‌سازی", icon: "sync" },
+  { key: "bulk", label: "تغییر دسته‌جمعی", shortLabel: "دسته", icon: "layers" },
   { key: "reports", label: "گزارشات", icon: "chart" },
   { key: "import", label: "اکسل", icon: "file" },
   { key: "settings", label: "تنظیمات", icon: "gear", gapAfter: true },
@@ -222,6 +223,7 @@ export default function AdminPage() {
       {tab === "categories" && <CategoriesTab flash={flash} askConfirm={askConfirm} />}
       {tab === "configs" && <ConfigsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "sync" && <SyncTab flash={flash} askConfirm={askConfirm} />}
+      {tab === "bulk" && <BulkAdjustTab flash={flash} askConfirm={askConfirm} />}
       {tab === "panels" && <PanelsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "settings" && (
         <SettingsTab
@@ -2234,6 +2236,364 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
           </button>
           <button type="button" className="btn success" onClick={() => void confirmApply()}>
             تأیید و اعمال
+          </button>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+/* ---------------- Bulk Adjust ---------------- */
+
+function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
+  type PanelOpt = { id: string; name: string };
+  type Result = {
+    updated: number;
+    skipped: number;
+    errors: number;
+    clientCount: number;
+    failed: Array<{ email: string; error: string }>;
+    skipReasons: Array<{ email: string; reason: string }>;
+  };
+
+  const [panels, setPanels] = useState<PanelOpt[]>([]);
+  const [panelServerId, setPanelServerId] = useState("");
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [result, setResult] = useState<Result | null>(null);
+
+  const [doInbounds, setDoInbounds] = useState(false);
+  const [inboundMode, setInboundMode] = useState<"set" | "add">("add");
+  const [inboundIdsRaw, setInboundIdsRaw] = useState("1,2,3");
+
+  const [doLimitIp, setDoLimitIp] = useState(false);
+  const [limitIpMode, setLimitIpMode] = useState<"set" | "add">("set");
+  const [limitIpValue, setLimitIpValue] = useState("2");
+
+  const [doAddGb, setDoAddGb] = useState(false);
+  const [addGb, setAddGb] = useState("10");
+
+  const [doAddDays, setDoAddDays] = useState(false);
+  const [addDays, setAddDays] = useState("30");
+
+  const [clearExpiry, setClearExpiry] = useState(false);
+
+  useEffect(() => {
+    void api<{ panels: Array<{ id: string; name: string }> }>("/admin/panels")
+      .then((r) => setPanels((r.panels ?? []).map((p) => ({ id: p.id, name: p.name }))))
+      .catch(() => setPanels([]));
+  }, []);
+
+  async function refreshPreview() {
+    try {
+      const q = panelServerId ? `?panelServerId=${encodeURIComponent(panelServerId)}` : "";
+      const r = await api<{ clientCount: number }>(`/admin/configs/bulk-adjust/preview${q}`);
+      setPreviewCount(r.clientCount);
+    } catch {
+      setPreviewCount(null);
+    }
+  }
+
+  useEffect(() => {
+    void refreshPreview();
+  }, [panelServerId]);
+
+  function summaryLines(): string[] {
+    const lines: string[] = [];
+    if (doInbounds) {
+      lines.push(
+        `اینباندها (${inboundMode === "set" ? "جایگزینی" : "افزودن"}): ${inboundIdsRaw.trim() || "—"}`,
+      );
+    }
+    if (doLimitIp) {
+      lines.push(
+        `محدودیت کاربر (${limitIpMode === "set" ? "ست" : "افزودن"}): ${limitIpValue}`,
+      );
+    }
+    if (doAddGb) lines.push(`افزودن حجم: ${addGb} گیگ`);
+    if (doAddDays && !clearExpiry) lines.push(`افزودن روز: ${addDays}`);
+    if (clearExpiry) lines.push("حذف تاریخ انقضا (نامحدود)");
+    return lines;
+  }
+
+  function openApply() {
+    if (!doInbounds && !doLimitIp && !doAddGb && !doAddDays && !clearExpiry) {
+      flash(null, "حداقل یک عملیات را انتخاب کنید");
+      return;
+    }
+    if (doInbounds && !inboundIdsRaw.trim()) {
+      flash(null, "شناسه اینباند را وارد کنید");
+      return;
+    }
+    void refreshPreview().then(() => setApplyOpen(true));
+  }
+
+  async function confirmApply() {
+    setApplyOpen(false);
+    const scope =
+      panelServerId
+        ? `سرور انتخاب‌شده (${panels.find((p) => p.id === panelServerId)?.name ?? "—"})`
+        : "همه پنل‌های فعال";
+    const n = previewCount ?? "؟";
+    if (
+      !(await askConfirm(
+        `تغییر دسته‌جمعی روی ${n} اکانت (${scope}) اعمال شود؟\n\n${summaryLines().join("\n")}`,
+      ))
+    ) {
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      const body: Record<string, unknown> = {
+        panelServerId: panelServerId || null,
+        clearExpiry,
+      };
+      if (doInbounds) {
+        body.inbounds = { mode: inboundMode, idsRaw: inboundIdsRaw.trim() };
+      }
+      if (doLimitIp) {
+        body.limitIp = { mode: limitIpMode, value: Number(limitIpValue.replace(/[^\d]/g, "") || "0") };
+      }
+      if (doAddGb) body.addGb = Number(addGb.replace(/[^\d]/g, "") || "0");
+      if (doAddDays && !clearExpiry) body.addDays = Number(addDays.replace(/[^\d]/g, "") || "0");
+
+      const r = await api<Result>("/admin/configs/bulk-adjust", { method: "POST", body });
+      setResult(r);
+      flash(
+        `انجام شد: ${r.updated} به‌روز · ${r.skipped} ردشده · ${r.errors} خطا (از ${r.clientCount})`,
+      );
+      await refreshPreview();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="panel">
+        <h2>تغییر دسته‌جمعی</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Bulk Adjust — اعمال همزمان اینباند، محدودیت کاربر، حجم، روز یا حذف انقضا روی همه کانفیگ‌های پنل
+          3x-ui (نه فقط دیتابیس ربات).
+        </p>
+
+        <div className="field" style={{ marginBottom: 14 }}>
+          <label>محدوده سرور</label>
+          <select value={panelServerId} onChange={(e) => setPanelServerId(e.target.value)}>
+            <option value="">همه پنل‌های فعال</option>
+            {panels.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.8rem" }}>
+            تعداد تقریبی اکانت:{" "}
+            <strong className="num">{previewCount == null ? "…" : previewCount}</strong>
+          </p>
+        </div>
+
+        <h3 style={{ fontSize: "0.95rem", marginBottom: 8 }}>عملیات</h3>
+
+        <div className="row-card" style={{ marginBottom: 10, padding: "12px 14px" }}>
+          <label className="sync-opt" style={{ marginBottom: doInbounds ? 10 : 0 }}>
+            <input type="checkbox" checked={doInbounds} onChange={(e) => setDoInbounds(e.target.checked)} />
+            <span>اینباندها</span>
+          </label>
+          {doInbounds && (
+            <div className="grid" style={{ gap: 10 }}>
+              <div className="field" style={{ margin: 0 }}>
+                <label>حالت</label>
+                <select
+                  value={inboundMode}
+                  onChange={(e) => setInboundMode(e.target.value === "set" ? "set" : "add")}
+                >
+                  <option value="add">افزودن (فعلی‌ها بمانند)</option>
+                  <option value="set">جایگزینی کامل</option>
+                </select>
+              </div>
+              <div className="field" style={{ margin: 0 }}>
+                <label>شناسه اینباندها</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  value={inboundIdsRaw}
+                  onChange={(e) => setInboundIdsRaw(e.target.value)}
+                  placeholder="1,2,3 یا 1-5"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="row-card" style={{ marginBottom: 10, padding: "12px 14px" }}>
+          <label className="sync-opt" style={{ marginBottom: doLimitIp ? 10 : 0 }}>
+            <input type="checkbox" checked={doLimitIp} onChange={(e) => setDoLimitIp(e.target.checked)} />
+            <span>محدودیت کاربر (limitIp)</span>
+          </label>
+          {doLimitIp && (
+            <div className="grid" style={{ gap: 10 }}>
+              <div className="field" style={{ margin: 0 }}>
+                <label>حالت</label>
+                <select
+                  value={limitIpMode}
+                  onChange={(e) => setLimitIpMode(e.target.value === "add" ? "add" : "set")}
+                >
+                  <option value="set">ست کردن مقدار</option>
+                  <option value="add">افزودن به مقدار فعلی</option>
+                </select>
+              </div>
+              <div className="field" style={{ margin: 0 }}>
+                <label>مقدار (۰ = نامحدود دستگاه)</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  inputMode="numeric"
+                  value={limitIpValue}
+                  onChange={(e) => setLimitIpValue(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="row-card" style={{ marginBottom: 10, padding: "12px 14px" }}>
+          <label className="sync-opt" style={{ marginBottom: doAddGb ? 10 : 0 }}>
+            <input type="checkbox" checked={doAddGb} onChange={(e) => setDoAddGb(e.target.checked)} />
+            <span>افزودن حجم (گیگ)</span>
+          </label>
+          {doAddGb && (
+            <div className="field" style={{ margin: 0 }}>
+              <label>گیگابایت</label>
+              <input
+                dir="ltr"
+                className="num"
+                inputMode="numeric"
+                value={addGb}
+                onChange={(e) => setAddGb(e.target.value)}
+              />
+              <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.78rem" }}>
+                اکانت‌های نامحدود رد می‌شوند.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="row-card" style={{ marginBottom: 10, padding: "12px 14px" }}>
+          <label className="sync-opt" style={{ marginBottom: doAddDays ? 10 : 0 }}>
+            <input
+              type="checkbox"
+              checked={doAddDays}
+              disabled={clearExpiry}
+              onChange={(e) => setDoAddDays(e.target.checked)}
+            />
+            <span>افزودن روز به انقضا</span>
+          </label>
+          {doAddDays && !clearExpiry && (
+            <div className="field" style={{ margin: 0 }}>
+              <label>تعداد روز</label>
+              <input
+                dir="ltr"
+                className="num"
+                inputMode="numeric"
+                value={addDays}
+                onChange={(e) => setAddDays(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="row-card" style={{ marginBottom: 14, padding: "12px 14px" }}>
+          <label className="sync-opt">
+            <input
+              type="checkbox"
+              checked={clearExpiry}
+              onChange={(e) => {
+                setClearExpiry(e.target.checked);
+                if (e.target.checked) setDoAddDays(false);
+              }}
+            />
+            <span>حذف تاریخ انقضا (نامحدود کردن تاریخ)</span>
+          </label>
+        </div>
+
+        <div className="actions">
+          <button type="button" className="btn danger" disabled={busy} onClick={openApply}>
+            {busy ? "در حال اعمال…" : "اجرای تغییر دسته‌جمعی"}
+          </button>
+          <button type="button" className="btn ghost" disabled={busy} onClick={() => void refreshPreview()}>
+            به‌روز کردن تعداد
+          </button>
+        </div>
+      </div>
+
+      {result && (
+        <div className="panel">
+          <h2>نتیجه</h2>
+          <p>
+            به‌روز: <strong className="num">{result.updated}</strong>
+            {" · "}
+            ردشده: <strong className="num">{result.skipped}</strong>
+            {" · "}
+            خطا: <strong className="num">{result.errors}</strong>
+            {" · "}
+            کل: <strong className="num">{result.clientCount}</strong>
+          </p>
+          {result.skipReasons.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <strong>ردشده‌ها</strong>
+              <ul className="muted" style={{ margin: "6px 0 0", paddingInlineStart: 18 }}>
+                {result.skipReasons.slice(0, 30).map((s) => (
+                  <li key={`s-${s.email}`}>
+                    <span className="num">{s.email}</span> — {s.reason}
+                  </li>
+                ))}
+                {result.skipReasons.length > 30 && <li>… و {result.skipReasons.length - 30} مورد دیگر</li>}
+              </ul>
+            </div>
+          )}
+          {result.failed.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <strong>خطاها</strong>
+              <ul className="muted" style={{ margin: "6px 0 0", paddingInlineStart: 18 }}>
+                {result.failed.slice(0, 30).map((f) => (
+                  <li key={`f-${f.email}`}>
+                    <span className="num">{f.email}</span> — {f.error}
+                  </li>
+                ))}
+                {result.failed.length > 30 && <li>… و {result.failed.length - 30} مورد دیگر</li>}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      <Modal open={applyOpen} title="تأیید تغییر دسته‌جمعی" onClose={() => setApplyOpen(false)}>
+        <p style={{ marginTop: 0 }}>
+          حدود <strong className="num">{previewCount ?? "؟"}</strong> اکانت روی{" "}
+          {panelServerId
+            ? `سرور «${panels.find((p) => p.id === panelServerId)?.name ?? "—"}»`
+            : "همه پنل‌های فعال"}{" "}
+          تغییر می‌کنند.
+        </p>
+        <ul style={{ margin: "0 0 12px", paddingInlineStart: 18 }}>
+          {summaryLines().map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+        <p className="muted" style={{ fontSize: "0.85rem" }}>
+          این عملیات برگشت خودکار (Undo) ندارد. قبل از اجرا از صحت گزینه‌ها مطمئن شوید.
+        </p>
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button type="button" className="btn ghost" onClick={() => setApplyOpen(false)}>
+            انصراف
+          </button>
+          <button type="button" className="btn danger" onClick={() => void confirmApply()}>
+            تأیید و اجرا
           </button>
         </div>
       </Modal>

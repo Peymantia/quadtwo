@@ -744,7 +744,9 @@ async function handleAccount(ctx: Context) {
 async function handleConfigLookup(ctx: Context) {
   if (!(await requireChannel(ctx))) return;
   waitingConfigLookup.add(ctx.from!.id);
-  await ctx.reply("🔍 لطفاً لینک کانفیگ یا UUID را ارسال کنید.\n\nلغو: انصراف");
+  await ctx.reply("🔍 لطفاً لینک کانفیگ یا UUID را ارسال کنید.", {
+    reply_markup: new InlineKeyboard().text("❌ انصراف", "cfglookup:cancel").danger(),
+  });
 }
 
 async function handleDashboard(ctx: Context) {
@@ -1161,6 +1163,15 @@ export function createBot() {
   bot.callbackQuery("m:cfglookup", async (ctx) => {
     await ctx.answerCallbackQuery();
     await handleConfigLookup(ctx);
+  });
+  bot.callbackQuery("cfglookup:cancel", async (ctx) => {
+    if (ctx.from) waitingConfigLookup.delete(ctx.from.id);
+    await ctx.answerCallbackQuery({ text: "لغو شد" });
+    try {
+      await ctx.editMessageText("🔍 مشاهده سریع لغو شد.");
+    } catch {
+      await ctx.reply("لغو شد.");
+    }
   });
   bot.callbackQuery("m:partner", async (ctx) => {
     await ctx.answerCallbackQuery();

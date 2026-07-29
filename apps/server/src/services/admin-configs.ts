@@ -1018,7 +1018,7 @@ async function deleteSubscriptionDbOnly(subId: string): Promise<void> {
   await prisma.subscription.delete({ where: { id: subId } });
 }
 
-async function listDetailedPanelClients(): Promise<DetailedPanelClient[]> {
+export async function listDetailedPanelClients(): Promise<DetailedPanelClient[]> {
   const out: DetailedPanelClient[] = [];
   const seen = new Set<string>();
 
@@ -1548,7 +1548,7 @@ function sameInboundIds(a: number[], b: number[]): boolean {
 }
 
 /** Attach/detach so the client matches the target inbound set. */
-async function syncClientInbounds(
+export async function syncClientInbounds(
   xui: XuiClient,
   email: string,
   current: number[],
