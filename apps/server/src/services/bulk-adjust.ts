@@ -63,8 +63,8 @@ function validateInput(input: BulkAdjustInput): void {
   const has =
     Boolean(input.inbounds?.ids?.length) ||
     input.limitIp != null ||
-    (input.addGb != null && input.addGb > 0) ||
-    (input.addDays != null && input.addDays > 0) ||
+    (input.addGb != null && input.addGb !== 0) ||
+    (input.addDays != null && input.addDays !== 0) ||
     Boolean(input.clearExpiry);
   if (!has) throw new Error("حداقل یک عملیات را انتخاب کنید");
 
@@ -80,16 +80,16 @@ function validateInput(input: BulkAdjustInput): void {
   }
 
   if (input.addGb != null) {
-    const g = Math.floor(Number(input.addGb));
-    if (!Number.isFinite(g) || g < 1) throw new Error("حجم افزودنی باید حداقل ۱ گیگ باشد");
-    if (g > BULK_ADD_GB_MAX) throw new Error(`حداکثر افزودن حجم ${BULK_ADD_GB_MAX} گیگ است`);
+    const g = Math.trunc(Number(input.addGb));
+    if (!Number.isFinite(g) || g === 0) throw new Error("مقدار حجم نمی‌تواند صفر باشد");
+    if (Math.abs(g) > BULK_ADD_GB_MAX) throw new Error(`حداکثر تغییر حجم ${BULK_ADD_GB_MAX} گیگ است`);
     input.addGb = g;
   }
 
   if (input.addDays != null) {
-    const d = Math.floor(Number(input.addDays));
-    if (!Number.isFinite(d) || d < 1) throw new Error("روز افزودنی باید حداقل ۱ باشد");
-    if (d > BULK_ADD_DAYS_MAX) throw new Error(`حداکثر افزودن روز ${BULK_ADD_DAYS_MAX} است`);
+    const d = Math.trunc(Number(input.addDays));
+    if (!Number.isFinite(d) || d === 0) throw new Error("مقدار روز نمی‌تواند صفر باشد");
+    if (Math.abs(d) > BULK_ADD_DAYS_MAX) throw new Error(`حداکثر تغییر روز ${BULK_ADD_DAYS_MAX} است`);
     input.addDays = d;
   }
 }
@@ -123,11 +123,13 @@ export async function previewBulkAdjust(panelServerId?: string | null): Promise<
 
 function extendPanelExpiry(expiryTime: number, days: number): number | null {
   const addMs = days * 86_400_000;
-  if (expiryTime === 0) return null; // unlimited — skip add days
+  if (expiryTime === 0) return null; // unlimited — skip
   if (expiryTime < 0) {
-    return -(Math.abs(expiryTime) + addMs);
+    const next = Math.abs(expiryTime) + addMs;
+    if (next <= 0) return Date.now() - 1; // expired
+    return -next;
   }
-  const base = Math.max(Date.now(), expiryTime);
+  const base = days >= 0 ? Math.max(Date.now(), expiryTime) : expiryTime;
   return base + addMs;
 }
 
@@ -136,6 +138,15 @@ function extendBotExpiry(sub: Subscription, days: number) {
   if (sub.startsOnConnect && !sub.activatedAt) {
     const remaining = Math.max(0, sub.expiresAt.getTime() - Date.now());
     const newRemaining = remaining + addMs;
+    if (newRemaining <= 0) {
+      const expiresAt = new Date(Date.now() - 1);
+      return {
+        expiresAt,
+        panelExpiryTime: expiresAt.getTime(),
+        startsOnConnect: false as const,
+        activatedAt: sub.activatedAt ?? new Date(),
+      };
+    }
     return {
       expiresAt: new Date(Date.now() + newRemaining),
       panelExpiryTime: -newRemaining,
@@ -143,7 +154,7 @@ function extendBotExpiry(sub: Subscription, days: number) {
       activatedAt: null as Date | null,
     };
   }
-  const base = Math.max(Date.now(), sub.expiresAt.getTime());
+  const base = days >= 0 ? Math.max(Date.now(), sub.expiresAt.getTime()) : sub.expiresAt.getTime();
   const expiresAt = new Date(base + addMs);
   return {
     expiresAt,
@@ -196,17 +207,21 @@ async function adjustOne(
     }
   }
 
-  // ——— add GB ———
-  if (input.addGb != null && input.addGb > 0) {
+  // ——— adjust GB (positive = increase, negative = decrease) ———
+  if (input.addGb != null && input.addGb !== 0) {
     const curBytes = Number(client.totalGB ?? 0);
     if (!Number.isFinite(curBytes) || curBytes <= 0) {
       skipNotes.push("حجم نامحدود");
     } else {
       const curGb = Math.max(1, Math.round(curBytes / 1024 ** 3));
       const newGb = curGb + input.addGb;
-      patch.totalGB = gbToBytes(newGb);
-      changed = true;
-      if (sub) dbData.trafficGb = newGb;
+      if (newGb < 1) {
+        skipNotes.push("حجم کمتر از ۱ گیگ نمی‌شود");
+      } else if (newGb !== curGb) {
+        patch.totalGB = gbToBytes(newGb);
+        changed = true;
+        if (sub) dbData.trafficGb = newGb;
+      }
     }
   }
 
@@ -225,8 +240,8 @@ async function adjustOne(
         dbData.status = SubscriptionStatus.active;
       }
     }
-  } else if (input.addDays != null && input.addDays > 0) {
-    // ——— add days (skipped if clearExpiry also set — clear wins) ———
+  } else if (input.addDays != null && input.addDays !== 0) {
+    // ——— adjust days (skipped if clearExpiry also set — clear wins) ———
     const curExp = Number(client.expiryTime ?? 0);
     const nextExp = extendPanelExpiry(curExp, input.addDays);
     if (nextExp == null) {

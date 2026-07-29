@@ -2023,8 +2023,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       if (body.limitIp && body.limitIp.value != null) {
         input.limitIp = { value: Number(body.limitIp.value) };
       }
-      if (body.addGb != null && Number(body.addGb) > 0) input.addGb = Number(body.addGb);
-      if (body.addDays != null && Number(body.addDays) > 0) input.addDays = Number(body.addDays);
+      if (body.addGb != null && Number(body.addGb) !== 0) input.addGb = Number(body.addGb);
+      if (body.addDays != null && Number(body.addDays) !== 0) input.addDays = Number(body.addDays);
 
       const result = await bulkAdjustAllPanelClients(input);
       await auditLog({

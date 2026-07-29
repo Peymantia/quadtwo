@@ -2245,6 +2245,45 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
 
 /* ---------------- Bulk Adjust ---------------- */
 
+function BulkNumStepper({
+  value,
+  onChange,
+  disabled,
+  allowNegative = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  allowNegative?: boolean;
+}) {
+  function parseNum(): number {
+    const n = Number(String(value).trim().replace(/[^\d-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  }
+  function step(delta: number) {
+    let next = parseNum() + delta;
+    if (!allowNegative && next < 0) next = 0;
+    onChange(String(next));
+  }
+  return (
+    <div className={`bulk-stepper${disabled ? " is-disabled" : ""}`} dir="ltr">
+      <button type="button" className="bulk-stepper-btn" disabled={disabled} onClick={() => step(-1)} aria-label="کم کردن">
+        −
+      </button>
+      <input
+        className="num"
+        inputMode="numeric"
+        disabled={disabled}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button type="button" className="bulk-stepper-btn" disabled={disabled} onClick={() => step(1)} aria-label="اضافه">
+        +
+      </button>
+    </div>
+  );
+}
+
 function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   type PanelOpt = { id: string; name: string };
   type Result = {
@@ -2264,7 +2303,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
   const [result, setResult] = useState<Result | null>(null);
 
   const [doInbounds, setDoInbounds] = useState(false);
-  const [inboundIdsRaw, setInboundIdsRaw] = useState("1,2,3");
+  const [inboundIdsRaw, setInboundIdsRaw] = useState("1-10");
 
   const [doLimitIp, setDoLimitIp] = useState(false);
   const [limitIpValue, setLimitIpValue] = useState("2");
@@ -2297,12 +2336,23 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
     void refreshPreview();
   }, [panelServerId]);
 
+  function parseSigned(raw: string): number {
+    const n = Number(String(raw).trim().replace(/[^\d-]/g, ""));
+    return Number.isFinite(n) ? Math.trunc(n) : 0;
+  }
+
   function summaryLines(): string[] {
     const lines: string[] = [];
+    if (doAddGb) {
+      const g = parseSigned(addGb);
+      lines.push(`${g < 0 ? "کاهش" : "افزایش"} حجم: ${Math.abs(g)} گیگ`);
+    }
+    if (doAddDays && !clearExpiry) {
+      const d = parseSigned(addDays);
+      lines.push(`${d < 0 ? "کاهش" : "افزایش"} روز: ${Math.abs(d)}`);
+    }
     if (doInbounds) lines.push(`اینباندها (جایگزینی): ${inboundIdsRaw.trim() || "—"}`);
     if (doLimitIp) lines.push(`محدودیت کاربر (IP Limit): ${limitIpValue}`);
-    if (doAddGb) lines.push(`افزودن حجم: ${addGb} گیگ`);
-    if (doAddDays && !clearExpiry) lines.push(`افزودن روز: ${addDays}`);
     if (clearExpiry) lines.push("حذف تاریخ انقضا (نامحدود)");
     return lines;
   }
@@ -2314,6 +2364,14 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
     }
     if (doInbounds && !inboundIdsRaw.trim()) {
       flash(null, "شناسه اینباند را وارد کنید");
+      return;
+    }
+    if (doAddGb && parseSigned(addGb) === 0) {
+      flash(null, "مقدار حجم نمی‌تواند صفر باشد");
+      return;
+    }
+    if (doAddDays && !clearExpiry && parseSigned(addDays) === 0) {
+      flash(null, "مقدار روز نمی‌تواند صفر باشد");
       return;
     }
     void refreshPreview().then(() => setApplyOpen(true));
@@ -2346,8 +2404,8 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
       if (doLimitIp) {
         body.limitIp = { value: Number(limitIpValue.replace(/[^\d]/g, "") || "0") };
       }
-      if (doAddGb) body.addGb = Number(addGb.replace(/[^\d]/g, "") || "0");
-      if (doAddDays && !clearExpiry) body.addDays = Number(addDays.replace(/[^\d]/g, "") || "0");
+      if (doAddGb) body.addGb = parseSigned(addGb);
+      if (doAddDays && !clearExpiry) body.addDays = parseSigned(addDays);
 
       const r = await api<Result>("/admin/configs/bulk-adjust", { method: "POST", body });
       setResult(r);
@@ -2392,100 +2450,71 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
         </div>
 
         <div className="bulk-cols">
-          <div className="bulk-col">
-            <div className={`bulk-op${doInbounds ? " is-on" : ""}`}>
-              <label className="bulk-op-head">
-                <input type="checkbox" checked={doInbounds} onChange={(e) => setDoInbounds(e.target.checked)} />
-                <span>اینباندها</span>
-              </label>
-              <div className="field">
-                <label>شناسه اینباندها (جایگزینی کامل)</label>
-                <input
-                  dir="ltr"
-                  className="num"
-                  disabled={!doInbounds}
-                  value={inboundIdsRaw}
-                  onChange={(e) => setInboundIdsRaw(e.target.value)}
-                  placeholder="1,2,3 یا 1-5"
-                />
-              </div>
-            </div>
+          <div className={`bulk-op bulk-op--gb${doAddGb ? " is-on" : ""}`}>
+            <label className="bulk-op-head">
+              <input type="checkbox" checked={doAddGb} onChange={(e) => setDoAddGb(e.target.checked)} />
+              <span>افزایش یا کاهش حجم باقیمانده (GB)</span>
+            </label>
+            <BulkNumStepper value={addGb} onChange={setAddGb} disabled={!doAddGb} allowNegative />
+            <p className="muted bulk-op-hint">عدد منفی = کاهش · اکانت‌های نامحدود رد می‌شوند.</p>
+          </div>
 
-            <div className={`bulk-op${doLimitIp ? " is-on" : ""}`}>
-              <label className="bulk-op-head">
-                <input type="checkbox" checked={doLimitIp} onChange={(e) => setDoLimitIp(e.target.checked)} />
-                <span>محدودیت کاربر (IP Limit)</span>
-              </label>
-              <div className="field">
-                <label>مقدار (۰ = نامحدود دستگاه)</label>
-                <input
-                  dir="ltr"
-                  className="num"
-                  inputMode="numeric"
-                  disabled={!doLimitIp}
-                  value={limitIpValue}
-                  onChange={(e) => setLimitIpValue(e.target.value)}
-                />
-              </div>
-            </div>
+          <div className={`bulk-op bulk-op--days${doAddDays ? " is-on" : ""}${clearExpiry ? " is-blocked" : ""}`}>
+            <label className="bulk-op-head">
+              <input
+                type="checkbox"
+                checked={doAddDays}
+                disabled={clearExpiry}
+                onChange={(e) => setDoAddDays(e.target.checked)}
+              />
+              <span>افزایش یا کاهش روزهای باقیمانده</span>
+            </label>
+            <BulkNumStepper
+              value={addDays}
+              onChange={setAddDays}
+              disabled={!doAddDays || clearExpiry}
+              allowNegative
+            />
+            <p className="muted bulk-op-hint">عدد منفی = کاهش روز.</p>
+          </div>
 
-            <div className={`bulk-op${clearExpiry ? " is-on" : ""}`}>
-              <label className="bulk-op-head">
-                <input
-                  type="checkbox"
-                  checked={clearExpiry}
-                  onChange={(e) => {
-                    setClearExpiry(e.target.checked);
-                    if (e.target.checked) setDoAddDays(false);
-                  }}
-                />
-                <span>حذف تاریخ انقضا (نامحدود کردن تاریخ)</span>
-              </label>
+          <div className={`bulk-op bulk-op--inbounds${doInbounds ? " is-on" : ""}`}>
+            <label className="bulk-op-head">
+              <input type="checkbox" checked={doInbounds} onChange={(e) => setDoInbounds(e.target.checked)} />
+              <span>اینباندها</span>
+            </label>
+            <div className="field">
+              <input
+                dir="ltr"
+                className="num"
+                disabled={!doInbounds}
+                value={inboundIdsRaw}
+                onChange={(e) => setInboundIdsRaw(e.target.value)}
+                placeholder="1-10"
+              />
             </div>
           </div>
 
-          <div className="bulk-col">
-            <div className={`bulk-op${doAddGb ? " is-on" : ""}`}>
-              <label className="bulk-op-head">
-                <input type="checkbox" checked={doAddGb} onChange={(e) => setDoAddGb(e.target.checked)} />
-                <span>افزودن حجم (گیگ)</span>
-              </label>
-              <div className="field">
-                <label>گیگابایت</label>
-                <input
-                  dir="ltr"
-                  className="num"
-                  inputMode="numeric"
-                  disabled={!doAddGb}
-                  value={addGb}
-                  onChange={(e) => setAddGb(e.target.value)}
-                />
-                <p className="muted bulk-op-hint">اکانت‌های نامحدود رد می‌شوند.</p>
-              </div>
-            </div>
+          <div className={`bulk-op bulk-op--limit${doLimitIp ? " is-on" : ""}`}>
+            <label className="bulk-op-head">
+              <input type="checkbox" checked={doLimitIp} onChange={(e) => setDoLimitIp(e.target.checked)} />
+              <span>محدودیت کاربر (IP Limit)</span>
+            </label>
+            <BulkNumStepper value={limitIpValue} onChange={setLimitIpValue} disabled={!doLimitIp} />
+          </div>
 
-            <div className={`bulk-op${doAddDays ? " is-on" : ""}${clearExpiry ? " is-blocked" : ""}`}>
-              <label className="bulk-op-head">
-                <input
-                  type="checkbox"
-                  checked={doAddDays}
-                  disabled={clearExpiry}
-                  onChange={(e) => setDoAddDays(e.target.checked)}
-                />
-                <span>افزودن روز به انقضا</span>
-              </label>
-              <div className="field">
-                <label>تعداد روز</label>
-                <input
-                  dir="ltr"
-                  className="num"
-                  inputMode="numeric"
-                  disabled={!doAddDays || clearExpiry}
-                  value={addDays}
-                  onChange={(e) => setAddDays(e.target.value)}
-                />
-              </div>
-            </div>
+          <div className={`bulk-op bulk-op--clear${clearExpiry ? " is-on" : ""}`}>
+            <label className="bulk-op-head">
+              <input
+                type="checkbox"
+                checked={clearExpiry}
+                onChange={(e) => {
+                  setClearExpiry(e.target.checked);
+                  if (e.target.checked) setDoAddDays(false);
+                }}
+              />
+              <span>حذف تاریخ انقضا (نامحدود کردن تاریخ)</span>
+            </label>
           </div>
         </div>
       </div>

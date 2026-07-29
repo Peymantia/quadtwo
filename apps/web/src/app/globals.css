@@ -2841,13 +2841,6 @@ button.pay-dest-number:active,
   align-items: start;
 }
 
-.bulk-col {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
-
 .bulk-op {
   margin: 0;
   padding: 14px;
@@ -2859,6 +2852,22 @@ button.pay-dest-number:active,
   flex-direction: column;
   gap: 10px;
   transition: border-color 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+}
+
+.bulk-op--gb {
+  order: 1;
+}
+.bulk-op--days {
+  order: 2;
+}
+.bulk-op--inbounds {
+  order: 3;
+}
+.bulk-op--limit {
+  order: 4;
+}
+.bulk-op--clear {
+  order: 5;
 }
 
 .bulk-op.is-on {
@@ -2894,8 +2903,67 @@ button.pay-dest-number:active,
 }
 
 .bulk-op-hint {
-  margin: 6px 0 0;
+  margin: 0;
   font-size: 0.78rem;
+}
+
+.bulk-stepper {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.bulk-stepper input {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  min-height: 46px;
+  padding: 0 14px;
+  line-height: 1.25;
+  font-size: 0.92rem;
+  text-align: center;
+  border: 1px solid var(--line);
+  background: rgba(10, 13, 35, 0.65);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.bulk-stepper input:focus {
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+
+.bulk-stepper-btn {
+  box-sizing: border-box;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.bulk-stepper-btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.bulk-stepper-btn:disabled,
+.bulk-stepper.is-disabled input {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .bulk-adjust .field input,
@@ -2932,6 +3000,28 @@ button.pay-dest-number:active,
 @media (min-width: 960px) {
   .bulk-cols {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* RTL: col1 = right (inbounds/limit), col2 = left (gb/days) */
+  .bulk-op--inbounds {
+    order: 1;
+    grid-column: 1;
+  }
+  .bulk-op--gb {
+    order: 2;
+    grid-column: 2;
+  }
+  .bulk-op--limit {
+    order: 3;
+    grid-column: 1;
+  }
+  .bulk-op--days {
+    order: 4;
+    grid-column: 2;
+  }
+  .bulk-op--clear {
+    order: 5;
+    grid-column: 1 / -1;
   }
 }
 
