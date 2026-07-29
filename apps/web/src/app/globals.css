@@ -2559,12 +2559,47 @@ button.pay-dest-number:active,
   opacity: 0.55;
 }
 
+.price-plan-card.golden {
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.05);
+}
+
 .price-plan-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.price-plan-toggles {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.price-plan-gold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--mute);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.price-plan-gold input {
+  width: 16px;
+  height: 16px;
+  accent-color: #eab308;
+}
+
+.price-plan-gold:has(input:checked) {
+  color: #facc15;
 }
 
 .price-plan-title {

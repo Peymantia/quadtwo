@@ -1163,6 +1163,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     pricePartner: "",
     priceWholesale: "",
     title: "",
+    isGolden: false,
   });
 
   const load = useCallback(
@@ -1317,6 +1318,17 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     }
   }
 
+  async function toggleGolden(c: PriceRow, isGolden: boolean) {
+    try {
+      await api(`/admin/prices/${c.id}`, { method: "PUT", body: { isGolden } });
+      setCells((list) => list.map((x) => (x.id === c.id ? { ...x, isGolden } : x)));
+      flash(isGolden ? "پیشنهاد ویژه شد ⭐" : "از پیشنهاد ویژه برداشته شد");
+    } catch (e) {
+      flash(null, errText(e));
+      await load();
+    }
+  }
+
   async function addCell() {
     try {
       const isUnlimited = newCell.category === "unlimited";
@@ -1344,10 +1356,20 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           pricePartner: parsePriceInput(newCell.pricePartner),
           priceWholesale: newCell.priceWholesale ? parsePriceInput(newCell.priceWholesale) : undefined,
           title: newCell.title || undefined,
+          isGolden: newCell.isGolden,
         },
       });
       flash("پلن جدید اضافه شد");
-      setNewCell({ category: "data", trafficGb: "", months: "1", priceUser: "", pricePartner: "", priceWholesale: "", title: "" });
+      setNewCell({
+        category: "data",
+        trafficGb: "",
+        months: "1",
+        priceUser: "",
+        pricePartner: "",
+        priceWholesale: "",
+        title: "",
+        isGolden: false,
+      });
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -1527,7 +1549,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           {shown.map((c) => {
             const e = edits[c.id] ?? {};
             return (
-              <div key={c.id} className={`price-plan-card${c.active === false ? " off" : ""}`}>
+              <div key={c.id} className={`price-plan-card${c.active === false ? " off" : ""}${c.isGolden ? " golden" : ""}`}>
                 <div className="price-plan-head">
                   <div className="price-plan-title">
                     <strong className="num">
@@ -1536,14 +1558,24 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                     </strong>
                     <span className="muted">{catLabel(c.category, categories)}</span>
                   </div>
-                  <label className="switch" title="فعال / غیرفعال">
-                    <input
-                      type="checkbox"
-                      checked={c.active !== false}
-                      onChange={(ev) => void toggleActive(c, ev.target.checked)}
-                    />
-                    <span className="track" />
-                  </label>
+                  <div className="price-plan-toggles">
+                    <label className="price-plan-gold" title="پیشنهاد ویژه — در حالت نرخی هم قیمت ثابت این پلن اعمال می‌شود">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(c.isGolden)}
+                        onChange={(ev) => void toggleGolden(c, ev.target.checked)}
+                      />
+                      <span>ویژه ⭐</span>
+                    </label>
+                    <label className="switch" title="فعال / غیرفعال">
+                      <input
+                        type="checkbox"
+                        checked={c.active !== false}
+                        onChange={(ev) => void toggleActive(c, ev.target.checked)}
+                      />
+                      <span className="track" />
+                    </label>
+                  </div>
                 </div>
                 <div className="price-plan-fields">
                   <div className="field">
@@ -1679,6 +1711,16 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           <div className="field">
             <label>عنوان (اختیاری)</label>
             <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
+          </div>
+          <div className="field" style={{ justifyContent: "flex-end" }}>
+            <label className="price-plan-gold" style={{ marginTop: 22 }}>
+              <input
+                type="checkbox"
+                checked={newCell.isGolden}
+                onChange={(e) => setNewCell((s) => ({ ...s, isGolden: e.target.checked }))}
+              />
+              <span>پیشنهاد ویژه ⭐</span>
+            </label>
           </div>
         </div>
         <button
