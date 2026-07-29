@@ -15,8 +15,10 @@ export const BULK_ADD_GB_MAX = 10_000;
 
 export type BulkAdjustInput = {
   panelServerId?: string | null;
-  inbounds?: { mode: "set" | "add"; ids: number[] };
-  limitIp?: { mode: "set" | "add"; value: number };
+  /** Replace all client inbound IDs with these */
+  inbounds?: { ids: number[] };
+  /** Set limitIp to this value (0 = unlimited devices) */
+  limitIp?: { value: number };
   addGb?: number;
   addDays?: number;
   clearExpiry?: boolean;
@@ -67,18 +69,12 @@ function validateInput(input: BulkAdjustInput): void {
   if (!has) throw new Error("حداقل یک عملیات را انتخاب کنید");
 
   if (input.inbounds) {
-    if (input.inbounds.mode !== "set" && input.inbounds.mode !== "add") {
-      throw new Error("حالت اینباند نامعتبر است");
-    }
     const ids = normalizeIds(input.inbounds.ids ?? []);
     if (!ids.length) throw new Error("شناسه اینباند را وارد کنید");
     input.inbounds.ids = ids;
   }
 
   if (input.limitIp) {
-    if (input.limitIp.mode !== "set" && input.limitIp.mode !== "add") {
-      throw new Error("حالت محدودیت کاربر نامعتبر است");
-    }
     if (!Number.isFinite(input.limitIp.value)) throw new Error("مقدار محدودیت کاربر نامعتبر است");
     input.limitIp.value = clampLimitIp(input.limitIp.value);
   }
@@ -182,24 +178,17 @@ async function adjustOne(
   const sub = await findSubByEmail(email);
   const dbData: Record<string, unknown> = {};
 
-  // ——— Inbounds ———
+  // ——— Inbounds (always replace) ———
   if (input.inbounds?.ids?.length) {
-    const ids = normalizeIds(input.inbounds.ids);
-    const target =
-      input.inbounds.mode === "add"
-        ? normalizeIds([...currentInboundIds, ...ids])
-        : ids;
+    const target = normalizeIds(input.inbounds.ids);
     const did = await syncClientInbounds(xui, email, currentInboundIds, target);
     if (did) changed = true;
   }
 
-  // ——— limitIp ———
+  // ——— limitIp (always set) ———
   if (input.limitIp) {
     const cur = Number(client.limitIp ?? 0);
-    const next =
-      input.limitIp.mode === "add"
-        ? clampLimitIp(cur + input.limitIp.value)
-        : clampLimitIp(input.limitIp.value);
+    const next = clampLimitIp(input.limitIp.value);
     if (next !== cur) {
       patch.limitIp = next;
       changed = true;

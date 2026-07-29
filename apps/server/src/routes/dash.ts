@@ -2001,8 +2001,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     try {
       const body = (await c.req.json().catch(() => ({}))) as {
         panelServerId?: string | null;
-        inbounds?: { mode?: string; ids?: number[]; idsRaw?: string };
-        limitIp?: { mode?: string; value?: number };
+        inbounds?: { ids?: number[]; idsRaw?: string };
+        limitIp?: { value?: number };
         addGb?: number;
         addDays?: number;
         clearExpiry?: boolean;
@@ -2018,16 +2018,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           Array.isArray(body.inbounds.ids) && body.inbounds.ids.length
             ? body.inbounds.ids
             : parseBulkInboundIds(String(body.inbounds.idsRaw ?? ""));
-        input.inbounds = {
-          mode: body.inbounds.mode === "add" ? "add" : "set",
-          ids,
-        };
+        input.inbounds = { ids };
       }
       if (body.limitIp && body.limitIp.value != null) {
-        input.limitIp = {
-          mode: body.limitIp.mode === "add" ? "add" : "set",
-          value: Number(body.limitIp.value),
-        };
+        input.limitIp = { value: Number(body.limitIp.value) };
       }
       if (body.addGb != null && Number(body.addGb) > 0) input.addGb = Number(body.addGb);
       if (body.addDays != null && Number(body.addDays) > 0) input.addDays = Number(body.addDays);

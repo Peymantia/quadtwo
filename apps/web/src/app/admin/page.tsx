@@ -2264,18 +2264,16 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
   const [result, setResult] = useState<Result | null>(null);
 
   const [doInbounds, setDoInbounds] = useState(false);
-  const [inboundMode, setInboundMode] = useState<"set" | "add">("add");
   const [inboundIdsRaw, setInboundIdsRaw] = useState("1,2,3");
 
   const [doLimitIp, setDoLimitIp] = useState(false);
-  const [limitIpMode, setLimitIpMode] = useState<"set" | "add">("set");
   const [limitIpValue, setLimitIpValue] = useState("2");
 
   const [doAddGb, setDoAddGb] = useState(false);
-  const [addGb, setAddGb] = useState("10");
+  const [addGb, setAddGb] = useState("1");
 
   const [doAddDays, setDoAddDays] = useState(false);
-  const [addDays, setAddDays] = useState("30");
+  const [addDays, setAddDays] = useState("1");
 
   const [clearExpiry, setClearExpiry] = useState(false);
 
@@ -2301,16 +2299,8 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
   function summaryLines(): string[] {
     const lines: string[] = [];
-    if (doInbounds) {
-      lines.push(
-        `اینباندها (${inboundMode === "set" ? "جایگزینی" : "افزودن"}): ${inboundIdsRaw.trim() || "—"}`,
-      );
-    }
-    if (doLimitIp) {
-      lines.push(
-        `محدودیت کاربر (${limitIpMode === "set" ? "ست" : "افزودن"}): ${limitIpValue}`,
-      );
-    }
+    if (doInbounds) lines.push(`اینباندها (جایگزینی): ${inboundIdsRaw.trim() || "—"}`);
+    if (doLimitIp) lines.push(`محدودیت کاربر (IP Limit): ${limitIpValue}`);
     if (doAddGb) lines.push(`افزودن حجم: ${addGb} گیگ`);
     if (doAddDays && !clearExpiry) lines.push(`افزودن روز: ${addDays}`);
     if (clearExpiry) lines.push("حذف تاریخ انقضا (نامحدود)");
@@ -2351,10 +2341,10 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
         clearExpiry,
       };
       if (doInbounds) {
-        body.inbounds = { mode: inboundMode, idsRaw: inboundIdsRaw.trim() };
+        body.inbounds = { idsRaw: inboundIdsRaw.trim() };
       }
       if (doLimitIp) {
-        body.limitIp = { mode: limitIpMode, value: Number(limitIpValue.replace(/[^\d]/g, "") || "0") };
+        body.limitIp = { value: Number(limitIpValue.replace(/[^\d]/g, "") || "0") };
       }
       if (doAddGb) body.addGb = Number(addGb.replace(/[^\d]/g, "") || "0");
       if (doAddDays && !clearExpiry) body.addDays = Number(addDays.replace(/[^\d]/g, "") || "0");
@@ -2374,159 +2364,128 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
   return (
     <>
-      <div className="panel">
+      <div className="panel bulk-adjust">
         <h2>تغییر دسته‌جمعی</h2>
         <p className="muted" style={{ marginTop: 0 }}>
           Bulk Adjust — اعمال همزمان اینباند، محدودیت کاربر، حجم، روز یا حذف انقضا روی همه کانفیگ‌های پنل
           3x-ui (نه فقط دیتابیس ربات).
         </p>
 
-        <div className="bulk-adjust-grid">
-          <div className="bulk-op bulk-op--scope">
-            <div className="bulk-scope-row">
+        <div className="bulk-toolbar">
+          <div className="field">
+            <label>
+              محدوده سرور (
+              <span className="num">{previewCount == null ? "…" : previewCount}</span>)
+            </label>
+            <select value={panelServerId} onChange={(e) => setPanelServerId(e.target.value)}>
+              <option value="">همه پنل‌های فعال</option>
+              {panels.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button type="button" className="btn danger bulk-scope-run" disabled={busy} onClick={openApply}>
+            {busy ? "در حال اعمال…" : "اجرای تغییر دسته‌جمعی"}
+          </button>
+        </div>
+
+        <div className="bulk-cols">
+          <div className="bulk-col">
+            <div className={`bulk-op${doInbounds ? " is-on" : ""}`}>
+              <label className="bulk-op-head">
+                <input type="checkbox" checked={doInbounds} onChange={(e) => setDoInbounds(e.target.checked)} />
+                <span>اینباندها</span>
+              </label>
               <div className="field">
-                <label>محدوده سرور</label>
-                <select value={panelServerId} onChange={(e) => setPanelServerId(e.target.value)}>
-                  <option value="">همه پنل‌های فعال</option>
-                  {panels.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <label>شناسه اینباندها (جایگزینی کامل)</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  disabled={!doInbounds}
+                  value={inboundIdsRaw}
+                  onChange={(e) => setInboundIdsRaw(e.target.value)}
+                  placeholder="1,2,3 یا 1-5"
+                />
               </div>
-              <button type="button" className="btn danger bulk-scope-run" disabled={busy} onClick={openApply}>
-                {busy ? "در حال اعمال…" : "اجرای تغییر دسته‌جمعی"}
-              </button>
             </div>
-            <p className="muted bulk-op-hint">
-              تعداد تقریبی اکانت:{" "}
-              <strong className="num">{previewCount == null ? "…" : previewCount}</strong>
-            </p>
-          </div>
 
-          <div className="bulk-op">
-            <label className="sync-opt">
-              <input type="checkbox" checked={doInbounds} onChange={(e) => setDoInbounds(e.target.checked)} />
-              <span>اینباندها</span>
-            </label>
-            {doInbounds && (
-              <div className="bulk-op-fields">
-                <div className="field">
-                  <label>حالت</label>
-                  <select
-                    value={inboundMode}
-                    onChange={(e) => setInboundMode(e.target.value === "set" ? "set" : "add")}
-                  >
-                    <option value="add">افزودن (فعلی‌ها بمانند)</option>
-                    <option value="set">جایگزینی کامل</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label>شناسه اینباندها</label>
-                  <input
-                    dir="ltr"
-                    className="num"
-                    value={inboundIdsRaw}
-                    onChange={(e) => setInboundIdsRaw(e.target.value)}
-                    placeholder="1,2,3 یا 1-5"
-                  />
-                </div>
+            <div className={`bulk-op${doLimitIp ? " is-on" : ""}`}>
+              <label className="bulk-op-head">
+                <input type="checkbox" checked={doLimitIp} onChange={(e) => setDoLimitIp(e.target.checked)} />
+                <span>محدودیت کاربر (IP Limit)</span>
+              </label>
+              <div className="field">
+                <label>مقدار (۰ = نامحدود دستگاه)</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  inputMode="numeric"
+                  disabled={!doLimitIp}
+                  value={limitIpValue}
+                  onChange={(e) => setLimitIpValue(e.target.value)}
+                />
               </div>
-            )}
+            </div>
+
+            <div className={`bulk-op${clearExpiry ? " is-on" : ""}`}>
+              <label className="bulk-op-head">
+                <input
+                  type="checkbox"
+                  checked={clearExpiry}
+                  onChange={(e) => {
+                    setClearExpiry(e.target.checked);
+                    if (e.target.checked) setDoAddDays(false);
+                  }}
+                />
+                <span>حذف تاریخ انقضا (نامحدود کردن تاریخ)</span>
+              </label>
+            </div>
           </div>
 
-          <div className="bulk-op">
-            <label className="sync-opt">
-              <input type="checkbox" checked={doLimitIp} onChange={(e) => setDoLimitIp(e.target.checked)} />
-              <span>محدودیت کاربر (IP Limit)</span>
-            </label>
-            {doLimitIp && (
-              <div className="bulk-op-fields">
-                <div className="field">
-                  <label>حالت</label>
-                  <select
-                    value={limitIpMode}
-                    onChange={(e) => setLimitIpMode(e.target.value === "add" ? "add" : "set")}
-                  >
-                    <option value="set">ست کردن مقدار</option>
-                    <option value="add">افزودن به مقدار فعلی</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label>مقدار (۰ = نامحدود دستگاه)</label>
-                  <input
-                    dir="ltr"
-                    className="num"
-                    inputMode="numeric"
-                    value={limitIpValue}
-                    onChange={(e) => setLimitIpValue(e.target.value)}
-                  />
-                </div>
+          <div className="bulk-col">
+            <div className={`bulk-op${doAddGb ? " is-on" : ""}`}>
+              <label className="bulk-op-head">
+                <input type="checkbox" checked={doAddGb} onChange={(e) => setDoAddGb(e.target.checked)} />
+                <span>افزودن حجم (گیگ)</span>
+              </label>
+              <div className="field">
+                <label>گیگابایت</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  inputMode="numeric"
+                  disabled={!doAddGb}
+                  value={addGb}
+                  onChange={(e) => setAddGb(e.target.value)}
+                />
+                <p className="muted bulk-op-hint">اکانت‌های نامحدود رد می‌شوند.</p>
               </div>
-            )}
-          </div>
+            </div>
 
-          <div className="bulk-op">
-            <label className="sync-opt">
-              <input type="checkbox" checked={doAddGb} onChange={(e) => setDoAddGb(e.target.checked)} />
-              <span>افزودن حجم (گیگ)</span>
-            </label>
-            {doAddGb && (
-              <div className="bulk-op-fields">
-                <div className="field bulk-op-fields__full">
-                  <label>گیگابایت</label>
-                  <input
-                    dir="ltr"
-                    className="num"
-                    inputMode="numeric"
-                    value={addGb}
-                    onChange={(e) => setAddGb(e.target.value)}
-                  />
-                  <p className="muted bulk-op-hint">اکانت‌های نامحدود رد می‌شوند.</p>
-                </div>
+            <div className={`bulk-op${doAddDays ? " is-on" : ""}${clearExpiry ? " is-blocked" : ""}`}>
+              <label className="bulk-op-head">
+                <input
+                  type="checkbox"
+                  checked={doAddDays}
+                  disabled={clearExpiry}
+                  onChange={(e) => setDoAddDays(e.target.checked)}
+                />
+                <span>افزودن روز به انقضا</span>
+              </label>
+              <div className="field">
+                <label>تعداد روز</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  inputMode="numeric"
+                  disabled={!doAddDays || clearExpiry}
+                  value={addDays}
+                  onChange={(e) => setAddDays(e.target.value)}
+                />
               </div>
-            )}
-          </div>
-
-          <div className="bulk-op">
-            <label className="sync-opt">
-              <input
-                type="checkbox"
-                checked={doAddDays}
-                disabled={clearExpiry}
-                onChange={(e) => setDoAddDays(e.target.checked)}
-              />
-              <span>افزودن روز به انقضا</span>
-            </label>
-            {doAddDays && !clearExpiry && (
-              <div className="bulk-op-fields">
-                <div className="field bulk-op-fields__full">
-                  <label>تعداد روز</label>
-                  <input
-                    dir="ltr"
-                    className="num"
-                    inputMode="numeric"
-                    value={addDays}
-                    onChange={(e) => setAddDays(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="bulk-op">
-            <label className="sync-opt">
-              <input
-                type="checkbox"
-                checked={clearExpiry}
-                onChange={(e) => {
-                  setClearExpiry(e.target.checked);
-                  if (e.target.checked) setDoAddDays(false);
-                }}
-              />
-              <span>حذف تاریخ انقضا (نامحدود کردن تاریخ)</span>
-            </label>
+            </div>
           </div>
         </div>
       </div>
