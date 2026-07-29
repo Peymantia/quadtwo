@@ -24,6 +24,8 @@ export type ConfigGroup = {
   /** panel group name, or null for "all" */
   panelGroup: string | null;
   partnerUserId?: string;
+  /** Emoji kind for Telegram group picker buttons */
+  kind?: "admin" | "partner" | "wholesale" | "tg" | "panel" | "all";
 };
 
 export type ConfigListItem = {
@@ -214,20 +216,24 @@ export async function listConfigGroups(): Promise<ConfigGroup[]> {
     const g = (u.panelGroup || "").trim();
     if (!g || seen.has(g.toLowerCase())) continue;
     seen.add(g.toLowerCase());
-    const roleTag = u.role === "wholesale" ? "عمده" : u.role === "admin" ? "ادمین" : "همکار";
+    const roleTag = u.role === "wholesale" ? "عمده‌فروش" : u.role === "admin" ? "ادمین" : "همکار";
+    const kind =
+      u.role === "wholesale" ? "wholesale" : u.role === "admin" ? "admin" : "partner";
     const name = u.agentName?.trim() || g;
     groups.push({
       key: `p${u.id}`,
       label: `${roleTag}: ${name}`,
       panelGroup: g,
       partnerUserId: u.id,
+      kind,
     });
   }
 
   groups.push({
     key: "tg",
-    label: "Telegram (کاربران عادی)",
+    label: "کاربران تلگرام",
     panelGroup: TELEGRAM_GROUP,
+    kind: "tg",
   });
   seen.add(TELEGRAM_GROUP.toLowerCase());
 
@@ -239,6 +245,7 @@ export async function listConfigGroups(): Promise<ConfigGroup[]> {
       key: encodePanelGroupKey(name),
       label: `پنل: ${name}`,
       panelGroup: name,
+      kind: "panel",
     });
   }
 
@@ -246,6 +253,7 @@ export async function listConfigGroups(): Promise<ConfigGroup[]> {
     key: "all",
     label: "تمام کانفیگ‌ها",
     panelGroup: null,
+    kind: "all",
   });
 
   return groups;

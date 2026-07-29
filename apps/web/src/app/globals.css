@@ -2814,6 +2814,48 @@ button.pay-dest-number:active,
   }
 }
 
+.bulk-op {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.bulk-op > .sync-opt {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.88rem;
+  padding: 10px 12px;
+}
+
+.bulk-op-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.bulk-op-fields .field {
+  margin: 0;
+  min-width: 0;
+}
+
+.bulk-op-fields__full {
+  grid-column: 1 / -1;
+}
+
+.bulk-op-hint {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 640px) {
+  .bulk-op-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---- Panel plan → server routing ---- */
 .panel-route-card {
   border: 1px solid var(--line);

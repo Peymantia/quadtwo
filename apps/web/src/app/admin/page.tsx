@@ -2399,14 +2399,14 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
         <h3 style={{ fontSize: "0.95rem", marginBottom: 8 }}>عملیات</h3>
 
-        <div className="row-card" style={{ marginBottom: 10, padding: "12px 14px" }}>
-          <label className="sync-opt" style={{ marginBottom: doInbounds ? 10 : 0 }}>
+        <div className="bulk-op">
+          <label className="sync-opt">
             <input type="checkbox" checked={doInbounds} onChange={(e) => setDoInbounds(e.target.checked)} />
             <span>اینباندها</span>
           </label>
           {doInbounds && (
-            <div className="grid" style={{ gap: 10 }}>
-              <div className="field" style={{ margin: 0 }}>
+            <div className="bulk-op-fields">
+              <div className="field">
                 <label>حالت</label>
                 <select
                   value={inboundMode}
@@ -2416,7 +2416,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
                   <option value="set">جایگزینی کامل</option>
                 </select>
               </div>
-              <div className="field" style={{ margin: 0 }}>
+              <div className="field">
                 <label>شناسه اینباندها</label>
                 <input
                   dir="ltr"
@@ -2430,14 +2430,14 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
           )}
         </div>
 
-        <div className="row-card" style={{ marginBottom: 10, padding: "12px 14px" }}>
-          <label className="sync-opt" style={{ marginBottom: doLimitIp ? 10 : 0 }}>
+        <div className="bulk-op">
+          <label className="sync-opt">
             <input type="checkbox" checked={doLimitIp} onChange={(e) => setDoLimitIp(e.target.checked)} />
-            <span>محدودیت کاربر (limitIp)</span>
+            <span>محدودیت کاربر (IP Limit)</span>
           </label>
           {doLimitIp && (
-            <div className="grid" style={{ gap: 10 }}>
-              <div className="field" style={{ margin: 0 }}>
+            <div className="bulk-op-fields">
+              <div className="field">
                 <label>حالت</label>
                 <select
                   value={limitIpMode}
@@ -2447,7 +2447,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
                   <option value="add">افزودن به مقدار فعلی</option>
                 </select>
               </div>
-              <div className="field" style={{ margin: 0 }}>
+              <div className="field">
                 <label>مقدار (۰ = نامحدود دستگاه)</label>
                 <input
                   dir="ltr"
@@ -2461,30 +2461,30 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
           )}
         </div>
 
-        <div className="row-card" style={{ marginBottom: 10, padding: "12px 14px" }}>
-          <label className="sync-opt" style={{ marginBottom: doAddGb ? 10 : 0 }}>
+        <div className="bulk-op">
+          <label className="sync-opt">
             <input type="checkbox" checked={doAddGb} onChange={(e) => setDoAddGb(e.target.checked)} />
             <span>افزودن حجم (گیگ)</span>
           </label>
           {doAddGb && (
-            <div className="field" style={{ margin: 0 }}>
-              <label>گیگابایت</label>
-              <input
-                dir="ltr"
-                className="num"
-                inputMode="numeric"
-                value={addGb}
-                onChange={(e) => setAddGb(e.target.value)}
-              />
-              <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.78rem" }}>
-                اکانت‌های نامحدود رد می‌شوند.
-              </p>
+            <div className="bulk-op-fields">
+              <div className="field bulk-op-fields__full">
+                <label>گیگابایت</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  inputMode="numeric"
+                  value={addGb}
+                  onChange={(e) => setAddGb(e.target.value)}
+                />
+                <p className="muted bulk-op-hint">اکانت‌های نامحدود رد می‌شوند.</p>
+              </div>
             </div>
           )}
         </div>
 
-        <div className="row-card" style={{ marginBottom: 10, padding: "12px 14px" }}>
-          <label className="sync-opt" style={{ marginBottom: doAddDays ? 10 : 0 }}>
+        <div className="bulk-op">
+          <label className="sync-opt">
             <input
               type="checkbox"
               checked={doAddDays}
@@ -2494,20 +2494,22 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
             <span>افزودن روز به انقضا</span>
           </label>
           {doAddDays && !clearExpiry && (
-            <div className="field" style={{ margin: 0 }}>
-              <label>تعداد روز</label>
-              <input
-                dir="ltr"
-                className="num"
-                inputMode="numeric"
-                value={addDays}
-                onChange={(e) => setAddDays(e.target.value)}
-              />
+            <div className="bulk-op-fields">
+              <div className="field bulk-op-fields__full">
+                <label>تعداد روز</label>
+                <input
+                  dir="ltr"
+                  className="num"
+                  inputMode="numeric"
+                  value={addDays}
+                  onChange={(e) => setAddDays(e.target.value)}
+                />
+              </div>
             </div>
           )}
         </div>
 
-        <div className="row-card" style={{ marginBottom: 14, padding: "12px 14px" }}>
+        <div className="bulk-op">
           <label className="sync-opt">
             <input
               type="checkbox"
@@ -2521,14 +2523,9 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
           </label>
         </div>
 
-        <div className="actions">
-          <button type="button" className="btn danger" disabled={busy} onClick={openApply}>
-            {busy ? "در حال اعمال…" : "اجرای تغییر دسته‌جمعی"}
-          </button>
-          <button type="button" className="btn ghost" disabled={busy} onClick={() => void refreshPreview()}>
-            به‌روز کردن تعداد
-          </button>
-        </div>
+        <button type="button" className="btn danger wide" disabled={busy} onClick={openApply}>
+          {busy ? "در حال اعمال…" : "اجرای تغییر دسته‌جمعی"}
+        </button>
       </div>
 
       {result && (

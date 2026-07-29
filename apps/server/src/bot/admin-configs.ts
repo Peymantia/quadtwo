@@ -25,22 +25,28 @@ export async function showConfigGroups(ctx: Context, edit = false) {
   }
   const groups = await listConfigGroups();
   const text = [
-    "📋 نمایش کلیه سرویس‌ها",
+    "👀 نمایش کلیه سرویس‌ها",
     "",
     "یک گروه (همکار) را انتخاب کنید، یا همه کانفیگ‌ها را ببینید.",
   ].join("\n");
 
   const kb = new InlineKeyboard();
   for (const g of groups) {
-    if (g.key === "all") {
-      kb.text(`📦 ${g.label}`, `cfg:list:all:0`).success().row();
-    } else if (g.key === "tg") {
-      kb.text(`📱 ${g.label}`, `cfg:list:tg:0`).row();
-    } else {
-      kb.text(`🤝 ${g.label}`, `cfg:list:${g.key}:0`).row();
-    }
+    const emoji =
+      g.kind === "admin"
+        ? "👑"
+        : g.kind === "partner" || g.kind === "wholesale"
+          ? "👨‍💼"
+          : g.kind === "tg"
+            ? "❤️"
+            : g.kind === "panel"
+              ? "🖥"
+              : "📦";
+    const btn = kb.text(`${emoji} ${g.label}`, `cfg:list:${g.key}:0`);
+    if (g.key === "all") btn.success();
+    kb.row();
   }
-  kb.text("« بستن", "cfg:close");
+  kb.text("❌ بستن", "cfg:close");
 
   if (edit && ctx.callbackQuery?.message) {
     await ctx.editMessageText(text, { reply_markup: kb });

@@ -98,7 +98,9 @@ export type EmojiKey =
   | "discount"
   | "crypto"
   | "rotate_sub"
-  | "base64_link";
+  | "base64_link"
+  | "office_worker"
+  | "telegram_heart";
 
 /** Current bot Unicode glyphs (Universal style). */
 export const UNIVERSAL: Record<EmojiKey, string> = {
@@ -114,7 +116,7 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   dash_otp: "🔐",
   config_lookup: "🔎",
   partner_request: "🤝",
-  all_configs: "📋",
+  all_configs: "👀",
   agent_panel: "💼",
   control_center: "🎛",
   hide_keyboard: "⬇️",
@@ -199,6 +201,9 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   rotate_sub: "🔀",
   /** Same glyph as my_services — disambiguated by label via resolvePremiumId */
   base64_link: "📦",
+  office_worker: "👨‍💼",
+  /** Same glyph as heart — disambiguated by label via resolvePremiumId */
+  telegram_heart: "❤️",
 };
 
 /**
@@ -218,7 +223,7 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   dash_otp: "5303479226882603449",
   config_lookup: "6318752565865482087",
   partner_request: "6296508771325707891",
-  all_configs: "5319153143093665867",
+  all_configs: "5210956306952758910",
   agent_panel: "5269402556924180806",
   control_center: "5361741454685256344",
   hide_keyboard: "5193202823411546657",
@@ -292,7 +297,7 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   download: "5406745015365943482",
   sales_cats: "6168111153508519591",
   broadcast: "5458603043203327669",
-  panels: "5456312597273923475",
+  panels: "5282843764451195532",
   import_excel: "5321221045292638119",
   agent_name: "5461117441612462242",
   dash_web: "5447410659077661506",
@@ -308,6 +313,10 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   rotate_sub: "5292122921035133343",
   /** Base64 config link button */
   base64_link: "5208962449989988262",
+  /** Partner / wholesale role in config group picker */
+  office_worker: "5429568755044720802",
+  /** Telegram users group button */
+  telegram_heart: "6296218646284863141",
 };
 
 /** When several keys share a glyph, pick ID from surrounding label text. */
@@ -357,8 +366,15 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
   if (glyph === "💼") {
     return PREMIUM_IDS.agent_panel;
   }
-  if (glyph === "📋") {
+  if (glyph === "👀") {
     return PREMIUM_IDS.all_configs;
+  }
+  if (glyph === "👨‍💼") {
+    return PREMIUM_IDS.office_worker;
+  }
+  if (glyph === "❤️" || glyph === "❤") {
+    if (after.includes("تلگرام")) return PREMIUM_IDS.telegram_heart;
+    return PREMIUM_IDS.heart;
   }
   if (glyph === "📥") {
     if (after.includes("اکسل")) return PREMIUM_IDS.import_excel;

@@ -19,7 +19,7 @@ export const BTN = {
   dashOtp: "🔐 داشبورد | وب اپ",
   configLookup: "🔎 مشاهده سریع",
   partner: "🤝 درخواست نمایندگی",
-  allConfigs: "📋 نمایش کلیه سرویس‌ها",
+  allConfigs: "👀 نمایش کلیه سرویس‌ها",
   /** @deprecated not on main menu */
   partnerPanel: "💼 پنل نماینده / عمده",
   agentPanel: "💼 مشخصات نماینده",
