@@ -1832,11 +1832,11 @@ button.stat.stat-link:active {
   white-space: nowrap;
 }
 
-/* Open upward + inward (toward date field) so it stays inside the card */
+/* Open downward + inward (toward date field) so it stays inside the card */
 .expiry-preset-dropdown {
   position: absolute;
-  top: auto;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
+  bottom: auto;
   inset-inline-end: 0;
   inset-inline-start: auto;
   z-index: 50;
