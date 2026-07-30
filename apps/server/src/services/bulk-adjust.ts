@@ -4,7 +4,7 @@
 import { SubscriptionStatus, type Subscription } from "@prisma/client";
 import { prisma } from "../db.js";
 import type { XuiClient } from "../panel/xui-client.js";
-import { gbToBytes } from "../utils/format.js";
+import { gbToBytes, bytesToGb } from "../utils/format.js";
 import { parseInboundIds } from "./inbounds.js";
 import { expiryFromPanel } from "./panel-expiry.js";
 import { listDetailedPanelClients, listEmailsInPanelGroup, syncClientInbounds } from "./admin-configs.js";
@@ -236,14 +236,18 @@ async function adjustOne(
     if (!Number.isFinite(curBytes) || curBytes <= 0) {
       skipNotes.push("حجم نامحدود");
     } else {
-      const curGb = Math.max(1, Math.round(curBytes / 1024 ** 3));
-      const newGb = curGb + input.addGb;
-      if (newGb < 1) {
-        skipNotes.push("حجم کمتر از ۱ گیگ نمی‌شود");
-      } else if (newGb !== curGb) {
-        patch.totalGB = gbToBytes(newGb);
-        changed = true;
-        if (sub) dbData.trafficGb = newGb;
+      const curGb = bytesToGb(curBytes) ?? 0;
+      if (curGb <= 0) {
+        skipNotes.push("حجم نامعتبر");
+      } else {
+        const newGb = Math.round((curGb + input.addGb) * 10) / 10;
+        if (newGb < 1) {
+          skipNotes.push("حجم کمتر از ۱ گیگ نمی‌شود");
+        } else if (newGb !== curGb) {
+          patch.totalGB = gbToBytes(newGb);
+          changed = true;
+          if (sub) dbData.trafficGb = newGb;
+        }
       }
     }
   }

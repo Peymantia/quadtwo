@@ -1,5 +1,5 @@
 import { prisma } from "../db.js";
-import { formatExpiryLabel, formatTraffic } from "../utils/format.js";
+import { formatExpiryLabel, formatTraffic, bytesToGb } from "../utils/format.js";
 import { resolvePanelForSubscription } from "./panel-servers.js";
 import { syncSubscriptionExpiryFromPanel, refreshSubscriptionSubUrl } from "./provision.js";
 import { applyPanelExpiryToBotData, panelExpiryDiffersFromBot } from "./panel-expiry.js";
@@ -149,7 +149,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
       }
 
       const bytes = Number(client.totalGB ?? 0);
-      const panelGb = bytes > 0 ? Math.max(1, Math.round(bytes / 1024 ** 3)) : null;
+      const panelGb = bytes > 0 ? bytesToGb(bytes) : null;
       if (panelGb !== fresh.trafficGb && (bytes > 0 || client.totalGB === 0 || client.totalGB == null)) {
         // totalGB 0 → unlimited (null)
         const nextGb = !bytes ? null : panelGb;
@@ -225,7 +225,7 @@ export async function getSubscriptionTrafficBytes(
       usedBytes = traf.used;
       if (traf.total > 0) {
         totalBytes = traf.total;
-        totalGb = Math.max(1, Math.round(traf.total / 1024 ** 3));
+        totalGb = bytesToGb(traf.total) ?? totalGb;
       }
     }
   } catch {

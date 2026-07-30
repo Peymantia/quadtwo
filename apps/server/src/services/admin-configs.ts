@@ -6,7 +6,7 @@ import { createXuiFromEnv, type XuiClient } from "../panel/xui-client.js";
 import { env, adminIds } from "../config/env.js";
 import { TELEGRAM_GROUP } from "./panel-groups.js";
 import { formatXuiError } from "../panel/xui-errors.js";
-import { gbToBytes, shortCode, randomSubId } from "../utils/format.js";
+import { gbToBytes, bytesToGb, shortCode, randomSubId } from "../utils/format.js";
 import { resolveSubUrl } from "./provision.js";
 import { sanitizeSubBase } from "./sub-url.js";
 import { getSetting, setSetting } from "./settings.js";
@@ -791,7 +791,7 @@ export async function getConfigDetail(opts: {
   const panelClient = hit?.client ?? null;
   const bytes = Number(panelClient?.totalGB ?? 0);
   let panelGb =
-    !panelClient || bytes <= 0 ? null : Math.max(1, Math.round(bytes / 1024 ** 3));
+    !panelClient || bytes <= 0 ? null : bytesToGb(bytes);
 
   // Get used traffic (up+down bytes) and refine total from traffic API
   let usedTrafficBytes = 0;
@@ -801,7 +801,7 @@ export async function getConfigDetail(opts: {
       if (t) {
         usedTrafficBytes = t.used;
         if (t.total > 0) {
-          panelGb = Math.max(1, Math.round(t.total / 1024 ** 3));
+          panelGb = bytesToGb(t.total);
         }
       }
     } catch {
@@ -911,7 +911,9 @@ export async function updateConfig(opts: {
     }
     if (opts.trafficGb !== undefined) {
       data.trafficGb =
-        opts.trafficGb === null || opts.trafficGb <= 0 ? null : Math.floor(opts.trafficGb);
+        opts.trafficGb === null || opts.trafficGb <= 0
+          ? null
+          : Math.round(Number(opts.trafficGb) * 10) / 10;
     }
     if (opts.expiresAt !== undefined && opts.expiresAt) {
       const d = new Date(opts.expiresAt);
@@ -991,12 +993,6 @@ type DetailedPanelClient = {
   limitIp: number;
   comment: string | null;
 };
-
-function bytesToGb(totalGB: number | undefined): number | null {
-  const bytes = Number(totalGB ?? 0);
-  if (!Number.isFinite(bytes) || bytes <= 0) return null;
-  return Math.max(1, Math.round(bytes / 1024 ** 3));
-}
 
 /** Panel comment is stored as `title | note` (same as updateConfig). */
 function parsePanelComment(comment: string | null | undefined): {

@@ -10,7 +10,26 @@ export function randomSubId(): string {
 
 export function gbToBytes(gb: number | null): number {
   if (gb === null || gb <= 0) return 0;
-  return gb * 1024 * 1024 * 1024;
+  return Math.round(gb * 1024 * 1024 * 1024);
+}
+
+/**
+ * Panel total bytes → GB with 1 decimal (e.g. 3.6).
+ * Avoids Math.round-to-int which turned 3.6G into 4G and broke usage %.
+ */
+export function bytesToGb(bytes: number | null | undefined): number | null {
+  const n = Number(bytes ?? 0);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const gb = Math.round((n / 1024 ** 3) * 10) / 10;
+  return gb > 0 ? gb : null;
+}
+
+export function formatTraffic(gb: number | null): string {
+  if (gb === null) return "نامحدود";
+  if (!Number.isFinite(gb)) return "—";
+  const n = Math.round(gb * 10) / 10;
+  const label = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  return `${label} گیگ`;
 }
 
 export function formatToman(amount: number): string {
@@ -44,11 +63,6 @@ export function ltrIsolate(value: string): string {
 /** Card number for display in RTL chats (copy-friendly, visually LTR). */
 export function formatCardNumberDisplay(number: string): string {
   return ltrIsolate(number.replace(/\s+/g, ""));
-}
-
-export function formatTraffic(gb: number | null): string {
-  if (gb === null) return "نامحدود";
-  return `${gb} گیگ`;
 }
 
 /** Days counted per billed month (panel Duration Days). */

@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { createXuiFromEnv, type XuiClient } from "../panel/xui-client.js";
 import { formatXuiError } from "../panel/xui-errors.js";
 import { env } from "../config/env.js";
-import { gbToBytes, shortCode } from "../utils/format.js";
+import { gbToBytes, bytesToGb, shortCode } from "../utils/format.js";
 import {
   createXuiFromPanel,
   listPanelServers,
@@ -46,11 +46,6 @@ export type AccountFullDetail = {
   /** Raw panel client extras for restore */
   panelClient: Record<string, unknown> | null;
 };
-
-function bytesToGb(bytes: number): number | null {
-  if (!Number.isFinite(bytes) || bytes <= 0) return null;
-  return Math.max(1, Math.round(bytes / 1024 ** 3));
-}
 
 function formatBytesFa(bytes: number): string {
   if (bytes <= 0) return "۰";

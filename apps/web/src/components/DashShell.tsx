@@ -442,11 +442,12 @@ export function DashShell(props: {
               {hasSettings && (
                 <button
                   type="button"
-                  className={`icon-btn settings-gear hide-mobile${settingsActive ? " on" : ""}`}
+                  className={`settings-btn hide-mobile${settingsActive ? " on" : ""}`}
                   aria-label="تنظیمات"
                   onClick={openSettings}
                 >
-                  <span aria-hidden="true">⚙️</span>
+                  <Icon name="gear" size={16} />
+                  <span>تنظیمات</span>
                 </button>
               )}
               <span className="role-pill">{roleLabel(props.role)}</span>

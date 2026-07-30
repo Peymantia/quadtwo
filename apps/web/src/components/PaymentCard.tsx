@@ -63,6 +63,12 @@ export function TrafficProgress({
       : usedBytes >= 1024 ** 3
         ? `${(usedBytes / 1024 ** 3).toFixed(2)} GB`
         : `${Math.round(usedBytes / 1024 ** 2)} MB`;
+  const totalLabel =
+    totalGb == null
+      ? ""
+      : Number.isInteger(totalGb)
+        ? String(totalGb)
+        : (Math.round(totalGb * 10) / 10).toFixed(1);
 
   return (
     <div className="traffic-progress" style={{ marginTop: 8 }}>
@@ -74,7 +80,7 @@ export function TrafficProgress({
       </div>
       <div className="traffic-progress-meta num">
         {totalBytes > 0
-          ? `${pct}% · ${usedLabel} از ${totalGb} GB`
+          ? `${pct}% · ${usedLabel} از ${totalLabel} GB`
           : `${usedLabel} مصرف‌شده${totalGb === null ? " (نامحدود)" : ""}`}
       </div>
     </div>

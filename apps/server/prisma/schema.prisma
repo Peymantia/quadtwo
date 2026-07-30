@@ -201,10 +201,7 @@ model Order {
   userId          String
   planId          String?
   kind            OrderKind     @default(new)
-  trafficGb       Int?
-  months          Int           @default(1)
-  price           Int
-  status          OrderStatus   @default(pending_payment)
+  trafficGb       Float?
   paymentMethod   PaymentMethod @default(card_to_card)
   receiptFileId   String?
   receiptText     String?
@@ -246,7 +243,7 @@ model Subscription {
   email           String
   clientUuid      String?
   panelSubId      String?
-  trafficGb       Int?
+  trafficGb       Float?
   /// When true, panel expiry is "start after first connect" (negative ms)
   startsOnConnect Boolean            @default(true)
   activatedAt     DateTime?
