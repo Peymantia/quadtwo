@@ -1753,6 +1753,13 @@ export function createBot() {
       return;
     }
 
+    // Admin / draft waits must win over crypto-receipt auto-capture
+    if (await handleControlCenterText(ctx, text)) return;
+    if (await handleDiscountCreateText(ctx, text)) return;
+    if (await handleMyServicesSearch(ctx, text)) return;
+    if (await handleServiceNoteText(ctx, text)) return;
+    if (await handleServiceRenameText(ctx, text)) return;
+
     // Crypto: accept tx hash / receipt text while order is pending payment
     if (!(Object.values(BTN) as string[]).includes(text) && text.length >= 6) {
       const user = await upsertUserFromTelegram(ctx.from!);
@@ -1775,12 +1782,6 @@ export function createBot() {
         return;
       }
     }
-
-    if (await handleControlCenterText(ctx, text)) return;
-    if (await handleDiscountCreateText(ctx, text)) return;
-    if (await handleMyServicesSearch(ctx, text)) return;
-    if (await handleServiceNoteText(ctx, text)) return;
-    if (await handleServiceRenameText(ctx, text)) return;
 
     if (waitingConfigLookup.has(tid)) {
       if ((Object.values(BTN) as string[]).includes(text)) {

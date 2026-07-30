@@ -1865,9 +1865,10 @@ export function registerControlCenter(bot: Bot) {
         "",
         "متن پیام را بفرستید (یا عکس/ویدیو/فایل با کپشن).",
         "بعد از پیش‌نمایش می‌توانید تأیید یا لغو کنید.",
-        "",
-        "لغو: /cancel",
       ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel").danger(),
+      },
     );
   });
 
@@ -2107,33 +2108,46 @@ async function showBroadcastPreview(
 ) {
   const tid = ctx.from!.id;
   const total = await countBroadcastRecipients(tid);
-  ccWait.set(tid, {
-    kind: "broadcast_ready",
+  const ready = {
+    kind: "broadcast_ready" as const,
     text: payload.text,
     fromChatId: payload.fromChatId,
     messageId: payload.messageId,
     preview: payload.preview,
-  });
-  await ctx.reply(
-    [
-      "📣 پیش‌نمایش پیام همگانی",
-      "",
-      "────────",
-      payload.preview,
-      "────────",
-      "",
-      `برای ${total} عضو ارسال شود؟`,
-      "(خودتان از لیست گیرندگان حذف می‌شوید.)",
-    ].join("\n"),
-    {
-      reply_markup: new InlineKeyboard()
-        .text("✅ تأیید و ارسال", "cc:broadcast:go")
-        .primary()
-        .row()
-        .text("✖️ لغو", "cc:broadcast:cancel")
-        .danger(),
-    },
-  );
+  };
+  ccWait.set(tid, ready);
+  try {
+    await ctx.reply(
+      [
+        "📣 پیش‌نمایش پیام همگانی",
+        "",
+        "────────",
+        payload.preview,
+        "────────",
+        "",
+        `برای ${total} عضو ارسال شود؟`,
+        "(خودتان از لیست گیرندگان حذف می‌شوید.)",
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text("✅ تأیید و ارسال", "cc:broadcast:go")
+          .primary()
+          .row()
+          .text("✖️ لغو", "cc:broadcast:cancel")
+          .danger(),
+      },
+    );
+  } catch (err) {
+    // Keep collecting so admin can resend; do not leave a stuck broadcast_ready without buttons
+    ccWait.set(tid, { kind: "broadcast" });
+    console.error("broadcast preview failed", err);
+    await ctx.reply(
+      `خطا در نمایش پیش‌نمایش:\n${String(err instanceof Error ? err.message : err).slice(0, 200)}\n\nمتن را دوباره بفرستید.`,
+      {
+        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel").danger(),
+      },
+    );
+  }
 }
 
 /**
@@ -2144,7 +2158,7 @@ export async function handleBroadcastMedia(ctx: Context): Promise<boolean> {
   const tid = ctx.from?.id;
   if (!tid) return false;
   const wait = ccWait.get(tid);
-  if (!wait || wait.kind !== "broadcast") return false;
+  if (!wait || (wait.kind !== "broadcast" && wait.kind !== "broadcast_ready")) return false;
   if (!(await isControlAdmin(tid))) {
     ccWait.delete(tid);
     return false;
@@ -2188,10 +2202,12 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     return false;
   }
 
-  if (wait.kind === "broadcast") {
+  if (wait.kind === "broadcast" || wait.kind === "broadcast_ready") {
     const trimmed = text.trim();
     if (!trimmed) {
-      await ctx.reply("متن خالی است. دوباره بفرستید یا /cancel");
+      await ctx.reply("متن خالی است. دوباره بفرستید.", {
+        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel").danger(),
+      });
       return true;
     }
     if (trimmed.length > 4000) {
