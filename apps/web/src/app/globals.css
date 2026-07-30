@@ -1730,7 +1730,7 @@ button.stat.stat-link:active {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
   width: 100%;
 }
@@ -1757,49 +1757,59 @@ button.stat.stat-link:active {
   max-width: none;
 }
 
-/* Discount create form: code | % | max uses | expiry | quick — one full-width row */
-.discount-codes-form {
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.85fr) minmax(0, 1.15fr) minmax(0, 1.35fr) auto;
+/*
+  Discount create: one full-width row on desktop
+  کد | درصد | حداکثر استفاده | انقضا + سریع
+*/
+.grid.discount-codes-form {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.9fr) minmax(0, 1.15fr) minmax(0, 1.55fr);
+  gap: 13px;
   align-items: end;
+  margin-bottom: 14px;
 }
 
-.discount-codes-form > .field,
-.discount-codes-form > .setting-row {
+.grid.discount-codes-form > .field {
+  margin-bottom: 0;
   min-width: 0;
 }
 
-.discount-codes-form .field.expiry-field input[type="datetime-local"] {
-  width: 100%;
-  max-width: none;
+.grid.discount-codes-form > .setting-row {
   min-width: 0;
 }
 
-.discount-codes-form .discount-expiry-quick .expiry-preset-menu {
-  width: 100%;
+.grid.discount-codes-form .expiry-quick-row--inline > input[type="datetime-local"] {
+  height: 100%;
+  min-height: 46px;
+  box-sizing: border-box;
 }
 
-.discount-codes-form .discount-expiry-quick .expiry-preset-trigger {
-  width: 100%;
-  min-height: 42px;
-  padding: 8px 14px !important;
+.grid.discount-codes-form .expiry-preset-trigger {
+  height: 100%;
+  min-height: 46px;
+  padding: 0 12px !important;
+  white-space: nowrap;
 }
 
+/* Tablet: 2×2, expiry (+ quick) full width */
 @media (max-width: 1100px) {
-  .discount-codes-form {
+  .grid.discount-codes-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .discount-codes-form .discount-expiry-quick {
+  .grid.discount-codes-form .expiry-field {
     grid-column: 1 / -1;
   }
 }
 
+/* Phone: stack; keep date + سریع side by side */
 @media (max-width: 640px) {
-  .discount-codes-form {
+  .grid.discount-codes-form {
     grid-template-columns: 1fr;
   }
 
-  .discount-codes-form .discount-expiry-quick {
+  .grid.discount-codes-form .expiry-field {
     grid-column: auto;
   }
 }
