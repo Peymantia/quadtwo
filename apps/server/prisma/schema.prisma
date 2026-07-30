@@ -203,7 +203,8 @@ model Order {
   kind            OrderKind     @default(new)
   trafficGb       Float?
   months          Int           @default(1)
-  price           Int
+  /// Default 0 only so schema push can re-add the column after accidental drop; app always sets real price.
+  price           Int           @default(0)
   status          OrderStatus   @default(pending_payment)
   paymentMethod   PaymentMethod @default(card_to_card)
   receiptFileId   String?
