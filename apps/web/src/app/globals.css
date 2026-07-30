@@ -1757,6 +1757,28 @@ button.stat.stat-link:active {
   max-width: none;
 }
 
+/* Discount form: expiry needs full width on narrow screens (datetime + «سریع») */
+@media (max-width: 900px) {
+  .discount-codes-form .discount-max-uses-field,
+  .discount-codes-form .field.expiry-field {
+    grid-column: 1 / -1;
+  }
+
+  .discount-codes-form .expiry-quick-row--inline {
+    gap: 10px;
+  }
+
+  .discount-codes-form .expiry-quick-row--inline > input[type="datetime-local"] {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .discount-codes-form .expiry-preset-trigger {
+    min-height: 42px;
+    padding: 8px 12px !important;
+  }
+}
+
 .expiry-quick-chips {
   gap: 6px;
 }

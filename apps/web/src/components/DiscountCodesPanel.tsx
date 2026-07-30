@@ -171,7 +171,7 @@ export function DiscountCodesPanel({
         {!enabled ? " — فعلاً توسط ادمین خاموش است (ادمین همچنان می‌تواند کد بسازد)." : ""}
       </p>
 
-      <div className="grid" style={{ marginBottom: 14 }}>
+      <div className="grid discount-codes-form" style={{ marginBottom: 14 }}>
         <div className="field">
           <label>کد</label>
           <input
@@ -191,7 +191,7 @@ export function DiscountCodesPanel({
             disabled={busy}
           />
         </div>
-        <div className="field">
+        <div className="field discount-max-uses-field">
           <label>حداکثر استفاده (خالی = نامحدود)</label>
           <input
             className="num"
@@ -201,9 +201,16 @@ export function DiscountCodesPanel({
             disabled={busy}
           />
         </div>
-          <div className="field expiry-field">
+        <div className="field expiry-field">
             <label>انقضا (اختیاری)</label>
             <div className="expiry-quick-row expiry-quick-row--inline">
+              <input
+                type="datetime-local"
+                dir="ltr"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                disabled={busy}
+              />
               <div className="expiry-preset-menu" ref={expiryMenuRef}>
                 <button
                   type="button"
@@ -231,13 +238,6 @@ export function DiscountCodesPanel({
                   </div>
                 )}
               </div>
-              <input
-                type="datetime-local"
-                dir="ltr"
-                value={expiresAt}
-                onChange={(e) => setExpiresAt(e.target.value)}
-                disabled={busy}
-              />
             </div>
           </div>
         <div className="field" style={{ gridColumn: "1 / -1" }}>
