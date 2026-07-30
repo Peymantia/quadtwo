@@ -17,7 +17,7 @@ import {
   payOrderWithWallet,
   rejectOrder,
 } from "../services/orders.js";
-import { listPriceMatrix, upsertPriceCell, isOfferCategory, listOfferPlans } from "../services/pricing.js";
+import { listPriceMatrix, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, listOfferPlans, listFixedPlans } from "../services/pricing.js";
 import {
   provisionOrder,
   refreshSubscriptionSubUrl,
@@ -80,6 +80,7 @@ import {
   setDraftNameMode,
   setDraftDiscountCode,
   setDraftOfferPlan,
+  setDraftFixedPlan,
 } from "./draft.js";
 import {
   isDiscountCodesEnabled,
@@ -256,7 +257,7 @@ async function showBuyCategoryPicker(ctx: Context, edit = false) {
   }
   if (keys.length === 1 && cats[keys[0]!] === true) {
     await setDraftCategory(BigInt(ctx.from!.id), keys[0]!);
-    if (isOfferCategory(keys[0])) await showOfferPlanPicker(ctx, edit);
+    if (isFixedSingleServiceCategory(keys[0])) await showFixedPlanPicker(ctx, keys[0]!, edit);
     else await showBuyWizard(ctx, edit);
     return;
   }
@@ -392,20 +393,25 @@ async function showRenewWizard(
   }
 }
 
-async function showOfferPlanPicker(ctx: Context, edit = false) {
+async function showFixedPlanPicker(ctx: Context, category: string, edit = false) {
   const user = await upsertUserFromTelegram(ctx.from!);
-  const roleUser = withEffectiveRole(user, ctx.from!.id);
-  const plans = await listOfferPlans();
+  const cat = category.trim().toLowerCase();
+  const plans = await listFixedPlans(cat);
+  const labels = await getCategoryLabels();
+  const catLabel = labels[cat] || (cat === "offer" ? "پیشنهاد ویژه" : cat === "unlimited" ? "نامحدود" : cat === "national" ? "نت ملی" : cat);
+  const star = cat === "offer" ? "⭐ " : "";
+
   if (!plans.length) {
-    await ctx.reply("فعلاً پلن پیشنهاد ویژه‌ای تعریف نشده است.");
+    await ctx.reply(`فعلاً پلنی برای «${catLabel}» تعریف نشده است.`);
     return;
   }
   if (plans.length === 1) {
     const p = plans[0]!;
-    await setDraftOfferPlan(BigInt(ctx.from!.id), {
+    await setDraftFixedPlan(BigInt(ctx.from!.id), {
       id: p.id,
       trafficGb: p.trafficGb,
       months: p.months,
+      category: cat,
     });
     await showBuyWizard(ctx, edit);
     return;
@@ -417,18 +423,24 @@ async function showOfferPlanPicker(ctx: Context, edit = false) {
     const p = plans[i]!;
     const priced = await draftPrice(
       user,
-      { trafficGb: p.trafficGb, months: p.months, unlimited: p.trafficGb == null, category: "offer" },
+      {
+        trafficGb: p.trafficGb,
+        months: p.months,
+        unlimited: cat === "unlimited" || p.trafficGb == null,
+        category: cat,
+      },
       ctx.from!.id,
     );
-    const vol = p.trafficGb == null ? "نامحدود" : formatTraffic(p.trafficGb);
+    const vol = cat === "unlimited" || p.trafficGb == null ? "نامحدود" : formatTraffic(p.trafficGb);
     const title = p.title?.trim() || `${vol} · ${p.months} ماه`;
     const price = priced ? formatToman(priced.price) : "—";
-    kb.text(`⭐ ${title} · ${price}`.slice(0, 64), `buy:offer:${p.id}`);
+    const cb = cat === "offer" ? `buy:offer:${p.id}` : `buy:fixed:${cat}:${p.id}`;
+    kb.text(`${star}${title} · ${price}`.slice(0, 64), cb);
     applyInlineButtonStyle(kb, styles[i]!);
     kb.row();
   }
   kb.text("◀️ بازگشت", "buy:back:cat").text("❌ انصراف", "buy:cat:cancel");
-  const text = "⭐ پیشنهاد ویژه\n\nیکی از پلن‌های ثابت را انتخاب کنید:";
+  const text = `${star}${catLabel}\n\nیکی از پلن‌های ثابت را انتخاب کنید:`;
   if (edit && ctx.callbackQuery?.message) {
     try {
       await ctx.editMessageText(text, { reply_markup: kb });
@@ -440,13 +452,18 @@ async function showOfferPlanPicker(ctx: Context, edit = false) {
   await ctx.reply(text, { reply_markup: kb });
 }
 
+async function showOfferPlanPicker(ctx: Context, edit = false) {
+  return showFixedPlanPicker(ctx, "offer", edit);
+}
+
 async function showBuyWizard(ctx: Context, edit = false) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
   const roleUser = withEffectiveRole(user, ctx.from!.id);
   const limitIp = await resolvePurchaseLimitIp(draft, roleUser.role);
   const priced = await draftPrice(user, draft, ctx.from!.id);
-  const qty = Math.max(1, draft.quantity);
+  const fixedSingle = isFixedSingleServiceCategory(draft.category);
+  const qty = fixedSingle ? 1 : Math.max(1, draft.quantity);
   const baseTotal = priced ? priced.price * qty : null;
   let discountAmount: number | null = null;
   let priceAfterDiscount: number | null = null;
@@ -1035,8 +1052,8 @@ export function createBot() {
     }
     try {
       await setDraftCategory(BigInt(ctx.from!.id), cat);
-      if (isOfferCategory(cat)) {
-        await showOfferPlanPicker(ctx, true);
+      if (isFixedSingleServiceCategory(cat)) {
+        await showFixedPlanPicker(ctx, cat, true);
       } else {
         await showBuyWizard(ctx, true);
       }
@@ -1059,6 +1076,25 @@ export function createBot() {
       id: plan.id,
       trafficGb: plan.trafficGb,
       months: plan.months,
+    });
+    await showBuyWizard(ctx, true);
+  });
+
+  bot.callbackQuery(/^buy:fixed:(unlimited|national):(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireChannel(ctx))) return;
+    const cat = String(ctx.match![1] || "");
+    const id = String(ctx.match![2] || "");
+    const plan = (await listFixedPlans(cat)).find((p) => p.id === id);
+    if (!plan) {
+      await ctx.reply("این پلن پیدا نشد.");
+      return;
+    }
+    await setDraftFixedPlan(BigInt(ctx.from!.id), {
+      id: plan.id,
+      trafficGb: plan.trafficGb,
+      months: plan.months,
+      category: cat,
     });
     await showBuyWizard(ctx, true);
   });
@@ -1097,7 +1133,7 @@ export function createBot() {
       return;
     }
     await setDraftCategory(BigInt(ctx.from!.id), "national");
-    await showBuyWizard(ctx, true);
+    await showFixedPlanPicker(ctx, "national", true);
   });
   bot.callbackQuery("m:renew", async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -1400,10 +1436,10 @@ export function createBot() {
           createdAt: { gte: new Date(Date.now() - 15_000) },
           trafficGb: draft.unlimited ? null : draft.trafficGb,
           months: draft.months,
-          quantity: draft.quantity,
+          quantity: isFixedSingleServiceCategory(draft.category) ? 1 : draft.quantity,
           // Must match discount (and thus price); otherwise a code applied after first tap is ignored
           ...(draft.discountCode
-            ? { discountCode: { code: draft.discountCode.toUpperCase() } }
+            ? { discountCode: { code: normalizeDiscountCode(draft.discountCode) } }
             : { discountCodeId: null }),
         },
         orderBy: { createdAt: "desc" },
@@ -1416,7 +1452,7 @@ export function createBot() {
           trafficGb: draft.unlimited ? null : draft.trafficGb,
           months: draft.months,
           accountName,
-          quantity: draft.quantity,
+          quantity: isFixedSingleServiceCategory(draft.category) ? 1 : draft.quantity,
           category: draft.category,
           limitIp: await resolvePurchaseLimitIp(draft, withEffectiveRole(user, ctx.from!.id).role),
           discountCode: draft.discountCode,

@@ -32,7 +32,7 @@ import {
   rejectOrder,
   setOrderPaymentMethod,
 } from "../services/orders.js";
-import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, type PlanCategory } from "../services/pricing.js";
+import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
 import {
   createDiscountCode,
@@ -785,8 +785,9 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     }
 
     const offerLocked = isOfferCategory(category);
+    const fixedSingle = isFixedSingleServiceCategory(category);
     let priced = await resolvePrice(pricedUser, trafficGb, months, category);
-    if (offerLocked && body.priceCellId?.trim()) {
+    if (fixedSingle && body.priceCellId?.trim()) {
       const cell = await prisma.priceCell.findFirst({
         where: { id: body.priceCellId.trim(), active: true },
       });
@@ -800,7 +801,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       }
     }
     if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
-    const priceBefore = priced.price * (offerLocked ? 1 : qty);
+    const priceBefore = priced.price * (fixedSingle ? 1 : qty);
     let discountAmount = 0;
     let price = priceBefore;
     let discountCode: string | null = null;
@@ -834,7 +835,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       trafficGb,
       months,
       category,
-      quantity: offerLocked ? 1 : qty,
+      quantity: fixedSingle ? 1 : qty,
       priceCellId: body.priceCellId?.trim() || null,
     });
   });

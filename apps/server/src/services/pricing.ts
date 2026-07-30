@@ -43,6 +43,15 @@ export function isOfferCategory(category: string | null | undefined): boolean {
   return (category || "").trim().toLowerCase() === "offer";
 }
 
+/**
+ * Single fixed service (no volume/month/qty steppers): offer, unlimited, national.
+ * Buyer picks a priced plan card; quantity is always 1.
+ */
+export function isFixedSingleServiceCategory(category: string | null | undefined): boolean {
+  const c = (category || "").trim().toLowerCase();
+  return c === "offer" || c === "unlimited" || c === "national";
+}
+
 /** Normalize traffic for purchase (unlimited → null; national 1–20; else 10–50 ×5). */
 export function normalizePurchaseTraffic(category: string, trafficGb: number | null): number | null {
   if (category === "unlimited") return null;
@@ -234,8 +243,15 @@ export async function listGoldenOffers() {
 
 /** Active fixed plans in the `offer` category. */
 export async function listOfferPlans() {
+  return listFixedPlans("offer");
+}
+
+/** Active priced plans for a fixed single-service category (offer / unlimited / national). */
+export async function listFixedPlans(category: string) {
+  const cat = (category || "").trim().toLowerCase();
+  if (!isFixedSingleServiceCategory(cat)) return [];
   return prisma.priceCell.findMany({
-    where: { active: true, category: "offer" },
+    where: { active: true, category: cat },
     orderBy: [{ sortOrder: "asc" }, { months: "asc" }, { trafficGb: "asc" }],
   });
 }

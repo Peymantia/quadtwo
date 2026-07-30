@@ -255,7 +255,9 @@ export function buyWizardKeyboard(opts: {
   /** Offer title when category is offer */
   offerTitle?: string | null;
 }) {
-  const isOffer = (opts.category || "").toLowerCase() === "offer";
+  const cat = (opts.category || "").toLowerCase();
+  const isOffer = cat === "offer";
+  const isFixed = isOffer || cat === "unlimited" || cat === "national";
   const vol = opts.unlimited || opts.trafficGb == null ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
   const unit = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
   const total =
@@ -263,19 +265,30 @@ export function buyWizardKeyboard(opts: {
       ? ""
       : ` · جمع ${formatToman(opts.price * opts.quantity)}`;
   const maxMonths = opts.maxMonths ?? 1;
-  const showMonthStepper = !isOffer && maxMonths > 1 && opts.category !== "national";
+  const showMonthStepper = !isFixed && maxMonths > 1;
   const isAgent = opts.canEditAgentOptions === true;
   const canEditIp = opts.canEditIp === true;
 
   const kb = new InlineKeyboard();
 
-  if (isOffer) {
-    if (opts.offerTitle?.trim()) {
+  if (isFixed) {
+    if (isOffer && opts.offerTitle?.trim()) {
       kb.text(`⭐ ${opts.offerTitle.trim().slice(0, 40)}`, "wiz:noop").row();
     }
     kb.text(`📏 ${vol}`, "wiz:noop").row();
     kb.text(`⏳ ${opts.months} ماه`, "wiz:noop").row();
     kb.text(`💰 ${unit}${total}`, "wiz:noop").row();
+
+    if (!isOffer && opts.discountsEnabled) {
+      if (opts.discountCode) {
+        kb.text(`🎟 ${opts.discountCode}`, "wiz:discount:set")
+          .row()
+          .text("✖ حذف کد", "wiz:discount:clear")
+          .row();
+      } else {
+        kb.text("🎟 کد تخفیف", "wiz:discount:set").row();
+      }
+    }
   } else {
     kb.text("−", "wiz:vol:-")
       .text(`📏 ${vol}`, "wiz:noop")
@@ -616,7 +629,7 @@ export function renewWizardKeyboard(opts: {
 
   const kb = new InlineKeyboard();
 
-  if (opts.category === "unlimited") {
+  if (opts.category === "unlimited" || opts.category === "national") {
     kb.text(`💎 ${vol}`, "wiz:noop").row();
   } else {
     kb.text("−", `renew:vol:${opts.subId}:-`)

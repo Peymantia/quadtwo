@@ -228,23 +228,26 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   }, [variant]);
 
   const isOffer = category === "offer";
+  const isFixedSingle = isOffer || category === "unlimited" || category === "national";
   const unlimitedIpLocked = category === "unlimited";
-  const offerCells = useMemo(
-    () => (catalog.cells ?? []).filter((c) => c.category === "offer" && c.price != null),
-    [catalog.cells],
+  const fixedCells = useMemo(
+    () => (catalog.cells ?? []).filter((c) => c.category === category && c.price != null),
+    [catalog.cells, category],
   );
-  const selectedOffer = isOffer ? offerCells[Math.min(offerIndex, Math.max(0, offerCells.length - 1))] ?? null : null;
-  const showQty = variant === "agent" && !isOffer;
+  const selectedFixed = isFixedSingle
+    ? fixedCells[Math.min(offerIndex, Math.max(0, fixedCells.length - 1))] ?? null
+    : null;
+  const showQty = variant === "agent" && !isFixedSingle;
   const qty = showQty ? Math.max(1, Math.min(50, quantity)) : 1;
 
-  const volumeFixed = category === "unlimited" || (isOffer && selectedOffer?.trafficGb == null);
-  const monthsLocked = isOffer || category === "national" || Math.max(1, catalog.maxMonths || 1) <= 1;
-  const ipLocked = isOffer || unlimitedIpLocked || !allowIpEdit;
+  const volumeFixed = category === "unlimited" || (isFixedSingle && selectedFixed?.trafficGb == null);
+  const monthsLocked = isFixedSingle || Math.max(1, catalog.maxMonths || 1) <= 1;
+  const ipLocked = isFixedSingle || unlimitedIpLocked || !allowIpEdit;
 
   const volumeSteps = useMemo((): SeekStep[] => {
-    if (isOffer && selectedOffer) {
-      if (selectedOffer.trafficGb == null) return [{ value: 0, label: "∞" }];
-      return [{ value: selectedOffer.trafficGb, label: String(selectedOffer.trafficGb) }];
+    if (isFixedSingle && selectedFixed) {
+      if (selectedFixed.trafficGb == null) return [{ value: 0, label: "∞" }];
+      return [{ value: selectedFixed.trafficGb, label: String(selectedFixed.trafficGb) }];
     }
     if (volumeFixed) return [{ value: 0, label: "∞" }];
     if (catalog.pricingMode === "matrix" && catalog.cells?.length) {
@@ -257,17 +260,12 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       ].sort((a, b) => a - b);
       if (gbs.length) return gbs.map((g) => ({ value: g, label: String(g) }));
     }
-    if (category === "national") {
-      const r = catalog.volumeRules?.national ?? { min: 1, max: 20, step: 1 };
-      return steppedValues(r.min, r.max, r.step).map((g) => ({ value: g, label: String(g) }));
-    }
     const r = catalog.volumeRules?.data ?? { min: 10, max: 50, step: 5 };
     return steppedValues(r.min, r.max, r.step).map((g) => ({ value: g, label: String(g) }));
-  }, [category, catalog, volumeFixed, isOffer, selectedOffer]);
+  }, [category, catalog, volumeFixed, isFixedSingle, selectedFixed]);
 
   const monthSteps = useMemo((): SeekStep[] => {
-    if (isOffer && selectedOffer) return [{ value: selectedOffer.months, label: String(selectedOffer.months) }];
-    if (category === "national") return [{ value: 1, label: "۱" }];
+    if (isFixedSingle && selectedFixed) return [{ value: selectedFixed.months, label: String(selectedFixed.months) }];
     if (catalog.pricingMode === "matrix" && catalog.cells?.length) {
       const ms = [
         ...new Set(
@@ -278,7 +276,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     }
     const max = Math.max(1, Math.min(12, catalog.maxMonths || 1));
     return Array.from({ length: max }, (_, i) => ({ value: i + 1, label: String(i + 1) }));
-  }, [category, catalog, isOffer, selectedOffer]);
+  }, [category, catalog, isFixedSingle, selectedFixed]);
 
   const ipSteps = useMemo((): SeekStep[] => {
     if (unlimitedIpLocked) {
@@ -313,8 +311,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   }, [category]);
 
   useEffect(() => {
-    setOfferIndex((i) => Math.min(i, Math.max(0, offerCells.length - 1)));
-  }, [offerCells]);
+    setOfferIndex((i) => Math.min(i, Math.max(0, fixedCells.length - 1)));
+  }, [fixedCells]);
 
   useEffect(() => {
     setGbIndex((i) => Math.min(i, Math.max(0, volumeSteps.length - 1)));
@@ -324,14 +322,18 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     setMonthIndex((i) => Math.min(i, Math.max(0, monthSteps.length - 1)));
   }, [monthSteps]);
 
-  const trafficGb = isOffer
-    ? selectedOffer?.trafficGb ?? null
+  const trafficGb = isFixedSingle
+    ? category === "unlimited"
+      ? null
+      : selectedFixed?.trafficGb ?? null
     : volumeFixed
       ? null
       : volumeSteps[gbIndex]?.value ?? volumeSteps[0]?.value ?? 10;
-  const months = isOffer ? selectedOffer?.months ?? 1 : monthSteps[monthIndex]?.value ?? 1;
-  const limitIp = isOffer
-    ? Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0))
+  const months = isFixedSingle ? selectedFixed?.months ?? 1 : monthSteps[monthIndex]?.value ?? 1;
+  const limitIp = isFixedSingle
+    ? category === "unlimited"
+      ? 2
+      : Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0))
     : unlimitedIpLocked
       ? 2
     : ipSteps[ipIndex]?.value ?? catalog.defaultLimitIp ?? 0;
@@ -347,18 +349,22 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const discountsAllowed = Boolean(catalog.discountsEnabled) && !isOffer && variant !== "admin";
 
   useEffect(() => {
-    if (isOffer) setQuantity(1);
-  }, [isOffer]);
+    if (isFixedSingle) setQuantity(1);
+  }, [isFixedSingle]);
 
   useEffect(() => {
     let cancelled = false;
     const t = window.setTimeout(() => {
-      if (isOffer && !selectedOffer) {
+      if (isFixedSingle && !selectedFixed) {
         setPrice(null);
         setPriceBefore(null);
         setDiscountAmount(0);
         setDiscountErr(null);
-        setQuoteErr("پلنی برای پیشنهاد ویژه تعریف نشده است");
+        setQuoteErr(
+          isOffer
+            ? "پلنی برای پیشنهاد ویژه تعریف نشده است"
+            : `پلنی برای «${catalog.categoryLabels[category] || category}» تعریف نشده است`,
+        );
         setQuoting(false);
         return;
       }
@@ -375,7 +381,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           trafficGb,
           months: category === "national" ? 1 : months,
           quantity: qty,
-          priceCellId: selectedOffer?.id || null,
+          priceCellId: selectedFixed?.id || null,
           discountCode:
             discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
               ? verifiedDiscount
@@ -406,7 +412,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [category, trafficGb, months, discountsAllowed, isOffer, selectedOffer, verifiedDiscount, qty, discountCode]);
+  }, [category, trafficGb, months, discountsAllowed, isFixedSingle, selectedFixed, verifiedDiscount, qty, discountCode, catalog.categoryLabels, isOffer]);
 
   async function checkDiscountCode() {
     const code = discountCode.trim().toUpperCase();
@@ -433,7 +439,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           trafficGb,
           months: category === "national" ? 1 : months,
           quantity: qty,
-          priceCellId: selectedOffer?.id || null,
+          priceCellId: selectedFixed?.id || null,
           discountCode: code,
         },
       });
@@ -489,7 +495,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       payWithWallet: method === "wallet",
       paymentMethod: method,
       quantity: qty,
-      priceCellId: selectedOffer?.id || null,
+      priceCellId: selectedFixed?.id || null,
       discountCode:
         discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
           ? verifiedDiscount
@@ -501,13 +507,13 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     !busy &&
     !quoting &&
     price != null &&
-    (!isOffer || Boolean(selectedOffer)) &&
+    (!isFixedSingle || Boolean(selectedFixed)) &&
     (nameMode === "random" || Boolean(customName.trim()));
   const catLabel = catalog.categoryLabels[category] || category;
   const confirmLines = [
     `اکانت «${pendingName}»`,
     `نوع: ${catLabel}`,
-    selectedOffer?.title ? `پلن: ${selectedOffer.title}` : "",
+    selectedFixed?.title ? `پلن: ${selectedFixed.title}` : "",
     `حجم: ${trafficGb == null ? "نامحدود" : `${(trafficGb ?? 0).toLocaleString("fa-IR")} گیگابایت`}`,
     `مدت: ${(category === "national" ? 1 : months).toLocaleString("fa-IR")} ماه`,
     qty > 1 ? `تعداد: ${qty.toLocaleString("fa-IR")}` : "",
@@ -542,31 +548,33 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         </div>
       </div>
 
-      {isOffer ? (
+      {isFixedSingle ? (
         <div className="field">
-          <label>پیشنهاد ویژه (ثابت)</label>
+          <label>{catLabel} (ثابت)</label>
           <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
-            حجم، مدت و قیمت این پلن ثابت است؛ فقط نام اکانت را مشخص کنید. کد تخفیف اعمال نمی‌شود.
+            {isOffer
+              ? "حجم، مدت و قیمت این پلن ثابت است؛ فقط نام اکانت را مشخص کنید. کد تخفیف اعمال نمی‌شود."
+              : "این سرویس تک‌پلن است؛ حجم و مدت قابل کم و زیاد کردن نیست. یک پلن را انتخاب کنید."}
           </p>
-          {!offerCells.length ? (
+          {!fixedCells.length ? (
             <p className="muted" style={{ color: "var(--pink)", margin: 0 }}>
-              هنوز پلنی در دسته offer تعریف نشده است.
+              هنوز پلنی در این دسته تعریف نشده است.
             </p>
           ) : (
             <div className="chip-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-              {offerCells.map((cell, idx) => {
+              {fixedCells.map((cell, idx) => {
                 const vol = cell.trafficGb == null ? "نامحدود" : `${cell.trafficGb} گیگ`;
                 const title = cell.title?.trim() || `${vol} · ${cell.months} ماه`;
                 return (
                   <button
                     key={cell.id || `${cell.trafficGb}-${cell.months}-${idx}`}
                     type="button"
-                    className={`plan-card${offerIndex === idx ? " on" : ""} golden`}
+                    className={`plan-card${offerIndex === idx ? " on" : ""}${isOffer ? " golden" : ""}`}
                     style={{ textAlign: "right", cursor: "pointer", width: "100%" }}
                     onClick={() => setOfferIndex(idx)}
                     disabled={busy}
                   >
-                    <div className="plan-name">⭐ {title}</div>
+                    <div className="plan-name">{isOffer ? "⭐ " : ""}{title}</div>
                     <div className="plan-meta muted">
                       {vol} · {cell.months} ماه
                     </div>

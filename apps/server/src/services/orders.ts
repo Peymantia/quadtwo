@@ -3,7 +3,7 @@ import { prisma } from "../db.js";
 import { resolvePanelForCategory, resolvePanelForSubscription } from "./panel-servers.js";
 import { checkRenewEligibility, inferRenewCategory } from "./renew-eligibility.js";
 import { canEditLimitIp, getDefaultLimitIp, UNLIMITED_LIMIT_IP } from "./settings.js";
-import { clampMonths, normalizePurchaseTraffic, resolvePrice, isOfferCategory, findPriceCell, priceFromCell, type PlanCategory } from "./pricing.js";
+import { clampMonths, normalizePurchaseTraffic, resolvePrice, isOfferCategory, isFixedSingleServiceCategory, findPriceCell, priceFromCell, type PlanCategory } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
 import { withEffectiveRole } from "./demo-role.js";
@@ -67,6 +67,7 @@ export async function createMatrixOrder(input: {
   let trafficGb = normalizePurchaseTraffic(category, input.trafficGb);
   let months = clampMonths(input.months);
   let offerLocked = isOfferCategory(category);
+  let fixedSingle = isFixedSingleServiceCategory(category);
   let selectedCell: Awaited<ReturnType<typeof findPriceCell>> = null;
 
   if (input.priceCellId?.trim()) {
@@ -77,24 +78,39 @@ export async function createMatrixOrder(input: {
     if (offerLocked && selectedCell.category !== "offer") {
       throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
     }
+    if (fixedSingle && !isOfferCategory(selectedCell.category) && selectedCell.category !== category) {
+      // Allow locking via cell only when categories match (or offer)
+      if (selectedCell.category !== "unlimited" && selectedCell.category !== "national") {
+        throw new Error("پلن انتخاب‌شده با دسته خرید هم‌خوان نیست");
+      }
+    }
     trafficGb = selectedCell.trafficGb;
     months = clampMonths(selectedCell.months);
     if (selectedCell.category === "offer") {
       category = "offer";
       offerLocked = true;
+      fixedSingle = true;
     } else if (selectedCell.category === "unlimited") {
       category = "unlimited";
       trafficGb = null;
+      fixedSingle = true;
+    } else if (selectedCell.category === "national") {
+      category = "national";
+      fixedSingle = true;
     } else {
       category = selectedCell.category as PlanCategory;
     }
   } else if (offerLocked) {
     selectedCell = await findPriceCell(trafficGb, months, "offer");
     if (!selectedCell?.active) throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
+  } else if (fixedSingle && kind !== OrderKind.renew) {
+    selectedCell = await findPriceCell(trafficGb, months, category);
+    if (!selectedCell?.active) throw new Error("این پلن پیدا نشد یا قیمت‌گذاری نشده است");
   }
 
+  const useCellPrice = Boolean(selectedCell && (offerLocked || (fixedSingle && kind !== OrderKind.renew)));
   const priced =
-    selectedCell && offerLocked
+    useCellPrice && selectedCell
       ? pricedUser.role === "admin"
         ? { cell: selectedCell, price: 0, mode: "matrix" as const }
         : (() => {
@@ -113,7 +129,7 @@ export async function createMatrixOrder(input: {
   const limitIp = category === "unlimited" ? UNLIMITED_LIMIT_IP : baseLimitIp;
   const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;
 
-  const priceBefore = priced.price * (offerLocked ? 1 : quantity);
+  const priceBefore = priced.price * (fixedSingle ? 1 : quantity);
   const applied =
     offerLocked || !input.discountCode?.trim()
       ? null
@@ -133,7 +149,7 @@ export async function createMatrixOrder(input: {
       kind,
       trafficGb,
       months,
-      quantity: offerLocked ? 1 : quantity,
+      quantity: fixedSingle ? 1 : quantity,
       limitIp: offerLocked ? defaultIp : limitIp,
       note,
       panelServerId,

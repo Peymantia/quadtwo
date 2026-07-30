@@ -5,7 +5,32 @@ import { getSetting, setSetting } from "./settings.js";
 const CODE_RE = /^[A-Z0-9][A-Z0-9_-]{2,31}$/;
 
 export function normalizeDiscountCode(raw: string): string {
-  return raw.trim().toUpperCase().replace(/\s+/g, "");
+  // en-US so Turkish İ/i quirks never break matching; always case-insensitive
+  return raw.trim().replace(/\s+/g, "").toLocaleUpperCase("en-US");
+}
+
+/** Find a discount row by code (case-insensitive); heals legacy mixed-case rows to uppercase. */
+export async function findDiscountCodeByInput(raw: string) {
+  const normalized = normalizeDiscountCode(raw);
+  if (!normalized) return null;
+
+  const exact = await prisma.discountCode.findUnique({ where: { code: normalized } });
+  if (exact) return exact;
+
+  const hits = await prisma.$queryRaw<Array<{ id: string; code: string }>>`
+    SELECT id, code FROM DiscountCode WHERE upper(code) = ${normalized} LIMIT 1
+  `;
+  const hit = hits[0];
+  if (!hit) return null;
+
+  if (hit.code !== normalized) {
+    try {
+      await prisma.discountCode.update({ where: { id: hit.id }, data: { code: normalized } });
+    } catch {
+      /* unique conflict if both casings somehow exist — still return the row */
+    }
+  }
+  return prisma.discountCode.findUnique({ where: { id: hit.id } });
 }
 
 export async function isDiscountCodesEnabled(): Promise<boolean> {
@@ -132,7 +157,7 @@ export async function previewDiscount(opts: {
     };
   }
 
-  const row = await prisma.discountCode.findUnique({ where: { code: normalized } });
+  const row = await findDiscountCodeByInput(normalized);
   if (!row || !row.active) return { error: MSG.invalid };
 
   if (row.createdByUserId !== opts.buyer.id) {
