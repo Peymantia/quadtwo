@@ -218,10 +218,10 @@ export function DiscountCodesPanel({
                 disabled={busy}
                 aria-expanded={expiryMenuOpen}
                 aria-haspopup="menu"
-                aria-label="انتخاب سریع تاریخ انقضا"
+                aria-label="انتخاب مدت انقضا"
                 onClick={() => setExpiryMenuOpen((o) => !o)}
               >
-                سریع ▾
+                مدت ▾
               </button>
               {expiryMenuOpen && (
                 <div className="expiry-preset-dropdown" role="menu">

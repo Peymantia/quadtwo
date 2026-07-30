@@ -1759,7 +1759,7 @@ button.stat.stat-link:active {
 
 /*
   Discount create: one full-width row on desktop
-  کد | درصد | حداکثر استفاده | انقضا + سریع
+  کد | درصد | حداکثر استفاده | انقضا + مدت
 */
 .grid.discount-codes-form {
   display: grid;
@@ -1803,7 +1803,7 @@ button.stat.stat-link:active {
   }
 }
 
-/* Phone: stack; keep date + سریع side by side */
+/* Phone: stack; keep date + مدت side by side */
 @media (max-width: 640px) {
   .grid.discount-codes-form {
     grid-template-columns: 1fr;
@@ -1832,16 +1832,17 @@ button.stat.stat-link:active {
   white-space: nowrap;
 }
 
-/* Open under the date field (inward) — button sits at inline-start */
+/* Open upward + inward (toward date field) so it stays inside the card */
 .expiry-preset-dropdown {
   position: absolute;
-  top: calc(100% + 4px);
-  inset-inline-start: 0;
-  inset-inline-end: auto;
+  top: auto;
+  bottom: calc(100% + 4px);
+  inset-inline-end: 0;
+  inset-inline-start: auto;
   z-index: 50;
   min-width: 132px;
   width: max-content;
-  max-width: min(180px, calc(100vw - 48px));
+  max-width: min(200px, calc(100vw - 32px));
   padding: 6px;
   border-radius: 12px;
   border: 1px solid var(--line);
