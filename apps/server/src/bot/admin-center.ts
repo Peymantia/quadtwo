@@ -1867,7 +1867,7 @@ export function registerControlCenter(bot: Bot) {
         "بعد از پیش‌نمایش می‌توانید تأیید یا لغو کنید.",
       ].join("\n"),
       {
-        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel").danger(),
+        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel"),
       },
     );
   });
@@ -1876,9 +1876,15 @@ export function registerControlCenter(bot: Bot) {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery({ text: "لغو شد" });
     ccWait.delete(ctx.from!.id);
-    await ctx.editMessageText("ارسال همگانی لغو شد.", {
-      reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
-    });
+    try {
+      await ctx.editMessageText("ارسال همگانی لغو شد.", {
+        reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
+      });
+    } catch {
+      await ctx.reply("ارسال همگانی لغو شد.", {
+        reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
+      });
+    }
   });
 
   bot.callbackQuery("cc:broadcast:go", async (ctx) => {
@@ -2131,10 +2137,8 @@ async function showBroadcastPreview(
       {
         reply_markup: new InlineKeyboard()
           .text("✅ تأیید و ارسال", "cc:broadcast:go")
-          .primary()
           .row()
-          .text("✖️ لغو", "cc:broadcast:cancel")
-          .danger(),
+          .text("✖️ لغو", "cc:broadcast:cancel"),
       },
     );
   } catch (err) {
@@ -2144,7 +2148,7 @@ async function showBroadcastPreview(
     await ctx.reply(
       `خطا در نمایش پیش‌نمایش:\n${String(err instanceof Error ? err.message : err).slice(0, 200)}\n\nمتن را دوباره بفرستید.`,
       {
-        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel").danger(),
+        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel"),
       },
     );
   }
@@ -2206,7 +2210,7 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     const trimmed = text.trim();
     if (!trimmed) {
       await ctx.reply("متن خالی است. دوباره بفرستید.", {
-        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel").danger(),
+        reply_markup: new InlineKeyboard().text("✖️ انصراف", "cc:broadcast:cancel"),
       });
       return true;
     }
