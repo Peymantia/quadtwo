@@ -1757,25 +1757,50 @@ button.stat.stat-link:active {
   max-width: none;
 }
 
-/* Discount form: expiry needs full width on narrow screens (datetime + «سریع») */
-@media (max-width: 900px) {
-  .discount-codes-form .discount-max-uses-field,
-  .discount-codes-form .field.expiry-field {
+/* Discount create form: code | % | max uses | expiry | quick — one full-width row */
+.discount-codes-form {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.85fr) minmax(0, 1.15fr) minmax(0, 1.35fr) auto;
+  align-items: end;
+}
+
+.discount-codes-form > .field,
+.discount-codes-form > .setting-row {
+  min-width: 0;
+}
+
+.discount-codes-form .field.expiry-field input[type="datetime-local"] {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.discount-codes-form .discount-expiry-quick .expiry-preset-menu {
+  width: 100%;
+}
+
+.discount-codes-form .discount-expiry-quick .expiry-preset-trigger {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 14px !important;
+}
+
+@media (max-width: 1100px) {
+  .discount-codes-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .discount-codes-form .discount-expiry-quick {
     grid-column: 1 / -1;
   }
+}
 
-  .discount-codes-form .expiry-quick-row--inline {
-    gap: 10px;
+@media (max-width: 640px) {
+  .discount-codes-form {
+    grid-template-columns: 1fr;
   }
 
-  .discount-codes-form .expiry-quick-row--inline > input[type="datetime-local"] {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .discount-codes-form .expiry-preset-trigger {
-    min-height: 42px;
-    padding: 8px 12px !important;
+  .discount-codes-form .discount-expiry-quick {
+    grid-column: auto;
   }
 }
 
