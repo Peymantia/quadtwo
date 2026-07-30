@@ -9,7 +9,7 @@ import { TrafficProgress } from "../../components/PaymentCard";
 import { api, apiBase, formatToman, getDemoRole, getToken } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
-import { SortSelect, type ListSort } from "../../components/SortSelect";
+import { type ListSort } from "../../components/SortSelect";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
 import { SubQrModal } from "../../components/SubQrModal";
