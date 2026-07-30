@@ -2610,8 +2610,9 @@ function BulkAdjustPanel({ flash, askConfirm }: { flash: Flash; askConfirm: AskC
                 disabled={!doInbounds}
                 value={inboundIdsRaw}
                 onChange={(e) => setInboundIdsRaw(e.target.value)}
-                placeholder="1,2,3,4,5,6,7,8,9,10"
+                placeholder="1,2,3"
               />
+              <p className="muted bulk-op-hint">اینباندهای فعال. با ویرگول جدا کنید. مثال: 1,2,3</p>
             </div>
           </div>
 
@@ -3067,41 +3068,52 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
         <p className="muted" style={{ marginTop: 0 }}>
           اکانت‌های دیتابیس ربات به‌همراه کلاینت‌های زنده‌ی 3x-ui. اگر فقط روی پنل ساخته شده باشند با برچسب «فقط پنل» دیده می‌شوند.
         </p>
-        <div className="field" style={{ marginBottom: 12 }}>
-          <label>جستجو (ایمیل، کد، مالک، نوت، عنوان)</label>
-          <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="مثلاً Liv یا email یا نوت"
-          />
+        <div className="configs-filters">
+          <div className="field">
+            <label>جستجو (ایمیل، کد، مالک، نوت، عنوان)</label>
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="مثلاً email یا کد یا نوت"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="admin-config-group">گروه پنل</label>
+            <select
+              id="admin-config-group"
+              value={groupKey}
+              onChange={(e) => {
+                setGroupKey(e.target.value);
+                setPage(0);
+              }}
+            >
+              {groups.map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="admin-config-sort">مرتب‌سازی</label>
+            <select
+              id="admin-config-sort"
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value as ListSort);
+                setPage(0);
+              }}
+            >
+              <option value="newest">از جدید به قدیم</option>
+              <option value="oldest">از قدیم به جدید</option>
+              <option value="ending">اتمام حجم یا تاریخ</option>
+              <option value="ending_date">نزدیک‌ترین انقضا</option>
+              <option value="ending_traffic">کمترین حجم باقی‌مانده</option>
+            </select>
+          </div>
         </div>
-        <div className="sort-bar">
-          <label htmlFor="admin-config-group">گروه پنل</label>
-          <select
-            id="admin-config-group"
-            value={groupKey}
-            onChange={(e) => {
-              setGroupKey(e.target.value);
-              setPage(0);
-            }}
-          >
-            {groups.map((g) => (
-              <option key={g.key} value={g.key}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <SortSelect
-          id="admin-config-sort"
-          value={sort}
-          onChange={(v) => {
-            setSort(v);
-            setPage(0);
-          }}
-        />
         {loading && <p className="muted">در حال دریافت…</p>}
-        <div className="list">
+        <div className="list configs-list">
           {items.map((c) => {
             const expired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
             return (
