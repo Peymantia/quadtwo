@@ -7,7 +7,7 @@ import type { XuiClient } from "../panel/xui-client.js";
 import { gbToBytes } from "../utils/format.js";
 import { parseInboundIds } from "./inbounds.js";
 import { expiryFromPanel } from "./panel-expiry.js";
-import { listDetailedPanelClients, syncClientInbounds } from "./admin-configs.js";
+import { listDetailedPanelClients, listEmailsInPanelGroup, syncClientInbounds } from "./admin-configs.js";
 import { listPanelServers } from "./panel-servers.js";
 
 export const BULK_ADD_DAYS_MAX = 3650;
@@ -15,6 +15,8 @@ export const BULK_ADD_GB_MAX = 10_000;
 
 export type BulkAdjustInput = {
   panelServerId?: string | null;
+  /** 3x-ui client group name (partner / admin / wholesale / Telegram / …) */
+  panelGroup?: string | null;
   /** Replace all client inbound IDs with these */
   inbounds?: { ids: number[] };
   /** Set limitIp to this value (0 = unlimited devices) */
@@ -36,6 +38,7 @@ export type BulkAdjustResult = {
 export type BulkAdjustPreview = {
   clientCount: number;
   panelName: string | null;
+  panelGroup: string | null;
   panels: Array<{ id: string; name: string; clientCount: number }>;
 };
 
@@ -94,14 +97,16 @@ function validateInput(input: BulkAdjustInput): void {
   }
 }
 
-export async function previewBulkAdjust(panelServerId?: string | null): Promise<BulkAdjustPreview> {
-  const clients = await listDetailedPanelClients();
-  const filtered = panelServerId
-    ? clients.filter((c) => c.panelServerId === panelServerId)
-    : clients;
+export async function previewBulkAdjust(opts?: {
+  panelServerId?: string | null;
+  panelGroup?: string | null;
+}): Promise<BulkAdjustPreview> {
+  const panelServerId = opts?.panelServerId?.trim() || null;
+  const panelGroup = opts?.panelGroup?.trim() || null;
+  const clients = await resolveBulkClients({ panelServerId, panelGroup });
 
   const byPanel = new Map<string, { id: string; name: string; clientCount: number }>();
-  for (const c of filtered) {
+  for (const c of clients) {
     const id = c.panelServerId ?? "__env__";
     const prev = byPanel.get(id);
     if (prev) prev.clientCount += 1;
@@ -111,14 +116,32 @@ export async function previewBulkAdjust(panelServerId?: string | null): Promise<
   let panelName: string | null = null;
   if (panelServerId) {
     const p = await listPanelServers().then((list) => list.find((x) => x.id === panelServerId));
-    panelName = p?.name ?? filtered[0]?.panelName ?? null;
+    panelName = p?.name ?? clients[0]?.panelName ?? null;
   }
 
   return {
-    clientCount: filtered.length,
+    clientCount: clients.length,
     panelName,
+    panelGroup,
     panels: [...byPanel.values()],
   };
+}
+
+async function resolveBulkClients(opts: {
+  panelServerId?: string | null;
+  panelGroup?: string | null;
+}) {
+  let clients = await listDetailedPanelClients();
+  if (opts.panelServerId) {
+    clients = clients.filter((c) => c.panelServerId === opts.panelServerId);
+  }
+  if (opts.panelGroup) {
+    const emails = new Set(
+      (await listEmailsInPanelGroup(opts.panelGroup)).map((e) => e.toLowerCase()),
+    );
+    clients = clients.filter((c) => emails.has(c.email.toLowerCase()));
+  }
+  return clients;
 }
 
 function extendPanelExpiry(expiryTime: number, days: number): number | null {
@@ -282,13 +305,13 @@ async function adjustOne(
 export async function bulkAdjustAllPanelClients(input: BulkAdjustInput): Promise<BulkAdjustResult> {
   validateInput(input);
 
-  const all = await listDetailedPanelClients();
-  const clients = input.panelServerId
-    ? all.filter((c) => c.panelServerId === input.panelServerId)
-    : all;
+  const clients = await resolveBulkClients({
+    panelServerId: input.panelServerId,
+    panelGroup: input.panelGroup,
+  });
 
   if (!clients.length) {
-    throw new Error("هیچ اکانتی روی پنل پیدا نشد");
+    throw new Error("هیچ اکانتی با این محدوده پیدا نشد");
   }
 
   const result: BulkAdjustResult = {

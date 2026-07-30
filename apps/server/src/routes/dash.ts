@@ -1991,7 +1991,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/admin/configs/bulk-adjust/preview", async (c) => {
     try {
       const panelServerId = c.req.query("panelServerId")?.trim() || null;
-      return c.json(await previewBulkAdjust(panelServerId));
+      const panelGroup = c.req.query("panelGroup")?.trim() || null;
+      return c.json(await previewBulkAdjust({ panelServerId, panelGroup }));
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }
@@ -2001,6 +2002,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     try {
       const body = (await c.req.json().catch(() => ({}))) as {
         panelServerId?: string | null;
+        panelGroup?: string | null;
         inbounds?: { ids?: number[]; idsRaw?: string };
         limitIp?: { value?: number };
         addGb?: number;
@@ -2010,6 +2012,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
       const input: BulkAdjustInput = {
         panelServerId: body.panelServerId?.trim() || null,
+        panelGroup: body.panelGroup?.trim() || null,
         clearExpiry: Boolean(body.clearExpiry),
       };
 
@@ -2030,7 +2033,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       await auditLog({
         action: "admin_bulk_adjust",
         actorTelegramId: BigInt(c.get("telegramId")),
-        detail: `updated:${result.updated} skipped:${result.skipped} errors:${result.errors} total:${result.clientCount}`,
+        detail: `updated:${result.updated} skipped:${result.skipped} errors:${result.errors} total:${result.clientCount}${input.panelGroup ? ` group:${input.panelGroup}` : ""}`,
       });
       return c.json(result);
     } catch (err) {

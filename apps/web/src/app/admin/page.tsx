@@ -29,7 +29,6 @@ const TABS: ShellTab[] = [
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server", gapAfter: true },
   { key: "sync", label: "همگام‌سازی", icon: "sync" },
-  { key: "bulk", label: "تغییر دسته‌جمعی", shortLabel: "دسته", icon: "layers" },
   { key: "reports", label: "گزارشات", icon: "chart" },
   { key: "import", label: "اکسل", icon: "file" },
   { key: "settings", label: "تنظیمات", icon: "gear", gapAfter: true },
@@ -159,6 +158,10 @@ export default function AdminPage() {
   const [err, setErr] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ message: string; resolve: (v: boolean) => void } | null>(null);
 
+  useEffect(() => {
+    if (tab === "bulk") setTab("configs");
+  }, [tab]);
+
   const flash = useCallback((ok: string | null, bad: string | null = null) => {
     setMsg(ok);
     setErr(bad);
@@ -223,7 +226,6 @@ export default function AdminPage() {
       {tab === "categories" && <CategoriesTab flash={flash} askConfirm={askConfirm} />}
       {tab === "configs" && <ConfigsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "sync" && <SyncTab flash={flash} askConfirm={askConfirm} />}
-      {tab === "bulk" && <BulkAdjustTab flash={flash} askConfirm={askConfirm} />}
       {tab === "panels" && <PanelsTab flash={flash} askConfirm={askConfirm} />}
       {tab === "settings" && (
         <SettingsTab
@@ -2367,8 +2369,9 @@ function BulkNumStepper({
   );
 }
 
-function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
+function BulkAdjustPanel({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   type PanelOpt = { id: string; name: string };
+  type GroupOpt = { key: string; label: string; panelGroup: string | null; kind?: string };
   type Result = {
     updated: number;
     skipped: number;
@@ -2379,7 +2382,9 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
   };
 
   const [panels, setPanels] = useState<PanelOpt[]>([]);
+  const [groups, setGroups] = useState<GroupOpt[]>([]);
   const [panelServerId, setPanelServerId] = useState("");
+  const [panelGroup, setPanelGroup] = useState("");
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
@@ -2399,15 +2404,25 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
   const [clearExpiry, setClearExpiry] = useState(false);
 
+  const agentGroups = groups.filter(
+    (g) => g.panelGroup && (g.kind === "admin" || g.kind === "partner" || g.kind === "wholesale"),
+  );
+
   useEffect(() => {
     void api<{ panels: Array<{ id: string; name: string }> }>("/admin/panels")
       .then((r) => setPanels((r.panels ?? []).map((p) => ({ id: p.id, name: p.name }))))
       .catch(() => setPanels([]));
+    void api<{ groups: GroupOpt[] }>("/admin/configs/groups")
+      .then((r) => setGroups(r.groups ?? []))
+      .catch(() => setGroups([]));
   }, []);
 
   async function refreshPreview() {
     try {
-      const q = panelServerId ? `?panelServerId=${encodeURIComponent(panelServerId)}` : "";
+      const params = new URLSearchParams();
+      if (panelServerId) params.set("panelServerId", panelServerId);
+      if (panelGroup) params.set("panelGroup", panelGroup);
+      const q = params.toString() ? `?${params}` : "";
       const r = await api<{ clientCount: number }>(`/admin/configs/bulk-adjust/preview${q}`);
       setPreviewCount(r.clientCount);
     } catch {
@@ -2417,11 +2432,25 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
   useEffect(() => {
     void refreshPreview();
-  }, [panelServerId]);
+  }, [panelServerId, panelGroup]);
 
   function parseSigned(raw: string): number {
     const n = Number(String(raw).trim().replace(/[^\d-]/g, ""));
     return Number.isFinite(n) ? Math.trunc(n) : 0;
+  }
+
+  function scopeLabel(): string {
+    const parts: string[] = [];
+    parts.push(
+      panelServerId
+        ? `سرور «${panels.find((p) => p.id === panelServerId)?.name ?? "—"}»`
+        : "همه پنل‌های فعال",
+    );
+    if (panelGroup) {
+      const g = agentGroups.find((x) => x.panelGroup === panelGroup);
+      parts.push(`گروه «${g?.label ?? panelGroup}»`);
+    }
+    return parts.join(" · ");
   }
 
   function summaryLines(): string[] {
@@ -2462,14 +2491,10 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
   async function confirmApply() {
     setApplyOpen(false);
-    const scope =
-      panelServerId
-        ? `سرور انتخاب‌شده (${panels.find((p) => p.id === panelServerId)?.name ?? "—"})`
-        : "همه پنل‌های فعال";
     const n = previewCount ?? "؟";
     if (
       !(await askConfirm(
-        `تغییر دسته‌جمعی روی ${n} اکانت (${scope}) اعمال شود؟\n\n${summaryLines().join("\n")}`,
+        `تغییر دسته‌جمعی روی ${n} اکانت (${scopeLabel()}) اعمال شود؟\n\n${summaryLines().join("\n")}`,
       ))
     ) {
       return;
@@ -2479,6 +2504,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
     try {
       const body: Record<string, unknown> = {
         panelServerId: panelServerId || null,
+        panelGroup: panelGroup || null,
         clearExpiry,
       };
       if (doInbounds) {
@@ -2505,27 +2531,38 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
   return (
     <>
-      <div className="panel bulk-adjust">
-        <h2>تغییر دسته‌جمعی</h2>
+      <div className="bulk-adjust">
         <p className="muted" style={{ marginTop: 0 }}>
-          Bulk Adjust — اعمال همزمان اینباند، محدودیت کاربر، حجم، روز یا حذف انقضا روی همه کانفیگ‌های پنل
-          3x-ui (نه فقط دیتابیس ربات).
+          اعمال همزمان اینباند، محدودیت کاربر، حجم، روز یا حذف انقضا روی کانفیگ‌های پنل 3x-ui (نه فقط دیتابیس ربات).
         </p>
 
         <div className="bulk-toolbar">
-          <div className="field">
-            <label>
-              محدوده سرور (
-              <span className="num">{previewCount == null ? "…" : previewCount}</span>)
-            </label>
-            <select value={panelServerId} onChange={(e) => setPanelServerId(e.target.value)}>
-              <option value="">همه پنل‌های فعال</option>
-              {panels.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+          <div className="bulk-toolbar-fields">
+            <div className="field">
+              <label>محدوده سرور</label>
+              <select value={panelServerId} onChange={(e) => setPanelServerId(e.target.value)}>
+                <option value="">همه پنل‌های فعال</option>
+                {panels.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>
+                گروه همکار / ادمین / عمده (
+                <span className="num">{previewCount == null ? "…" : previewCount}</span>)
+              </label>
+              <select value={panelGroup} onChange={(e) => setPanelGroup(e.target.value)}>
+                <option value="">همه گروه‌ها</option>
+                {agentGroups.map((g) => (
+                  <option key={g.key} value={g.panelGroup ?? ""}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <button type="button" className="btn danger bulk-scope-run" disabled={busy} onClick={openApply}>
             {busy ? "در حال اعمال…" : "اجرای تغییر دسته‌جمعی"}
@@ -2604,8 +2641,8 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
       </div>
 
       {result && (
-        <div className="panel">
-          <h2>نتیجه</h2>
+        <div className="bulk-adjust-result">
+          <h3>نتیجه</h3>
           <p>
             به‌روز: <strong className="num">{result.updated}</strong>
             {" · "}
@@ -2646,11 +2683,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 
       <Modal open={applyOpen} title="تأیید تغییر دسته‌جمعی" onClose={() => setApplyOpen(false)}>
         <p style={{ marginTop: 0 }}>
-          حدود <strong className="num">{previewCount ?? "؟"}</strong> اکانت روی{" "}
-          {panelServerId
-            ? `سرور «${panels.find((p) => p.id === panelServerId)?.name ?? "—"}»`
-            : "همه پنل‌های فعال"}{" "}
-          تغییر می‌کنند.
+          حدود <strong className="num">{previewCount ?? "؟"}</strong> اکانت روی {scopeLabel()} تغییر می‌کنند.
         </p>
         <ul style={{ margin: "0 0 12px", paddingInlineStart: 18 }}>
           {summaryLines().map((l) => (
@@ -2674,6 +2707,7 @@ function BulkAdjustTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
 }
 
 function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
+  const [bulkOpen, setBulkOpen] = useState<string | null>(null);
   const [groups, setGroups] = useState<Array<{ key: string; label: string }>>([]);
   const [groupKey, setGroupKey] = useState("all");
   const [items, setItems] = useState<
@@ -3018,6 +3052,16 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
 
   return (
     <>
+      <SettingsAccordion
+        id="bulk"
+        title="تغییر دسته‌جمعی"
+        icon="layers"
+        openId={bulkOpen}
+        onToggle={(id) => setBulkOpen((cur) => (cur === id ? null : id))}
+      >
+        <BulkAdjustPanel flash={flash} askConfirm={askConfirm} />
+      </SettingsAccordion>
+
       <div className="panel">
         <h2>اکانت‌ها</h2>
         <p className="muted" style={{ marginTop: 0 }}>

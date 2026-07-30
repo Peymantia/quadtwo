@@ -2862,6 +2862,14 @@ button.pay-dest-number:active,
   margin-bottom: 14px;
 }
 
+.bulk-toolbar-fields {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
 .bulk-adjust .bulk-toolbar .field {
   flex: 1;
   margin: 0;
@@ -2873,6 +2881,17 @@ button.pay-dest-number:active,
   height: 46px;
   padding-inline: 18px;
   white-space: nowrap;
+}
+
+.bulk-adjust-result {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.bulk-adjust-result h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
 }
 
 .bulk-cols {
@@ -3070,6 +3089,10 @@ button.pay-dest-number:active,
   .bulk-adjust .bulk-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .bulk-toolbar-fields {
+    grid-template-columns: 1fr;
   }
 
   .bulk-adjust .bulk-scope-run {

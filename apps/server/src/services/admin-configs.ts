@@ -275,6 +275,11 @@ async function emailsInPanelGroup(groupName: string): Promise<string[]> {
   return [...emails];
 }
 
+/** Emails currently listed under a 3x-ui client group (partner/admin/wholesale/…). */
+export async function listEmailsInPanelGroup(groupName: string): Promise<string[]> {
+  return emailsInPanelGroup(groupName);
+}
+
 function ownerFromUser(user: {
   username: string | null;
   firstName?: string | null;
