@@ -26,7 +26,7 @@ import {
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
 import { claimTestService } from "../services/test-service.js";
-import { getChannels, getPaymentCard, getPaymentMethodsConfig, getPublicPaymentMethods, assertCheckoutPaymentMethod, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, canEditLimitIp, resolvePurchaseLimitIp, setSetting, isSalesCategoryEnabled } from "../services/settings.js";
+import { getChannels, getPaymentCard, getPaymentMethodsConfig, getPublicPaymentMethods, assertCheckoutPaymentMethod, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, canEditLimitIp, resolvePurchaseLimitIp, setSetting, isSalesCategoryEnabled, resolveMiniAppUrl } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
@@ -218,6 +218,7 @@ async function replyMainMenu(ctx: Context, preface?: string) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const role = effectiveRole(ctx.from!.id, user.role);
   const demo = isDemoMode();
+  const miniAppUrl = await resolveMiniAppUrl();
   const lines = [preface?.trim() || "منوی اصلی"];
   if (demo) {
     lines.push("", `🎭 نسخه نمایشی — نقش فعلی: ${demoRoleLabel(role)}`);
@@ -228,6 +229,7 @@ async function replyMainMenu(ctx: Context, preface?: string) {
       isPartner: role === "partner",
       isWholesale: role === "wholesale",
       demoMode: demo,
+      miniAppUrl,
     }),
   });
 }
@@ -769,25 +771,63 @@ async function handleConfigLookup(ctx: Context) {
 async function handleDashboard(ctx: Context) {
   const { dashBaseUrl } = await import("../config/env.js");
   const url = dashBaseUrl();
+  const mini = await resolveMiniAppUrl();
+  const kb = new InlineKeyboard();
+  if (mini) {
+    kb.webApp("📱 باز کردن پنل داخل تلگرام", mini).success().row();
+  }
+  kb.url("🌐 باز کردن در مرورگر", url).row().text("🔐 دریافت کد OTP", "dash:otp");
   await ctx.reply(
     [
-      "🌐 داشبورد وب Piing",
+      "🌐 پنل وب Piing",
       "",
-      `🔗 آدرس: ${url}`,
-      "",
-      "ورود با رمز عبور یا کد یکبار مصرف از تلگرام.",
-      "برای دریافت کد، دکمه «داشبورد | وب اپ» را بزنید.",
+      mini
+        ? "از دکمه سبز، پنل را مستقیم داخل تلگرام باز کنید (بدون رمز)."
+        : "آدرس Mini App تنظیم نشده — از مرورگر یا کد OTP وارد شوید.",
+      `🔗 آدرس مرورگر: ${url}`,
     ].join("\n"),
-    {
-      reply_markup: new InlineKeyboard()
-        .url("🌐 باز کردن داشبورد", url)
-        .row()
-        .text("🔐 دریافت کد OTP", "dash:otp"),
-    },
+    { reply_markup: kb },
   );
 }
 
 async function handleDashOtp(ctx: Context) {
+  try {
+    const mini = await resolveMiniAppUrl();
+    if (mini) {
+      await ctx.reply(
+        [
+          "📱 پنل وب‌اپ",
+          "",
+          "برای ورود سریع داخل تلگرام (بدون رمز) دکمه زیر را بزنید.",
+          "اگر روی کامپیوتر در مرورگر جدا می‌خواهید وارد شوید، از «ورود مرورگر» کد بگیرید.",
+        ].join("\n"),
+        {
+          reply_markup: new InlineKeyboard()
+            .webApp("📱 باز کردن پنل", mini)
+            .success()
+            .row()
+            .text("🔐 کد ورود مرورگر", "dash:otp_code"),
+        },
+      );
+      return;
+    }
+    const { mintOtpPayloadForTelegramUser } = await import("../routes/dash.js");
+    const { dashBaseUrl } = await import("../config/env.js");
+    const { buildDashboardOtpTelegramMessage } = await import("../services/web-auth.js");
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const { code, login } = await mintOtpPayloadForTelegramUser(Number(user.telegramId));
+    const loginUrl = `${dashBaseUrl().replace(/\/$/, "")}/login`;
+    const msg = buildDashboardOtpTelegramMessage(loginUrl, login, String(code));
+    await ctx.reply(msg.text, {
+      ...(msg.entities?.length ? { entities: msg.entities as never } : {}),
+      reply_markup: new InlineKeyboard().url("🔐 ورود به داشبورد", loginUrl),
+    });
+  } catch (err) {
+    await ctx.reply(friendlyBotError(err));
+  }
+}
+
+async function handleDashOtpCode(ctx: Context) {
   try {
     const { mintOtpPayloadForTelegramUser } = await import("../routes/dash.js");
     const { dashBaseUrl } = await import("../config/env.js");
@@ -970,6 +1010,7 @@ export function createBot() {
         isPartner: role === "partner",
         isWholesale: role === "wholesale",
         demoMode: demo,
+        miniAppUrl: await resolveMiniAppUrl(),
       }),
     });
   });
@@ -985,6 +1026,7 @@ export function createBot() {
         "🔄 منوی ربات به‌روز شد",
         "",
         "دکمه‌ها و دستورات جدید بارگذاری شدند.",
+        "اگر «📱 پنل وب‌اپ» را می‌بینید، مستقیم داخل تلگرام باز می‌شود.",
         "اگر تغییری نمی‌بینید، یک‌بار چت را ببندید و دوباره باز کنید.",
       ].join("\n"),
     );
@@ -1190,11 +1232,15 @@ export function createBot() {
   });
   bot.callbackQuery("m:dashotp", async (ctx) => {
     await ctx.answerCallbackQuery();
-    await handleDashOtp(ctx);
+    await handleDashOtpCode(ctx);
   });
   bot.callbackQuery("dash:otp", async (ctx) => {
     await ctx.answerCallbackQuery();
-    await handleDashOtp(ctx);
+    await handleDashOtpCode(ctx);
+  });
+  bot.callbackQuery("dash:otp_code", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleDashOtpCode(ctx);
   });
   bot.callbackQuery("m:cfglookup", async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -2307,7 +2353,7 @@ export function createBot() {
   });
   bot.hears(hearsBtn(BTN.support), async (ctx) => handleSupport(ctx));
   bot.hears(hearsBtn(BTN.dashboard), async (ctx) => handleDashboard(ctx));
-  bot.hears(hearsBtn(BTN.dashOtp), async (ctx) => handleDashOtp(ctx));
+  bot.hears([...hearsBtn(BTN.dashOtp), ...hearsBtn("🔐 داشبورد | وب اپ")], async (ctx) => handleDashOtpCode(ctx));
   bot.hears(hearsBtn(BTN.demoRole), async (ctx) => {
     if (!isDemoMode()) {
       await ctx.reply("نسخه نمایشی فعال نیست.");
@@ -2944,11 +2990,13 @@ export function createBot() {
     }
     await setSetting("miniapp_url", url);
     await syncTelegramMenu(ctx.api).catch(() => undefined);
-    await ctx.reply(
+    await replyMainMenu(
+      ctx,
       [
         "آدرس وب‌اپ ذخیره شد ✅",
         "",
-        "کاربران با /app یا دکمه «داشبورد | وب اپ» شناسه و رمز موقت می‌گیرند، سپس وارد می‌شوند.",
+        "منوی تلگرام (دکمه OPEN / پنل) و کیبورد «📱 پنل وب‌اپ» مستقیم داخل تلگرام باز می‌شوند — بدون رمز.",
+        "کاربران یک‌بار /update بزنند تا کیبورد جدید بیاید.",
       ].join("\n"),
     );
   });

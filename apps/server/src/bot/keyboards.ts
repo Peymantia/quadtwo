@@ -16,7 +16,10 @@ export const BTN = {
   support: "🆘 پشتیبانی",
   test: "🧪 دریافت اکانت تست",
   dashboard: "🌐 داشبورد وب",
-  dashOtp: "🔐 داشبورد | وب اپ",
+  /** Opens Telegram Mini App (no OTP) when miniapp URL is configured */
+  miniApp: "📱 پنل وب‌اپ",
+  /** Browser login with temporary credentials */
+  dashOtp: "🔐 ورود مرورگر",
   configLookup: "🔎 مشاهده سریع",
   partner: "🤝 درخواست نمایندگی",
   allConfigs: "👀 نمایش کلیه سرویس‌ها",
@@ -61,6 +64,8 @@ export type MainMenuOpts = {
   isPartner: boolean;
   isWholesale?: boolean;
   demoMode?: boolean;
+  /** HTTPS Mini App URL — when set, shows a WebApp keyboard button */
+  miniAppUrl?: string | null;
 };
 
 /**
@@ -70,12 +75,15 @@ export type MainMenuOpts = {
  *   سرویس‌های من | خرید
  *   کلیه سرویس‌ها | تمدید
  *   تمام‌صفحه | مشاهده سریع
- *   داشبورد | وب اپ | کنترل سنتر
+ *   پنل وب‌اپ | کنترل سنتر
  *   [| تغییر نقش دمو — فقط DEMO_MODE]
  *
- * Other roles: buy, services, wallet/account, support|تمام‌صفحه, guide/test, agent|partner + lookup, dash OTP.
+ * Other roles: buy, services, wallet/account, support|تمام‌صفحه, guide/test, agent|partner + lookup,
+ * then green Mini App button (+ optional browser OTP).
  */
 export function mainMenuReply(opts: MainMenuOpts) {
+  const mini = opts.miniAppUrl?.startsWith("https://") ? opts.miniAppUrl : null;
+
   if (opts.isAdmin) {
     const kb = new Keyboard()
       .text(BTN.myServices)
@@ -86,11 +94,12 @@ export function mainMenuReply(opts: MainMenuOpts) {
       .row()
       .text(BTN.hideKeyboard)
       .text(BTN.configLookup)
-      .row()
-      .text(BTN.dashOtp)
-      .text(BTN.controlCenter)
       .row();
+    if (mini) kb.webApp(BTN.miniApp, mini).success();
+    else kb.text(BTN.dashOtp);
+    kb.text(BTN.controlCenter).row();
     if (opts.demoMode) kb.text(BTN.demoRole).row();
+    if (mini) kb.text(BTN.dashOtp).row();
     return kb.persistent().resized();
   }
 
@@ -121,8 +130,12 @@ export function mainMenuReply(opts: MainMenuOpts) {
     kb.text(BTN.partner).primary().text(BTN.configLookup).primary().row();
   }
 
-  // Always OTP credentials first — do not open Mini App directly (no password on screen).
-  kb.text(BTN.dashOtp).danger().row();
+  if (mini) {
+    kb.webApp(BTN.miniApp, mini).success().row();
+    kb.text(BTN.dashOtp).row();
+  } else {
+    kb.text(BTN.dashOtp).danger().row();
+  }
 
   return kb.persistent().resized();
 }
@@ -186,6 +199,8 @@ export function applyInlineButtonStyle(kb: InlineKeyboard, style: TgBtnStyle) {
 
 /** @deprecated inline main menu — use mainMenuReply */
 export function mainMenuInline(opts: MainMenuOpts) {
+  const mini = opts.miniAppUrl?.startsWith("https://") ? opts.miniAppUrl : null;
+
   if (opts.isAdmin) {
     const kb = new InlineKeyboard()
       .text(BTN.myServices, "m:myservices")
@@ -196,11 +211,12 @@ export function mainMenuInline(opts: MainMenuOpts) {
       .row()
       .text(BTN.hideKeyboard, "m:hidekb")
       .text(BTN.configLookup, "m:cfglookup")
-      .row()
-      .text(BTN.dashOtp, "m:dashotp")
-      .text(BTN.controlCenter, "cc:home")
       .row();
+    if (mini) kb.webApp(BTN.miniApp, mini).success();
+    else kb.text(BTN.dashOtp, "m:dashotp");
+    kb.text(BTN.controlCenter, "cc:home").row();
     if (opts.demoMode) kb.text(BTN.demoRole, "m:demorole").row();
+    if (mini) kb.text(BTN.dashOtp, "m:dashotp").row();
     return kb;
   }
 
@@ -229,7 +245,12 @@ export function mainMenuInline(opts: MainMenuOpts) {
     kb.text(BTN.partner, "m:partner").primary().text(BTN.configLookup, "m:cfglookup").primary().row();
   }
 
-  kb.text(BTN.dashOtp, "m:dashotp").danger().row();
+  if (mini) {
+    kb.webApp(BTN.miniApp, mini).success().row();
+    kb.text(BTN.dashOtp, "m:dashotp").row();
+  } else {
+    kb.text(BTN.dashOtp, "m:dashotp").danger().row();
+  }
   return kb;
 }
 

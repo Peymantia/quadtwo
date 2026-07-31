@@ -160,6 +160,19 @@ export async function setSetting(key: string, value: string): Promise<void> {
   });
 }
 
+/**
+ * HTTPS URL for Telegram Mini App / WebApp buttons.
+ * Prefers `miniapp_url` setting, then DASH_DOMAIN / PUBLIC_DOMAIN.
+ */
+export async function resolveMiniAppUrl(): Promise<string | null> {
+  const { dashBaseUrl } = await import("../config/env.js");
+  const stored = (await getSetting("miniapp_url")).trim().replace(/\/$/, "");
+  if (stored.startsWith("https://")) return stored;
+  const dash = dashBaseUrl();
+  if (dash.startsWith("https://")) return dash;
+  return null;
+}
+
 export async function getAllSettings() {
   const rows = await prisma.setting.findMany();
   const map: Record<string, string> = { ...defaults };
