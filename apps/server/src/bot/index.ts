@@ -234,6 +234,32 @@ async function replyMainMenu(ctx: Context, preface?: string) {
   });
 }
 
+/**
+ * Pin a Mini App launch message at the top of the private chat.
+ * Telegram cannot pin reply-keyboard buttons; a pinned message + WebApp button is the closest UX.
+ */
+async function pinMiniAppBanner(ctx: Context) {
+  const mini = await resolveMiniAppUrl();
+  const chatId = ctx.chat?.id;
+  if (!mini || chatId == null) return;
+  try {
+    const msg = await ctx.reply(
+      [
+        "📱 پنل وب‌اپ",
+        "",
+        "این پیام بالای چت پین شده است.",
+        "با دکمه زیر مستقیم داخل تلگرام وارد پنل شوید — بدون رمز.",
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard().webApp("📱 باز کردن پنل", mini).success(),
+      },
+    );
+    await ctx.api.pinChatMessage(chatId, msg.message_id, { disable_notification: true });
+  } catch (err) {
+    console.warn("pinMiniAppBanner failed", err);
+  }
+}
+
 /** Temporarily hide sticky reply keyboard for a fuller chat surface. */
 async function hideMainKeyboard(ctx: Context) {
   await ctx.reply("⬇️ کیبورد مخفی شد — صفحهٔ چت بازتر است.", {
@@ -1013,6 +1039,7 @@ export function createBot() {
         miniAppUrl: await resolveMiniAppUrl(),
       }),
     });
+    await pinMiniAppBanner(ctx);
   });
 
   /** Reload slash-command menu + reply keyboard after bot updates */
@@ -1030,6 +1057,7 @@ export function createBot() {
         "اگر تغییری نمی‌بینید، یک‌بار چت را ببندید و دوباره باز کنید.",
       ].join("\n"),
     );
+    await pinMiniAppBanner(ctx);
   });
 
   bot.command("hide", async (ctx) => {
