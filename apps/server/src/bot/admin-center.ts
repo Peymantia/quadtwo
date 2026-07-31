@@ -40,6 +40,7 @@ import {
   type RolePricingKey,
   type RolePricingModes,
   type SalesCategories,
+  resolveMiniAppUrl,
 } from "../services/settings.js";
 import { demoteToUser, listNotifyAdminTelegramIds, listPendingPartnerRequests } from "../services/users.js";
 import { formatToman } from "../utils/format.js";
@@ -59,6 +60,16 @@ import {
   broadcastTextToAllUsers,
   countBroadcastRecipients,
 } from "../services/broadcast.js";
+import {
+  broadcastPinMiniAppBanner,
+  broadcastUnpinMiniAppBanner,
+  DEFAULT_MINIAPP_PIN_TEXT,
+  getMiniAppPinText,
+  isMiniAppPinAutoEnabled,
+  sendAndPinMiniAppBanner,
+  setMiniAppPinAuto,
+  setMiniAppPinText,
+} from "../services/miniapp-pin.js";
 import {
   categoryLabelFa,
   createPanelServer,
@@ -84,6 +95,8 @@ import {
 
 /** Prevent overlapping broadcasts */
 let broadcastBusy = false;
+/** Prevent overlapping miniapp pin/unpin broadcasts */
+let miniPinBusy = false;
 
 /** Waiting text input for control-center forms */
 export const ccWait = new Map<
@@ -121,6 +134,7 @@ export const ccWait = new Map<
       messageId?: number;
       preview: string;
     }
+  | { kind: "minipin_text" }
   | {
       kind: "rate_ask";
       role: RolePricingKey;
@@ -291,6 +305,53 @@ export async function showControlCenter(ctx: Context, edit = true) {
   } else {
     await ctx.reply(text, { reply_markup: kb });
   }
+}
+
+async function showMiniPinPanel(ctx: Context, edit = true) {
+  const textBody = await getMiniAppPinText();
+  const auto = await isMiniAppPinAutoEnabled();
+  const mini = await resolveMiniAppUrl();
+  const total = await countBroadcastRecipients();
+  const preview = textBody.length > 600 ? `${textBody.slice(0, 600)}…` : textBody;
+  const msg = [
+    "📌 پیام پین وب پنل",
+    "",
+    `آدرس وب پنل: ${mini ?? "❌ تنظیم نشده (HTTPS لازم است)"}`,
+    `پین خودکار در /start و /update: ${auto ? "✅ روشن" : "⭕️ خاموش"}`,
+    `کاربران ربات: ${total}`,
+    "",
+    "متن فعلی:",
+    preview,
+    "",
+    "ایموجی‌های شناخته‌شده (مثل 📱) در ارسال به‌صورت پریمیوم اعمال می‌شوند.",
+  ].join("\n");
+  const kb = new InlineKeyboard()
+    .text("✏️ ویرایش متن", "cc:minipin:edit")
+    .primary()
+    .row()
+    .text(auto ? "⭕️ خاموش کردن پین خودکار" : "✅ روشن کردن پین خودکار", "cc:minipin:auto")
+    .row()
+    .text("👁 پیش‌نمایش روی من", "cc:minipin:me")
+    .success()
+    .row()
+    .text("📌 پین مجدد برای همه", "cc:minipin:all")
+    .primary()
+    .row()
+    .text("📍 آن‌پین برای همه", "cc:minipin:unpin")
+    .danger()
+    .row()
+    .text("♻️ بازگردانی متن پیش‌فرض", "cc:minipin:reset")
+    .row()
+    .text("« کنترل سنتر", "cc:home");
+  if (edit && ctx.callbackQuery?.message) {
+    try {
+      await ctx.editMessageText(msg, { reply_markup: kb });
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  await ctx.reply(msg, { reply_markup: kb });
 }
 
 function catLabel(c: string) {
@@ -1887,6 +1948,142 @@ export function registerControlCenter(bot: Bot) {
     }
   });
 
+  bot.callbackQuery("cc:minipin", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showMiniPinPanel(ctx);
+  });
+
+  bot.callbackQuery("cc:minipin:edit", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "minipin_text" });
+    await ctx.reply(
+      [
+        "متن جدید پیام پین وب پنل را بفرستید (چند خطی مجاز).",
+        "",
+        "برای ایموجی پریمیوم، با ایموجی شروع کنید (مثلاً 📱 پنل وب‌اپ).",
+        "لغو: /cancel",
+      ].join("\n"),
+    );
+  });
+
+  bot.callbackQuery("cc:minipin:auto", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const next = !(await isMiniAppPinAutoEnabled());
+    await setMiniAppPinAuto(next);
+    await ctx.answerCallbackQuery({ text: next ? "پین خودکار روشن شد" : "پین خودکار خاموش شد" });
+    await showMiniPinPanel(ctx);
+  });
+
+  bot.callbackQuery("cc:minipin:reset", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await setMiniAppPinText(DEFAULT_MINIAPP_PIN_TEXT);
+    await ctx.answerCallbackQuery({ text: "متن پیش‌فرض ذخیره شد" });
+    await showMiniPinPanel(ctx);
+  });
+
+  bot.callbackQuery("cc:minipin:me", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery({ text: "در حال پین…" });
+    const chatId = ctx.from!.id;
+    const r = await sendAndPinMiniAppBanner(ctx.api, chatId);
+    if (r.ok) {
+      await ctx.reply("✅ پیام پین وب پنل برای شما ارسال و پین شد.", {
+        reply_markup: new InlineKeyboard().text("📌 مدیریت پین", "cc:minipin").row().text("🎛 کنترل سنتر", "cc:home"),
+      });
+    } else {
+      await ctx.reply(`❌ ${r.error}`, {
+        reply_markup: new InlineKeyboard().text("📌 مدیریت پین", "cc:minipin").row().text("🎛 کنترل سنتر", "cc:home"),
+      });
+    }
+  });
+
+  bot.callbackQuery("cc:minipin:all", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    if (miniPinBusy) {
+      await ctx.answerCallbackQuery({ text: "عملیات قبلی هنوز تمام نشده", show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const mini = await resolveMiniAppUrl();
+    if (!mini) {
+      await ctx.reply("❌ ابتدا آدرس HTTPS وب پنل را با /setminiapp تنظیم کنید.", {
+        reply_markup: new InlineKeyboard().text("📌 مدیریت پین", "cc:minipin"),
+      });
+      return;
+    }
+    miniPinBusy = true;
+    const progress = await ctx.reply("⏳ در حال پین مجدد برای همه کاربران…");
+    try {
+      const r = await broadcastPinMiniAppBanner(ctx.api, {
+        onProgress: async (done, total) => {
+          try {
+            await ctx.api.editMessageText(ctx.chat!.id, progress.message_id, `⏳ پین: ${done}/${total}`);
+          } catch {
+            /* ignore */
+          }
+        },
+      });
+      await auditLog({
+        action: "minipin_broadcast",
+        actorTelegramId: ctx.from!.id,
+        detail: `sent=${r.sent} failed=${r.failed} total=${r.total}`,
+      });
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        progress.message_id,
+        `✅ پین وب پنل برای همه اعمال شد\nموفق: ${r.sent}\nناموفق: ${r.failed}\nکل: ${r.total}`,
+        {
+          reply_markup: new InlineKeyboard().text("📌 مدیریت پین", "cc:minipin").row().text("🎛 کنترل سنتر", "cc:home"),
+        },
+      );
+    } catch (err) {
+      await ctx.reply(`❌ خطا: ${String(err).replace(/^Error:\s*/, "")}`);
+    } finally {
+      miniPinBusy = false;
+    }
+  });
+
+  bot.callbackQuery("cc:minipin:unpin", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    if (miniPinBusy) {
+      await ctx.answerCallbackQuery({ text: "عملیات قبلی هنوز تمام نشده", show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    miniPinBusy = true;
+    const progress = await ctx.reply("⏳ در حال آن‌پین برای همه کاربران…");
+    try {
+      const r = await broadcastUnpinMiniAppBanner(ctx.api, {
+        onProgress: async (done, total) => {
+          try {
+            await ctx.api.editMessageText(ctx.chat!.id, progress.message_id, `⏳ آن‌پین: ${done}/${total}`);
+          } catch {
+            /* ignore */
+          }
+        },
+      });
+      await auditLog({
+        action: "minipin_unpin_all",
+        actorTelegramId: ctx.from!.id,
+        detail: `sent=${r.sent} failed=${r.failed} total=${r.total}`,
+      });
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        progress.message_id,
+        `✅ آن‌پین انجام شد\nموفق: ${r.sent}\nناموفق: ${r.failed}\nکل: ${r.total}`,
+        {
+          reply_markup: new InlineKeyboard().text("📌 مدیریت پین", "cc:minipin").row().text("🎛 کنترل سنتر", "cc:home"),
+        },
+      );
+    } catch (err) {
+      await ctx.reply(`❌ خطا: ${String(err).replace(/^Error:\s*/, "")}`);
+    } finally {
+      miniPinBusy = false;
+    }
+  });
+
   bot.callbackQuery("cc:broadcast:go", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     const tid = ctx.from!.id;
@@ -2247,6 +2444,15 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     ccWait.delete(tid);
     await ctx.reply("متن خوش‌آمد ذخیره شد ✅", {
       reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
+    });
+    return true;
+  }
+
+  if (wait.kind === "minipin_text") {
+    await setMiniAppPinText(text);
+    ccWait.delete(tid);
+    await ctx.reply("متن پیام پین وب پنل ذخیره شد ✅\nبرای اعمال روی همه کاربران از «پین مجدد برای همه» استفاده کنید.", {
+      reply_markup: new InlineKeyboard().text("📌 مدیریت پین", "cc:minipin").row().text("🎛 کنترل سنتر", "cc:home"),
     });
     return true;
   }

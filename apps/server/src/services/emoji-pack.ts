@@ -343,10 +343,10 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
   if (glyph === "📱") {
     if (/^\s*QR/i.test(after) || after.includes("نمایش QR")) return PREMIUM_IDS.qr_code;
     if (after.includes("آیفون") || after.includes("iOS") || after.includes("iPhone")) return PREMIUM_IDS.iphone;
+    // «ورود به وب پنل» / پنل وب‌اپ
     return PREMIUM_IDS.phone_device;
   }
   if (glyph === "🌐") {
-    // «پنل وب‌اپ» / داشبورد — dash_web premium id
     return PREMIUM_IDS.dash_web;
   }
   if (glyph === "📦") {

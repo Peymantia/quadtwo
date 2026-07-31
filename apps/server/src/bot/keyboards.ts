@@ -16,10 +16,10 @@ export const BTN = {
   support: "🆘 پشتیبانی",
   test: "🧪 دریافت اکانت تست",
   dashboard: "🌐 داشبورد وب",
-  /** Admin (prod): WebApp next to buy — premium via dash_web (🌐) */
-  miniApp: "🌐 پنل وب‌اپ",
-  /** User / partner / wholesale / admin-demo: direct Mini App entry */
-  miniAppDirect: "📱 ورود مستقیم به وب اپ",
+  /** Admin (prod): WebApp next to buy */
+  miniApp: "🌐 ورود به وب پنل",
+  /** User / partner / wholesale / admin-demo: Mini App entry */
+  miniAppDirect: "📱 ورود به وب پنل",
   /** Browser login with temporary credentials */
   dashOtp: "🔐 ورود به وب اپ از طریق مرورگر",
   configLookup: "🔎 مشاهده سریع",
@@ -939,6 +939,9 @@ export function controlCenterKeyboard(opts?: { pendingPartners?: number }) {
     .row()
     .text("📣 پیام همگانی", "cc:broadcast")
     .primary()
+    .row()
+    .text("📌 پیام پین وب پنل", "cc:minipin")
+    .success()
     .row()
     .text("💾 پشتیبان دیتابیس", "cc:backup")
     .success()

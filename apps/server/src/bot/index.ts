@@ -134,6 +134,10 @@ import { syncTelegramMenu, syncTelegramMenuSafe } from "./menu.js";
 import { installEmojiApiTransform } from "../services/emoji-transform.js";
 import { isDemoMode } from "../services/license.js";
 import { effectiveRole, demoRoleLabel, setDemoRole, parseDemoRole, withEffectiveRole } from "../services/demo-role.js";
+import {
+  isMiniAppPinAutoEnabled,
+  sendAndPinMiniAppBanner,
+} from "../services/miniapp-pin.js";
 
 const waitingName = new Set<number>();
 /** Waiting for discount code text: buy wizard or renew */
@@ -239,20 +243,11 @@ async function replyMainMenu(ctx: Context, preface?: string) {
  * Telegram cannot pin reply-keyboard buttons; a pinned message + WebApp button is the closest UX.
  */
 async function pinMiniAppBanner(ctx: Context) {
-  const mini = await resolveMiniAppUrl();
+  if (!(await isMiniAppPinAutoEnabled())) return;
   const chatId = ctx.chat?.id;
-  if (!mini || chatId == null) return;
-  try {
-    const msg = await ctx.reply(
-      ["📱 پنل وب‌اپ", "", "با دکمه زیر مستقیم از تلگرام وارد وب پنل شوید..."].join("\n"),
-      {
-        reply_markup: new InlineKeyboard().webApp("📱 باز کردن وب پنل", mini).success(),
-      },
-    );
-    await ctx.api.pinChatMessage(chatId, msg.message_id, { disable_notification: true });
-  } catch (err) {
-    console.warn("pinMiniAppBanner failed", err);
-  }
+  if (chatId == null) return;
+  const r = await sendAndPinMiniAppBanner(ctx.api, chatId);
+  if (!r.ok) console.warn("pinMiniAppBanner failed", r.error);
 }
 
 /** Temporarily hide sticky reply keyboard for a fuller chat surface. */
@@ -824,7 +819,7 @@ async function handleDashOtp(ctx: Context) {
         ].join("\n"),
         {
           reply_markup: new InlineKeyboard()
-            .webApp("🌐 باز کردن وب پنل", mini)
+            .webApp("📱 ورود به وب پنل", mini)
             .success()
             .row()
             .text("🔐 کد ورود مرورگر", "dash:otp_code"),
@@ -1048,7 +1043,7 @@ export function createBot() {
         "🔄 منوی ربات به‌روز شد",
         "",
         "دکمه‌ها و دستورات جدید بارگذاری شدند.",
-        "اگر «ورود مستقیم به وب اپ» یا «پنل وب‌اپ» را می‌بینید، مستقیم داخل تلگرام باز می‌شود.",
+        "اگر «ورود به وب پنل» را می‌بینید، مستقیم داخل تلگرام باز می‌شود.",
         "اگر تغییری نمی‌بینید، یک‌بار چت را ببندید و دوباره باز کنید.",
       ].join("\n"),
     );

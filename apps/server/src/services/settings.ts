@@ -36,6 +36,10 @@ const defaults: Record<string, string> = {
   support_username: "",
   support_telegram_id: "",
   miniapp_url: "",
+  /** Pinned Mini App banner body (Premium emoji applied on send) */
+  miniapp_pin_text: "",
+  /** Auto-pin banner on /start and /update (1/0) */
+  miniapp_pin_auto: "1",
   xui_inbound_ids: "1,2,3,4,5,6,7,8,9,10",
   guide_text: `📖 آموزش اتصال
 

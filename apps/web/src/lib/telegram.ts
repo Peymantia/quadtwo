@@ -4,6 +4,9 @@ export type TelegramWebApp = {
   initData: string;
   ready: () => void;
   expand: () => void;
+  requestFullscreen?: () => void;
+  exitFullscreen?: () => void;
+  isFullscreen?: boolean;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   themeParams?: Record<string, string>;
@@ -93,6 +96,8 @@ export function prepareTelegramUi(wa: TelegramWebApp) {
   try {
     wa.ready();
     wa.expand();
+    // Full-size / fullscreen Mini App (Bot API 8+) when opened from keyboard WebApp
+    wa.requestFullscreen?.();
   } catch {
     /* ignore */
   }

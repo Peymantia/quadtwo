@@ -110,6 +110,18 @@ export async function applyPremiumReplyMarkup(markup: unknown): Promise<unknown>
   return transformReplyMarkup(markup);
 }
 
+/** Always apply Premium icons/entities (ignores emoji_style) — e.g. pinned Mini App banner. */
+export function forcePremiumTextAndMarkup(
+  text: string,
+  markup?: unknown,
+): { text: string; entities: TgEntity[]; reply_markup?: unknown } {
+  return {
+    text,
+    entities: attachPremiumTextEntities(text),
+    reply_markup: markup != null ? transformReplyMarkup(markup) : undefined,
+  };
+}
+
 /** Attach custom_emoji entities for known Universal glyphs (UTF-16 offsets). */
 export function attachPremiumTextEntities(text: string, existing?: TgEntity[]): TgEntity[] {
   const entities: TgEntity[] = existing ? [...existing] : [];
