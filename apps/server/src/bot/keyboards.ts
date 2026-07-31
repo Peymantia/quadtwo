@@ -72,23 +72,23 @@ export type MainMenuOpts = {
 
 /**
  * Sticky reply keyboard — order + colors (Telegram: success=green, primary=blue, danger=red).
- * RTL: first button in a row = visual right.
+ * RTL: first button in a row = visual right (pairs listed visual L | R → code R then L).
  *
- * Admin DEMO:
- *   خرید | تغییر نقش دمو
- *   تمدید | سرویس‌های من
- *   مشاهده سریع | کلیه سرویس‌ها
- *   کنترل سنتر | تمام‌صفحه
- *   ورود مستقیم به وب اپ | ورود مرورگر  (both green)
+ * Admin DEMO (visual):
+ *   تغییر نقش دمو | خرید (آبی)
+ *   سرویس‌های من | تمدید
+ *   کلیه سرویس‌ها | مشاهده سریع
+ *   تمام‌صفحه | کنترل سنتر
+ *   ورود مرورگر | ورود مستقیم  (both green)
  *
- * Admin prod:
- *   خرید | پنل وب‌اپ (WebApp green)
- *   تمدید | سرویس‌های من
- *   مشاهده سریع | کلیه سرویس‌ها
- *   کنترل سنتر | تمام‌صفحه
+ * Admin prod (visual):
+ *   پنل وب‌اپ | خرید (both آبی)
+ *   سرویس‌های من | تمدید
+ *   کلیه سرویس‌ها | مشاهده سریع
+ *   تمام‌صفحه | کنترل سنتر
  *   ورود مرورگر (full-width, red)
  *
- * User / partner / wholesale: … then green pair ورود مستقیم | ورود مرورگر.
+ * User / partner / wholesale: columns mirrored vs previous; green web pair.
  */
 export function mainMenuReply(opts: MainMenuOpts) {
   const mini = opts.miniAppUrl?.startsWith("https://") ? opts.miniAppUrl : null;
@@ -97,27 +97,28 @@ export function mainMenuReply(opts: MainMenuOpts) {
     const kb = new Keyboard();
 
     if (opts.demoMode) {
-      kb.text(BTN.buy).text(BTN.demoRole).row();
+      kb.text(BTN.demoRole).text(BTN.buy).primary().row();
     } else if (mini) {
-      kb.text(BTN.buy).webApp(BTN.miniApp, mini).success().row();
+      kb.webApp(BTN.miniApp, mini).primary().text(BTN.buy).primary().row();
     } else {
-      kb.text(BTN.buy).row();
+      kb.text(BTN.buy).primary().row();
     }
 
     kb
-      .text(BTN.renew)
       .text(BTN.myServices)
+      .text(BTN.renew)
       .row()
-      .text(BTN.configLookup)
       .text(BTN.allConfigs)
+      .text(BTN.configLookup)
       .row()
-      .text(BTN.controlCenter)
       .text(BTN.hideKeyboard)
+      .text(BTN.controlCenter)
       .row();
 
     if (opts.demoMode) {
+      kb.text(BTN.dashOtp).success();
       if (mini) kb.webApp(BTN.miniAppDirect, mini).success();
-      kb.text(BTN.dashOtp).success().row();
+      kb.row();
     } else {
       kb.text(BTN.dashOtp).danger().row();
     }
@@ -126,34 +127,35 @@ export function mainMenuReply(opts: MainMenuOpts) {
   }
 
   const isAgent = opts.isPartner || opts.isWholesale;
-  const kb = new Keyboard().text(BTN.buy).success();
+  const kb = new Keyboard();
   if (opts.demoMode) {
-    kb.text(BTN.demoRole).success();
+    kb.text(BTN.demoRole).success().text(BTN.buy).success().row();
+  } else {
+    kb.text(BTN.buy).success().row();
   }
   kb
-    .row()
-    .text(BTN.myServices)
     .text(BTN.renew)
+    .text(BTN.myServices)
     .row()
-    .text(BTN.wallet)
     .text(BTN.account)
+    .text(BTN.wallet)
     .row()
-    .text(BTN.support)
     .text(BTN.hideKeyboard)
+    .text(BTN.support)
     .row();
 
   if (!isAgent) {
-    kb.text(BTN.guide).success().text(BTN.test).success().row();
+    kb.text(BTN.test).success().text(BTN.guide).success().row();
   }
 
   if (isAgent) {
-    kb.text(BTN.agentPanel).primary().text(BTN.configLookup).primary().row();
+    kb.text(BTN.configLookup).primary().text(BTN.agentPanel).primary().row();
   } else {
-    kb.text(BTN.partner).primary().text(BTN.configLookup).primary().row();
+    kb.text(BTN.configLookup).primary().text(BTN.partner).primary().row();
   }
 
   if (mini) {
-    kb.webApp(BTN.miniAppDirect, mini).success().text(BTN.dashOtp).success().row();
+    kb.text(BTN.dashOtp).success().webApp(BTN.miniAppDirect, mini).success().row();
   } else {
     kb.text(BTN.dashOtp).success().row();
   }
@@ -225,25 +227,26 @@ export function mainMenuInline(opts: MainMenuOpts) {
   if (opts.isAdmin) {
     const kb = new InlineKeyboard();
     if (opts.demoMode) {
-      kb.text(BTN.buy, "m:buy").text(BTN.demoRole, "m:demorole").row();
+      kb.text(BTN.demoRole, "m:demorole").text(BTN.buy, "m:buy").primary().row();
     } else if (mini) {
-      kb.text(BTN.buy, "m:buy").webApp(BTN.miniApp, mini).success().row();
+      kb.webApp(BTN.miniApp, mini).primary().text(BTN.buy, "m:buy").primary().row();
     } else {
-      kb.text(BTN.buy, "m:buy").row();
+      kb.text(BTN.buy, "m:buy").primary().row();
     }
     kb
-      .text(BTN.renew, "m:renew")
       .text(BTN.myServices, "m:myservices")
+      .text(BTN.renew, "m:renew")
       .row()
-      .text(BTN.configLookup, "m:cfglookup")
       .text(BTN.allConfigs, "m:configs")
+      .text(BTN.configLookup, "m:cfglookup")
       .row()
-      .text(BTN.controlCenter, "cc:home")
       .text(BTN.hideKeyboard, "m:hidekb")
+      .text(BTN.controlCenter, "cc:home")
       .row();
     if (opts.demoMode) {
+      kb.text(BTN.dashOtp, "m:dashotp").success();
       if (mini) kb.webApp(BTN.miniAppDirect, mini).success();
-      kb.text(BTN.dashOtp, "m:dashotp").success().row();
+      kb.row();
     } else {
       kb.text(BTN.dashOtp, "m:dashotp").danger().row();
     }
@@ -251,32 +254,35 @@ export function mainMenuInline(opts: MainMenuOpts) {
   }
 
   const isAgent = opts.isPartner || opts.isWholesale;
-  const kb = new InlineKeyboard()
-    .text(BTN.buy, "m:buy")
-    .success()
-    .row()
-    .text(BTN.myServices, "m:myservices")
+  const kb = new InlineKeyboard();
+  if (opts.demoMode) {
+    kb.text(BTN.demoRole, "m:demorole").success().text(BTN.buy, "m:buy").success().row();
+  } else {
+    kb.text(BTN.buy, "m:buy").success().row();
+  }
+  kb
     .text(BTN.renew, "m:renew")
+    .text(BTN.myServices, "m:myservices")
     .row()
-    .text(BTN.wallet, "m:wallet")
     .text(BTN.account, "m:account")
+    .text(BTN.wallet, "m:wallet")
     .row()
-    .text(BTN.support, "m:support")
     .text(BTN.hideKeyboard, "m:hidekb")
+    .text(BTN.support, "m:support")
     .row();
 
   if (!isAgent) {
-    kb.text(BTN.guide, "m:guide").success().text(BTN.test, "m:test").success().row();
+    kb.text(BTN.test, "m:test").success().text(BTN.guide, "m:guide").success().row();
   }
 
   if (isAgent) {
-    kb.text(BTN.agentPanel, "m:partnerpanel").primary().text(BTN.configLookup, "m:cfglookup").primary().row();
+    kb.text(BTN.configLookup, "m:cfglookup").primary().text(BTN.agentPanel, "m:partnerpanel").primary().row();
   } else {
-    kb.text(BTN.partner, "m:partner").primary().text(BTN.configLookup, "m:cfglookup").primary().row();
+    kb.text(BTN.configLookup, "m:cfglookup").primary().text(BTN.partner, "m:partner").primary().row();
   }
 
   if (mini) {
-    kb.webApp(BTN.miniAppDirect, mini).success().text(BTN.dashOtp, "m:dashotp").success().row();
+    kb.text(BTN.dashOtp, "m:dashotp").success().webApp(BTN.miniAppDirect, mini).success().row();
   } else {
     kb.text(BTN.dashOtp, "m:dashotp").success().row();
   }
