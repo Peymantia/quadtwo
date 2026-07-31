@@ -29,6 +29,14 @@ async function markSent(subscriptionId: string, kind: string, bucket: string) {
     .catch(() => undefined);
 }
 
+async function clearSent(subscriptionId: string, kind: string, bucket: string) {
+  await prisma.notificationLog
+    .deleteMany({
+      where: { subscriptionId, kind, bucket },
+    })
+    .catch(() => undefined);
+}
+
 function renewKeyboard(subId: string) {
   return new InlineKeyboard().text("♻️ تمدید سرویس", `sub:renew:${subId}`).success();
 }
@@ -159,9 +167,14 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
         if (traf) {
           const total = traf.total > 0 ? traf.total : sub.trafficGb * 1024 * 1024 * 1024;
           const remMb = remainingMb(total, traf.used);
-          if (remMb !== null && remMb <= cfg.traffic.megabytes) {
-            const bucket = `traf:${dayBucket()}:${cfg.traffic.megabytes}`;
-            if (!(await alreadySent(sub.id, "traffic", bucket))) {
+          // One warning per "low traffic" episode — not per UTC calendar day
+          // (UTC midnight ≈ 03:30 Iran, which caused duplicate identical alerts overnight).
+          const trafficBucket = `traf:episode:${cfg.traffic.megabytes}`;
+          if (remMb !== null && remMb > cfg.traffic.megabytes) {
+            // Recovered above threshold → allow a future warning if they drop again
+            await clearSent(sub.id, "traffic", trafficBucket);
+          } else if (remMb !== null && remMb <= cfg.traffic.megabytes) {
+            if (!(await alreadySent(sub.id, "traffic", trafficBucket))) {
               const ok = await sendUser(
                 api,
                 sub.user.telegramId,
@@ -177,7 +190,7 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
                 canOfferRenew ? renewKeyboard(sub.id) : undefined,
               );
               if (ok) {
-                await markSent(sub.id, "traffic", bucket);
+                await markSent(sub.id, "traffic", trafficBucket);
                 sent++;
               }
             }
