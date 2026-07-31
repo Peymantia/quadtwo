@@ -10,10 +10,6 @@ import { syncSubscriptionExpiryFromPanel } from "./provision.js";
 const MS_HOUR = 60 * 60 * 1000;
 const MS_DAY = 24 * MS_HOUR;
 
-function dayBucket(d = new Date()) {
-  return d.toISOString().slice(0, 10);
-}
-
 async function alreadySent(subscriptionId: string, kind: string, bucket: string) {
   const row = await prisma.notificationLog.findUnique({
     where: { subscriptionId_kind_bucket: { subscriptionId, kind, bucket } },
