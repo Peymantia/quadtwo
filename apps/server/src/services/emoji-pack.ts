@@ -345,6 +345,10 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
     if (after.includes("آیفون") || after.includes("iOS") || after.includes("iPhone")) return PREMIUM_IDS.iphone;
     return PREMIUM_IDS.phone_device;
   }
+  if (glyph === "🌐") {
+    // «پنل وب‌اپ» / داشبورد — dash_web premium id
+    return PREMIUM_IDS.dash_web;
+  }
   if (glyph === "📦") {
     if (after.includes("Base64")) return PREMIUM_IDS.base64_link;
     return PREMIUM_IDS.my_services;

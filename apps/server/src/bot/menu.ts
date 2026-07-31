@@ -7,7 +7,7 @@ export async function syncTelegramMenu(api: Api) {
     { command: "start", description: "منوی اصلی" },
     { command: "update", description: "به‌روزرسانی منو و تغییرات جدید" },
     { command: "hide", description: "مخفی کردن کیبورد (نمایش تمام‌صفحه)" },
-    { command: "app", description: "ورود به پنل وب‌اپ / مرورگر" },
+    { command: "app", description: "ورود به وب پنل / مرورگر" },
     { command: "buy", description: "خرید سرویس" },
     { command: "services", description: "سرویس‌های من" },
     { command: "wallet", description: "کیف پول" },
@@ -27,7 +27,7 @@ export async function syncTelegramMenu(api: Api) {
     await api.setChatMenuButton({
       menu_button: {
         type: "web_app",
-        text: "پنل",
+        text: "وب پنل",
         web_app: { url: miniUrl },
       },
     });

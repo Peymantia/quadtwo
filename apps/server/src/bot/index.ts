@@ -244,14 +244,9 @@ async function pinMiniAppBanner(ctx: Context) {
   if (!mini || chatId == null) return;
   try {
     const msg = await ctx.reply(
-      [
-        "📱 پنل وب‌اپ",
-        "",
-        "این پیام بالای چت پین شده است.",
-        "با دکمه زیر مستقیم داخل تلگرام وارد پنل شوید — بدون رمز.",
-      ].join("\n"),
+      ["📱 پنل وب‌اپ", "", "با دکمه زیر مستقیم از تلگرام وارد وب پنل شوید..."].join("\n"),
       {
-        reply_markup: new InlineKeyboard().webApp("📱 باز کردن پنل", mini).success(),
+        reply_markup: new InlineKeyboard().webApp("📱 باز کردن وب پنل", mini).success(),
       },
     );
     await ctx.api.pinChatMessage(chatId, msg.message_id, { disable_notification: true });
@@ -822,14 +817,14 @@ async function handleDashOtp(ctx: Context) {
     if (mini) {
       await ctx.reply(
         [
-          "📱 پنل وب‌اپ",
+          "🌐 وب پنل",
           "",
           "برای ورود سریع داخل تلگرام (بدون رمز) دکمه زیر را بزنید.",
-          "اگر روی کامپیوتر در مرورگر جدا می‌خواهید وارد شوید، از «ورود مرورگر» کد بگیرید.",
+          "اگر روی کامپیوتر در مرورگر جدا می‌خواهید وارد شوید، از «ورود به وب اپ از طریق مرورگر» کد بگیرید.",
         ].join("\n"),
         {
           reply_markup: new InlineKeyboard()
-            .webApp("📱 باز کردن پنل", mini)
+            .webApp("🌐 باز کردن وب پنل", mini)
             .success()
             .row()
             .text("🔐 کد ورود مرورگر", "dash:otp_code"),
@@ -1053,7 +1048,7 @@ export function createBot() {
         "🔄 منوی ربات به‌روز شد",
         "",
         "دکمه‌ها و دستورات جدید بارگذاری شدند.",
-        "اگر «📱 پنل وب‌اپ» را می‌بینید، مستقیم داخل تلگرام باز می‌شود.",
+        "اگر «ورود مستقیم به وب اپ» یا «پنل وب‌اپ» را می‌بینید، مستقیم داخل تلگرام باز می‌شود.",
         "اگر تغییری نمی‌بینید، یک‌بار چت را ببندید و دوباره باز کنید.",
       ].join("\n"),
     );
@@ -2381,7 +2376,14 @@ export function createBot() {
   });
   bot.hears(hearsBtn(BTN.support), async (ctx) => handleSupport(ctx));
   bot.hears(hearsBtn(BTN.dashboard), async (ctx) => handleDashboard(ctx));
-  bot.hears([...hearsBtn(BTN.dashOtp), ...hearsBtn("🔐 داشبورد | وب اپ")], async (ctx) => handleDashOtpCode(ctx));
+  bot.hears(
+    [
+      ...hearsBtn(BTN.dashOtp),
+      ...hearsBtn("🔐 ورود مرورگر"),
+      ...hearsBtn("🔐 داشبورد | وب اپ"),
+    ],
+    async (ctx) => handleDashOtpCode(ctx),
+  );
   bot.hears(hearsBtn(BTN.demoRole), async (ctx) => {
     if (!isDemoMode()) {
       await ctx.reply("نسخه نمایشی فعال نیست.");
@@ -3023,7 +3025,7 @@ export function createBot() {
       [
         "آدرس وب‌اپ ذخیره شد ✅",
         "",
-        "منوی تلگرام (دکمه OPEN / پنل) و کیبورد «📱 پنل وب‌اپ» مستقیم داخل تلگرام باز می‌شوند — بدون رمز.",
+        "منوی تلگرام (دکمه «وب پنل») و کیبورد وب‌اپ مستقیم داخل تلگرام باز می‌شوند — بدون رمز.",
         "کاربران یک‌بار /update بزنند تا کیبورد جدید بیاید.",
       ].join("\n"),
     );

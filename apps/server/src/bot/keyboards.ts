@@ -16,10 +16,12 @@ export const BTN = {
   support: "🆘 پشتیبانی",
   test: "🧪 دریافت اکانت تست",
   dashboard: "🌐 داشبورد وب",
-  /** Opens Telegram Mini App (no OTP) when miniapp URL is configured */
-  miniApp: "📱 پنل وب‌اپ",
+  /** Admin (prod): WebApp next to buy — premium via dash_web (🌐) */
+  miniApp: "🌐 پنل وب‌اپ",
+  /** User / partner / wholesale / admin-demo: direct Mini App entry */
+  miniAppDirect: "📱 ورود مستقیم به وب اپ",
   /** Browser login with temporary credentials */
-  dashOtp: "🔐 ورود مرورگر",
+  dashOtp: "🔐 ورود به وب اپ از طریق مرورگر",
   configLookup: "🔎 مشاهده سریع",
   partner: "🤝 درخواست نمایندگی",
   allConfigs: "👀 نمایش کلیه سرویس‌ها",
@@ -70,36 +72,56 @@ export type MainMenuOpts = {
 
 /**
  * Sticky reply keyboard — order + colors (Telegram: success=green, primary=blue, danger=red).
+ * RTL: first button in a row = visual right.
  *
- * Admin (prod + demo) — all neutral (RTL: first in row = visual right):
- *   سرویس‌های من | خرید
- *   کلیه سرویس‌ها | تمدید
- *   تمام‌صفحه | مشاهده سریع
- *   پنل وب‌اپ | کنترل سنتر
- *   [| تغییر نقش دمو — فقط DEMO_MODE]
+ * Admin DEMO:
+ *   خرید | تغییر نقش دمو
+ *   تمدید | سرویس‌های من
+ *   مشاهده سریع | کلیه سرویس‌ها
+ *   کنترل سنتر | تمام‌صفحه
+ *   ورود مستقیم به وب اپ | ورود مرورگر  (both green)
  *
- * Other roles: buy, services, wallet/account, support|تمام‌صفحه, guide/test, agent|partner + lookup,
- * then green Mini App button (+ optional browser OTP).
+ * Admin prod:
+ *   خرید | پنل وب‌اپ (WebApp green)
+ *   تمدید | سرویس‌های من
+ *   مشاهده سریع | کلیه سرویس‌ها
+ *   کنترل سنتر | تمام‌صفحه
+ *   ورود مرورگر (full-width, red)
+ *
+ * User / partner / wholesale: … then green pair ورود مستقیم | ورود مرورگر.
  */
 export function mainMenuReply(opts: MainMenuOpts) {
   const mini = opts.miniAppUrl?.startsWith("https://") ? opts.miniAppUrl : null;
 
   if (opts.isAdmin) {
-    const kb = new Keyboard()
-      .text(BTN.myServices)
-      .text(BTN.buy)
-      .row()
-      .text(BTN.allConfigs)
+    const kb = new Keyboard();
+
+    if (opts.demoMode) {
+      kb.text(BTN.buy).text(BTN.demoRole).row();
+    } else if (mini) {
+      kb.text(BTN.buy).webApp(BTN.miniApp, mini).success().row();
+    } else {
+      kb.text(BTN.buy).row();
+    }
+
+    kb
       .text(BTN.renew)
+      .text(BTN.myServices)
       .row()
-      .text(BTN.hideKeyboard)
       .text(BTN.configLookup)
+      .text(BTN.allConfigs)
+      .row()
+      .text(BTN.controlCenter)
+      .text(BTN.hideKeyboard)
       .row();
-    if (mini) kb.webApp(BTN.miniApp, mini).success();
-    else kb.text(BTN.dashOtp);
-    kb.text(BTN.controlCenter).row();
-    if (opts.demoMode) kb.text(BTN.demoRole).row();
-    if (mini) kb.text(BTN.dashOtp).row();
+
+    if (opts.demoMode) {
+      if (mini) kb.webApp(BTN.miniAppDirect, mini).success();
+      kb.text(BTN.dashOtp).success().row();
+    } else {
+      kb.text(BTN.dashOtp).danger().row();
+    }
+
     return kb.persistent().resized();
   }
 
@@ -131,10 +153,9 @@ export function mainMenuReply(opts: MainMenuOpts) {
   }
 
   if (mini) {
-    kb.webApp(BTN.miniApp, mini).success().row();
-    kb.text(BTN.dashOtp).row();
+    kb.webApp(BTN.miniAppDirect, mini).success().text(BTN.dashOtp).success().row();
   } else {
-    kb.text(BTN.dashOtp).danger().row();
+    kb.text(BTN.dashOtp).success().row();
   }
 
   return kb.persistent().resized();
@@ -202,21 +223,30 @@ export function mainMenuInline(opts: MainMenuOpts) {
   const mini = opts.miniAppUrl?.startsWith("https://") ? opts.miniAppUrl : null;
 
   if (opts.isAdmin) {
-    const kb = new InlineKeyboard()
-      .text(BTN.myServices, "m:myservices")
-      .text(BTN.buy, "m:buy")
-      .row()
-      .text(BTN.allConfigs, "m:configs")
+    const kb = new InlineKeyboard();
+    if (opts.demoMode) {
+      kb.text(BTN.buy, "m:buy").text(BTN.demoRole, "m:demorole").row();
+    } else if (mini) {
+      kb.text(BTN.buy, "m:buy").webApp(BTN.miniApp, mini).success().row();
+    } else {
+      kb.text(BTN.buy, "m:buy").row();
+    }
+    kb
       .text(BTN.renew, "m:renew")
+      .text(BTN.myServices, "m:myservices")
       .row()
-      .text(BTN.hideKeyboard, "m:hidekb")
       .text(BTN.configLookup, "m:cfglookup")
+      .text(BTN.allConfigs, "m:configs")
+      .row()
+      .text(BTN.controlCenter, "cc:home")
+      .text(BTN.hideKeyboard, "m:hidekb")
       .row();
-    if (mini) kb.webApp(BTN.miniApp, mini).success();
-    else kb.text(BTN.dashOtp, "m:dashotp");
-    kb.text(BTN.controlCenter, "cc:home").row();
-    if (opts.demoMode) kb.text(BTN.demoRole, "m:demorole").row();
-    if (mini) kb.text(BTN.dashOtp, "m:dashotp").row();
+    if (opts.demoMode) {
+      if (mini) kb.webApp(BTN.miniAppDirect, mini).success();
+      kb.text(BTN.dashOtp, "m:dashotp").success().row();
+    } else {
+      kb.text(BTN.dashOtp, "m:dashotp").danger().row();
+    }
     return kb;
   }
 
@@ -246,10 +276,9 @@ export function mainMenuInline(opts: MainMenuOpts) {
   }
 
   if (mini) {
-    kb.webApp(BTN.miniApp, mini).success().row();
-    kb.text(BTN.dashOtp, "m:dashotp").row();
+    kb.webApp(BTN.miniAppDirect, mini).success().text(BTN.dashOtp, "m:dashotp").success().row();
   } else {
-    kb.text(BTN.dashOtp, "m:dashotp").danger().row();
+    kb.text(BTN.dashOtp, "m:dashotp").success().row();
   }
   return kb;
 }
