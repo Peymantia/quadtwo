@@ -50,6 +50,14 @@ export async function createMatrixOrder(input: {
   if (isWholesaleFixedRole(pricedUser.role) && kind === OrderKind.new) {
     category = WHOLESALE_FIXED_CATEGORY;
   }
+  // پلن‌های عمده‌فروش فقط برای نقش عمده‌فروش (نه کاربر/همکار/همکار ویژه/ادمین)
+  if (
+    kind === OrderKind.new &&
+    isWholesaleFixedCategory(category) &&
+    !isWholesaleFixedRole(pricedUser.role)
+  ) {
+    throw new Error("پلن‌های عمده‌فروش فقط برای نقش عمده‌فروش قابل خرید است");
+  }
   let panelServerId: string | null = null;
   let accountName = input.accountName;
   let orderUserId = user.id;
@@ -96,6 +104,13 @@ export async function createMatrixOrder(input: {
     }
     if (isWholesaleFixedRole(pricedUser.role) && kind === OrderKind.new && !isWholesaleFixedCategory(selectedCell.category)) {
       throw new Error("عمده‌فروش فقط می‌تواند پلن‌های تعریف‌شده عمده‌فروشی را بخرد");
+    }
+    if (
+      kind === OrderKind.new &&
+      isWholesaleFixedCategory(selectedCell.category) &&
+      !isWholesaleFixedRole(pricedUser.role)
+    ) {
+      throw new Error("پلن‌های عمده‌فروش فقط برای نقش عمده‌فروش قابل خرید است");
     }
     if (fixedSingle && !isOfferCategory(selectedCell.category) && selectedCell.category !== category) {
       // Allow locking via cell only when categories match (or offer)

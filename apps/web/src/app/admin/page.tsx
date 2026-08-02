@@ -1219,7 +1219,8 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   }, []);
 
   const shown = catFilter ? cells.filter((c) => c.category === catFilter) : cells;
-  const rateCategories = categories.filter((c) => c.key !== "unlimited");
+  const rateCategories = categories.filter((c) => c.key !== "unlimited" && c.key !== "wholesale" && c.key !== "offer");
+  const isWholesaleForm = newCell.category === "wholesale";
 
   function catUnit(cat: string, role: "user" | "partner" | "wholesale", field: "perGb" | "perMonth") {
     return Number(rates.categories?.[cat]?.[role]?.[field] ?? rates[role][field] ?? 0);
@@ -1269,16 +1270,27 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     const e = edits[c.id];
     if (!e) return;
     try {
+      const isWh = c.category === "wholesale" || c.category === "reseller";
+      const resellerPrice = Number(e.priceReseller ?? c.priceReseller ?? 0);
       await api(`/admin/prices/${c.id}`, {
         method: "PUT",
-        body: {
-          priceUser: Number(e.priceUser ?? c.priceUser),
-          pricePartner: Number(e.pricePartner ?? c.pricePartner),
-          priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
-          priceReseller: Number(e.priceReseller ?? c.priceReseller ?? 0),
-          limitIp: Number(e.limitIp ?? c.limitIp ?? 0),
-          title: e.title ?? c.title,
-        },
+        body: isWh
+          ? {
+              priceUser: resellerPrice,
+              pricePartner: resellerPrice,
+              priceWholesale: resellerPrice,
+              priceReseller: resellerPrice,
+              limitIp: Number(e.limitIp ?? c.limitIp ?? 0),
+              title: e.title ?? c.title,
+            }
+          : {
+              priceUser: Number(e.priceUser ?? c.priceUser),
+              pricePartner: Number(e.pricePartner ?? c.pricePartner),
+              priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
+              priceReseller: Number(e.priceReseller ?? c.priceReseller ?? 0),
+              limitIp: Number(e.limitIp ?? c.limitIp ?? 0),
+              title: e.title ?? c.title,
+            },
       });
       flash("قیمت ذخیره شد");
       setEdits((m) => {
@@ -1301,16 +1313,27 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         const c = cells.find((x) => x.id === id);
         const e = edits[id];
         if (!c || !e) continue;
+        const isWh = c.category === "wholesale" || c.category === "reseller";
+        const resellerPrice = Number(e.priceReseller ?? c.priceReseller ?? 0);
         await api(`/admin/prices/${id}`, {
           method: "PUT",
-          body: {
-            priceUser: Number(e.priceUser ?? c.priceUser),
-            pricePartner: Number(e.pricePartner ?? c.pricePartner),
-            priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
-            priceReseller: Number(e.priceReseller ?? c.priceReseller ?? 0),
-            limitIp: Number(e.limitIp ?? c.limitIp ?? 0),
-            title: e.title ?? c.title,
-          },
+          body: isWh
+            ? {
+                priceUser: resellerPrice,
+                pricePartner: resellerPrice,
+                priceWholesale: resellerPrice,
+                priceReseller: resellerPrice,
+                limitIp: Number(e.limitIp ?? c.limitIp ?? 0),
+                title: e.title ?? c.title,
+              }
+            : {
+                priceUser: Number(e.priceUser ?? c.priceUser),
+                pricePartner: Number(e.pricePartner ?? c.pricePartner),
+                priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
+                priceReseller: Number(e.priceReseller ?? c.priceReseller ?? 0),
+                limitIp: Number(e.limitIp ?? c.limitIp ?? 0),
+                title: e.title ?? c.title,
+              },
         });
         n++;
       }
@@ -1359,6 +1382,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     try {
       const isUnlimited = newCell.category === "unlimited";
       const isOffer = newCell.category === "offer";
+      const isWholesale = newCell.category === "wholesale";
       const trafficGb =
         isUnlimited || (isOffer && !String(newCell.trafficGb).trim())
           ? null
@@ -1373,23 +1397,40 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         flash(null, "حجم پیشنهاد ویژه نامعتبر است (خالی = نامحدود).");
         return;
       }
+      if (isWholesale && !parsePriceInput(newCell.priceReseller)) {
+        flash(null, "قیمت عمده‌فروش را وارد کنید.");
+        return;
+      }
+      const wholesalePrice = parsePriceInput(newCell.priceReseller);
       await api("/admin/prices", {
-        body: {
-          category: isUnlimited ? "unlimited" : newCell.category,
-          trafficGb,
-          months: Number(newCell.months),
-          priceUser: parsePriceInput(newCell.priceUser),
-          pricePartner: parsePriceInput(newCell.pricePartner),
-          priceWholesale: newCell.priceWholesale ? parsePriceInput(newCell.priceWholesale) : undefined,
-          priceReseller: newCell.priceReseller ? parsePriceInput(newCell.priceReseller) : undefined,
-          limitIp: newCell.category === "wholesale" ? Number(newCell.limitIp) || 1 : undefined,
-          title: newCell.title || undefined,
-          isGolden: newCell.isGolden,
-        },
+        body: isWholesale
+          ? {
+              category: "wholesale",
+              trafficGb,
+              months: Number(newCell.months),
+              priceUser: wholesalePrice,
+              pricePartner: wholesalePrice,
+              priceWholesale: wholesalePrice,
+              priceReseller: wholesalePrice,
+              limitIp: Number(newCell.limitIp) || 1,
+              title: newCell.title || undefined,
+              isGolden: false,
+            }
+          : {
+              category: isUnlimited ? "unlimited" : newCell.category,
+              trafficGb,
+              months: Number(newCell.months),
+              priceUser: parsePriceInput(newCell.priceUser),
+              pricePartner: parsePriceInput(newCell.pricePartner),
+              priceWholesale: newCell.priceWholesale ? parsePriceInput(newCell.priceWholesale) : undefined,
+              priceReseller: newCell.priceReseller ? parsePriceInput(newCell.priceReseller) : undefined,
+              title: newCell.title || undefined,
+              isGolden: newCell.isGolden,
+            },
       });
       flash("پلن جدید اضافه شد");
       setNewCell({
-        category: "data",
+        category: isWholesale ? "wholesale" : "data",
         trafficGb: "",
         months: "1",
         priceUser: "",
@@ -1460,8 +1501,12 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
 
       <section className="panel prices-section">
         <div className="prices-section-head">
-          <h2>افزودن پلن جدید</h2>
-          <p className="muted">پلن ماتریکس جدید به جدول قیمت‌ها اضافه می‌شود.</p>
+          <h2>{isWholesaleForm ? "افزودن پلن عمده‌فروش" : "افزودن پلن جدید"}</h2>
+          <p className="muted">
+            {isWholesaleForm
+              ? "فقط برای نقش عمده‌فروش؛ پلن ثابت با قیمت و تعداد کاربر مشخص."
+              : "پلن ماتریکس جدید به جدول قیمت‌ها اضافه می‌شود."}
+          </p>
         </div>
         <div className="prices-add-grid">
           <div className="field">
@@ -1486,7 +1531,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
               className="num"
               inputMode="numeric"
               disabled={newCell.category === "unlimited"}
-              placeholder={newCell.category === "unlimited" ? "∞" : newCell.category === "offer" ? "مثلاً 50 یا خالی" : "مثلاً 25"}
+              placeholder={newCell.category === "unlimited" ? "∞" : newCell.category === "offer" ? "مثلاً 50 یا خالی" : "مثلاً 100"}
               value={newCell.category === "unlimited" ? "" : newCell.trafficGb}
               onChange={(e) => setNewCell((s) => ({ ...s, trafficGb: e.target.value }))}
             />
@@ -1500,72 +1545,92 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
               onChange={(e) => setNewCell((s) => ({ ...s, months: e.target.value }))}
             />
           </div>
-          <div className="field">
-            <label>قیمت کاربر</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              dir="ltr"
-              value={formatPriceInput(newCell.priceUser)}
-              onChange={(e) => setNewCell((s) => ({ ...s, priceUser: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
-            />
-          </div>
-          <div className="field">
-            <label>قیمت همکار</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              dir="ltr"
-              value={formatPriceInput(newCell.pricePartner)}
-              onChange={(e) => setNewCell((s) => ({ ...s, pricePartner: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
-            />
-          </div>
-          <div className="field">
-            <label>قیمت همکار ویژه</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              dir="ltr"
-              value={formatPriceInput(newCell.priceWholesale)}
-              onChange={(e) => setNewCell((s) => ({ ...s, priceWholesale: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
-            />
-          </div>
-          <div className="field">
-            <label>قیمت عمده‌فروش</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              dir="ltr"
-              value={formatPriceInput(newCell.priceReseller)}
-              onChange={(e) => setNewCell((s) => ({ ...s, priceReseller: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
-            />
-          </div>
-          {newCell.category === "wholesale" && (
-            <div className="field">
-              <label>تعداد کاربر (IP)</label>
-              <input
-                className="num"
-                inputMode="numeric"
-                dir="ltr"
-                value={newCell.limitIp}
-                onChange={(e) => setNewCell((s) => ({ ...s, limitIp: e.target.value.replace(/[^\d]/g, "") }))}
-              />
-            </div>
+          {isWholesaleForm ? (
+            <>
+              <div className="field">
+                <label>قیمت عمده‌فروش</label>
+                <input
+                  className="num"
+                  inputMode="numeric"
+                  dir="ltr"
+                  value={formatPriceInput(newCell.priceReseller)}
+                  onChange={(e) =>
+                    setNewCell((s) => ({ ...s, priceReseller: formatPriceInput(parsePriceInput(e.target.value) || "") }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>تعداد کاربر (IP)</label>
+                <input
+                  className="num"
+                  inputMode="numeric"
+                  dir="ltr"
+                  value={newCell.limitIp}
+                  onChange={(e) => setNewCell((s) => ({ ...s, limitIp: e.target.value.replace(/[^\d]/g, "") }))}
+                />
+              </div>
+              <div className="field">
+                <label>عنوان (اختیاری)</label>
+                <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <label>قیمت کاربر</label>
+                <input
+                  className="num"
+                  inputMode="numeric"
+                  dir="ltr"
+                  value={formatPriceInput(newCell.priceUser)}
+                  onChange={(e) =>
+                    setNewCell((s) => ({ ...s, priceUser: formatPriceInput(parsePriceInput(e.target.value) || "") }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>قیمت همکار</label>
+                <input
+                  className="num"
+                  inputMode="numeric"
+                  dir="ltr"
+                  value={formatPriceInput(newCell.pricePartner)}
+                  onChange={(e) =>
+                    setNewCell((s) => ({ ...s, pricePartner: formatPriceInput(parsePriceInput(e.target.value) || "") }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>قیمت همکار ویژه</label>
+                <input
+                  className="num"
+                  inputMode="numeric"
+                  dir="ltr"
+                  value={formatPriceInput(newCell.priceWholesale)}
+                  onChange={(e) =>
+                    setNewCell((s) => ({
+                      ...s,
+                      priceWholesale: formatPriceInput(parsePriceInput(e.target.value) || ""),
+                    }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>عنوان (اختیاری)</label>
+                <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
+              </div>
+              <div className="field prices-add-gold">
+                <label className="price-plan-gold">
+                  <input
+                    type="checkbox"
+                    checked={newCell.isGolden}
+                    onChange={(e) => setNewCell((s) => ({ ...s, isGolden: e.target.checked }))}
+                  />
+                  <span>پیشنهاد ویژه ⭐</span>
+                </label>
+              </div>
+            </>
           )}
-          <div className="field">
-            <label>عنوان (اختیاری)</label>
-            <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
-          </div>
-          <div className="field prices-add-gold">
-            <label className="price-plan-gold">
-              <input
-                type="checkbox"
-                checked={newCell.isGolden}
-                onChange={(e) => setNewCell((s) => ({ ...s, isGolden: e.target.checked }))}
-              />
-              <span>پیشنهاد ویژه ⭐</span>
-            </label>
-          </div>
         </div>
         <div className="prices-section-actions">
           <button
@@ -1573,9 +1638,11 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             className="btn success"
             disabled={
               !newCell.months ||
-              !newCell.priceUser ||
-              !newCell.pricePartner ||
-              (newCell.category !== "unlimited" && newCell.category !== "offer" && !newCell.trafficGb)
+              (isWholesaleForm
+                ? !newCell.priceReseller || !newCell.trafficGb
+                : !newCell.priceUser ||
+                  !newCell.pricePartner ||
+                  (newCell.category !== "unlimited" && newCell.category !== "offer" && !newCell.trafficGb))
             }
             onClick={addCell}
           >
@@ -1732,28 +1799,34 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             قیمت نامحدود از «نرخ هر ماه» بالا (و در صورت نبود نرخ، از پلن ماتریکس همین دسته) محاسبه می‌شود.
           </p>
         )}
+        {(catFilter === "wholesale" || catFilter === "reseller") && (
+          <p className="hint">این پلن‌ها فقط برای نقش عمده‌فروش قابل خرید هستند.</p>
+        )}
         <div className="price-plan-list">
           {shown.map((c) => {
             const e = edits[c.id] ?? {};
+            const isWh = c.category === "wholesale" || c.category === "reseller";
             return (
               <div key={c.id} className={`price-plan-card${c.active === false ? " off" : ""}${c.isGolden ? " golden" : ""}`}>
                 <div className="price-plan-head">
                   <div className="price-plan-title">
                     <strong className="num">
-                      {c.trafficGb ?? "∞"}GB · {c.months}ماه
-                      {c.isGolden && " ⭐"}
+                      {c.title?.trim() || `${c.trafficGb ?? "∞"}GB · ${c.months}ماه`}
+                      {!isWh && c.isGolden && " ⭐"}
                     </strong>
                     <span className="muted">{catLabel(c.category, categories)}</span>
                   </div>
                   <div className="price-plan-toggles">
-                    <label className="price-plan-gold" title="پیشنهاد ویژه — در حالت نرخی هم قیمت ثابت این پلن اعمال می‌شود">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(c.isGolden)}
-                        onChange={(ev) => void toggleGolden(c, ev.target.checked)}
-                      />
-                      <span>ویژه ⭐</span>
-                    </label>
+                    {!isWh && (
+                      <label className="price-plan-gold" title="پیشنهاد ویژه — در حالت نرخی هم قیمت ثابت این پلن اعمال می‌شود">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(c.isGolden)}
+                          onChange={(ev) => void toggleGolden(c, ev.target.checked)}
+                        />
+                        <span>ویژه ⭐</span>
+                      </label>
+                    )}
                     <label className="switch" title="فعال / غیرفعال">
                       <input
                         type="checkbox"
@@ -1765,82 +1838,99 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                   </div>
                 </div>
                 <div className="price-plan-fields">
-                  <div className="field">
-                    <label>کاربر</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(e.priceUser ?? c.priceUser)}
-                      onChange={(ev) =>
-                        setEdits((m) => ({
-                          ...m,
-                          [c.id]: { ...m[c.id], priceUser: parsePriceInput(ev.target.value) },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>همکار</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(e.pricePartner ?? c.pricePartner)}
-                      onChange={(ev) =>
-                        setEdits((m) => ({
-                          ...m,
-                          [c.id]: { ...m[c.id], pricePartner: parsePriceInput(ev.target.value) },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>همکار ویژه</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(e.priceWholesale ?? c.priceWholesale)}
-                      onChange={(ev) =>
-                        setEdits((m) => ({
-                          ...m,
-                          [c.id]: { ...m[c.id], priceWholesale: parsePriceInput(ev.target.value) },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>عمده‌فروش</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(e.priceReseller ?? c.priceReseller ?? 0)}
-                      onChange={(ev) =>
-                        setEdits((m) => ({
-                          ...m,
-                          [c.id]: { ...m[c.id], priceReseller: parsePriceInput(ev.target.value) },
-                        }))
-                      }
-                    />
-                  </div>
-                  {(c.category === "wholesale" || c.category === "reseller") && (
-                    <div className="field">
-                      <label>کاربر (IP)</label>
-                      <input
-                        className="num"
-                        inputMode="numeric"
-                        dir="ltr"
-                        value={String(e.limitIp ?? c.limitIp ?? 0)}
-                        onChange={(ev) =>
-                          setEdits((m) => ({
-                            ...m,
-                            [c.id]: { ...m[c.id], limitIp: Number(ev.target.value.replace(/[^\d]/g, "") || "0") },
-                          }))
-                        }
-                      />
-                    </div>
+                  {isWh ? (
+                    <>
+                      <div className="field">
+                        <label>قیمت</label>
+                        <input
+                          className="num"
+                          inputMode="numeric"
+                          dir="ltr"
+                          value={formatPriceInput(e.priceReseller ?? c.priceReseller ?? 0)}
+                          onChange={(ev) =>
+                            setEdits((m) => ({
+                              ...m,
+                              [c.id]: { ...m[c.id], priceReseller: parsePriceInput(ev.target.value) },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="field">
+                        <label>کاربر (IP)</label>
+                        <input
+                          className="num"
+                          inputMode="numeric"
+                          dir="ltr"
+                          value={String(e.limitIp ?? c.limitIp ?? 0)}
+                          onChange={(ev) =>
+                            setEdits((m) => ({
+                              ...m,
+                              [c.id]: { ...m[c.id], limitIp: Number(ev.target.value.replace(/[^\d]/g, "") || "0") },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="field">
+                        <label>عنوان</label>
+                        <input
+                          value={String(e.title ?? c.title ?? "")}
+                          onChange={(ev) =>
+                            setEdits((m) => ({
+                              ...m,
+                              [c.id]: { ...m[c.id], title: ev.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="field">
+                        <label>کاربر</label>
+                        <input
+                          className="num"
+                          inputMode="numeric"
+                          dir="ltr"
+                          value={formatPriceInput(e.priceUser ?? c.priceUser)}
+                          onChange={(ev) =>
+                            setEdits((m) => ({
+                              ...m,
+                              [c.id]: { ...m[c.id], priceUser: parsePriceInput(ev.target.value) },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="field">
+                        <label>همکار</label>
+                        <input
+                          className="num"
+                          inputMode="numeric"
+                          dir="ltr"
+                          value={formatPriceInput(e.pricePartner ?? c.pricePartner)}
+                          onChange={(ev) =>
+                            setEdits((m) => ({
+                              ...m,
+                              [c.id]: { ...m[c.id], pricePartner: parsePriceInput(ev.target.value) },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="field">
+                        <label>همکار ویژه</label>
+                        <input
+                          className="num"
+                          inputMode="numeric"
+                          dir="ltr"
+                          value={formatPriceInput(e.priceWholesale ?? c.priceWholesale)}
+                          onChange={(ev) =>
+                            setEdits((m) => ({
+                              ...m,
+                              [c.id]: { ...m[c.id], priceWholesale: parsePriceInput(ev.target.value) },
+                            }))
+                          }
+                        />
+                      </div>
+                    </>
                   )}
                 </div>
                 <div className="price-plan-actions">
@@ -1983,12 +2073,18 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
                     </span>
                     <span>{c.cellCount} پلن</span>
                     {c.builtin ? <span className="cat-card__tag">پیش‌فرض</span> : null}
+                    {c.key === "wholesale" ? <span className="cat-card__tag">فقط عمده‌فروش</span> : null}
                   </div>
                   <label className="switch switch-sm" title="فروش فعال/غیرفعال">
                     <input type="checkbox" checked={c.enabled} onChange={(e) => save(c, { enabled: e.target.checked })} />
                     <span className="track" />
                   </label>
                 </div>
+                {c.key === "wholesale" ? (
+                  <p className="muted" style={{ margin: "0 0 8px", fontSize: 12 }}>
+                    با فعال‌سازی، فقط نقش عمده‌فروش این پلن‌ها را می‌بیند و می‌خرد؛ نقش‌های دیگر به این دسته دسترسی ندارند.
+                  </p>
+                ) : null}
                 <input
                   className="cat-card__input"
                   value={draft}

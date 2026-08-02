@@ -17,8 +17,8 @@ import {
   payOrderWithWallet,
   rejectOrder,
 } from "../services/orders.js";
-import { listPriceMatrix, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, listOfferPlans, listFixedPlans, isWholesaleFixedCategory, WHOLESALE_FIXED_CATEGORY } from "../services/pricing.js";
 import { isWholesaleFixedRole, roleLabelFa } from "../services/roles.js";
+import { listPriceMatrix, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, listOfferPlans, listFixedPlans, isWholesaleFixedCategory, WHOLESALE_FIXED_CATEGORY } from "../services/pricing.js";
 import {
   provisionOrder,
   refreshSubscriptionSubUrl,
@@ -1126,14 +1126,23 @@ export function createBot() {
       return;
     }
     const cats = await getSalesCategories();
-    if (!cats[cat]) {
+    if (!cats[cat] && cat !== "reseller") {
       await ctx.reply(cat === "national" ? NATIONAL_EMERGENCY_MSG : "این دسته فعلاً برای فروش فعال نیست.");
       return;
     }
+    const roleUser = withEffectiveRole(await upsertUserFromTelegram(ctx.from!), ctx.from!.id);
+    if (isWholesaleFixedCategory(cat) && !isWholesaleFixedRole(roleUser.role)) {
+      await ctx.reply("این پلن‌ها فقط برای عمده‌فروش است.");
+      return;
+    }
+    if (isWholesaleFixedRole(roleUser.role) && !isWholesaleFixedCategory(cat)) {
+      await ctx.reply("عمده‌فروش فقط می‌تواند از پلن‌های ثابت عمده‌فروشی خرید کند.");
+      return;
+    }
     try {
-      await setDraftCategory(BigInt(ctx.from!.id), cat);
-      if (isFixedSingleServiceCategory(cat)) {
-        await showFixedPlanPicker(ctx, cat, true);
+      await setDraftCategory(BigInt(ctx.from!.id), isWholesaleFixedCategory(cat) ? WHOLESALE_FIXED_CATEGORY : cat);
+      if (isFixedSingleServiceCategory(cat) || isWholesaleFixedCategory(cat)) {
+        await showFixedPlanPicker(ctx, isWholesaleFixedCategory(cat) ? WHOLESALE_FIXED_CATEGORY : cat, true);
       } else {
         await showBuyWizard(ctx, true);
       }
@@ -1165,6 +1174,11 @@ export function createBot() {
     if (!(await requireChannel(ctx))) return;
     const cat = String(ctx.match![1] || "");
     const id = String(ctx.match![2] || "");
+    const roleUser = withEffectiveRole(await upsertUserFromTelegram(ctx.from!), ctx.from!.id);
+    if (isWholesaleFixedCategory(cat) && !isWholesaleFixedRole(roleUser.role)) {
+      await ctx.reply("این پلن فقط برای عمده‌فروش است.");
+      return;
+    }
     const plan = (await listFixedPlans(cat)).find((p) => p.id === id);
     if (!plan) {
       await ctx.reply("این پلن پیدا نشد.");
