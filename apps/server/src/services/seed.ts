@@ -126,9 +126,9 @@ export async function ensureWholesaleDefaultPlans() {
     priceReseller: number;
     title: string;
   }> = [
-    { trafficGb: 100, months: 1, limitIp: 1, priceReseller: 150_000, title: "۱۰۰ گیگ · تک‌کاربره" },
-    { trafficGb: 200, months: 1, limitIp: 2, priceReseller: 250_000, title: "۲۰۰ گیگ · دوکاربره" },
-    { trafficGb: 300, months: 1, limitIp: 2, priceReseller: 400_000, title: "۳۰۰ گیگ · دوکاربره" },
+    { trafficGb: 100, months: 1, limitIp: 1, priceReseller: 150_000, title: "۱۰۰گیگ · تک‌کاربره" },
+    { trafficGb: 200, months: 1, limitIp: 2, priceReseller: 250_000, title: "۲۰۰گیگ · دوکاربره" },
+    { trafficGb: 300, months: 1, limitIp: 2, priceReseller: 400_000, title: "۳۰۰گیگ · دوکاربره" },
   ];
 
   for (const p of plans) {

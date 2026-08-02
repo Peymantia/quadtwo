@@ -431,8 +431,19 @@ async function showFixedPlanPicker(ctx: Context, category: string, edit = false)
   const cat = category.trim().toLowerCase();
   const plans = await listFixedPlans(cat);
   const labels = await getCategoryLabels();
-  const catLabel = labels[cat] || (cat === "offer" ? "پیشنهاد ویژه" : cat === "unlimited" ? "نامحدود" : cat === "national" ? "نت ملی" : cat);
-  const star = cat === "offer" ? "⭐ " : "";
+  const isWholesale = isWholesaleFixedCategory(cat);
+  const catLabel =
+    labels[cat] ||
+    (cat === "offer"
+      ? "پیشنهاد ویژه"
+      : cat === "unlimited"
+        ? "نامحدود"
+        : cat === "national"
+          ? "نت ملی"
+          : isWholesale
+            ? "پلن‌های عمده‌فروش"
+            : cat);
+  const star = cat === "offer" ? "⭐ " : isWholesale ? "📦 " : "";
 
   if (!plans.length) {
     await ctx.reply(`فعلاً پلنی برای «${catLabel}» تعریف نشده است.`);
@@ -465,12 +476,25 @@ async function showFixedPlanPicker(ctx: Context, category: string, edit = false)
       },
       ctx.from!.id,
     );
-    const vol = cat === "unlimited" || p.trafficGb == null ? "نامحدود" : formatTraffic(p.trafficGb);
-    const ipHint = p.limitIp > 0 ? ` · ${p.limitIp} کاربر` : "";
-    const title = p.title?.trim() || `${vol} · ${p.months} ماه${ipHint}`;
-    const price = priced ? formatToman(priced.price) : "—";
+    const price = priced ? priced.price : null;
+    const priceFa = price == null ? "—" : `${price.toLocaleString("fa-IR")}ت`;
+    let label: string;
+    if (isWholesale) {
+      // Keep digits glued to words so RTL Telegram doesn't yank GB to the far edge.
+      const gb =
+        p.trafficGb == null ? "نامحدود" : `${Number(p.trafficGb).toLocaleString("fa-IR")}گیگ`;
+      const ip =
+        p.limitIp === 1 ? "تک‌کاربره" : p.limitIp > 0 ? `${p.limitIp.toLocaleString("fa-IR")}کاربره` : "";
+      label = `📦 ${gb}${ip ? ` · ${ip}` : ""} · ${priceFa}`;
+    } else {
+      const vol = cat === "unlimited" || p.trafficGb == null ? "نامحدود" : formatTraffic(p.trafficGb);
+      const ipHint = p.limitIp > 0 ? ` · ${p.limitIp} کاربر` : "";
+      const title = p.title?.trim() || `${vol} · ${p.months} ماه${ipHint}`;
+      const priceFull = price == null ? "—" : formatToman(price);
+      label = `${star}${title} · ${priceFull}`;
+    }
     const cb = cat === "offer" ? `buy:offer:${p.id}` : `buy:fixed:${cat}:${p.id}`;
-    kb.text(`${star}${title} · ${price}`.slice(0, 64), cb);
+    kb.text(label.slice(0, 64), cb);
     applyInlineButtonStyle(kb, styles[i]!);
     kb.row();
   }

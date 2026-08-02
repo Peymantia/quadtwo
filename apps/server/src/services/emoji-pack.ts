@@ -100,7 +100,8 @@ export type EmojiKey =
   | "rotate_sub"
   | "base64_link"
   | "office_worker"
-  | "telegram_heart";
+  | "telegram_heart"
+  | "wholesale_plan";
 
 /** Current bot Unicode glyphs (Universal style). */
 export const UNIVERSAL: Record<EmojiKey, string> = {
@@ -204,6 +205,8 @@ export const UNIVERSAL: Record<EmojiKey, string> = {
   office_worker: "👨‍💼",
   /** Same glyph as heart — disambiguated by label via resolvePremiumId */
   telegram_heart: "❤️",
+  /** Fixed wholesale plans — same 📦 glyph, matched by گیگ/کاربره in label */
+  wholesale_plan: "📦",
 };
 
 /**
@@ -317,6 +320,8 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   office_worker: "5429568755044720802",
   /** Telegram users group button */
   telegram_heart: "6296218646284863141",
+  /** عمده‌فروش fixed plan buttons */
+  wholesale_plan: "5812268311261484198",
 };
 
 /** When several keys share a glyph, pick ID from surrounding label text. */
@@ -351,6 +356,9 @@ export function resolvePremiumId(glyph: string, afterText: string): string | und
   }
   if (glyph === "📦") {
     if (after.includes("Base64")) return PREMIUM_IDS.base64_link;
+    if (after.includes("گیگ") || after.includes("کاربره") || after.includes("عمده")) {
+      return PREMIUM_IDS.wholesale_plan;
+    }
     return PREMIUM_IDS.my_services;
   }
   if (glyph === "🔀") {
