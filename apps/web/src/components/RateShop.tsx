@@ -792,7 +792,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                 className="name-mode-input"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
-                placeholder="مثلاً ali-mobile"
+                placeholder="مثلاً Ali"
                 disabled={busy || nameMode !== "custom"}
                 aria-label="نام شخصی"
               />
@@ -835,7 +835,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
               className="name-mode-input"
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
-              placeholder="مثلاً ali-mobile"
+              placeholder="مثلاً Ali"
               disabled={busy || nameMode !== "custom"}
               aria-label="نام شخصی"
             />
