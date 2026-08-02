@@ -181,7 +181,10 @@ export async function createMatrixOrder(input: {
 
   const priceBefore = priced.price * (fixedSingle ? 1 : quantity);
   const applied =
-    offerLocked || !input.discountCode?.trim()
+    offerLocked ||
+    isWholesaleFixedRole(pricedUser.role) ||
+    isWholesaleFixedCategory(category) ||
+    !input.discountCode?.trim()
       ? null
       : await assertAndApplyDiscount({
           buyer: pricedUser,

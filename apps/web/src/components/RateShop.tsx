@@ -350,7 +350,12 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const monthValue = <SeekValueLabel num={months} unit="ماه" />;
   const ipValue = limitIp <= 0 ? "نامحدود" : <SeekValueLabel num={limitIp} unit="کاربر" />;
 
-  const discountsAllowed = Boolean(catalog.discountsEnabled) && !isOffer && variant !== "admin";
+  const discountsAllowed =
+    Boolean(catalog.discountsEnabled) &&
+    !isOffer &&
+    category !== "wholesale" &&
+    category !== "reseller" &&
+    variant !== "admin";
 
   useEffect(() => {
     if (isFixedSingle) setQuantity(1);
@@ -558,7 +563,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
             {isOffer
               ? "حجم، مدت و قیمت این پلن ثابت است؛ فقط نام اکانت را مشخص کنید. کد تخفیف اعمال نمی‌شود."
-              : "این سرویس تک‌پلن است؛ حجم و مدت قابل کم و زیاد کردن نیست. یک پلن را انتخاب کنید."}
+              : category === "wholesale" || category === "reseller"
+                ? "پلن ثابت عمده‌فروش؛ حجم و مدت قابل تغییر نیست. کد تخفیف اعمال نمی‌شود."
+                : "این سرویس تک‌پلن است؛ حجم و مدت قابل کم و زیاد کردن نیست. یک پلن را انتخاب کنید."}
           </p>
           {!fixedCells.length ? (
             <p className="muted" style={{ color: "var(--pink)", margin: 0 }}>

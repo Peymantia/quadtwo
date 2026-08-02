@@ -316,7 +316,8 @@ export function buyWizardKeyboard(opts: {
 }) {
   const cat = (opts.category || "").toLowerCase();
   const isOffer = cat === "offer";
-  const isFixed = isOffer || cat === "unlimited" || cat === "national";
+  const isWholesale = cat === "wholesale" || cat === "reseller";
+  const isFixed = isOffer || isWholesale || cat === "unlimited" || cat === "national";
   const vol = opts.unlimited || opts.trafficGb == null ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
   const unit = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
   const total =
@@ -327,6 +328,7 @@ export function buyWizardKeyboard(opts: {
   const showMonthStepper = !isFixed && maxMonths > 1;
   const isAgent = opts.canEditAgentOptions === true;
   const canEditIp = opts.canEditIp === true;
+  const allowDiscount = opts.discountsEnabled === true && !isOffer && !isWholesale;
 
   const kb = new InlineKeyboard();
 
@@ -336,9 +338,12 @@ export function buyWizardKeyboard(opts: {
     }
     kb.text(`📏 ${vol}`, "wiz:noop").row();
     kb.text(`⏳ ${opts.months} ماه`, "wiz:noop").row();
+    if (isWholesale && opts.limitIp > 0) {
+      kb.text(`📱 ${formatLimitIp(opts.limitIp)}`, "wiz:noop").row();
+    }
     kb.text(`💰 ${unit}${total}`, "wiz:noop").row();
 
-    if (!isOffer && opts.discountsEnabled) {
+    if (allowDiscount) {
       if (opts.discountCode) {
         kb.text(`🎟 ${opts.discountCode}`, "wiz:discount:set")
           .row()
@@ -376,7 +381,7 @@ export function buyWizardKeyboard(opts: {
 
     kb.text(`💰 ${unit}${total}`, "wiz:noop").row();
 
-    if (opts.discountsEnabled) {
+    if (allowDiscount) {
       if (opts.discountCode) {
         kb.text(`🎟 ${opts.discountCode}`, "wiz:discount:set")
           .row()

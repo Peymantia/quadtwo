@@ -477,15 +477,21 @@ async function showFixedPlanPicker(ctx: Context, category: string, edit = false)
       ctx.from!.id,
     );
     const price = priced ? priced.price : null;
-    const priceFa = price == null ? "—" : `${price.toLocaleString("fa-IR")}ت`;
     let label: string;
     if (isWholesale) {
-      // Keep digits glued to words so RTL Telegram doesn't yank GB to the far edge.
-      const gb =
-        p.trafficGb == null ? "نامحدود" : `${Number(p.trafficGb).toLocaleString("fa-IR")}گیگ`;
-      const ip =
-        p.limitIp === 1 ? "تک‌کاربره" : p.limitIp > 0 ? `${p.limitIp.toLocaleString("fa-IR")}کاربره` : "";
-      label = `📦 ${gb}${ip ? ` · ${ip}` : ""} · ${priceFa}`;
+      // Exact RTL-friendly label: emoji + «۱۰۰ گیگ - تک‌کاربره - ۱۵۰٬۰۰۰ تومان»
+      const gbFa =
+        p.trafficGb == null ? "نامحدود" : `${Number(p.trafficGb).toLocaleString("fa-IR")} گیگ`;
+      const ipFa =
+        p.limitIp === 1
+          ? "تک‌کاربره"
+          : p.limitIp === 2
+            ? "دو‌کاربره"
+            : p.limitIp > 0
+              ? `${Number(p.limitIp).toLocaleString("fa-IR")}‌کاربره`
+              : "";
+      const priceFa = price == null ? "—" : formatToman(price);
+      label = ipFa ? `📦 ${gbFa} - ${ipFa} - ${priceFa}` : `📦 ${gbFa} - ${priceFa}`;
     } else {
       const vol = cat === "unlimited" || p.trafficGb == null ? "نامحدود" : formatTraffic(p.trafficGb);
       const ipHint = p.limitIp > 0 ? ` · ${p.limitIp} کاربر` : "";
@@ -527,8 +533,9 @@ async function showBuyWizard(ctx: Context, edit = false) {
   let discountAmount: number | null = null;
   let priceAfterDiscount: number | null = null;
   const offer = isOfferCategory(draft.category);
-  const discountsOn = !offer && (await isDiscountCodesEnabled());
-  if (offer && draft.discountCode) {
+  const wholesaleBuy = isWholesaleFixedCategory(draft.category) || isWholesaleFixedRole(roleUser.role);
+  const discountsOn = !offer && !wholesaleBuy && (await isDiscountCodesEnabled());
+  if ((offer || wholesaleBuy) && draft.discountCode) {
     await setDraftDiscountCode(BigInt(ctx.from!.id), null);
     draft.discountCode = null;
   }
@@ -1473,8 +1480,13 @@ export function createBot() {
   bot.callbackQuery("wiz:discount:set", async (ctx) => {
     await ctx.answerCallbackQuery();
     const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
+    const roleUser = withEffectiveRole(await upsertUserFromTelegram(ctx.from!), ctx.from!.id);
     if (isOfferCategory(draft.category)) {
       await ctx.reply("کد تخفیف برای پیشنهاد ویژه فعال نیست.");
+      return;
+    }
+    if (isWholesaleFixedCategory(draft.category) || isWholesaleFixedRole(roleUser.role)) {
+      await ctx.reply("کد تخفیف برای عمده‌فروش فعال نیست.");
       return;
     }
     if (!(await isDiscountCodesEnabled())) {

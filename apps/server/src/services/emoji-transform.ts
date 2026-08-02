@@ -45,12 +45,6 @@ function stripDirMarks(text: string): string {
   return text.replace(DIR_MARKS, "");
 }
 
-/** Force LTR embedding so emoji/icon stays at the start of the label on mobile RTL. */
-function withLeadingLrm(text: string): string {
-  const t = stripDirMarks(text);
-  return t ? `${LRM}${t}` : t;
-}
-
 function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: string } | null {
   const bare = stripDirMarks(text);
   for (const row of UNIVERSAL_BY_LENGTH) {
@@ -81,14 +75,14 @@ function matchTrailingGlyph(text: string): { glyph: string; id: string; rest: st
 function transformButtonPremium(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
   if (btn.icon_custom_emoji_id) {
-    return { ...btn, text: withLeadingLrm(String(btn.text)) };
+    return { ...btn, text: stabilizeButtonText(String(btn.text)) };
   }
   const hit = matchLeadingGlyph(btn.text) || matchTrailingGlyph(btn.text);
-  if (!hit) return { ...btn, text: withLeadingLrm(btn.text) };
-  // Premium icon + LRM so clients keep icon at the start of the label.
+  if (!hit) return { ...btn, text: stabilizeButtonText(btn.text) };
+  // Premium icon; RTL Persian labels need RLM (not LRM) so digits stay with their words.
   return {
     ...btn,
-    text: withLeadingLrm(hit.rest),
+    text: stabilizeButtonText(hit.rest),
     icon_custom_emoji_id: hit.id,
   };
 }
@@ -96,7 +90,15 @@ function transformButtonPremium(btn: Record<string, unknown>): Record<string, un
 /** Universal style: only stabilize direction (keep unicode emoji in text). */
 function transformButtonDirection(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
-  return { ...btn, text: withLeadingLrm(btn.text) };
+  return { ...btn, text: stabilizeButtonText(btn.text) };
+}
+
+/** LRM for LTR/emoji-led labels; RLM when the label is Persian so «۱۰۰ گیگ» does not reverse. */
+function stabilizeButtonText(text: string): string {
+  const t = stripDirMarks(text);
+  if (!t) return t;
+  if (/[\u0600-\u06FF]/.test(t)) return `\u200F${t}`;
+  return `${LRM}${t}`;
 }
 
 function mapKeyboardButtons(

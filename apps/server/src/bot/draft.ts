@@ -168,7 +168,7 @@ export async function setDraftFixedPlan(
       quantity: 1,
       limitIp,
       limitIpTouched: typeof plan.limitIp === "number" && plan.limitIp > 0,
-      ...(isOfferCategory(cat) ? { discountCode: null } : {}),
+      ...(isOfferCategory(cat) || cat === "wholesale" || cat === "reseller" ? { discountCode: null } : {}),
       priceCellId: plan.id,
     },
   });

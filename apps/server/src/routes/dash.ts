@@ -759,7 +759,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       maxMonths,
       defaultLimitIp,
       canEditLimitIp: canEditLimitIp(pricedUser.role),
-      discountsEnabled: await isDiscountCodesEnabled(),
+      discountsEnabled:
+        pricedUser.role !== "wholesale" && (await isDiscountCodesEnabled()),
       volumeRules: {
         data: { min: 10, max: 50, step: 5 },
         national: { min: 1, max: 20, step: 1 },
@@ -819,18 +820,22 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     let percentOff: number | null = null;
     let discountError: string | null = null;
     if (!offerLocked && body.discountCode?.trim()) {
-      const prev = await previewDiscount({
-        buyer: pricedUser,
-        code: body.discountCode,
-        price: priceBefore,
-      });
-      if ("error" in prev) {
-        discountError = prev.error;
+      if (pricedUser.role === "wholesale" || category === "wholesale" || category === "reseller") {
+        discountError = "کد تخفیف برای عمده‌فروش فعال نیست";
       } else {
-        discountAmount = prev.discountAmount;
-        price = prev.priceAfter;
-        discountCode = prev.code;
-        percentOff = prev.percentOff;
+        const prev = await previewDiscount({
+          buyer: pricedUser,
+          code: body.discountCode,
+          price: priceBefore,
+        });
+        if ("error" in prev) {
+          discountError = prev.error;
+        } else {
+          discountAmount = prev.discountAmount;
+          price = prev.priceAfter;
+          discountCode = prev.code;
+          percentOff = prev.percentOff;
+        }
       }
     } else if (offerLocked && body.discountCode?.trim()) {
       discountError = "کد تخفیف برای پیشنهاد ویژه فعال نیست";

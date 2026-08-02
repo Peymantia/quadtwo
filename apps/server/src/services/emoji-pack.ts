@@ -321,7 +321,7 @@ export const PREMIUM_IDS: Record<EmojiKey, string> = {
   /** Telegram users group button */
   telegram_heart: "6296218646284863141",
   /** عمده‌فروش fixed plan buttons */
-  wholesale_plan: "5812268311261484198",
+  wholesale_plan: "5222444124698853913",
 };
 
 /** When several keys share a glyph, pick ID from surrounding label text. */
