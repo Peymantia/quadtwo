@@ -118,7 +118,10 @@ export function clampLimitIp(n: number) {
 }
 
 export function formatLimitIp(n: number) {
-  return n <= 0 ? "نامحدود" : `${n} کاربر`;
+  if (n <= 0) return "نامحدود";
+  if (n === 1) return "یک کاربر";
+  if (n === 2) return "دو کاربر";
+  return `${n.toLocaleString("fa-IR")} کاربر`;
 }
 
 export type { UserRole };

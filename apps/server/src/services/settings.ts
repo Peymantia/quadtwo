@@ -290,9 +290,16 @@ export async function resolvePurchaseLimitIp(
   role?: string,
 ): Promise<number> {
   if (draft.category === "unlimited" || draft.unlimited === true) return UNLIMITED_LIMIT_IP;
+  // Plan-locked or explicitly chosen IP (e.g. عمده‌فروش fixed plans) wins over role defaults.
+  if (draft.limitIpTouched) {
+    return Math.max(0, Math.min(10, Math.floor(draft.limitIp)));
+  }
+  const cat = (draft.category || "").toLowerCase();
+  if ((cat === "wholesale" || cat === "reseller") && draft.limitIp > 0) {
+    return Math.max(0, Math.min(10, Math.floor(draft.limitIp)));
+  }
   if (role && !canEditLimitIp(role)) return getDefaultLimitIp();
-  if (draft.limitIpTouched) return draft.limitIp;
-  if (draft.limitIp > 0) return draft.limitIp;
+  if (draft.limitIp > 0) return Math.max(0, Math.min(10, Math.floor(draft.limitIp)));
   return getDefaultLimitIp();
 }
 

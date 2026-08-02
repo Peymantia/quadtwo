@@ -504,7 +504,7 @@ async function showFixedPlanPicker(ctx: Context, category: string, edit = false)
     applyInlineButtonStyle(kb, styles[i]!);
     kb.row();
   }
-  kb.text("◀️ بازگشت", "buy:back:cat").text("❌ انصراف", "buy:cat:cancel");
+  kb.text("❌ انصراف", "buy:cat:cancel");
   const text = `${star}${catLabel}\n\nیکی از پلن‌های ثابت را انتخاب کنید:`;
   if (edit && ctx.callbackQuery?.message) {
     try {
@@ -523,8 +523,23 @@ async function showOfferPlanPicker(ctx: Context, edit = false) {
 
 async function showBuyWizard(ctx: Context, edit = false) {
   const user = await upsertUserFromTelegram(ctx.from!);
-  const draft = await getOrCreateDraft(BigInt(ctx.from!.id));
+  let draft = await getOrCreateDraft(BigInt(ctx.from!.id));
   const roleUser = withEffectiveRole(user, ctx.from!.id);
+
+  // عمده‌فروش: IP از پلن ثابت (اگر در draft نبود، از PriceCell بخوان)
+  if (isWholesaleFixedCategory(draft.category) && draft.priceCellId && !(draft.limitIpTouched && draft.limitIp > 0)) {
+    const cell = await prisma.priceCell.findFirst({
+      where: { id: draft.priceCellId, active: true },
+      select: { limitIp: true },
+    });
+    if (cell && cell.limitIp > 0) {
+      draft = await prisma.buyDraft.update({
+        where: { telegramId: BigInt(ctx.from!.id) },
+        data: { limitIp: cell.limitIp, limitIpTouched: true },
+      });
+    }
+  }
+
   const limitIp = await resolvePurchaseLimitIp(draft, roleUser.role);
   const priced = await draftPrice(user, draft, ctx.from!.id);
   const fixedSingle = isFixedSingleServiceCategory(draft.category);
