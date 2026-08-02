@@ -5099,28 +5099,33 @@ function SettingsTab({
             <span className="track" />
           </label>
         </div>
-        {settings.discount_codes_enabled === "true" && (
-          <div className="setting-row">
-            <div>
-              <div className="t">سقف درصد تخفیف همکار / همکار ویژه</div>
-              <div className="d">ادمین تا ۱۰۰٪؛ همکار و همکار ویژه حداکثر این عدد.</div>
-            </div>
-            <input
-              className="num"
-              inputMode="numeric"
-              value={settings.discount_max_percent || "30"}
-              onChange={(e) => save({ discount_max_percent: e.target.value })}
-              style={{
-                width: 72,
-                border: "1px solid var(--line)",
-                background: "rgba(10,13,35,.6)",
-                color: "var(--text)",
-                borderRadius: 10,
-                padding: "8px 12px",
-              }}
-            />
+        <div className="setting-row">
+          <div>
+            <div className="t">سقف درصد تخفیف همکار / همکار ویژه</div>
+            <div className="d">ادمین تا ۱۰۰٪؛ همکار و همکار ویژه هنگام ساخت کد حداکثر این عدد را می‌توانند بزنند.</div>
           </div>
-        )}
+          <input
+            className="num"
+            inputMode="numeric"
+            value={settings.discount_max_percent || "30"}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/[^\d]/g, "");
+              setSettings((s) => ({ ...s, discount_max_percent: raw }));
+            }}
+            onBlur={() => {
+              const n = Math.max(1, Math.min(100, Number(settings.discount_max_percent || "30") || 30));
+              void save({ discount_max_percent: String(n) });
+            }}
+            style={{
+              width: 72,
+              border: "1px solid var(--line)",
+              background: "rgba(10,13,35,.6)",
+              color: "var(--text)",
+              borderRadius: 10,
+              padding: "8px 12px",
+            }}
+          />
+        </div>
         <div className="setting-row">
           <div>
             <div className="t">محدودیت پیش‌فرض دستگاه (IP)</div>

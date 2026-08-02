@@ -55,8 +55,11 @@ export function DiscountCodesPanel({
 }) {
   const [enabled, setEnabled] = useState(false);
   const [maxPercent, setMaxPercent] = useState(30);
+  const [partnerCap, setPartnerCap] = useState(30);
+  const [maxPercentDraft, setMaxPercentDraft] = useState("30");
   const [items, setItems] = useState<DiscountItem[]>([]);
   const [busy, setBusy] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
   const [code, setCode] = useState("");
   const [percent, setPercent] = useState("10");
   const [maxUses, setMaxUses] = useState("");
@@ -72,10 +75,17 @@ export function DiscountCodesPanel({
       setEnabled(r.enabled);
       setMaxPercent(r.maxPercent);
       setItems(r.items ?? []);
+      if (showOwner) {
+        const s = await api<{ settings: Record<string, string> }>("/admin/settings");
+        const cap = String(s.settings.discount_max_percent || "30");
+        setMaxPercentDraft(cap);
+      } else {
+        setMaxPercentDraft(String(r.maxPercent));
+      }
     } catch (e) {
       flash(null, String(e instanceof Error ? e.message : e));
     }
-  }, [flash]);
+  }, [flash, showOwner]);
 
   useEffect(() => {
     void load();
@@ -162,14 +172,79 @@ export function DiscountCodesPanel({
     setExpiryMenuOpen(false);
   }
 
+  async function saveAdminDiscountSettings(patch: { enabled?: boolean; maxPercent?: number }) {
+    if (!showOwner) return;
+    setSettingsBusy(true);
+    try {
+      const body: Record<string, string> = {};
+      if (patch.enabled !== undefined) body.discount_codes_enabled = patch.enabled ? "true" : "false";
+      if (patch.maxPercent !== undefined) {
+        body.discount_max_percent = String(Math.max(1, Math.min(100, Math.floor(patch.maxPercent))));
+      }
+      await api("/admin/settings", { method: "PUT", body });
+      flash("تنظیمات تخفیف ذخیره شد");
+      await load();
+    } catch (e) {
+      flash(null, String(e instanceof Error ? e.message : e));
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
   return (
     <div className="panel">
       <h2>کدهای تخفیف</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        کد ادمین برای همه خریداران معتبر است. کد همکار/عمده‌فروش به‌صورت پیش‌فرض فقط برای خودش است؛ با «قابل‌اشتراک»
+        کد ادمین برای همه خریداران معتبر است. کد همکار/همکار ویژه به‌صورت پیش‌فرض فقط برای خودش است؛ با «قابل‌اشتراک»
         مشتری‌ها هم می‌توانند استفاده کنند. سقف درصد شما: {maxPercent}٪.
         {!enabled ? " — فعلاً توسط ادمین خاموش است (ادمین همچنان می‌تواند کد بسازد)." : ""}
       </p>
+
+      {showOwner && (
+        <div className="panel" style={{ marginBottom: 14, padding: 12 }}>
+          <div className="setting-row" style={{ marginBottom: 10 }}>
+            <div>
+              <div className="t">فعال‌سازی کد تخفیف در خرید</div>
+              <div className="d">ربات و وب‌پنل — مشتریان بتوانند کد وارد کنند.</div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={enabled}
+                disabled={settingsBusy}
+                onChange={(e) => void saveAdminDiscountSettings({ enabled: e.target.checked })}
+              />
+              <span className="track" />
+            </label>
+          </div>
+          <div className="setting-row">
+            <div>
+              <div className="t">سقف درصد تخفیف همکار / همکار ویژه</div>
+              <div className="d">ادمین تا ۱۰۰٪؛ نماینده‌ها حداکثر این عدد.</div>
+            </div>
+            <input
+              className="num"
+              inputMode="numeric"
+              disabled={settingsBusy}
+              value={maxPercentDraft}
+              onChange={(e) => setMaxPercentDraft(e.target.value.replace(/[^\d]/g, ""))}
+              onBlur={() => {
+                const n = Math.max(1, Math.min(100, Number(maxPercentDraft || "30") || 30));
+                setMaxPercentDraft(String(n));
+                void saveAdminDiscountSettings({ maxPercent: n });
+              }}
+              style={{
+                width: 72,
+                border: "1px solid var(--line)",
+                background: "rgba(10,13,35,.6)",
+                color: "var(--text)",
+                borderRadius: 10,
+                padding: "8px 12px",
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="grid discount-codes-form" style={{ marginBottom: 14 }}>
         <div className="field">
