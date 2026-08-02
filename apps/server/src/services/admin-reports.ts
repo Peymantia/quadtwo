@@ -255,11 +255,16 @@ export async function adminSalesReport(period: "today" | "week" | "month") {
 }
 
 export async function agentsSalesLeaderboard(opts: {
-  role: "partner" | "wholesale";
+  role: "partner" | "wholesale" | "reseller";
   period: SalesPeriod;
 }): Promise<{ period: SalesPeriod; periodLabel: string; rows: AgentSalesRow[]; text: string }> {
   const since = periodSince(opts.period);
-  const role = opts.role === "wholesale" ? UserRole.wholesale : UserRole.partner;
+  const role =
+    opts.role === "wholesale"
+      ? UserRole.wholesale
+      : opts.role === "reseller"
+        ? UserRole.reseller
+        : UserRole.partner;
   const users = await prisma.user.findMany({
     where: { role },
     select: {
@@ -304,7 +309,8 @@ export async function agentsSalesLeaderboard(opts: {
     })
     .sort((a, b) => b.sales - a.sales || b.orders - a.orders);
 
-  const title = opts.role === "wholesale" ? "عمده‌فروش‌ها" : "همکاران";
+  const title =
+    opts.role === "wholesale" ? "عمده‌فروش‌ها" : opts.role === "reseller" ? "همکاران ویژه" : "همکاران";
   const label = periodLabel(opts.period);
   const lines = [
     `📊 گزارش فروش ${title} — ${label}`,
@@ -326,7 +332,7 @@ export async function agentsSalesLeaderboard(opts: {
 }
 
 /** @deprecated use agentsSalesLeaderboard */
-export async function partnerSalesReport(role: "partner" | "wholesale") {
+export async function partnerSalesReport(role: "partner" | "wholesale" | "reseller") {
   const { rows } = await agentsSalesLeaderboard({ role, period: "all" });
   return rows.map((r) => ({
     id: r.id,

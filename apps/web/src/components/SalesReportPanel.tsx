@@ -317,7 +317,7 @@ export function SalesReportPanel({
 }
 
 export function AgentsLeaderboardPanel() {
-  const [role, setRole] = useState<"partner" | "wholesale">("partner");
+  const [role, setRole] = useState<"partner" | "wholesale" | "reseller">("partner");
   const [period, setPeriod] = useState<SalesPeriod>("jalali_month");
   const [rows, setRows] = useState<AgentRow[]>([]);
   const [label, setLabel] = useState("");
@@ -333,10 +333,17 @@ export function AgentsLeaderboardPanel() {
 
   return (
     <div className="panel">
-      <h2>رتبه‌بندی همکاران / عمده</h2>
+      <h2>رتبه‌بندی همکاران / همکار ویژه / عمده‌فروش</h2>
       <div className="chip-row" style={{ marginBottom: 10 }}>
         <button type="button" className={`chip${role === "partner" ? " on" : ""}`} onClick={() => setRole("partner")}>
           همکار
+        </button>
+        <button
+          type="button"
+          className={`chip${role === "reseller" ? " on" : ""}`}
+          onClick={() => setRole("reseller")}
+        >
+          همکار ویژه
         </button>
         <button
           type="button"

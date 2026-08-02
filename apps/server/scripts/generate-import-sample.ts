@@ -81,7 +81,7 @@ const rates = sheet([
   ["role", "perGb", "perMonth", "unlimitedPerMonth", "توضیح"],
   ["user", 15000, 30000, 1500000, "مشتری عادی"],
   ["partner", 12000, 25000, 1200000, "همکار"],
-  ["wholesale", 10000, 20000, 1000000, "عمده"],
+  ["wholesale", 10000, 20000, 1000000, "همکار ویژه"],
 ]);
 
 const salesCats = sheet([

@@ -722,7 +722,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         }),
     );
 
-    if (cats.includes("unlimited") && pricedUser.role !== "reseller") {
+    if (cats.includes("unlimited") && pricedUser.role !== "wholesale") {
       const haveMonths = new Set(
         priced.filter((p) => p.category === "unlimited" && p.price != null).map((p) => p.months),
       );
@@ -1391,7 +1391,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/reports/agents", async (c) => {
-    const role = c.req.query("role") === "wholesale" ? "wholesale" : "partner";
+    const q = c.req.query("role");
+    const role = q === "wholesale" || q === "reseller" ? q : "partner";
     const period = parseSalesPeriod(c.req.query("period") || "jalali_month");
     return c.json(await agentsSalesLeaderboard({ role, period }));
   });
@@ -2836,10 +2837,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.post("/admin/partners/:id/approve", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { asRole?: string };
     const asRole =
-      body.asRole === "wholesale"
-        ? "wholesale"
-        : body.asRole === "reseller"
-          ? "reseller"
+      body.asRole === "reseller"
+        ? "reseller"
+        : body.asRole === "wholesale"
+          ? "wholesale"
           : "partner";
     const req = await approvePartner(c.req.param("id"), asRole);
     await auditLog({
@@ -2849,16 +2850,16 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       detail: asRole,
     });
     const status =
-      asRole === "wholesale"
-        ? `همکار ویژه تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`
-        : asRole === "reseller"
-          ? `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "reseller_…"}`
+      asRole === "reseller"
+        ? `همکار ویژه تأیید شد — گروه پنل: ${req.user.panelGroup ?? "reseller_…"}`
+        : asRole === "wholesale"
+          ? `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`
           : `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
     void notifyTelegram(
       req.user.telegramId,
-      asRole === "wholesale"
+      asRole === "reseller"
         ? "✅ به‌عنوان همکار ویژه تأیید شدید."
-        : asRole === "reseller"
+        : asRole === "wholesale"
           ? "✅ به‌عنوان عمده‌فروش تأیید شدید."
           : "✅ درخواست همکاری شما تأیید شد (همکار).",
     );

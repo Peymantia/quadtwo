@@ -11,8 +11,8 @@ import {
   isFixedSingleServiceCategory,
   findPriceCell,
   priceFromCell,
-  isResellerCategory,
-  RESELLER_CATEGORY,
+  isWholesaleFixedCategory,
+  WHOLESALE_FIXED_CATEGORY,
   type PlanCategory,
 } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
@@ -20,7 +20,7 @@ import { provisionOrder } from "./provision.js";
 import { withEffectiveRole } from "./demo-role.js";
 import { isDemoMode } from "./license.js";
 import { assertAndApplyDiscount, recordDiscountUse, cancelOpenPendingForDiscount } from "./discount-codes.js";
-import { isResellerRole } from "./roles.js";
+import { isWholesaleFixedRole } from "./roles.js";
 
 export async function createMatrixOrder(input: {
   userId: string;
@@ -46,9 +46,9 @@ export async function createMatrixOrder(input: {
   const kind = input.kind ?? OrderKind.new;
 
   let category = (input.category as PlanCategory) || "data";
-  // عمده‌فروش: فقط پلن‌های ثابت دسته reseller
-  if (isResellerRole(pricedUser.role) && kind === OrderKind.new) {
-    category = RESELLER_CATEGORY;
+  // عمده‌فروش (wholesale): فقط پلن‌های ثابت
+  if (isWholesaleFixedRole(pricedUser.role) && kind === OrderKind.new) {
+    category = WHOLESALE_FIXED_CATEGORY;
   }
   let panelServerId: string | null = null;
   let accountName = input.accountName;
@@ -94,7 +94,7 @@ export async function createMatrixOrder(input: {
     if (offerLocked && selectedCell.category !== "offer") {
       throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
     }
-    if (isResellerRole(pricedUser.role) && kind === OrderKind.new && selectedCell.category !== RESELLER_CATEGORY) {
+    if (isWholesaleFixedRole(pricedUser.role) && kind === OrderKind.new && !isWholesaleFixedCategory(selectedCell.category)) {
       throw new Error("عمده‌فروش فقط می‌تواند پلن‌های تعریف‌شده عمده‌فروشی را بخرد");
     }
     if (fixedSingle && !isOfferCategory(selectedCell.category) && selectedCell.category !== category) {
@@ -102,7 +102,7 @@ export async function createMatrixOrder(input: {
       if (
         selectedCell.category !== "unlimited" &&
         selectedCell.category !== "national" &&
-        selectedCell.category !== RESELLER_CATEGORY
+        !isWholesaleFixedCategory(selectedCell.category)
       ) {
         throw new Error("پلن انتخاب‌شده با دسته خرید هم‌خوان نیست");
       }
@@ -120,8 +120,8 @@ export async function createMatrixOrder(input: {
     } else if (selectedCell.category === "national") {
       category = "national";
       fixedSingle = true;
-    } else if (selectedCell.category === RESELLER_CATEGORY) {
-      category = RESELLER_CATEGORY;
+    } else if (isWholesaleFixedCategory(selectedCell.category)) {
+      category = WHOLESALE_FIXED_CATEGORY;
       fixedSingle = true;
     } else {
       category = selectedCell.category as PlanCategory;
@@ -129,7 +129,7 @@ export async function createMatrixOrder(input: {
   } else if (offerLocked) {
     selectedCell = await findPriceCell(trafficGb, months, "offer");
     if (!selectedCell?.active) throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
-  } else if (isResellerRole(pricedUser.role) && kind === OrderKind.new) {
+  } else if (isWholesaleFixedRole(pricedUser.role) && kind === OrderKind.new) {
     throw new Error("برای خرید عمده‌فروشی باید یکی از پلن‌های ثابت را انتخاب کنید");
   } else if (fixedSingle && kind !== OrderKind.renew) {
     selectedCell = await findPriceCell(trafficGb, months, category);

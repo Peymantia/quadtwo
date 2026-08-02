@@ -17,8 +17,8 @@ import {
   payOrderWithWallet,
   rejectOrder,
 } from "../services/orders.js";
-import { listPriceMatrix, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, listOfferPlans, listFixedPlans, isResellerCategory, RESELLER_CATEGORY } from "../services/pricing.js";
-import { isResellerRole, isSellerRole, roleLabelFa } from "../services/roles.js";
+import { listPriceMatrix, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, listOfferPlans, listFixedPlans, isWholesaleFixedCategory, WHOLESALE_FIXED_CATEGORY } from "../services/pricing.js";
+import { isWholesaleFixedRole, roleLabelFa } from "../services/roles.js";
 import {
   provisionOrder,
   refreshSubscriptionSubUrl,
@@ -232,8 +232,8 @@ async function replyMainMenu(ctx: Context, preface?: string) {
     reply_markup: mainMenuReply({
       isAdmin: role === "admin",
       isPartner: role === "partner",
-      isWholesale: role === "wholesale",
       isReseller: role === "reseller",
+      isWholesale: role === "wholesale",
       demoMode: demo,
       miniAppUrl,
     }),
@@ -269,13 +269,13 @@ async function showBuyCategoryPicker(ctx: Context, edit = false) {
   const cats = await getSalesCategories();
   const labels = await getCategoryLabels();
 
-  /** Always list national (even when sales-off) so users see the emergency notice — except reseller. */
+  /** Always list national (even when sales-off) so users see the emergency notice — except عمده‌فروش. */
   const keys = [...enabled];
-  if (!isResellerRole(role) && !keys.includes("national")) keys.push("national");
+  if (!isWholesaleFixedRole(role) && !keys.includes("national")) keys.push("national");
 
   if (!keys.length) {
     await ctx.reply(
-      isResellerRole(role)
+      isWholesaleFixedRole(role)
         ? "فعلاً پلنی برای عمده‌فروش تعریف نشده. با ادمین تماس بگیرید."
         : "فعلاً هیچ دسته‌ای برای فروش فعال نیست. با پشتیبانی تماس بگیرید.",
     );
@@ -311,9 +311,9 @@ async function startBuyFlow(ctx: Context) {
   if (!(await requireChannel(ctx))) return;
   const user = await upsertUserFromTelegram(ctx.from!);
   const role = effectiveRole(ctx.from!.id, user.role);
-  if (isResellerRole(role)) {
-    await setDraftCategory(BigInt(ctx.from!.id), RESELLER_CATEGORY);
-    await showFixedPlanPicker(ctx, RESELLER_CATEGORY);
+  if (isWholesaleFixedRole(role)) {
+    await setDraftCategory(BigInt(ctx.from!.id), WHOLESALE_FIXED_CATEGORY);
+    await showFixedPlanPicker(ctx, WHOLESALE_FIXED_CATEGORY);
     return;
   }
   await showBuyCategoryPicker(ctx);
@@ -2343,8 +2343,8 @@ export function createBot() {
         target: req.id,
         detail: "wholesale",
       });
-      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان همکار ویژه تأیید شدید.");
-      const status = `همکار ویژه تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`;
+      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
+      const status = `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`;
       const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
       void finalizeAdminReviewMessages("partner", req.id, status);
       await ctx.editMessageText(status).catch(() => undefined);
@@ -2364,8 +2364,8 @@ export function createBot() {
         target: req.id,
         detail: "reseller",
       });
-      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
-      const status = `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "reseller_…"}`;
+      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان همکار ویژه تأیید شدید.");
+      const status = `همکار ویژه تأیید شد — گروه پنل: ${req.user.panelGroup ?? "reseller_…"}`;
       const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
       void finalizeAdminReviewMessages("partner", req.id, status);
       await ctx.editMessageText(status).catch(() => undefined);

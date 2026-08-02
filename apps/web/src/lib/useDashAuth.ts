@@ -35,9 +35,9 @@ export function useDashAuth(allowed?: Role[]) {
         router.replace(
           data.user.role === "admin"
             ? "/admin"
-            : data.user.role === "wholesale"
+            : data.user.role === "reseller"
               ? "/reseller"
-              : data.user.role === "reseller"
+              : data.user.role === "wholesale"
                 ? "/wholesaler"
                 : data.user.role === "partner"
                   ? "/partner"

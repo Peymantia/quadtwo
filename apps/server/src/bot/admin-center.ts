@@ -458,35 +458,35 @@ async function showPriceRates(ctx: Context) {
       `📁 ${label}`,
       `  مشتری: گیگ ${formatToman(c.user?.perGb ?? rates.user.perGb)} · ماه ${formatToman(c.user?.perMonth ?? rates.user.perMonth)}`,
       `  همکار: گیگ ${formatToman(c.partner?.perGb ?? rates.partner.perGb)} · ماه ${formatToman(c.partner?.perMonth ?? rates.partner.perMonth)}`,
-      `  عمده: گیگ ${formatToman(c.wholesale?.perGb ?? rates.wholesale.perGb)} · ماه ${formatToman(c.wholesale?.perMonth ?? rates.wholesale.perMonth)}`,
+      `  همکار ویژه: گیگ ${formatToman(c.wholesale?.perGb ?? rates.wholesale.perGb)} · ماه ${formatToman(c.wholesale?.perMonth ?? rates.wholesale.perMonth)}`,
     ].join("\n");
   };
 
   const text = [
     "✏️ نرخ محاسبه قیمت (گیگ + ماه)",
     "",
-    `حالت‌ها: مشتری ${modes.user === "rate" ? "نرخی" : "ماتریکس"} · همکار ${modes.partner === "rate" ? "نرخی" : "ماتریکس"} · عمده ${modes.wholesale === "rate" ? "نرخی" : "ماتریکس"}`,
+    `حالت‌ها: مشتری ${modes.user === "rate" ? "نرخی" : "ماتریکس"} · همکار ${modes.partner === "rate" ? "نرخی" : "ماتریکس"} · همکار ویژه ${modes.wholesale === "rate" ? "نرخی" : "ماتریکس"}`,
     "",
     lineCat("data", "VIP / data"),
     "",
     lineCat("national", "اینترنت ملی"),
     "",
-    `♾️ نامحدود/ماه — مشتری ${formatToman(rates.user.unlimitedPerMonth)} · همکار ${formatToman(rates.partner.unlimitedPerMonth)} · عمده ${formatToman(rates.wholesale.unlimitedPerMonth)}`,
+    `♾️ نامحدود/ماه — مشتری ${formatToman(rates.user.unlimitedPerMonth)} · همکار ${formatToman(rates.partner.unlimitedPerMonth)} · همکار ویژه ${formatToman(rates.wholesale.unlimitedPerMonth)}`,
   ].join("\n");
 
   await ctx.editMessageText(text, {
     reply_markup: new InlineKeyboard()
       .text("✏️ data · مشتری", "cc:pricing:rates:edit:data:user")
       .text("همکار", "cc:pricing:rates:edit:data:partner")
-      .text("عمده", "cc:pricing:rates:edit:data:wholesale")
+      .text("همکار ویژه", "cc:pricing:rates:edit:data:wholesale")
       .row()
       .text("✏️ ملی · مشتری", "cc:pricing:rates:edit:national:user")
       .text("همکار", "cc:pricing:rates:edit:national:partner")
-      .text("عمده", "cc:pricing:rates:edit:national:wholesale")
+      .text("همکار ویژه", "cc:pricing:rates:edit:national:wholesale")
       .row()
       .text("✏️ نامحدود/ماه مشتری", "cc:pricing:rates:edit:unlimited:user")
       .text("همکار", "cc:pricing:rates:edit:unlimited:partner")
-      .text("عمده", "cc:pricing:rates:edit:unlimited:wholesale")
+      .text("همکار ویژه", "cc:pricing:rates:edit:unlimited:wholesale")
       .row()
       .text("« قیمت‌گذاری", "cc:pricing"),
   });
@@ -643,8 +643,11 @@ async function showPriceDetail(ctx: Context, cellId: string) {
     "🤝 همکار",
     `   ${formatToman(cell.pricePartner)}`,
     "",
-    "📦 عمده‌فروش",
+    "⭐ همکار ویژه",
     `   ${formatToman(cell.priceWholesale)}`,
+    "",
+    "📦 عمده‌فروش",
+    `   ${formatToman(cell.priceReseller ?? 0)}`,
     "━━━━━━━━━━━━",
     "",
     "برای تغییر، روی دکمه قیمت موردنظر بزنید.",
@@ -985,7 +988,7 @@ async function showDemote(ctx: Context) {
   const kb = new InlineKeyboard();
   for (const u of users) {
     const kind =
-      u.role === "reseller" ? "عمده‌فروش" : u.role === "wholesale" ? "همکار ویژه" : "همکار";
+      u.role === "wholesale" ? "عمده‌فروش" : u.role === "reseller" ? "همکار ویژه" : "همکار";
     const label = `${kind} ${u.username ? `@${u.username}` : u.telegramId}`;
     kb.text(label.slice(0, 40), `cc:demote:do:${u.id}`).row();
   }
@@ -1052,7 +1055,11 @@ async function showPartnerRequestDetail(ctx: Context, requestId: string) {
   await ctx.editMessageText(text, { reply_markup: kb });
 }
 
-async function showReport(ctx: Context, role: "partner" | "wholesale", period: SalesPeriod = "jalali_month") {
+async function showReport(
+  ctx: Context,
+  role: "partner" | "wholesale" | "reseller",
+  period: SalesPeriod = "jalali_month",
+) {
   const { text } = await agentsSalesLeaderboard({ role, period });
   const p = (key: SalesPeriod, label: string) => (period === key ? `• ${label}` : label);
   await ctx.editMessageText(text.slice(0, 3900), {
@@ -1533,16 +1540,26 @@ export function registerControlCenter(bot: Bot) {
     await showReport(ctx, "partner", "jalali_month");
   });
 
+  bot.callbackQuery("cc:rep:reseller", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    await showReport(ctx, "reseller", "jalali_month");
+  });
+
   bot.callbackQuery("cc:rep:wholesale", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
     await showReport(ctx, "wholesale", "jalali_month");
   });
 
-  bot.callbackQuery(/^cc:rep:(partner|wholesale):(today|week|month|jalali_month|all)$/, async (ctx) => {
+  bot.callbackQuery(/^cc:rep:(partner|wholesale|reseller):(today|week|month|jalali_month|all)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    await showReport(ctx, ctx.match![1] as "partner" | "wholesale", parseSalesPeriod(ctx.match![2]));
+    await showReport(
+      ctx,
+      ctx.match![1] as "partner" | "wholesale" | "reseller",
+      parseSalesPeriod(ctx.match![2]),
+    );
   });
 
   bot.callbackQuery("cc:demote", async (ctx) => {
@@ -2786,7 +2803,7 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
         await savePriceRates(partial);
         ccWait.delete(tid);
         const roleLabel =
-          wait.role === "user" ? "مشتری" : wait.role === "partner" ? "همکار" : "عمده";
+          wait.role === "user" ? "مشتری" : wait.role === "partner" ? "همکار" : "همکار ویژه";
         await ctx.reply(`✅ نامحدود/ماه ${roleLabel}: ${formatToman(amount)}`, {
           reply_markup: new InlineKeyboard()
             .text("✏️ نرخ‌ها", "cc:pricing:rates")
@@ -2815,7 +2832,7 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     await savePriceRates(partial);
     ccWait.delete(tid);
     const roleLabel =
-      wait.role === "user" ? "مشتری" : wait.role === "partner" ? "همکار" : "عمده";
+      wait.role === "user" ? "مشتری" : wait.role === "partner" ? "همکار" : "همکار ویژه";
     await ctx.reply(`✅ نرخ‌های ${roleLabel}${cat ? ` · ${cat}` : ""} ذخیره شد.`, {
       reply_markup: new InlineKeyboard()
         .text("✏️ نرخ‌ها", "cc:pricing:rates")
@@ -2877,14 +2894,14 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
         [
           `✅ قیمت همکار: ${formatToman(amount)}`,
           "",
-          "حالا قیمت عمده‌فروش را بفرستید (فقط عدد).",
+          "حالا قیمت همکار ویژه را بفرستید (فقط عدد).",
           "مثال: 210000",
         ].join("\n"),
       );
       return true;
     }
 
-    // wholesale — finalize
+    // wholesale (= همکار ویژه price) — finalize
     const priceUser = wait.priceUser!;
     const pricePartner = wait.pricePartner!;
     const cell = await upsertPriceCell({
@@ -2911,7 +2928,7 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
         `📌 ${planTitle(cell.trafficGb, cell.months)}`,
         `👤 مشتری: ${formatToman(cell.priceUser)}`,
         `🤝 همکار: ${formatToman(cell.pricePartner)}`,
-        `📦 عمده: ${formatToman(cell.priceWholesale)}`,
+        `⭐ همکار ویژه: ${formatToman(cell.priceWholesale)}`,
       ].join("\n"),
       {
         reply_markup: new InlineKeyboard()

@@ -148,8 +148,8 @@ function parsePriceInput(raw: string): number {
 const ROLE_FA: Record<string, string> = {
   user: "کاربر",
   partner: "همکار",
-  wholesale: "همکار ویژه",
-  reseller: "عمده‌فروش",
+  reseller: "همکار ویژه",
+  wholesale: "عمده‌فروش",
   admin: "ادمین",
 };
 
@@ -784,9 +784,9 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
 
   async function decidePartner(id: string, action: "approve" | "reject", asRole?: "partner" | "wholesale" | "reseller") {
     const label =
-      asRole === "wholesale"
+      asRole === "reseller"
         ? "همکار ویژه"
-        : asRole === "reseller"
+        : asRole === "wholesale"
           ? "عمده‌فروش"
           : asRole === "partner"
             ? "همکار"
@@ -834,7 +834,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
 
   async function removePartner(u: AdminUser) {
     const label = u.username ? `@${u.username}` : u.agentName || u.telegramId;
-    const kind = u.role === "wholesale" ? "همکار ویژه" : u.role === "reseller" ? "عمده‌فروش" : "همکار";
+    const kind = u.role === "reseller" ? "همکار ویژه" : u.role === "wholesale" ? "عمده‌فروش" : "همکار";
     if (
       !(await askConfirm(
         `${kind} «${label}» از همکاری حذف شود و به مشتری عادی تبدیل شود؟\nنام نماینده و گروه پنل پاک می‌شود.`,
@@ -933,7 +933,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                       type="button"
                       className="btn primary sm"
                       disabled={partnerBusy === r.id}
-                      onClick={() => void decidePartner(r.id, "approve", "wholesale")}
+                      onClick={() => void decidePartner(r.id, "approve", "reseller")}
                     >
                       همکار ویژه
                     </button>
@@ -941,7 +941,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                       type="button"
                       className="btn primary sm"
                       disabled={partnerBusy === r.id}
-                      onClick={() => void decidePartner(r.id, "approve", "reseller")}
+                      onClick={() => void decidePartner(r.id, "approve", "wholesale")}
                     >
                       عمده‌فروش
                     </button>
@@ -1619,7 +1619,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                   [
                     ["user", "کاربر"],
                     ["partner", "همکار"],
-                    ["wholesale", "عمده"],
+                    ["wholesale", "همکار ویژه"],
                   ] as const
                 ).map(([role, roleLabel]) => (
                   <div key={role} className="rate-role-row">
@@ -1657,7 +1657,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                 [
                   ["user", "کاربر"],
                   ["partner", "همکار"],
-                  ["wholesale", "عمده"],
+                  ["wholesale", "همکار ویژه"],
                 ] as const
               ).map(([role, roleLabel]) => (
                 <div key={role} className="field">
@@ -2598,7 +2598,7 @@ function BulkAdjustPanel({ flash, askConfirm }: { flash: Flash; askConfirm: AskC
             </div>
             <div className="field">
               <label>
-                گروه همکار / ادمین / عمده (
+                گروه همکار / ادمین / همکار ویژه / عمده‌فروش (
                 <span className="num">{previewCount == null ? "…" : previewCount}</span>)
               </label>
               <select value={panelGroup} onChange={(e) => setPanelGroup(e.target.value)}>
@@ -4971,8 +4971,8 @@ function SettingsTab({
         {settings.discount_codes_enabled === "true" && (
           <div className="setting-row">
             <div>
-              <div className="t">سقف درصد تخفیف همکار / عمده</div>
-              <div className="d">ادمین تا ۱۰۰٪؛ همکار و عمده حداکثر این عدد.</div>
+              <div className="t">سقف درصد تخفیف همکار / همکار ویژه</div>
+              <div className="d">ادمین تا ۱۰۰٪؛ همکار و همکار ویژه حداکثر این عدد.</div>
             </div>
             <input
               className="num"

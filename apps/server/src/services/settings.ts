@@ -141,6 +141,7 @@ const defaults: Record<string, string> = {
     unlimited: "نامحدود",
     offer: "پیشنهاد ویژه",
     reseller: "پلن‌های عمده‌فروش",
+    wholesale: "پلن‌های عمده‌فروش",
   }),
   /** Display order for plan categories (web dashboard + bot) */
   category_order_json: JSON.stringify(["data", "national", "unlimited"]),
@@ -273,9 +274,9 @@ export async function getDefaultLimitIp(): Promise<number> {
 /** Unlimited plans are always locked to 2 users/devices. */
 export const UNLIMITED_LIMIT_IP = 2;
 
-/** Admin / partner / همکار ویژه may change IP limit at purchase; user + reseller use settings default. */
+/** Admin / partner / همکار ویژه (reseller) may change IP limit; user + عمده‌فروش (wholesale) cannot. */
 export function canEditLimitIp(role: string): boolean {
-  return role === "admin" || role === "partner" || role === "wholesale";
+  return role === "admin" || role === "partner" || role === "reseller";
 }
 
 /** Effective IP limit for buy wizard / checkout (unset draft → admin default). */
@@ -377,10 +378,11 @@ export async function getPricingModes(): Promise<RolePricingModes> {
 }
 
 export async function getPricingModeForRole(role: string): Promise<PricingMode> {
-  // عمده‌فروش: فقط پلن ثابت ماتریکس (بدون seek/نرخی)
-  if (role === "reseller") return "matrix";
+  // عمده‌فروش (wholesale): فقط پلن ثابت ماتریکس
+  if (role === "wholesale") return "matrix";
   const modes = await getPricingModes();
-  if (role === "wholesale" || role === "admin") return modes.wholesale;
+  // همکار ویژه (reseller) + admin → نرخ/ماتریکس عمدهٔ سابق
+  if (role === "reseller" || role === "admin") return modes.wholesale;
   if (role === "partner") return modes.partner;
   return modes.user;
 }
@@ -446,7 +448,7 @@ export function ratesForRoleCategory(
   rates: PriceRates,
 ): RoleRates {
   const roleKey: RolePricingKey =
-    role === "wholesale" || role === "admin"
+    role === "reseller" || role === "admin"
       ? "wholesale"
       : role === "partner"
         ? "partner"
@@ -466,7 +468,7 @@ export type SalesCategories = Record<string, boolean>;
 export const BUILTIN_CATEGORY_KEYS = ["data", "national", "unlimited"] as const;
 
 export function defaultSalesCategories(): SalesCategories {
-  return { data: true, national: true, unlimited: true, reseller: true };
+  return { data: true, national: true, unlimited: true, wholesale: true };
 }
 
 export async function getSalesCategories(): Promise<SalesCategories> {
@@ -501,6 +503,7 @@ export function defaultCategoryLabels(): CategoryLabels {
     national: "اینترنت ملی",
     unlimited: "نامحدود",
     offer: "پیشنهاد ویژه",
+    wholesale: "پلن‌های عمده‌فروش",
     reseller: "پلن‌های عمده‌فروش",
   };
 }
@@ -613,19 +616,21 @@ export async function listEnabledSalesCategories(): Promise<string[]> {
   const cats = await getSalesCategories();
   const labels = await getCategoryLabels();
   const order = await getCategoryOrder();
-  const keys = new Set([...Object.keys(cats), ...Object.keys(labels), ...BUILTIN_CATEGORY_KEYS, "reseller"]);
+  const keys = new Set([...Object.keys(cats), ...Object.keys(labels), ...BUILTIN_CATEGORY_KEYS, "wholesale", "reseller"]);
   return sortKeysByCategoryOrder([...keys].filter((k) => cats[k] === true), order);
 }
 
 /**
  * Role-aware sales categories:
- * - reseller → only «reseller» (if enabled)
- * - everyone else → enabled cats except «reseller»
+ * - wholesale (عمده‌فروش) → only fixed wholesale plans
+ * - everyone else → enabled cats except wholesale/reseller fixed category
  */
 export async function listEnabledSalesCategoriesForRole(role: string): Promise<string[]> {
   const all = await listEnabledSalesCategories();
-  if (role === "reseller") return all.filter((k) => k === "reseller");
-  return all.filter((k) => k !== "reseller");
+  if (role === "wholesale") {
+    return all.filter((k) => k === "wholesale" || k === "reseller");
+  }
+  return all.filter((k) => k !== "wholesale" && k !== "reseller");
 }
 
 export type PaymentMethodsConfig = {

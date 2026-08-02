@@ -91,8 +91,8 @@ export async function api<T>(
 
 export function homePathForRole(role: Role): string {
   if (role === "admin") return "/admin";
-  if (role === "wholesale") return "/reseller";
-  if (role === "reseller") return "/wholesaler";
+  if (role === "reseller") return "/reseller";
+  if (role === "wholesale") return "/wholesaler";
   if (role === "partner") return "/partner";
   return "/app";
 }
@@ -103,9 +103,9 @@ export function roleLabel(role: Role): string {
       return "ادمین";
     case "partner":
       return "همکار";
-    case "wholesale":
-      return "همکار ویژه";
     case "reseller":
+      return "همکار ویژه";
+    case "wholesale":
       return "عمده‌فروش";
     default:
       return "کاربر";

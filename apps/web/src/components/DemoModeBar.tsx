@@ -7,8 +7,8 @@ import { api, homePathForRole, setDemoRoleLocal, type Role } from "../lib/api";
 const DEMO_ROLES: { role: Role; label: string }[] = [
   { role: "admin", label: "ادمین" },
   { role: "partner", label: "همکار" },
-  { role: "wholesale", label: "همکار ویژه" },
-  { role: "reseller", label: "عمده‌فروش" },
+  { role: "reseller", label: "همکار ویژه" },
+  { role: "wholesale", label: "عمده‌فروش" },
   { role: "user", label: "کاربر" },
 ];
 

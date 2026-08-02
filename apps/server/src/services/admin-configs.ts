@@ -216,9 +216,9 @@ export async function listConfigGroups(): Promise<ConfigGroup[]> {
     const g = (u.panelGroup || "").trim();
     if (!g || seen.has(g.toLowerCase())) continue;
     seen.add(g.toLowerCase());
-    const roleTag = u.role === "reseller" ? "عمده‌فروش" : u.role === "wholesale" ? "همکار ویژه" : u.role === "admin" ? "ادمین" : "همکار";
+    const roleTag = u.role === "wholesale" ? "عمده‌فروش" : u.role === "reseller" ? "همکار ویژه" : u.role === "admin" ? "ادمین" : "همکار";
     const kind =
-      u.role === "reseller" ? "reseller" : u.role === "wholesale" ? "wholesale" : u.role === "admin" ? "admin" : "partner";
+      u.role === "wholesale" ? "wholesale" : u.role === "reseller" ? "reseller" : u.role === "admin" ? "admin" : "partner";
     const name = u.agentName?.trim() || g;
     groups.push({
       key: `p${u.id}`,
