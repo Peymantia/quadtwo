@@ -1005,73 +1005,43 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
 
       <div className="panel">
         <h2>کاربران</h2>
-        <div className="actions" style={{ marginBottom: 12 }}>
-          {["", "user", "partner", "wholesale", "reseller", "admin"].map((r) => (
-            <button
-              key={r || "all"}
-              type="button"
-              className={`chip${roleFilter === r ? " on" : ""}`}
-              onClick={() => setRoleFilter(r)}
-            >
-              {r ? ROLE_FA[r] : "همه"}
-            </button>
-          ))}
+        <div className="field" style={{ marginBottom: 12, maxWidth: 280 }}>
+          <label>دسته کاربران</label>
+          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+            <option value="">همه</option>
+            {["user", "partner", "wholesale", "reseller", "admin"].map((r) => (
+              <option key={r} value={r}>
+                {ROLE_FA[r]}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="field">
           <label>جستجو (یوزرنیم، آی‌دی، نام)</label>
           <input value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <div className="table-wrap hide-mobile">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>کاربر</th>
-                <th>نقش</th>
-                <th>کیف پول</th>
-                <th>عملیات</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.slice(0, 60).map((u) => (
-                <tr key={u.id}>
-                  <td>
-                    <strong>{u.username ? `@${u.username}` : u.firstName || u.telegramId}</strong>
-                    {u.agentName && <div className="muted">{u.agentName}</div>}
-                    <div className="muted num">{u.telegramId}</div>
-                  </td>
-                  <td>
-                    <select value={u.role} onChange={(e) => changeRole(u, e.target.value)}>
-                      {Object.entries(ROLE_FA).map(([k, v]) => (
-                        <option key={k} value={k}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="num">{formatToman(u.balance)}</td>
-                  <td>
-                    <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
-                      جزئیات / شارژ
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="users-mlist show-mobile">
+        <div className="users-mlist users-mlist--always">
           {shown.slice(0, 60).map((u) => (
             <div key={u.id} className="users-mcard">
               <div className="users-mrow">
                 <div className="users-muser">
-                  <strong>{u.username ? `@${u.username}` : u.firstName || u.telegramId}</strong>
-                  {u.agentName && <div className="muted">{u.agentName}</div>}
-                  <div className="muted num">{u.telegramId}</div>
+                  <strong>
+                    TG Username: {u.username ? `@${u.username}` : u.firstName || "—"}
+                  </strong>
+                  {u.agentName ? <div className="muted">{u.agentName}</div> : null}
                 </div>
                 <div className="users-mwallet num">{formatToman(u.balance)}</div>
               </div>
+              <div className="users-mmeta">
+                <div>
+                  TG User ID: <span className="num">{u.telegramId}</span>
+                </div>
+                <div>Group: {u.panelGroup || "—"}</div>
+              </div>
               <div className="users-mrow users-mrow-actions">
+                <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
+                  جزئیات و شارژ
+                </button>
                 <select
                   className="users-mrole"
                   value={u.role}
@@ -1084,9 +1054,6 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                     </option>
                   ))}
                 </select>
-                <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
-                  جزئیات و شارژ
-                </button>
               </div>
             </div>
           ))}

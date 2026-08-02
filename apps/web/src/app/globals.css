@@ -1230,11 +1230,15 @@ h3 {
   display: none;
 }
 
-/* Admin users — stacked cards on mobile (no table header) */
+/* Admin users — stacked cards */
 .users-mlist {
   display: none;
   flex-direction: column;
   gap: 10px;
+}
+
+.users-mlist--always {
+  display: flex;
 }
 
 .users-mcard {
@@ -1255,6 +1259,15 @@ h3 {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+
+.users-mmeta {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 
 .users-muser {

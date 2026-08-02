@@ -58,47 +58,40 @@ function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: str
   return null;
 }
 
-/** Emoji after label (e.g. «قبلی ◀️» / «بعدی ▶️») — still maps to Premium button icon. */
-function matchTrailingGlyph(text: string): { glyph: string; id: string; rest: string } | null {
-  const bare = stripDirMarks(text);
-  for (const row of UNIVERSAL_BY_LENGTH) {
-    if (bare.endsWith(row.glyph)) {
-      const rest = bare.slice(0, -row.glyph.length).replace(/\s+$/, "");
-      if (!rest) return null;
-      const id = resolvePremiumId(row.glyph, rest) || row.id;
-      return { glyph: row.glyph, id, rest };
-    }
+/** Keep emoji at the logical start of button labels.
+ * Prefixing RLM to `emoji + Persian` makes Telegram RTL clients push the emoji to the visual end.
+ * Telegram `icon_custom_emoji_id` is also drawn on the LTR “before” side (= visual end in RTL) — avoid it. */
+function stabilizeButtonText(text: string): string {
+  const t = stripDirMarks(text);
+  if (!t) return t;
+
+  const lead = matchLeadingGlyph(t);
+  if (lead) {
+    return `${lead.glyph} ${lead.rest}`.replace(/\s+/g, " ").trim();
   }
-  return null;
+  // Leading emoji not in our pack (or ZWJ sequences)
+  if (/^\p{Extended_Pictographic}/u.test(t) || /^\p{Emoji_Presentation}/u.test(t)) {
+    return t;
+  }
+  // Pure Persian / digit labels (no leading emoji): RLM keeps numbers with words
+  if (/[\u0600-\u06FF]/.test(t)) return `\u200F${t}`;
+  return `${LRM}${t}`;
 }
 
 function transformButtonPremium(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
-  if (btn.icon_custom_emoji_id) {
-    return { ...btn, text: stabilizeButtonText(String(btn.text)) };
-  }
-  const hit = matchLeadingGlyph(btn.text) || matchTrailingGlyph(btn.text);
-  if (!hit) return { ...btn, text: stabilizeButtonText(btn.text) };
-  // Premium icon; RTL Persian labels need RLM (not LRM) so digits stay with their words.
-  return {
-    ...btn,
-    text: stabilizeButtonText(hit.rest),
-    icon_custom_emoji_id: hit.id,
-  };
+  const next: Record<string, unknown> = { ...btn, text: stabilizeButtonText(btn.text) };
+  // Drop custom button icon — in RTL it appears at the end of the label.
+  delete next.icon_custom_emoji_id;
+  return next;
 }
 
 /** Universal style: only stabilize direction (keep unicode emoji in text). */
 function transformButtonDirection(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
-  return { ...btn, text: stabilizeButtonText(btn.text) };
-}
-
-/** LRM for LTR/emoji-led labels; RLM when the label is Persian so «۱۰۰ گیگ» does not reverse. */
-function stabilizeButtonText(text: string): string {
-  const t = stripDirMarks(text);
-  if (!t) return t;
-  if (/[\u0600-\u06FF]/.test(t)) return `\u200F${t}`;
-  return `${LRM}${t}`;
+  const next: Record<string, unknown> = { ...btn, text: stabilizeButtonText(btn.text) };
+  delete next.icon_custom_emoji_id;
+  return next;
 }
 
 function mapKeyboardButtons(

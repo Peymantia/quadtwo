@@ -170,6 +170,12 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     setConfigPage(0);
   }, [filter, configSort, configPageSize]);
 
+  const discountAllowed = home?.user.discountCodesAllowed !== false;
+  const tabs = useMemo(
+    () => (discountAllowed ? TABS : TABS.filter((t) => t.key !== "discounts")),
+    [discountAllowed],
+  );
+
   if (loading || !home) return <LoadingScreen />;
 
   async function createRate(payload: RateOrderPayload) {
@@ -313,11 +319,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   }
 
   const userLabel = home.user.agentName || (home.user.username ? `@${home.user.username}` : "");
-  const discountAllowed = home.user.discountCodesAllowed !== false;
-  const tabs = useMemo(
-    () => (discountAllowed ? TABS : TABS.filter((t) => t.key !== "discounts")),
-    [discountAllowed],
-  );
 
   return (
     <DashShell

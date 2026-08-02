@@ -21,7 +21,7 @@ export const BTN = {
   /** User / partner / wholesale / admin-demo: Mini App entry */
   miniAppDirect: "📱 ورود به وب پنل",
   /** Browser login with temporary credentials */
-  dashOtp: "🔐 ورود به وب پنل (مرورگر)",
+  dashOtp: "🔐 رمز ورود به وب پنل",
   configLookup: "🔎 مشاهده سریع",
   partner: "🤝 درخواست نمایندگی",
   allConfigs: "👀 نمایش کلیه سرویس‌ها",
@@ -58,6 +58,15 @@ export function hearsBtn(label: string): string[] {
   // Original with emoji + direction marks (stuck keyboards after last deploy)
   out.add(`\u200F${label}`);
   out.add(`\u200E${label}`);
+  // Legacy browser-login label
+  if (label.includes("رمز ورود به وب پنل") || label.includes("ورود به وب پنل")) {
+    out.add("🔐 ورود به وب پنل (مرورگر)");
+    out.add("ورود به وب پنل (مرورگر)");
+    out.add("🔐 کد ورود مرورگر");
+    out.add("کد ورود مرورگر");
+    out.add("🔐 ورود مرورگر");
+    out.add("ورود مرورگر");
+  }
   return [...out];
 }
 
