@@ -1022,23 +1022,36 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
         </div>
         <div className="users-mlist users-mlist--always">
           {shown.slice(0, 60).map((u) => (
-            <div key={u.id} className="users-mcard" dir="rtl">
+            <div key={u.id} className="users-mcard">
               <div className="users-mrow">
                 <div className="users-muser">
-                  <strong>
-                    Username: {u.username ? `@${u.username}` : u.firstName || "—"}
-                  </strong>
+                  <div className="users-muser-title">
+                    <span className="users-mlabel">Username:</span>{" "}
+                    {u.username ? (
+                      <a
+                        className="users-musername"
+                        href={`https://t.me/${u.username}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        @{u.username}
+                      </a>
+                    ) : (
+                      <span>{u.firstName || "—"}</span>
+                    )}
+                  </div>
                   {u.agentName ? <div className="muted">{u.agentName}</div> : null}
                 </div>
                 <div className="users-mwallet num">{formatToman(u.balance)}</div>
               </div>
               <div className="users-mmeta">
                 <div>
-                  User ID: <span className="num" dir="ltr">
-                    {u.telegramId}
-                  </span>
+                  <span className="users-mlabel">User ID:</span>{" "}
+                  <span className="num">{u.telegramId}</span>
                 </div>
-                <div>Group: {u.panelGroup || "—"}</div>
+                <div>
+                  <span className="users-mlabel">Group:</span> {u.panelGroup || "—"}
+                </div>
               </div>
               <div className="users-mrow-actions">
                 <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>

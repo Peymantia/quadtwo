@@ -58,20 +58,6 @@ function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: str
   return null;
 }
 
-/** Emoji after label (e.g. «قبلی ◀️» / «بعدی ▶️»). */
-function matchTrailingGlyph(text: string): { glyph: string; id: string; rest: string } | null {
-  const bare = stripDirMarks(text);
-  for (const row of UNIVERSAL_BY_LENGTH) {
-    if (bare.endsWith(row.glyph)) {
-      const rest = bare.slice(0, -row.glyph.length).replace(/\s+$/, "");
-      if (!rest) return null;
-      const id = resolvePremiumId(row.glyph, rest) || row.id;
-      return { glyph: row.glyph, id, rest };
-    }
-  }
-  return null;
-}
-
 /**
  * Universal / plain labels: keep leading unicode emoji at the logical start.
  * Never prefix RLM onto `emoji + Persian` — that pushes the glyph to the visual end in RTL.
@@ -92,30 +78,18 @@ function stabilizeButtonText(text: string): string {
 }
 
 /**
- * Premium buttons: Telegram draws `icon_custom_emoji_id` before the text.
- * Keep unicode glyph OUT of the text (avoid double emoji) and avoid RLM on the label
- * so the icon stays on the reading-start side with Persian RTL keyboards.
- * Fallback: if no pack id, keep unicode via stabilizeButtonText.
+ * Premium buttons — RTL mobile fix:
+ * `icon_custom_emoji_id` is drawn on the absolute LEFT of the button.
+ * On desktop LTR that is the reading start; on RTL mobile it is the reading END.
+ * Telegram has no way to pin the icon to the reading start in RTL, so we keep the
+ * unicode glyph at the string start (correct on both clients) and skip the API icon.
+ * Message bodies still get Premium via custom_emoji entities.
  */
 function transformButtonPremium(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
-
-  const existingId = typeof btn.icon_custom_emoji_id === "string" ? btn.icon_custom_emoji_id : "";
-  const hit = matchLeadingGlyph(btn.text) || matchTrailingGlyph(btn.text);
-  const id = existingId || hit?.id || "";
-  if (!id) {
-    const next: Record<string, unknown> = { ...btn, text: stabilizeButtonText(btn.text) };
-    delete next.icon_custom_emoji_id;
-    return next;
-  }
-
-  const rest = hit ? hit.rest : stripDirMarks(btn.text);
-  // Plain Persian (or LTR) label — no direction mark; icon carries the emoji.
-  return {
-    ...btn,
-    text: rest,
-    icon_custom_emoji_id: id,
-  };
+  const next: Record<string, unknown> = { ...btn, text: stabilizeButtonText(btn.text) };
+  delete next.icon_custom_emoji_id;
+  return next;
 }
 
 /** Universal style: unicode emoji in text, no custom button icon. */

@@ -1246,8 +1246,8 @@ h3 {
   border-radius: var(--radius);
   background: rgba(10, 13, 35, 0.35);
   padding: 12px 14px;
-  direction: rtl;
-  text-align: right;
+  direction: ltr;
+  text-align: left;
 }
 
 .users-mrow {
@@ -1271,18 +1271,35 @@ h3 {
   gap: 4px;
   font-size: 0.9rem;
   color: var(--muted);
-  text-align: right;
+  text-align: left;
+  direction: ltr;
+}
+
+.users-mlabel {
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .users-muser {
   min-width: 0;
   flex: 1;
-  text-align: right;
+  text-align: left;
 }
 
-.users-muser strong {
-  display: block;
+.users-muser-title {
   word-break: break-word;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.users-musername {
+  color: var(--accent, #6ea8fe);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.users-musername:hover {
+  text-decoration: underline;
 }
 
 .users-mwallet {
@@ -1290,8 +1307,9 @@ h3 {
   font-weight: 700;
   white-space: nowrap;
   padding-top: 2px;
-  margin-inline-start: auto;
-  text-align: left;
+  margin-left: auto;
+  text-align: right;
+  direction: rtl;
 }
 
 .users-mrow-actions {
@@ -1302,6 +1320,7 @@ h3 {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
+  direction: ltr;
 }
 
 .users-mrole {
