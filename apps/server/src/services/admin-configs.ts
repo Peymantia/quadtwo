@@ -25,7 +25,7 @@ export type ConfigGroup = {
   panelGroup: string | null;
   partnerUserId?: string;
   /** Emoji kind for Telegram group picker buttons */
-  kind?: "admin" | "partner" | "wholesale" | "tg" | "panel" | "all";
+  kind?: "admin" | "partner" | "wholesale" | "reseller" | "tg" | "panel" | "all";
 };
 
 export type ConfigListItem = {
