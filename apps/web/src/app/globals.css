@@ -3832,7 +3832,31 @@ button.pay-dest-number:active,
 }
 
 .rate-shop-cats {
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.name-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.name-mode-row .chip {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.name-mode-row .name-mode-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.name-mode-row .name-mode-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .rate-shop-card {

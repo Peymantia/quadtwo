@@ -541,21 +541,23 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
   return (
     <div className="rate-shop seek-shop">
-      <div className="field">
-        <label>نوع اشتراک</label>
-        <div className="chip-row rate-shop-cats">
-          {cats.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              className={`chip${category === cat ? " on" : ""}`}
-              onClick={() => setCategory(cat)}
-            >
-              {catalog.categoryLabels[cat] || cat}
-            </button>
-          ))}
+      {cats.length > 1 ? (
+        <div className="field">
+          <label>نوع اشتراک</label>
+          <div className="chip-row rate-shop-cats">
+            {cats.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                className={`chip${category === cat ? " on" : ""}`}
+                onClick={() => setCategory(cat)}
+              >
+                {catalog.categoryLabels[cat] || cat}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {isFixedSingle ? (
         <div className="field">
@@ -767,22 +769,32 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         <>
           <div className="field">
             <label>نام کاربر</label>
-            <div className="chip-row" style={{ marginBottom: 10 }}>
-              <button type="button" className={`chip${nameMode === "random" ? " on" : ""}`} onClick={() => setNameMode("random")}>
+            <div className="name-mode-row">
+              <button
+                type="button"
+                className={`chip${nameMode === "random" ? " on" : ""}`}
+                onClick={() => setNameMode("random")}
+                disabled={busy}
+              >
                 رندوم
               </button>
-              <button type="button" className={`chip${nameMode === "custom" ? " on" : ""}`} onClick={() => setNameMode("custom")}>
+              <button
+                type="button"
+                className={`chip${nameMode === "custom" ? " on" : ""}`}
+                onClick={() => setNameMode("custom")}
+                disabled={busy}
+              >
                 شخصی
               </button>
-            </div>
-            {nameMode === "custom" && (
               <input
+                className="name-mode-input"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
                 placeholder="مثلاً ali-mobile"
-                disabled={busy}
+                disabled={busy || nameMode !== "custom"}
+                aria-label="نام شخصی"
               />
-            )}
+            </div>
           </div>
           <div className="field">
             <label>توضیحات (اختیاری)</label>
@@ -799,23 +811,33 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
       {variant === "user" && (
         <div className="field">
-          <label>نام اکانت (اختیاری)</label>
-          <div className="chip-row" style={{ marginBottom: 10 }}>
-            <button type="button" className={`chip${nameMode === "random" ? " on" : ""}`} onClick={() => setNameMode("random")}>
+          <label>نام کاربر</label>
+          <div className="name-mode-row">
+            <button
+              type="button"
+              className={`chip${nameMode === "random" ? " on" : ""}`}
+              onClick={() => setNameMode("random")}
+              disabled={busy}
+            >
               رندوم
             </button>
-            <button type="button" className={`chip${nameMode === "custom" ? " on" : ""}`} onClick={() => setNameMode("custom")}>
+            <button
+              type="button"
+              className={`chip${nameMode === "custom" ? " on" : ""}`}
+              onClick={() => setNameMode("custom")}
+              disabled={busy}
+            >
               شخصی
             </button>
-          </div>
-          {nameMode === "custom" && (
             <input
+              className="name-mode-input"
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
               placeholder="مثلاً ali-mobile"
-              disabled={busy}
+              disabled={busy || nameMode !== "custom"}
+              aria-label="نام شخصی"
             />
-          )}
+          </div>
         </div>
       )}
 
