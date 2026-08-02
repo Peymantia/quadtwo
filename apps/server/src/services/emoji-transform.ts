@@ -58,9 +58,24 @@ function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: str
   return null;
 }
 
-/** Keep emoji at the logical start of button labels.
- * Prefixing RLM to `emoji + Persian` makes Telegram RTL clients push the emoji to the visual end.
- * Telegram `icon_custom_emoji_id` is also drawn on the LTR “before” side (= visual end in RTL) — avoid it. */
+/** Emoji after label (e.g. «قبلی ◀️» / «بعدی ▶️»). */
+function matchTrailingGlyph(text: string): { glyph: string; id: string; rest: string } | null {
+  const bare = stripDirMarks(text);
+  for (const row of UNIVERSAL_BY_LENGTH) {
+    if (bare.endsWith(row.glyph)) {
+      const rest = bare.slice(0, -row.glyph.length).replace(/\s+$/, "");
+      if (!rest) return null;
+      const id = resolvePremiumId(row.glyph, rest) || row.id;
+      return { glyph: row.glyph, id, rest };
+    }
+  }
+  return null;
+}
+
+/**
+ * Universal / plain labels: keep leading unicode emoji at the logical start.
+ * Never prefix RLM onto `emoji + Persian` — that pushes the glyph to the visual end in RTL.
+ */
 function stabilizeButtonText(text: string): string {
   const t = stripDirMarks(text);
   if (!t) return t;
@@ -69,24 +84,41 @@ function stabilizeButtonText(text: string): string {
   if (lead) {
     return `${lead.glyph} ${lead.rest}`.replace(/\s+/g, " ").trim();
   }
-  // Leading emoji not in our pack (or ZWJ sequences)
   if (/^\p{Extended_Pictographic}/u.test(t) || /^\p{Emoji_Presentation}/u.test(t)) {
     return t;
   }
-  // Pure Persian / digit labels (no leading emoji): RLM keeps numbers with words
   if (/[\u0600-\u06FF]/.test(t)) return `\u200F${t}`;
   return `${LRM}${t}`;
 }
 
+/**
+ * Premium buttons: Telegram draws `icon_custom_emoji_id` before the text.
+ * Keep unicode glyph OUT of the text (avoid double emoji) and avoid RLM on the label
+ * so the icon stays on the reading-start side with Persian RTL keyboards.
+ * Fallback: if no pack id, keep unicode via stabilizeButtonText.
+ */
 function transformButtonPremium(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
-  const next: Record<string, unknown> = { ...btn, text: stabilizeButtonText(btn.text) };
-  // Drop custom button icon — in RTL it appears at the end of the label.
-  delete next.icon_custom_emoji_id;
-  return next;
+
+  const existingId = typeof btn.icon_custom_emoji_id === "string" ? btn.icon_custom_emoji_id : "";
+  const hit = matchLeadingGlyph(btn.text) || matchTrailingGlyph(btn.text);
+  const id = existingId || hit?.id || "";
+  if (!id) {
+    const next: Record<string, unknown> = { ...btn, text: stabilizeButtonText(btn.text) };
+    delete next.icon_custom_emoji_id;
+    return next;
+  }
+
+  const rest = hit ? hit.rest : stripDirMarks(btn.text);
+  // Plain Persian (or LTR) label — no direction mark; icon carries the emoji.
+  return {
+    ...btn,
+    text: rest,
+    icon_custom_emoji_id: id,
+  };
 }
 
-/** Universal style: only stabilize direction (keep unicode emoji in text). */
+/** Universal style: unicode emoji in text, no custom button icon. */
 function transformButtonDirection(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
   const next: Record<string, unknown> = { ...btn, text: stabilizeButtonText(btn.text) };

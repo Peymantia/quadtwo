@@ -1022,11 +1022,11 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
         </div>
         <div className="users-mlist users-mlist--always">
           {shown.slice(0, 60).map((u) => (
-            <div key={u.id} className="users-mcard">
+            <div key={u.id} className="users-mcard" dir="rtl">
               <div className="users-mrow">
                 <div className="users-muser">
                   <strong>
-                    TG Username: {u.username ? `@${u.username}` : u.firstName || "—"}
+                    Username: {u.username ? `@${u.username}` : u.firstName || "—"}
                   </strong>
                   {u.agentName ? <div className="muted">{u.agentName}</div> : null}
                 </div>
@@ -1034,11 +1034,13 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               </div>
               <div className="users-mmeta">
                 <div>
-                  TG User ID: <span className="num">{u.telegramId}</span>
+                  User ID: <span className="num" dir="ltr">
+                    {u.telegramId}
+                  </span>
                 </div>
                 <div>Group: {u.panelGroup || "—"}</div>
               </div>
-              <div className="users-mrow users-mrow-actions">
+              <div className="users-mrow-actions">
                 <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
                   جزئیات و شارژ
                 </button>
