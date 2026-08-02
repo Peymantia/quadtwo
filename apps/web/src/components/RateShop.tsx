@@ -561,18 +561,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
 
       {isFixedSingle ? (
         <div className="field">
-          {category !== "wholesale" && category !== "reseller" ? (
-            <>
-              <label>{catLabel} (ثابت)</label>
-              <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
-                {isOffer
-                  ? "حجم، مدت و قیمت این پلن ثابت است؛ فقط نام اکانت را مشخص کنید. کد تخفیف اعمال نمی‌شود."
-                  : "این سرویس تک‌پلن است؛ حجم و مدت قابل کم و زیاد کردن نیست. یک پلن را انتخاب کنید."}
-              </p>
-            </>
-          ) : (
-            <p className="plan-pick-hint">📦 پلن مورد نظر خود را انتخاب کنید:</p>
-          )}
+          <p className="plan-pick-hint">
+            {isOffer ? "⭐" : category === "unlimited" ? "💎" : "📦"} پلن مورد نظر خود را انتخاب کنید:
+          </p>
           {!fixedCells.length ? (
             <p className="muted" style={{ color: "var(--pink)", margin: 0 }}>
               هنوز پلنی در این دسته تعریف نشده است.
@@ -580,7 +571,6 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           ) : (
             <div className="plan-card-list">
               {fixedCells.map((cell, idx) => {
-                const isWholesale = category === "wholesale" || category === "reseller";
                 const months = Math.max(1, cell.months || 1);
                 const monthsLabel =
                   months === 1
@@ -591,9 +581,15 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                         ? "سه ماهه"
                         : `${months.toLocaleString("fa-IR")} ماهه`;
                 const volLabel =
-                  cell.trafficGb == null ? "نامحدود" : `${cell.trafficGb.toLocaleString("fa-IR")} گیگ`;
+                  cell.trafficGb == null || category === "unlimited"
+                    ? "نامحدود"
+                    : `${cell.trafficGb.toLocaleString("fa-IR")} گیگ`;
                 const primaryLabel =
-                  cell.trafficGb == null ? `${monthsLabel} نامحدود` : `${monthsLabel} ${volLabel}`;
+                  cell.title?.trim() && isOffer
+                    ? cell.title.trim()
+                    : cell.trafficGb == null || category === "unlimited"
+                      ? `${monthsLabel} نامحدود`
+                      : `${monthsLabel} ${volLabel}`;
                 const ip = typeof cell.limitIp === "number" ? cell.limitIp : 0;
                 const limitLabel =
                   ip <= 0
@@ -603,38 +599,27 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                       : ip === 2
                         ? "دو کاربره"
                         : `${ip.toLocaleString("fa-IR")} کاربره`;
-                const title = cell.title?.trim() || primaryLabel;
                 return (
                   <button
                     key={cell.id || `${cell.trafficGb}-${cell.months}-${idx}`}
                     type="button"
-                    className={`plan-card${isWholesale ? " plan-card--compact" : ""}${offerIndex === idx ? " on" : ""}${isOffer ? " golden" : ""}`}
+                    className={`plan-card plan-card--compact${offerIndex === idx ? " on" : ""}${isOffer ? " golden" : ""}`}
                     onClick={() => setOfferIndex(idx)}
                     disabled={busy}
                   >
-                    {isWholesale ? (
-                      <>
-                        <div className="plan-card-specs" dir="rtl">
-                          <div className="plan-card-primary">{primaryLabel}</div>
-                          <div className="plan-card-limit">محدودیت: {limitLabel}</div>
-                        </div>
-                        <div className="plan-price num" dir="rtl">
-                          {formatToman(cell.price ?? 0)}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="plan-name">
-                          {isOffer ? "⭐ " : ""}
-                          {title}
-                        </div>
-                        <div className="plan-meta muted">
-                          {primaryLabel}
-                          {ip > 0 ? ` · محدودیت: ${limitLabel}` : ""}
-                        </div>
-                        <div className="plan-price num">{formatToman(cell.price ?? 0)}</div>
-                      </>
-                    )}
+                    <div className="plan-card-specs" dir="rtl">
+                      <div className="plan-card-primary">{primaryLabel}</div>
+                      <div className="plan-card-limit">
+                        {isOffer && cell.title?.trim()
+                          ? `${
+                              cell.trafficGb == null ? `${monthsLabel} نامحدود` : `${monthsLabel} ${volLabel}`
+                            } · محدودیت: ${limitLabel}`
+                          : `محدودیت: ${limitLabel}`}
+                      </div>
+                    </div>
+                    <div className="plan-price num" dir="rtl">
+                      {formatToman(cell.price ?? 0)}
+                    </div>
                   </button>
                 );
               })}
