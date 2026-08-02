@@ -68,6 +68,7 @@ type PriceRow = {
   priceUser: number;
   pricePartner: number;
   priceWholesale: number;
+  priceReseller?: number;
   isGolden: boolean;
   active: boolean;
 };
@@ -147,7 +148,8 @@ function parsePriceInput(raw: string): number {
 const ROLE_FA: Record<string, string> = {
   user: "کاربر",
   partner: "همکار",
-  wholesale: "عمده‌فروش",
+  wholesale: "همکار ویژه",
+  reseller: "عمده‌فروش",
   admin: "ادمین",
 };
 
@@ -780,8 +782,15 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       )
     : users;
 
-  async function decidePartner(id: string, action: "approve" | "reject", asRole?: "partner" | "wholesale") {
-    const label = asRole === "wholesale" ? "عمده‌فروش" : asRole === "partner" ? "همکار" : "رد";
+  async function decidePartner(id: string, action: "approve" | "reject", asRole?: "partner" | "wholesale" | "reseller") {
+    const label =
+      asRole === "wholesale"
+        ? "همکار ویژه"
+        : asRole === "reseller"
+          ? "عمده‌فروش"
+          : asRole === "partner"
+            ? "همکار"
+            : "رد";
     if (
       !(await askConfirm(
         action === "reject"
@@ -798,7 +807,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
         flash("درخواست رد شد");
       } else {
         await api(`/admin/partners/${id}/approve`, { body: { asRole: asRole ?? "partner" } });
-        flash(asRole === "wholesale" ? "به‌عنوان عمده‌فروش تأیید شد" : "به‌عنوان همکار تأیید شد");
+        flash(`به‌عنوان ${label} تأیید شد`);
       }
       await loadPartners();
       await load();
@@ -825,7 +834,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
 
   async function removePartner(u: AdminUser) {
     const label = u.username ? `@${u.username}` : u.agentName || u.telegramId;
-    const kind = u.role === "wholesale" ? "عمده‌فروش" : "همکار";
+    const kind = u.role === "wholesale" ? "همکار ویژه" : u.role === "reseller" ? "عمده‌فروش" : "همکار";
     if (
       !(await askConfirm(
         `${kind} «${label}» از همکاری حذف شود و به مشتری عادی تبدیل شود؟\nنام نماینده و گروه پنل پاک می‌شود.`,
@@ -926,7 +935,15 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                       disabled={partnerBusy === r.id}
                       onClick={() => void decidePartner(r.id, "approve", "wholesale")}
                     >
-                      تأیید عمده
+                      همکار ویژه
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary sm"
+                      disabled={partnerBusy === r.id}
+                      onClick={() => void decidePartner(r.id, "approve", "reseller")}
+                    >
+                      عمده‌فروش
                     </button>
                     <button
                       type="button"
@@ -947,7 +964,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       <div className="panel">
         <h2>کاربران</h2>
         <div className="actions" style={{ marginBottom: 12 }}>
-          {["", "user", "partner", "wholesale", "admin"].map((r) => (
+          {["", "user", "partner", "wholesale", "reseller", "admin"].map((r) => (
             <button
               key={r || "all"}
               type="button"
@@ -1063,7 +1080,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
             )}
           </div>
 
-          {(selected.role === "partner" || selected.role === "wholesale") && (
+          {(selected.role === "partner" || selected.role === "wholesale" || selected.role === "reseller") && (
             <div className="actions" style={{ marginTop: 12 }}>
               <button type="button" className="btn danger" onClick={() => void removePartner(selected)}>
                 حذف از همکاری — تبدیل به مشتری عادی
@@ -1164,6 +1181,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     priceUser: "",
     pricePartner: "",
     priceWholesale: "",
+    priceReseller: "",
     title: "",
     isGolden: false,
   });
@@ -1255,6 +1273,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           priceUser: Number(e.priceUser ?? c.priceUser),
           pricePartner: Number(e.pricePartner ?? c.pricePartner),
           priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
+          priceReseller: Number(e.priceReseller ?? c.priceReseller ?? 0),
           title: e.title ?? c.title,
         },
       });
@@ -1285,6 +1304,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             priceUser: Number(e.priceUser ?? c.priceUser),
             pricePartner: Number(e.pricePartner ?? c.pricePartner),
             priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
+            priceReseller: Number(e.priceReseller ?? c.priceReseller ?? 0),
             title: e.title ?? c.title,
           },
         });
@@ -1357,6 +1377,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           priceUser: parsePriceInput(newCell.priceUser),
           pricePartner: parsePriceInput(newCell.pricePartner),
           priceWholesale: newCell.priceWholesale ? parsePriceInput(newCell.priceWholesale) : undefined,
+          priceReseller: newCell.priceReseller ? parsePriceInput(newCell.priceReseller) : undefined,
           title: newCell.title || undefined,
           isGolden: newCell.isGolden,
         },
@@ -1369,6 +1390,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         priceUser: "",
         pricePartner: "",
         priceWholesale: "",
+        priceReseller: "",
         title: "",
         isGolden: false,
       });
@@ -1413,7 +1435,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             [
               ["user", "کاربر عادی"],
               ["partner", "همکار"],
-              ["wholesale", "عمده‌فروش"],
+              ["wholesale", "همکار ویژه"],
             ] as const
           ).map(([key, label]) => (
             <div key={key} className="pricing-mode-card">
@@ -1493,13 +1515,23 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             />
           </div>
           <div className="field">
-            <label>قیمت عمده</label>
+            <label>قیمت همکار ویژه</label>
             <input
               className="num"
               inputMode="numeric"
               dir="ltr"
               value={formatPriceInput(newCell.priceWholesale)}
               onChange={(e) => setNewCell((s) => ({ ...s, priceWholesale: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
+            />
+          </div>
+          <div className="field">
+            <label>قیمت عمده‌فروش</label>
+            <input
+              className="num"
+              inputMode="numeric"
+              dir="ltr"
+              value={formatPriceInput(newCell.priceReseller)}
+              onChange={(e) => setNewCell((s) => ({ ...s, priceReseller: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
             />
           </div>
           <div className="field">
@@ -1746,7 +1778,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                     />
                   </div>
                   <div className="field">
-                    <label>عمده</label>
+                    <label>همکار ویژه</label>
                     <input
                       className="num"
                       inputMode="numeric"
@@ -1756,6 +1788,21 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                         setEdits((m) => ({
                           ...m,
                           [c.id]: { ...m[c.id], priceWholesale: parsePriceInput(ev.target.value) },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label>عمده‌فروش</label>
+                    <input
+                      className="num"
+                      inputMode="numeric"
+                      dir="ltr"
+                      value={formatPriceInput(e.priceReseller ?? c.priceReseller ?? 0)}
+                      onChange={(ev) =>
+                        setEdits((m) => ({
+                          ...m,
+                          [c.id]: { ...m[c.id], priceReseller: parsePriceInput(ev.target.value) },
                         }))
                       }
                     />

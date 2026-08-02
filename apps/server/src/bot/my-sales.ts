@@ -7,8 +7,8 @@ async function showMySales(ctx: Context, period: SalesPeriod = "jalali_month", e
   if (!ctx.from) return;
   const user = await upsertUserFromTelegram(ctx.from);
   const role = effectiveRole(ctx.from.id, user.role);
-  if (role !== "partner" && role !== "wholesale" && role !== "admin") {
-    await ctx.reply("این بخش برای همکار، عمده‌فروش و ادمین است.");
+  if (role !== "partner" && role !== "wholesale" && role !== "reseller" && role !== "admin") {
+    await ctx.reply("این بخش برای همکار، همکار ویژه، عمده‌فروش و ادمین است.");
     return;
   }
   const stats = await buildSalesStats({

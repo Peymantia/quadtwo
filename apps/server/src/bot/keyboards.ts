@@ -65,6 +65,7 @@ export type MainMenuOpts = {
   isAdmin: boolean;
   isPartner: boolean;
   isWholesale?: boolean;
+  isReseller?: boolean;
   demoMode?: boolean;
   /** HTTPS Mini App URL — when set, shows a WebApp keyboard button */
   miniAppUrl?: string | null;
@@ -126,7 +127,7 @@ export function mainMenuReply(opts: MainMenuOpts) {
     return kb.persistent().resized();
   }
 
-  const isAgent = opts.isPartner || opts.isWholesale;
+  const isAgent = opts.isPartner || opts.isWholesale || opts.isReseller;
   const kb = new Keyboard();
   if (opts.demoMode) {
     kb.text(BTN.demoRole).success().text(BTN.buy).success().row();
@@ -170,7 +171,9 @@ export function demoRoleInlineKeyboard(current?: string) {
     .text(mark("admin", "ادمین"), "demo:role:admin")
     .text(mark("partner", "همکار"), "demo:role:partner")
     .row()
-    .text(mark("wholesale", "عمده"), "demo:role:wholesale")
+    .text(mark("wholesale", "همکار ویژه"), "demo:role:wholesale")
+    .text(mark("reseller", "عمده‌فروش"), "demo:role:reseller")
+    .row()
     .text(mark("user", "کاربر"), "demo:role:user");
 }
 
@@ -253,7 +256,7 @@ export function mainMenuInline(opts: MainMenuOpts) {
     return kb;
   }
 
-  const isAgent = opts.isPartner || opts.isWholesale;
+  const isAgent = opts.isPartner || opts.isWholesale || opts.isReseller;
   const kb = new InlineKeyboard();
   if (opts.demoMode) {
     kb.text(BTN.demoRole, "m:demorole").success().text(BTN.buy, "m:buy").success().row();
@@ -516,7 +519,10 @@ export function partnerRequestKeyboard(requestId: string) {
   return new InlineKeyboard()
     .text("✅ همکار", `prt:ok:${requestId}`)
     .success()
-    .text("📦 عمده‌فروش", `prt:wh:${requestId}`)
+    .text("⭐ همکار ویژه", `prt:wh:${requestId}`)
+    .primary()
+    .row()
+    .text("📦 عمده‌فروش", `prt:rs:${requestId}`)
     .primary()
     .row()
     .text("❌ رد", `prt:no:${requestId}`)
@@ -912,7 +918,9 @@ export function controlCenterKeyboard(opts?: { pendingPartners?: number }) {
     .success()
     .row()
     .text("📊 گزارش همکاران", "cc:rep:partner")
-    .text("📊 گزارش عمده", "cc:rep:wholesale")
+    .text("📊 گزارش همکار ویژه", "cc:rep:wholesale")
+    .row()
+    .text("📊 گزارش عمده‌فروش", "cc:rep:reseller")
     .row()
     .text("🔍 جستجو کاربر/سفارش", "cc:search")
     .primary()
@@ -922,7 +930,7 @@ export function controlCenterKeyboard(opts?: { pendingPartners?: number }) {
     .text(partnerLabel, "cc:partners")
     .primary()
     .row()
-    .text("✖️ حذف همکار / عمده‌فروش", "cc:demote")
+    .text("✖️ حذف همکار / همکار ویژه / عمده‌فروش", "cc:demote")
     .danger()
     .row()
     .text("💳 کارت بانکی", "cc:card")

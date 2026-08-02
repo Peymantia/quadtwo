@@ -10,7 +10,8 @@ const PREVIEW_PANELS = [
   { path: "/admin", label: "ادمین" },
   { path: "/app", label: "کاربر" },
   { path: "/partner", label: "همکار" },
-  { path: "/reseller", label: "عمده‌فروش" },
+  { path: "/reseller", label: "همکار ویژه" },
+  { path: "/wholesaler", label: "عمده‌فروش" },
 ] as const;
 
 function AdminPanelSwitcher() {

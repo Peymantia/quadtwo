@@ -3,12 +3,24 @@ import { prisma } from "../db.js";
 import { resolvePanelForCategory, resolvePanelForSubscription } from "./panel-servers.js";
 import { checkRenewEligibility, inferRenewCategory } from "./renew-eligibility.js";
 import { canEditLimitIp, getDefaultLimitIp, UNLIMITED_LIMIT_IP } from "./settings.js";
-import { clampMonths, normalizePurchaseTraffic, resolvePrice, isOfferCategory, isFixedSingleServiceCategory, findPriceCell, priceFromCell, type PlanCategory } from "./pricing.js";
+import {
+  clampMonths,
+  normalizePurchaseTraffic,
+  resolvePrice,
+  isOfferCategory,
+  isFixedSingleServiceCategory,
+  findPriceCell,
+  priceFromCell,
+  isResellerCategory,
+  RESELLER_CATEGORY,
+  type PlanCategory,
+} from "./pricing.js";
 import { debitWallet } from "./wallet.js";
 import { provisionOrder } from "./provision.js";
 import { withEffectiveRole } from "./demo-role.js";
 import { isDemoMode } from "./license.js";
 import { assertAndApplyDiscount, recordDiscountUse, cancelOpenPendingForDiscount } from "./discount-codes.js";
+import { isResellerRole } from "./roles.js";
 
 export async function createMatrixOrder(input: {
   userId: string;
@@ -34,6 +46,10 @@ export async function createMatrixOrder(input: {
   const kind = input.kind ?? OrderKind.new;
 
   let category = (input.category as PlanCategory) || "data";
+  // عمده‌فروش: فقط پلن‌های ثابت دسته reseller
+  if (isResellerRole(pricedUser.role) && kind === OrderKind.new) {
+    category = RESELLER_CATEGORY;
+  }
   let panelServerId: string | null = null;
   let accountName = input.accountName;
   let orderUserId = user.id;
@@ -78,9 +94,16 @@ export async function createMatrixOrder(input: {
     if (offerLocked && selectedCell.category !== "offer") {
       throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
     }
+    if (isResellerRole(pricedUser.role) && kind === OrderKind.new && selectedCell.category !== RESELLER_CATEGORY) {
+      throw new Error("عمده‌فروش فقط می‌تواند پلن‌های تعریف‌شده عمده‌فروشی را بخرد");
+    }
     if (fixedSingle && !isOfferCategory(selectedCell.category) && selectedCell.category !== category) {
       // Allow locking via cell only when categories match (or offer)
-      if (selectedCell.category !== "unlimited" && selectedCell.category !== "national") {
+      if (
+        selectedCell.category !== "unlimited" &&
+        selectedCell.category !== "national" &&
+        selectedCell.category !== RESELLER_CATEGORY
+      ) {
         throw new Error("پلن انتخاب‌شده با دسته خرید هم‌خوان نیست");
       }
     }
@@ -97,12 +120,17 @@ export async function createMatrixOrder(input: {
     } else if (selectedCell.category === "national") {
       category = "national";
       fixedSingle = true;
+    } else if (selectedCell.category === RESELLER_CATEGORY) {
+      category = RESELLER_CATEGORY;
+      fixedSingle = true;
     } else {
       category = selectedCell.category as PlanCategory;
     }
   } else if (offerLocked) {
     selectedCell = await findPriceCell(trafficGb, months, "offer");
     if (!selectedCell?.active) throw new Error("این پیشنهاد ویژه موجود نیست یا غیرفعال است");
+  } else if (isResellerRole(pricedUser.role) && kind === OrderKind.new) {
+    throw new Error("برای خرید عمده‌فروشی باید یکی از پلن‌های ثابت را انتخاب کنید");
   } else if (fixedSingle && kind !== OrderKind.renew) {
     selectedCell = await findPriceCell(trafficGb, months, category);
     if (!selectedCell?.active) throw new Error("این پلن پیدا نشد یا قیمت‌گذاری نشده است");

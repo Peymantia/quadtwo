@@ -203,7 +203,7 @@ async function listPanelGroupNames(): Promise<string[]> {
 export async function listConfigGroups(): Promise<ConfigGroup[]> {
   const partners = await prisma.user.findMany({
     where: {
-      role: { in: [UserRole.partner, UserRole.wholesale, UserRole.admin] },
+      role: { in: [UserRole.partner, UserRole.wholesale, UserRole.reseller, UserRole.admin] },
       OR: [{ panelGroup: { not: null } }, { agentName: { not: null } }],
     },
     orderBy: [{ role: "asc" }, { agentName: "asc" }],
@@ -216,9 +216,9 @@ export async function listConfigGroups(): Promise<ConfigGroup[]> {
     const g = (u.panelGroup || "").trim();
     if (!g || seen.has(g.toLowerCase())) continue;
     seen.add(g.toLowerCase());
-    const roleTag = u.role === "wholesale" ? "عمده‌فروش" : u.role === "admin" ? "ادمین" : "همکار";
+    const roleTag = u.role === "reseller" ? "عمده‌فروش" : u.role === "wholesale" ? "همکار ویژه" : u.role === "admin" ? "ادمین" : "همکار";
     const kind =
-      u.role === "wholesale" ? "wholesale" : u.role === "admin" ? "admin" : "partner";
+      u.role === "reseller" ? "reseller" : u.role === "wholesale" ? "wholesale" : u.role === "admin" ? "admin" : "partner";
     const name = u.agentName?.trim() || g;
     groups.push({
       key: `p${u.id}`,

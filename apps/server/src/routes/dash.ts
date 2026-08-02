@@ -68,6 +68,7 @@ import {
   saveNotifConfig,
   defaultNotifConfig,
   listEnabledSalesCategories,
+  listEnabledSalesCategoriesForRole,
   saveCategoryLabels,
   saveCategoryOrder,
   getCategoryOrder,
@@ -295,7 +296,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     if (!isDemoMode()) return c.json({ error: "Demo mode is off" }, 400);
     const body = await c.req.json<{ role?: string }>();
     const role = parseDemoRole(body.role);
-    if (!role) return c.json({ error: "role must be user|partner|wholesale|admin" }, 400);
+    if (!role) return c.json({ error: "role must be user|partner|wholesale|reseller|admin" }, 400);
     setDemoRole(c.get("telegramId"), role);
     return c.json({ ok: true, role, label: demoRoleLabel(role) });
   });
@@ -695,12 +696,12 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/me/catalog", async (c) => {
-    const cats = await listEnabledSalesCategories();
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+    const pricedUser = withEffectiveRole(user, c.get("telegramId"));
+    const cats = await listEnabledSalesCategoriesForRole(pricedUser.role);
     const labels = await getCategoryLabels();
     const maxMonths = await getMaxPurchaseMonths();
     const cells = await listPriceMatrix();
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
-    const pricedUser = withEffectiveRole(user, c.get("telegramId"));
     const pricingMode = await getPricingModeForRole(pricedUser.role);
     const defaultLimitIp = await getDefaultLimitIp();
     const priced = await Promise.all(
@@ -721,7 +722,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         }),
     );
 
-    if (cats.includes("unlimited")) {
+    if (cats.includes("unlimited") && pricedUser.role !== "reseller") {
       const haveMonths = new Set(
         priced.filter((p) => p.category === "unlimited" && p.price != null).map((p) => p.months),
       );
@@ -861,7 +862,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/me/reports/sales", async (c) => {
     const role = c.get("role");
-    if (role !== "admin" && role !== "partner" && role !== "wholesale") {
+    if (role !== "admin" && role !== "partner" && role !== "wholesale" && role !== "reseller") {
       return c.json({ error: "Forbidden" }, 403);
     }
     const period = parseSalesPeriod(c.req.query("period") || "jalali_month");
@@ -1055,7 +1056,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
 export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
   api.use("/partner/*", async (c, next) => {
     const role = c.get("role");
-    if (role !== "partner" && role !== "wholesale" && role !== "admin") {
+    if (role !== "partner" && role !== "wholesale" && role !== "reseller" && role !== "admin") {
       return c.json({ error: "Forbidden" }, 403);
     }
     await next();
@@ -1626,6 +1627,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         priceUser: x.priceUser,
         pricePartner: x.pricePartner,
         priceWholesale: x.priceWholesale,
+        priceReseller: x.priceReseller,
         isGolden: x.isGolden,
         active: x.active,
       })),
@@ -1681,6 +1683,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       priceUser: number;
       pricePartner: number;
       priceWholesale?: number;
+      priceReseller?: number;
       category?: PlanCategory;
       isGolden?: boolean;
       title?: string;
@@ -1698,7 +1701,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.put("/admin/prices/:id", async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
     const data: Record<string, unknown> = {};
-    for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "isGolden", "trafficGb", "months", "category", "active"]) {
+    for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "priceReseller", "isGolden", "trafficGb", "months", "category", "active"]) {
       if (body[k] !== undefined) data[k] = body[k];
     }
     // ∞GB only in unlimited — offer may also be ∞ while staying category=offer
@@ -1730,7 +1733,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       fields?: Array<"priceUser" | "pricePartner" | "priceWholesale">;
       roundTo?: number;
     }>();
-    const fields = body.fields?.length ? body.fields : (["priceUser", "pricePartner", "priceWholesale"] as const);
+    const fields = body.fields?.length ? body.fields : (["priceUser", "pricePartner", "priceWholesale", "priceReseller"] as const);
     const value = Number(body.value);
     if (!Number.isFinite(value) || value === 0) return c.json({ error: "مقدار نامعتبر" }, 400);
     const roundTo = Math.max(1, Math.floor(body.roundTo ?? 1000));
@@ -2466,16 +2469,18 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.post("/admin/users/:id/role", async (c) => {
     const body = await c.req.json<{ role: UserRole }>();
-    if (!["user", "partner", "wholesale", "admin"].includes(body.role)) {
+    if (!["user", "partner", "wholesale", "reseller", "admin"].includes(body.role)) {
       return c.json({ error: "نقش نامعتبر" }, 400);
     }
     const target = await prisma.user.findUnique({ where: { id: c.req.param("id") } });
     if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
 
-    if (
-      body.role === "user" &&
-      (target.role === UserRole.partner || target.role === UserRole.wholesale)
-    ) {
+    const wasSeller =
+      target.role === UserRole.partner ||
+      target.role === UserRole.wholesale ||
+      target.role === UserRole.reseller;
+
+    if (body.role === "user" && wasSeller) {
       await demoteToUser(target.id);
     } else {
       await prisma.user.update({ where: { id: target.id }, data: { role: body.role } });
@@ -2488,10 +2493,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       detail: `${target.role} -> ${body.role}`,
     });
 
-    if (
-      body.role === "user" &&
-      (target.role === UserRole.partner || target.role === UserRole.wholesale)
-    ) {
+    if (body.role === "user" && wasSeller) {
       await notifyTelegram(
         target.telegramId,
         "اطلاع: همکاری شما پایان یافت و حساب به مشتری عادی تبدیل شد.",
@@ -2833,7 +2835,12 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.post("/admin/partners/:id/approve", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { asRole?: string };
-    const asRole = body.asRole === "wholesale" ? "wholesale" : "partner";
+    const asRole =
+      body.asRole === "wholesale"
+        ? "wholesale"
+        : body.asRole === "reseller"
+          ? "reseller"
+          : "partner";
     const req = await approvePartner(c.req.param("id"), asRole);
     await auditLog({
       action: "partner_approved",
@@ -2843,13 +2850,17 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     });
     const status =
       asRole === "wholesale"
-        ? `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`
-        : `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
+        ? `همکار ویژه تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`
+        : asRole === "reseller"
+          ? `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "reseller_…"}`
+          : `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
     void notifyTelegram(
       req.user.telegramId,
       asRole === "wholesale"
-        ? "✅ به‌عنوان عمده‌فروش تأیید شدید."
-        : "✅ درخواست همکاری شما تأیید شد (همکار).",
+        ? "✅ به‌عنوان همکار ویژه تأیید شدید."
+        : asRole === "reseller"
+          ? "✅ به‌عنوان عمده‌فروش تأیید شدید."
+          : "✅ درخواست همکاری شما تأیید شد (همکار).",
     );
     const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
     void finalizeAdminReviewMessages("partner", req.id, status);

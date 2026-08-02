@@ -7,7 +7,7 @@ export const TELEGRAM_GROUP = "Telegram";
 /** Roles that must buy into their own named panel group (not Telegram). */
 export function needsDedicatedPanelGroup(role: UserRole | string): boolean {
   // Admin creates into Telegram (or their optional panelGroup) without forcing agent name.
-  return role === "partner" || role === "wholesale";
+  return role === "partner" || role === "wholesale" || role === "reseller";
 }
 
 /** ASCII slug for 3x-ui group names (panel usually expects Latin). */
@@ -35,7 +35,7 @@ export function buildPanelGroupFromAgentName(agentName: string, telegramId: bigi
 /** @deprecated prefer buildPanelGroupFromAgentName with explicit agentName */
 export function partnerPanelGroupName(
   user: { telegramId: bigint; username?: string | null; firstName?: string | null; agentName?: string | null },
-  asRole: "partner" | "wholesale",
+  asRole: "partner" | "wholesale" | "reseller",
 ): string {
   const source = user.agentName || user.username || user.firstName || String(user.telegramId);
   try {
@@ -48,7 +48,7 @@ export function partnerPanelGroupName(
 /**
  * Which 3x-ui group should receive newly created clients for this buyer.
  * - regular user → "Telegram"
- * - admin / partner / wholesale → their panelGroup (from نام نماینده)
+ * - admin / partner / wholesale / reseller → their panelGroup (from نام نماینده)
  */
 export function resolveClientGroup(user: User): string {
   if (user.panelGroup?.trim()) {

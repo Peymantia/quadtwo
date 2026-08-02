@@ -1,18 +1,19 @@
 import type { User, UserRole } from "@prisma/client";
 import { isDemoMode } from "./license.js";
+import { APP_ROLES, roleLabelFa, type AppRole, isAppRole } from "./roles.js";
 
-const ROLES = new Set<string>(["user", "partner", "wholesale", "admin"]);
+const ROLES = new Set<string>(APP_ROLES);
 
 /** In-memory demo role overlay (per Telegram ID). Lost on process restart — fine for demos. */
 const byTelegramId = new Map<string, UserRole>();
 
-export type DemoRole = "user" | "partner" | "wholesale" | "admin";
+export type DemoRole = AppRole;
 
 export function parseDemoRole(raw: string | undefined | null): DemoRole | null {
   if (!raw) return null;
   const r = raw.trim().toLowerCase();
-  if (!ROLES.has(r)) return null;
-  return r as DemoRole;
+  if (!isAppRole(r)) return null;
+  return r;
 }
 
 export function getDemoRole(telegramId: string | number | bigint): DemoRole | null {
@@ -53,15 +54,9 @@ export function withEffectiveRole<T extends { role: UserRole }>(
 }
 
 export function demoRoleLabel(role: string): string {
-  switch (role) {
-    case "admin":
-      return "ادمین";
-    case "partner":
-      return "همکار";
-    case "wholesale":
-      return "عمده‌فروش";
-    default:
-      return "کاربر";
-  }
+  return roleLabelFa(role);
 }
 
+export function listDemoRoles(): DemoRole[] {
+  return [...ROLES] as DemoRole[];
+}

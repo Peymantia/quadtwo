@@ -133,7 +133,10 @@ export async function listPendingPartnerRequests() {
   });
 }
 
-export async function approvePartner(requestId: string, asRole: "partner" | "wholesale" = "partner") {
+export async function approvePartner(
+  requestId: string,
+  asRole: "partner" | "wholesale" | "reseller" = "partner",
+) {
   const req = await prisma.partnerRequest.findUniqueOrThrow({
     where: { id: requestId },
     include: { user: true },
@@ -160,10 +163,17 @@ export async function approvePartner(requestId: string, asRole: "partner" | "who
     /* exists */
   }
 
+  const role =
+    asRole === "wholesale"
+      ? UserRole.wholesale
+      : asRole === "reseller"
+        ? UserRole.reseller
+        : UserRole.partner;
+
   await prisma.user.update({
     where: { id: req.userId },
     data: {
-      role: asRole === "wholesale" ? UserRole.wholesale : UserRole.partner,
+      role,
       agentName,
       panelGroup: group,
     },

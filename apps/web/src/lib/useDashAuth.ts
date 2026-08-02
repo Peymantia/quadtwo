@@ -37,9 +37,11 @@ export function useDashAuth(allowed?: Role[]) {
             ? "/admin"
             : data.user.role === "wholesale"
               ? "/reseller"
-              : data.user.role === "partner"
-                ? "/partner"
-                : "/app",
+              : data.user.role === "reseller"
+                ? "/wholesaler"
+                : data.user.role === "partner"
+                  ? "/partner"
+                  : "/app",
         );
         return;
       }

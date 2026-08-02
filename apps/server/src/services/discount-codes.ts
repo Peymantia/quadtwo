@@ -50,8 +50,16 @@ export async function getDiscountMaxPercentForRole(role: UserRole | string): Pro
 }
 
 export function canManageDiscountCodes(role: UserRole | string): boolean {
-  return role === UserRole.admin || role === UserRole.partner || role === UserRole.wholesale
-    || role === "admin" || role === "partner" || role === "wholesale";
+  return (
+    role === UserRole.admin ||
+    role === UserRole.partner ||
+    role === UserRole.wholesale ||
+    role === UserRole.reseller ||
+    role === "admin" ||
+    role === "partner" ||
+    role === "wholesale" ||
+    role === "reseller"
+  );
 }
 
 export type AppliedDiscount = {

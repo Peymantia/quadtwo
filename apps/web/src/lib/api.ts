@@ -8,7 +8,7 @@ export function apiBase(): string {
 /** @deprecated use apiBase() — kept for any external imports */
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
 
-export type Role = "user" | "partner" | "wholesale" | "admin";
+export type Role = "user" | "partner" | "wholesale" | "reseller" | "admin";
 
 export type SessionUser = {
   id: string;
@@ -42,7 +42,7 @@ export function clearToken() {
 export function getDemoRole(): Role | null {
   if (typeof window === "undefined") return null;
   const r = localStorage.getItem(DEMO_ROLE_KEY);
-  if (r === "user" || r === "partner" || r === "wholesale" || r === "admin") return r;
+  if (r === "user" || r === "partner" || r === "wholesale" || r === "reseller" || r === "admin") return r;
   return null;
 }
 
@@ -92,6 +92,7 @@ export async function api<T>(
 export function homePathForRole(role: Role): string {
   if (role === "admin") return "/admin";
   if (role === "wholesale") return "/reseller";
+  if (role === "reseller") return "/wholesaler";
   if (role === "partner") return "/partner";
   return "/app";
 }
@@ -103,6 +104,8 @@ export function roleLabel(role: Role): string {
     case "partner":
       return "همکار";
     case "wholesale":
+      return "همکار ویژه";
+    case "reseller":
       return "عمده‌فروش";
     default:
       return "کاربر";

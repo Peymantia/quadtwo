@@ -10,7 +10,10 @@ datasource db {
 enum UserRole {
   user
   partner
+  /// همکار ویژه (قیمت/خرید شبیه همکار با نرخ عمده سابق)
   wholesale
+  /// عمده‌فروش — فقط پلن‌های ثابت تعریف‌شده توسط ادمین
+  reseller
   admin
 }
 
@@ -165,6 +168,8 @@ model PriceCell {
   priceUser      Int
   pricePartner   Int
   priceWholesale Int     @default(0)
+  /// Price for reseller role (عمده‌فروش) — used for category=reseller fixed plans
+  priceReseller   Int     @default(0)
   isGolden       Boolean @default(false)
   active         Boolean @default(true)
   sortOrder      Int     @default(0)

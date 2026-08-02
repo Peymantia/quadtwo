@@ -406,7 +406,7 @@ async function showPricingHome(ctx: Context) {
     "📐 حالت هر نقش:",
     modeLine("👤 مشتری", modes.user),
     modeLine("🤝 همکار", modes.partner),
-    modeLine("📦 عمده", modes.wholesale),
+    modeLine("⭐ همکار ویژه", modes.wholesale),
     "",
     "فرمول نرخی: (گیگ × نرخ گیگ) + (ماه × نرخ ماه)",
     `نمونه مشتری data ۵۰گیگ ۲ماه: ${formatToman(50 * dataGb + 2 * dataMo)}`,
@@ -418,7 +418,7 @@ async function showPricingHome(ctx: Context) {
   for (const [role, label] of [
     ["user", "مشتری"],
     ["partner", "همکار"],
-    ["wholesale", "عمده"],
+    ["wholesale", "همکار ویژه"],
   ] as const) {
     rows
       .text(
@@ -502,7 +502,7 @@ async function askRateStep(
   },
 ) {
   const roleLabel =
-    opts.role === "user" ? "مشتری عادی" : opts.role === "partner" ? "همکار" : "عمده‌فروش";
+    opts.role === "user" ? "مشتری عادی" : opts.role === "partner" ? "همکار" : "همکار ویژه";
   const fieldLabel =
     opts.field === "perGb" ? "هر گیگ" : opts.field === "perMonth" ? "هر ماه" : "نامحدود (هر ماه)";
   const catPart =
@@ -655,7 +655,7 @@ async function showPriceDetail(ctx: Context, cellId: string) {
     .row()
     .text("✏️ قیمت همکار", `cc:price:edit:${cell.id}:partner`)
     .row()
-    .text("✏️ قیمت عمده", `cc:price:edit:${cell.id}:wholesale`)
+    .text("✏️ قیمت همکار ویژه", `cc:price:edit:${cell.id}:wholesale`)
     .row()
     .text(cell.isGolden ? "⭐ برداشتن از ویژه" : "⭐ کردن پیشنهاد ویژه", `cc:price:gold:${cell.id}`)
     .primary()
@@ -796,7 +796,7 @@ async function askPriceStep(
   const labels = {
     user: { title: "👤 قیمت مشتری عادی", hint: "مثلاً 330000" },
     partner: { title: "🤝 قیمت همکار", hint: "مثلاً 260000" },
-    wholesale: { title: "📦 قیمت عمده‌فروش", hint: "مثلاً 210000" },
+    wholesale: { title: "⭐ قیمت همکار ویژه", hint: "مثلاً 210000" },
   } as const;
   const L = labels[opts.field];
   ccWait.set(ctx.from!.id, {
@@ -978,20 +978,22 @@ async function showPanelDetail(ctx: Context, id: string) {
 
 async function showDemote(ctx: Context) {
   const users = await prisma.user.findMany({
-    where: { role: { in: [UserRole.partner, UserRole.wholesale] } },
+    where: { role: { in: [UserRole.partner, UserRole.wholesale, UserRole.reseller] } },
     take: 20,
     orderBy: { updatedAt: "desc" },
   });
   const kb = new InlineKeyboard();
   for (const u of users) {
-    const label = `${u.role === "wholesale" ? "عمده" : "همکار"} ${u.username ? `@${u.username}` : u.telegramId}`;
+    const kind =
+      u.role === "reseller" ? "عمده‌فروش" : u.role === "wholesale" ? "همکار ویژه" : "همکار";
+    const label = `${kind} ${u.username ? `@${u.username}` : u.telegramId}`;
     kb.text(label.slice(0, 40), `cc:demote:do:${u.id}`).row();
   }
   kb.text("« کنترل سنتر", "cc:home");
   await ctx.editMessageText(
     users.length
-      ? "✖️ حذف همکار / عمده‌فروش\nبا انتخاب، به مشتری عادی تبدیل می‌شود (نام نماینده و گروه پنل پاک می‌شود):"
-      : "همکار یا عمده‌فروشی برای حذف نیست.",
+      ? "✖️ حذف همکار / همکار ویژه / عمده‌فروش\nبا انتخاب، به مشتری عادی تبدیل می‌شود (نام نماینده و گروه پنل پاک می‌شود):"
+      : "همکار / همکار ویژه / عمده‌فروشی برای حذف نیست.",
     { reply_markup: kb },
   );
 }

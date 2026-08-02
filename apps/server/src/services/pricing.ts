@@ -8,7 +8,9 @@ import {
   type PriceRates,
   type RoleRates,
 } from "./settings.js";
+import { isResellerCategory, isResellerRole, RESELLER_CATEGORY } from "./roles.js";
 
+export { isResellerCategory, RESELLER_CATEGORY } from "./roles.js";
 export const DATA_MIN_GB = 10;
 export const DATA_MAX_GB = 50;
 export const DATA_STEP_GB = 5;
@@ -44,18 +46,18 @@ export function isOfferCategory(category: string | null | undefined): boolean {
 }
 
 /**
- * Single fixed service (no volume/month/qty steppers): offer, unlimited, national.
+ * Single fixed service (no volume/month/qty steppers): offer, unlimited, national, reseller.
  * Buyer picks a priced plan card; quantity is always 1.
  */
 export function isFixedSingleServiceCategory(category: string | null | undefined): boolean {
   const c = (category || "").trim().toLowerCase();
-  return c === "offer" || c === "unlimited" || c === "national";
+  return c === "offer" || c === "unlimited" || c === "national" || c === "reseller";
 }
 
 /** Normalize traffic for purchase (unlimited → null; national 1–20; else 10–50 ×5). */
 export function normalizePurchaseTraffic(category: string, trafficGb: number | null): number | null {
   if (category === "unlimited") return null;
-  if (isOfferCategory(category)) {
+  if (isOfferCategory(category) || isResellerCategory(category)) {
     if (trafficGb == null) return null;
     const n = Math.floor(Number(trafficGb));
     return Number.isFinite(n) && n > 0 ? n : null;
@@ -66,12 +68,14 @@ export function normalizePurchaseTraffic(category: string, trafficGb: number | n
 }
 
 export function volumeRulesForCategory(category: string): {
-  kind: "unlimited" | "national" | "data" | "offer";
+  kind: "unlimited" | "national" | "data" | "offer" | "reseller";
   min?: number;
   max?: number;
   step?: number;
 } {
-  if (isOfferCategory(category)) return { kind: "offer" };
+  if (isOfferCategory(category) || isResellerCategory(category)) {
+    return { kind: isResellerCategory(category) ? "reseller" : "offer" };
+  }
   if (category === "unlimited") return { kind: "unlimited" };
   if (category === "national") {
     return { kind: "national", min: NATIONAL_MIN_GB, max: NATIONAL_MAX_GB, step: 1 };
@@ -114,7 +118,11 @@ export async function findPriceCell(
   months: number,
   category: PlanCategory = "data",
 ) {
-  const cat = isOfferCategory(category) ? "offer" : trafficGb === null ? "unlimited" : category;
+  let cat: string;
+  if (isResellerCategory(category)) cat = RESELLER_CATEGORY;
+  else if (isOfferCategory(category)) cat = "offer";
+  else if (trafficGb === null) cat = "unlimited";
+  else cat = category;
   return prisma.priceCell.findFirst({
     where: { trafficGb, months, category: cat, active: true },
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
@@ -127,8 +135,14 @@ export async function findPriceCellById(id: string) {
 
 export function priceFromCell(
   role: UserRole,
-  cell: { priceUser: number; pricePartner: number; priceWholesale: number },
+  cell: {
+    priceUser: number;
+    pricePartner: number;
+    priceWholesale: number;
+    priceReseller?: number;
+  },
 ) {
+  if (isResellerRole(role)) return cell.priceReseller ?? 0;
   if (role === "wholesale" || role === "admin") return cell.priceWholesale || cell.pricePartner;
   if (role === "partner") return cell.pricePartner;
   return cell.priceUser;
@@ -171,9 +185,9 @@ export async function resolvePrice(
     return { cell: null, price: 0, mode: "rate" as const };
   }
 
-  // Offer plans are always fixed matrix cells (no rate formula / seek bars).
-  if (isOfferCategory(category)) {
-    const cell = await findPriceCell(trafficGb, months, "offer");
+  // Offer / reseller plans are always fixed matrix cells (no rate formula / seek bars).
+  if (isOfferCategory(category) || isResellerCategory(category)) {
+    const cell = await findPriceCell(trafficGb, months, isResellerCategory(category) ? RESELLER_CATEGORY : "offer");
     if (!cell) return null;
     const price = priceFromCell(role, cell);
     if (price <= 0) return null;
@@ -246,7 +260,12 @@ export async function listOfferPlans() {
   return listFixedPlans("offer");
 }
 
-/** Active priced plans for a fixed single-service category (offer / unlimited / national). */
+/** Active fixed plans for عمده‌فروش (reseller category). */
+export async function listResellerPlans() {
+  return listFixedPlans(RESELLER_CATEGORY);
+}
+
+/** Active priced plans for a fixed single-service category (offer / unlimited / national / reseller). */
 export async function listFixedPlans(category: string) {
   const cat = (category || "").trim().toLowerCase();
   if (!isFixedSingleServiceCategory(cat)) return [];
@@ -284,13 +303,15 @@ export async function upsertPriceCell(input: {
   priceUser: number;
   pricePartner: number;
   priceWholesale?: number;
+  priceReseller?: number;
   category?: PlanCategory;
   isGolden?: boolean;
   title?: string;
 }) {
   const requested = (input.category ?? "data").trim() || "data";
-  const category =
-    isOfferCategory(requested)
+  const category = isResellerCategory(requested)
+    ? RESELLER_CATEGORY
+    : isOfferCategory(requested)
       ? "offer"
       : input.trafficGb === null
         ? "unlimited"
@@ -302,6 +323,7 @@ export async function upsertPriceCell(input: {
     priceUser: input.priceUser,
     pricePartner: input.pricePartner,
     priceWholesale: input.priceWholesale ?? input.pricePartner,
+    priceReseller: input.priceReseller ?? input.priceUser,
     category,
     isGolden: input.isGolden ?? false,
     title: input.title,

@@ -228,7 +228,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   }, [variant]);
 
   const isOffer = category === "offer";
-  const isFixedSingle = isOffer || category === "unlimited" || category === "national";
+  const isFixedSingle =
+    isOffer || category === "unlimited" || category === "national" || category === "reseller";
   const unlimitedIpLocked = category === "unlimited";
   const fixedCells = useMemo(
     () => (catalog.cells ?? []).filter((c) => c.category === category && c.price != null),

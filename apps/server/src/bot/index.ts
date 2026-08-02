@@ -17,7 +17,8 @@ import {
   payOrderWithWallet,
   rejectOrder,
 } from "../services/orders.js";
-import { listPriceMatrix, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, listOfferPlans, listFixedPlans } from "../services/pricing.js";
+import { listPriceMatrix, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, listOfferPlans, listFixedPlans, isResellerCategory, RESELLER_CATEGORY } from "../services/pricing.js";
+import { isResellerRole, isSellerRole, roleLabelFa } from "../services/roles.js";
 import {
   provisionOrder,
   refreshSubscriptionSubUrl,
@@ -26,7 +27,7 @@ import {
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
 import { claimTestService } from "../services/test-service.js";
-import { getChannels, getPaymentCard, getPaymentMethodsConfig, getPublicPaymentMethods, assertCheckoutPaymentMethod, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, canEditLimitIp, resolvePurchaseLimitIp, setSetting, isSalesCategoryEnabled, resolveMiniAppUrl } from "../services/settings.js";
+import { getChannels, getPaymentCard, getPaymentMethodsConfig, getPublicPaymentMethods, assertCheckoutPaymentMethod, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, listEnabledSalesCategoriesForRole, canEditLimitIp, resolvePurchaseLimitIp, setSetting, isSalesCategoryEnabled, resolveMiniAppUrl } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
 import { getWallet } from "../services/wallet.js";
 import {
@@ -232,6 +233,7 @@ async function replyMainMenu(ctx: Context, preface?: string) {
       isAdmin: role === "admin",
       isPartner: role === "partner",
       isWholesale: role === "wholesale",
+      isReseller: role === "reseller",
       demoMode: demo,
       miniAppUrl,
     }),
@@ -261,16 +263,22 @@ async function hideMainKeyboard(ctx: Context) {
 }
 
 async function showBuyCategoryPicker(ctx: Context, edit = false) {
-  const enabled = await listEnabledSalesCategories();
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const role = effectiveRole(ctx.from!.id, user.role);
+  const enabled = await listEnabledSalesCategoriesForRole(role);
   const cats = await getSalesCategories();
   const labels = await getCategoryLabels();
 
-  /** Always list national (even when sales-off) so users see the emergency notice. */
+  /** Always list national (even when sales-off) so users see the emergency notice — except reseller. */
   const keys = [...enabled];
-  if (!keys.includes("national")) keys.push("national");
+  if (!isResellerRole(role) && !keys.includes("national")) keys.push("national");
 
   if (!keys.length) {
-    await ctx.reply("فعلاً هیچ دسته‌ای برای فروش فعال نیست. با پشتیبانی تماس بگیرید.");
+    await ctx.reply(
+      isResellerRole(role)
+        ? "فعلاً پلنی برای عمده‌فروش تعریف نشده. با ادمین تماس بگیرید."
+        : "فعلاً هیچ دسته‌ای برای فروش فعال نیست. با پشتیبانی تماس بگیرید.",
+    );
     return;
   }
   if (keys.length === 1 && cats[keys[0]!] === true) {
@@ -301,6 +309,13 @@ const NATIONAL_EMERGENCY_MSG = "این سرویس در شرایط اضطراری
 
 async function startBuyFlow(ctx: Context) {
   if (!(await requireChannel(ctx))) return;
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const role = effectiveRole(ctx.from!.id, user.role);
+  if (isResellerRole(role)) {
+    await setDraftCategory(BigInt(ctx.from!.id), RESELLER_CATEGORY);
+    await showFixedPlanPicker(ctx, RESELLER_CATEGORY);
+    return;
+  }
   await showBuyCategoryPicker(ctx);
 }
 
@@ -896,8 +911,10 @@ async function handlePartnerRequest(ctx: Context) {
     await ctx.reply("ادمین نیازی به درخواست نمایندگی ندارد.");
     return;
   }
-  if (user.role === "partner" || user.role === "wholesale") {
-    await ctx.reply(`شما قبلاً ${user.role === "wholesale" ? "عمده‌فروش" : "نماینده"} هستید.\nگروه پنل: ${user.panelGroup ?? "—"}`);
+  if (user.role === "partner" || user.role === "wholesale" || user.role === "reseller") {
+    await ctx.reply(
+      `شما قبلاً ${roleLabelFa(user.role)} هستید.\nگروه پنل: ${user.panelGroup ?? "—"}`,
+    );
     return;
   }
   waitingPartner.set(ctx.from!.id, { step: "compose" });
@@ -919,7 +936,7 @@ async function handlePartnerRequest(ctx: Context) {
 async function handlePartnerPanel(ctx: Context) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const role = effectiveRole(ctx.from!.id, user.role);
-  if (role !== "partner" && role !== "wholesale" && role !== "admin") return;
+  if (role !== "partner" && role !== "wholesale" && role !== "reseller" && role !== "admin") return;
   const ready = assertAgentReadyForPurchase(user);
   await ctx.reply(
     [
@@ -1025,6 +1042,7 @@ export function createBot() {
         isAdmin: role === "admin",
         isPartner: role === "partner",
         isWholesale: role === "wholesale",
+        isReseller: role === "reseller",
         demoMode: demo,
         miniAppUrl: await resolveMiniAppUrl(),
       }),
@@ -1293,7 +1311,7 @@ export function createBot() {
   bot.callbackQuery("agent:set", async (ctx) => {
     await ctx.answerCallbackQuery();
     const user = await upsertUserFromTelegram(ctx.from!);
-    if (user.role !== "admin" && user.role !== "partner" && user.role !== "wholesale") {
+    if (user.role !== "admin" && user.role !== "partner" && user.role !== "wholesale" && user.role !== "reseller") {
       await ctx.reply("فقط ادمین و نماینده می‌توانند نام نماینده تعریف کنند.");
       return;
     }
@@ -1349,7 +1367,7 @@ export function createBot() {
   bot.callbackQuery("wiz:qty:+", async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
     if (!canEditLimitIp(withEffectiveRole(user, ctx.from!.id).role)) {
-      await ctx.answerCallbackQuery({ text: "این گزینه فقط برای همکار / عمده‌فروش است", show_alert: true });
+      await ctx.answerCallbackQuery({ text: "این گزینه فقط برای همکار / همکار ویژه است", show_alert: true });
       return;
     }
     await ctx.answerCallbackQuery();
@@ -1359,7 +1377,7 @@ export function createBot() {
   bot.callbackQuery("wiz:qty:-", async (ctx) => {
     const user = await upsertUserFromTelegram(ctx.from!);
     if (!canEditLimitIp(withEffectiveRole(user, ctx.from!.id).role)) {
-      await ctx.answerCallbackQuery({ text: "این گزینه فقط برای همکار / عمده‌فروش است", show_alert: true });
+      await ctx.answerCallbackQuery({ text: "این گزینه فقط برای همکار / همکار ویژه است", show_alert: true });
       return;
     }
     await ctx.answerCallbackQuery();
@@ -2325,8 +2343,29 @@ export function createBot() {
         target: req.id,
         detail: "wholesale",
       });
+      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان همکار ویژه تأیید شدید.");
+      const status = `همکار ویژه تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`;
+      const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
+      void finalizeAdminReviewMessages("partner", req.id, status);
+      await ctx.editMessageText(status).catch(() => undefined);
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery(/^prt:rs:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return ctx.answerCallbackQuery({ text: "no", show_alert: true });
+    await ctx.answerCallbackQuery();
+    try {
+      const req = await approvePartner(ctx.match![1], "reseller");
+      await auditLog({
+        action: "partner_approved",
+        actorTelegramId: ctx.from?.id,
+        target: req.id,
+        detail: "reseller",
+      });
       await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
-      const status = `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`;
+      const status = `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "reseller_…"}`;
       const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
       void finalizeAdminReviewMessages("partner", req.id, status);
       await ctx.editMessageText(status).catch(() => undefined);
@@ -2399,7 +2438,7 @@ export function createBot() {
       { reply_markup: demoRoleInlineKeyboard(current) },
     );
   });
-  bot.callbackQuery(/^demo:role:(admin|partner|wholesale|user)$/, async (ctx) => {
+  bot.callbackQuery(/^demo:role:(admin|partner|wholesale|reseller|user)$/, async (ctx) => {
     if (!isDemoMode()) {
       await ctx.answerCallbackQuery({ text: "Demo off", show_alert: true });
       return;
