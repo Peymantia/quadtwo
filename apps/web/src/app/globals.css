@@ -1723,7 +1723,9 @@ button.stat.stat-link:active {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  text-align: left;
+  direction: rtl;
+  text-align: right;
+  unicode-bidi: isolate;
 }
 
 .plan-card--compact .plan-card-primary {
@@ -1731,12 +1733,14 @@ button.stat.stat-link:active {
   font-size: 0.95rem;
   line-height: 1.35;
   color: var(--text);
+  white-space: nowrap;
 }
 
 .plan-card--compact .plan-card-limit {
   font-size: 0.8rem;
   line-height: 1.3;
   color: var(--mute);
+  white-space: nowrap;
 }
 
 .plan-card--compact .plan-price {
@@ -1747,6 +1751,8 @@ button.stat.stat-link:active {
   color: var(--teal);
   text-align: right;
   white-space: nowrap;
+  direction: rtl;
+  unicode-bidi: isolate;
 }
 
 .plan-card.golden {

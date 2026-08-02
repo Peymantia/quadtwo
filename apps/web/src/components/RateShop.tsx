@@ -577,12 +577,29 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
             <div className="plan-card-list">
               {fixedCells.map((cell, idx) => {
                 const isWholesale = category === "wholesale" || category === "reseller";
-                const vol = cell.trafficGb == null ? "نامحدود" : `${cell.trafficGb.toLocaleString("fa-IR")} گیگ`;
-                const monthsLabel = `${cell.months.toLocaleString("fa-IR")} ماه`;
+                const months = Math.max(1, cell.months || 1);
+                const monthsLabel =
+                  months === 1
+                    ? "یک ماهه"
+                    : months === 2
+                      ? "دو ماهه"
+                      : months === 3
+                        ? "سه ماهه"
+                        : `${months.toLocaleString("fa-IR")} ماهه`;
+                const volLabel =
+                  cell.trafficGb == null ? "نامحدود" : `${cell.trafficGb.toLocaleString("fa-IR")} گیگ`;
+                const primaryLabel =
+                  cell.trafficGb == null ? `${monthsLabel} نامحدود` : `${monthsLabel} ${volLabel}`;
                 const ip = typeof cell.limitIp === "number" ? cell.limitIp : 0;
                 const limitLabel =
-                  ip <= 0 ? "نامحدود" : ip === 1 ? "یک کاربره" : ip === 2 ? "دو کاربره" : `${ip.toLocaleString("fa-IR")} کاربره`;
-                const title = cell.title?.trim() || `${vol} · ${monthsLabel}`;
+                  ip <= 0
+                    ? "نامحدود"
+                    : ip === 1
+                      ? "یک کاربره"
+                      : ip === 2
+                        ? "دو کاربره"
+                        : `${ip.toLocaleString("fa-IR")} کاربره`;
+                const title = cell.title?.trim() || primaryLabel;
                 return (
                   <button
                     key={cell.id || `${cell.trafficGb}-${cell.months}-${idx}`}
@@ -593,13 +610,13 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                   >
                     {isWholesale ? (
                       <>
-                        <div className="plan-card-specs">
-                          <div className="plan-card-primary">
-                            {vol} - {monthsLabel}
-                          </div>
+                        <div className="plan-card-specs" dir="rtl">
+                          <div className="plan-card-primary">{primaryLabel}</div>
                           <div className="plan-card-limit">محدودیت: {limitLabel}</div>
                         </div>
-                        <div className="plan-price num">{formatToman(cell.price ?? 0)}</div>
+                        <div className="plan-price num" dir="rtl">
+                          {formatToman(cell.price ?? 0)}
+                        </div>
                       </>
                     ) : (
                       <>
@@ -608,8 +625,8 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                           {title}
                         </div>
                         <div className="plan-meta muted">
-                          {vol} · {monthsLabel}
-                          {ip > 0 ? ` · ${limitLabel}` : ""}
+                          {primaryLabel}
+                          {ip > 0 ? ` · محدودیت: ${limitLabel}` : ""}
                         </div>
                         <div className="plan-price num">{formatToman(cell.price ?? 0)}</div>
                       </>
