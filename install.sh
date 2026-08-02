@@ -150,6 +150,12 @@ build_app() {
   npm run build -w @quadtwo/shared
   npm run db:generate -w @quadtwo/server
   DATABASE_URL="file:${INSTALL_DIR}/data/quadtwo.db" npm run db:push -w @quadtwo/server
+  # Isolated demo showcase uses its own SQLite file — keep schema in sync on updates
+  if [[ -f "${INSTALL_DIR}/data/demo.db" ]]; then
+    log "Updating demo database schema (data/demo.db)..."
+    DATABASE_URL="file:${INSTALL_DIR}/data/demo.db" npm run db:push -w @quadtwo/server \
+      || log "Warning: demo db:push failed — run: DATABASE_URL=file:${INSTALL_DIR}/data/demo.db npm run db:push -w @quadtwo/server"
+  fi
   npm run build -w @quadtwo/server
   log "Building web dashboard..."
   # Clean stale chunks so HTML never references deleted hashed files

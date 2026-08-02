@@ -188,6 +188,11 @@ export async function seedIfNeeded() {
     console.log(`seeded ${rows.length} price matrix cells`);
   }
 
-  await ensureWholesaleCategoryCanonical();
-  await ensureWholesaleDefaultPlans();
+  try {
+    await ensureWholesaleCategoryCanonical();
+    await ensureWholesaleDefaultPlans();
+  } catch (err) {
+    // e.g. demo.db not yet db:push'd after a schema change — don't kill the process
+    console.error("wholesale ensure failed (continuing startup):", err);
+  }
 }
