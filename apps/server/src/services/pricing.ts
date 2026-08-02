@@ -312,6 +312,7 @@ export async function upsertPriceCell(input: {
   pricePartner: number;
   priceWholesale?: number;
   priceReseller?: number;
+  limitIp?: number;
   category?: PlanCategory;
   isGolden?: boolean;
   title?: string;
@@ -332,6 +333,9 @@ export async function upsertPriceCell(input: {
     pricePartner: input.pricePartner,
     priceWholesale: input.priceWholesale ?? input.pricePartner,
     priceReseller: input.priceReseller ?? input.priceUser,
+    ...(input.limitIp !== undefined
+      ? { limitIp: Math.max(0, Math.min(10, Math.floor(input.limitIp))) }
+      : {}),
     category,
     isGolden: input.isGolden ?? false,
     title: input.title,

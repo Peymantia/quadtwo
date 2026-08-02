@@ -149,21 +149,25 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
 /** Lock draft to a specific fixed plan price cell (offer / unlimited / national). */
 export async function setDraftFixedPlan(
   telegramId: bigint,
-  plan: { id: string; trafficGb: number | null; months: number; category: string },
+  plan: { id: string; trafficGb: number | null; months: number; category: string; limitIp?: number },
 ) {
   await getOrCreateDraft(telegramId);
   const defaultIp = await getDefaultLimitIp();
   const cat = plan.category.trim().toLowerCase();
+  const limitIp =
+    typeof plan.limitIp === "number" && plan.limitIp > 0
+      ? Math.max(0, Math.min(10, Math.floor(plan.limitIp)))
+      : defaultIp;
   return prisma.buyDraft.update({
     where: { telegramId },
     data: {
-      category: cat,
+      category: cat === "reseller" ? "wholesale" : cat,
       unlimited: cat === "unlimited" || plan.trafficGb == null,
       trafficGb: cat === "unlimited" ? null : plan.trafficGb,
       months: await capMonths(plan.months),
       quantity: 1,
-      limitIp: defaultIp,
-      limitIpTouched: false,
+      limitIp,
+      limitIpTouched: typeof plan.limitIp === "number" && plan.limitIp > 0,
       ...(isOfferCategory(cat) ? { discountCode: null } : {}),
       priceCellId: plan.id,
     },

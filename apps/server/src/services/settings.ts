@@ -140,7 +140,6 @@ const defaults: Record<string, string> = {
     national: "اینترنت ملی",
     unlimited: "نامحدود",
     offer: "پیشنهاد ویژه",
-    reseller: "پلن‌های عمده‌فروش",
     wholesale: "پلن‌های عمده‌فروش",
   }),
   /** Display order for plan categories (web dashboard + bot) */
@@ -479,6 +478,9 @@ export async function getSalesCategories(): Promise<SalesCategories> {
     for (const [k, v] of Object.entries(raw)) {
       if (typeof v === "boolean" && k.trim()) out[k.trim()] = v;
     }
+    // Merge legacy reseller flag into wholesale; never expose reseller separately
+    if (out.reseller === true) out.wholesale = true;
+    delete out.reseller;
     return out;
   } catch {
     return base;
@@ -504,7 +506,6 @@ export function defaultCategoryLabels(): CategoryLabels {
     unlimited: "نامحدود",
     offer: "پیشنهاد ویژه",
     wholesale: "پلن‌های عمده‌فروش",
-    reseller: "پلن‌های عمده‌فروش",
   };
 }
 
@@ -516,6 +517,9 @@ export async function getCategoryLabels(): Promise<CategoryLabels> {
     for (const [k, v] of Object.entries(raw)) {
       if (typeof v === "string" && k.trim() && v.trim()) out[k.trim()] = v.trim();
     }
+    // Legacy alias — never show as a separate category in UI
+    if (out.reseller && !out.wholesale) out.wholesale = out.reseller;
+    delete out.reseller;
     return out;
   } catch {
     return base;
@@ -616,19 +620,20 @@ export async function listEnabledSalesCategories(): Promise<string[]> {
   const cats = await getSalesCategories();
   const labels = await getCategoryLabels();
   const order = await getCategoryOrder();
-  const keys = new Set([...Object.keys(cats), ...Object.keys(labels), ...BUILTIN_CATEGORY_KEYS, "wholesale", "reseller"]);
+  const keys = new Set([...Object.keys(cats), ...Object.keys(labels), ...BUILTIN_CATEGORY_KEYS, "wholesale"]);
+  keys.delete("reseller");
   return sortKeysByCategoryOrder([...keys].filter((k) => cats[k] === true), order);
 }
 
 /**
  * Role-aware sales categories:
  * - wholesale (عمده‌فروش) → only fixed wholesale plans
- * - everyone else → enabled cats except wholesale/reseller fixed category
+ * - everyone else → enabled cats except wholesale fixed category
  */
 export async function listEnabledSalesCategoriesForRole(role: string): Promise<string[]> {
   const all = await listEnabledSalesCategories();
   if (role === "wholesale") {
-    return all.filter((k) => k === "wholesale" || k === "reseller");
+    return all.includes("wholesale") ? ["wholesale"] : [];
   }
   return all.filter((k) => k !== "wholesale" && k !== "reseller");
 }

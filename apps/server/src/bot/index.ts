@@ -445,6 +445,7 @@ async function showFixedPlanPicker(ctx: Context, category: string, edit = false)
       trafficGb: p.trafficGb,
       months: p.months,
       category: cat,
+      limitIp: p.limitIp,
     });
     await showBuyWizard(ctx, edit);
     return;
@@ -465,7 +466,8 @@ async function showFixedPlanPicker(ctx: Context, category: string, edit = false)
       ctx.from!.id,
     );
     const vol = cat === "unlimited" || p.trafficGb == null ? "نامحدود" : formatTraffic(p.trafficGb);
-    const title = p.title?.trim() || `${vol} · ${p.months} ماه`;
+    const ipHint = p.limitIp > 0 ? ` · ${p.limitIp} کاربر` : "";
+    const title = p.title?.trim() || `${vol} · ${p.months} ماه${ipHint}`;
     const price = priced ? formatToman(priced.price) : "—";
     const cb = cat === "offer" ? `buy:offer:${p.id}` : `buy:fixed:${cat}:${p.id}`;
     kb.text(`${star}${title} · ${price}`.slice(0, 64), cb);
@@ -1158,7 +1160,7 @@ export function createBot() {
     await showBuyWizard(ctx, true);
   });
 
-  bot.callbackQuery(/^buy:fixed:(unlimited|national):(.+)$/, async (ctx) => {
+  bot.callbackQuery(/^buy:fixed:(unlimited|national|wholesale|reseller):(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireChannel(ctx))) return;
     const cat = String(ctx.match![1] || "");
@@ -1172,7 +1174,8 @@ export function createBot() {
       id: plan.id,
       trafficGb: plan.trafficGb,
       months: plan.months,
-      category: cat,
+      category: cat === "reseller" ? "wholesale" : cat,
+      limitIp: plan.limitIp,
     });
     await showBuyWizard(ctx, true);
   });

@@ -69,6 +69,7 @@ type PriceRow = {
   pricePartner: number;
   priceWholesale: number;
   priceReseller?: number;
+  limitIp?: number;
   isGolden: boolean;
   active: boolean;
 };
@@ -1182,6 +1183,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     pricePartner: "",
     priceWholesale: "",
     priceReseller: "",
+    limitIp: "1",
     title: "",
     isGolden: false,
   });
@@ -1274,6 +1276,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           pricePartner: Number(e.pricePartner ?? c.pricePartner),
           priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
           priceReseller: Number(e.priceReseller ?? c.priceReseller ?? 0),
+          limitIp: Number(e.limitIp ?? c.limitIp ?? 0),
           title: e.title ?? c.title,
         },
       });
@@ -1305,6 +1308,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             pricePartner: Number(e.pricePartner ?? c.pricePartner),
             priceWholesale: Number(e.priceWholesale ?? c.priceWholesale),
             priceReseller: Number(e.priceReseller ?? c.priceReseller ?? 0),
+            limitIp: Number(e.limitIp ?? c.limitIp ?? 0),
             title: e.title ?? c.title,
           },
         });
@@ -1378,6 +1382,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           pricePartner: parsePriceInput(newCell.pricePartner),
           priceWholesale: newCell.priceWholesale ? parsePriceInput(newCell.priceWholesale) : undefined,
           priceReseller: newCell.priceReseller ? parsePriceInput(newCell.priceReseller) : undefined,
+          limitIp: newCell.category === "wholesale" ? Number(newCell.limitIp) || 1 : undefined,
           title: newCell.title || undefined,
           isGolden: newCell.isGolden,
         },
@@ -1391,6 +1396,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         pricePartner: "",
         priceWholesale: "",
         priceReseller: "",
+        limitIp: "1",
         title: "",
         isGolden: false,
       });
@@ -1534,6 +1540,18 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
               onChange={(e) => setNewCell((s) => ({ ...s, priceReseller: formatPriceInput(parsePriceInput(e.target.value) || "") }))}
             />
           </div>
+          {newCell.category === "wholesale" && (
+            <div className="field">
+              <label>تعداد کاربر (IP)</label>
+              <input
+                className="num"
+                inputMode="numeric"
+                dir="ltr"
+                value={newCell.limitIp}
+                onChange={(e) => setNewCell((s) => ({ ...s, limitIp: e.target.value.replace(/[^\d]/g, "") }))}
+              />
+            </div>
+          )}
           <div className="field">
             <label>عنوان (اختیاری)</label>
             <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
@@ -1807,6 +1825,23 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                       }
                     />
                   </div>
+                  {(c.category === "wholesale" || c.category === "reseller") && (
+                    <div className="field">
+                      <label>کاربر (IP)</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={String(e.limitIp ?? c.limitIp ?? 0)}
+                        onChange={(ev) =>
+                          setEdits((m) => ({
+                            ...m,
+                            [c.id]: { ...m[c.id], limitIp: Number(ev.target.value.replace(/[^\d]/g, "") || "0") },
+                          }))
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="price-plan-actions">
                   <button type="button" className="btn primary sm" disabled={!edits[c.id]} onClick={() => saveRow(c)}>

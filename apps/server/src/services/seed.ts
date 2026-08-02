@@ -1,10 +1,16 @@
 import { prisma } from "../db.js";
 import { isDemoMode } from "./license.js";
+import { upsertPriceCell } from "./pricing.js";
+import { WHOLESALE_FIXED_CATEGORY } from "./roles.js";
 import {
   ensureDefaultSettings,
+  getCategoryLabels,
+  getCategoryOrder,
   getChannels,
   getPriceRates,
   getSalesCategories,
+  saveCategoryLabels,
+  saveCategoryOrder,
   saveChannels,
   saveSalesCategories,
   setSetting,
@@ -79,6 +85,68 @@ async function disableForcedChannelsInDemo() {
   }
 }
 
+/** Fold legacy `reseller` category into `wholesale` and keep sales settings clean. */
+export async function ensureWholesaleCategoryCanonical() {
+  const renamed = await prisma.priceCell.updateMany({
+    where: { category: "reseller" },
+    data: { category: WHOLESALE_FIXED_CATEGORY },
+  });
+  if (renamed.count > 0) {
+    console.log(`renamed ${renamed.count} price cell(s) reseller → wholesale`);
+  }
+
+  const cats = await getSalesCategories();
+  {
+    const next = { ...cats, wholesale: true as boolean };
+    delete (next as Record<string, unknown>).reseller;
+    await saveSalesCategories(next);
+  }
+
+  const labels = await getCategoryLabels();
+  {
+    const next = { ...labels, wholesale: labels.wholesale || "پلن‌های عمده‌فروش" };
+    delete (next as Record<string, unknown>).reseller;
+    await saveCategoryLabels(next);
+  }
+
+  const order = await getCategoryOrder();
+  {
+    const next = order.map((k) => (k === "reseller" ? "wholesale" : k));
+    if (!next.includes("wholesale")) next.push("wholesale");
+    await saveCategoryOrder([...new Set(next)]);
+  }
+}
+
+/** Admin-defined fixed plans for عمده‌فروش (upsert by GB/months). */
+export async function ensureWholesaleDefaultPlans() {
+  const plans: Array<{
+    trafficGb: number;
+    months: number;
+    limitIp: number;
+    priceReseller: number;
+    title: string;
+  }> = [
+    { trafficGb: 100, months: 1, limitIp: 1, priceReseller: 150_000, title: "۱۰۰ گیگ · تک‌کاربره" },
+    { trafficGb: 200, months: 1, limitIp: 2, priceReseller: 250_000, title: "۲۰۰ گیگ · دوکاربره" },
+    { trafficGb: 300, months: 1, limitIp: 2, priceReseller: 400_000, title: "۳۰۰ گیگ · دوکاربره" },
+  ];
+
+  for (const p of plans) {
+    await upsertPriceCell({
+      trafficGb: p.trafficGb,
+      months: p.months,
+      category: WHOLESALE_FIXED_CATEGORY,
+      title: p.title,
+      limitIp: p.limitIp,
+      priceUser: p.priceReseller,
+      pricePartner: p.priceReseller,
+      priceWholesale: p.priceReseller,
+      priceReseller: p.priceReseller,
+    });
+  }
+  console.log(`ensured ${plans.length} wholesale fixed plans`);
+}
+
 export async function seedIfNeeded() {
   await ensureDefaultSettings();
   await disableForcedChannelsInDemo();
@@ -119,4 +187,7 @@ export async function seedIfNeeded() {
     await prisma.priceCell.createMany({ data: rows });
     console.log(`seeded ${rows.length} price matrix cells`);
   }
+
+  await ensureWholesaleCategoryCanonical();
+  await ensureWholesaleDefaultPlans();
 }

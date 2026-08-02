@@ -170,6 +170,8 @@ model PriceCell {
   priceWholesale Int     @default(0)
   /// Price for wholesale role (عمده‌فروش) — used for category=wholesale fixed plans
   priceReseller   Int     @default(0)
+  /// Max simultaneous IPs for this plan (0 = use system default). Used by عمده‌فروش fixed plans.
+  limitIp        Int     @default(0)
   isGolden       Boolean @default(false)
   active         Boolean @default(true)
   sortOrder      Int     @default(0)

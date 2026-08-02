@@ -26,6 +26,7 @@ export type RateShopCatalog = {
     title?: string | null;
     price?: number | null;
     isGolden?: boolean;
+    limitIp?: number;
   }>;
 };
 
@@ -334,7 +335,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const limitIp = isFixedSingle
     ? category === "unlimited"
       ? 2
-      : Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0))
+      : selectedFixed && typeof selectedFixed.limitIp === "number" && selectedFixed.limitIp > 0
+        ? Math.max(0, Math.min(10, selectedFixed.limitIp))
+        : Math.max(0, Math.min(10, catalog.defaultLimitIp ?? 0))
     : unlimitedIpLocked
       ? 2
     : ipSteps[ipIndex]?.value ?? catalog.defaultLimitIp ?? 0;
@@ -578,6 +581,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                     <div className="plan-name">{isOffer ? "⭐ " : ""}{title}</div>
                     <div className="plan-meta muted">
                       {vol} · {cell.months} ماه
+                      {cell.limitIp && cell.limitIp > 0 ? ` · ${cell.limitIp} کاربر` : ""}
                     </div>
                     <div className="plan-price num">{formatToman(cell.price ?? 0)}</div>
                   </button>

@@ -707,17 +707,26 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const priced = await Promise.all(
       cells
         .filter((cell) => cell.active && cell.months <= maxMonths)
-        .filter((cell) => cats.includes(cell.category))
+        .filter((cell) => {
+          if (pricedUser.role === "wholesale") {
+            return cell.category === "wholesale" || cell.category === "reseller";
+          }
+          return cats.includes(cell.category);
+        })
         .map(async (cell) => {
           const resolved = await resolvePrice(pricedUser, cell.trafficGb, cell.months, cell.category);
           return {
             id: cell.id,
-            category: cell.category,
+            category:
+              pricedUser.role === "wholesale" && (cell.category === "reseller" || cell.category === "wholesale")
+                ? "wholesale"
+                : cell.category,
             trafficGb: cell.trafficGb,
             months: cell.months,
             title: cell.title,
             isGolden: cell.isGolden,
             price: resolved?.price ?? null,
+            limitIp: cell.limitIp ?? 0,
           };
         }),
     );
@@ -738,6 +747,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           title: null,
           isGolden: false,
           price: resolved.price,
+          limitIp: 0,
         });
       }
     }
@@ -1629,6 +1639,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         pricePartner: x.pricePartner,
         priceWholesale: x.priceWholesale,
         priceReseller: x.priceReseller,
+        limitIp: x.limitIp,
         isGolden: x.isGolden,
         active: x.active,
       })),
@@ -1685,6 +1696,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       pricePartner: number;
       priceWholesale?: number;
       priceReseller?: number;
+      limitIp?: number;
       category?: PlanCategory;
       isGolden?: boolean;
       title?: string;
@@ -1702,7 +1714,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.put("/admin/prices/:id", async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
     const data: Record<string, unknown> = {};
-    for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "priceReseller", "isGolden", "trafficGb", "months", "category", "active"]) {
+    for (const k of ["title", "priceUser", "pricePartner", "priceWholesale", "priceReseller", "limitIp", "isGolden", "trafficGb", "months", "category", "active"]) {
       if (body[k] !== undefined) data[k] = body[k];
     }
     // ∞GB only in unlimited — offer may also be ∞ while staying category=offer
@@ -1771,12 +1783,19 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       _count: { _all: true },
     });
     const countMap = new Map(counts.map((x) => [x.category, x._count._all]));
+    // Fold legacy reseller cells into wholesale count
+    const resellerCount = countMap.get("reseller") ?? 0;
+    if (resellerCount) {
+      countMap.set("wholesale", (countMap.get("wholesale") ?? 0) + resellerCount);
+      countMap.delete("reseller");
+    }
     const keys = new Set<string>([
       ...BUILTIN_CATEGORY_KEYS,
       ...Object.keys(enabled),
       ...Object.keys(labels),
-      ...counts.map((x) => x.category),
+      ...[...countMap.keys()],
     ]);
+    keys.delete("reseller");
     const sorted = sortKeysByCategoryOrder([...keys], order);
     return c.json({
       categories: sorted.map((key) => ({

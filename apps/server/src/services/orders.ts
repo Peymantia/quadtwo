@@ -149,11 +149,18 @@ export async function createMatrixOrder(input: {
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
   const quantity = kind === OrderKind.renew ? 1 : Math.max(1, Math.min(50, input.quantity ?? 1));
   const defaultIp = await getDefaultLimitIp();
-  const baseLimitIp = !canEditLimitIp(pricedUser.role)
-    ? defaultIp
-    : input.limitIp === undefined
-      ? defaultIp
-      : Math.max(0, Math.min(10, Math.floor(input.limitIp)));
+  const cellLimitIp =
+    selectedCell && typeof selectedCell.limitIp === "number" && selectedCell.limitIp > 0
+      ? Math.max(0, Math.min(10, Math.floor(selectedCell.limitIp)))
+      : null;
+  const baseLimitIp =
+    cellLimitIp != null
+      ? cellLimitIp
+      : !canEditLimitIp(pricedUser.role)
+        ? defaultIp
+        : input.limitIp === undefined
+          ? defaultIp
+          : Math.max(0, Math.min(10, Math.floor(input.limitIp)));
   const limitIp = category === "unlimited" ? UNLIMITED_LIMIT_IP : baseLimitIp;
   const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;
 
