@@ -324,12 +324,14 @@ async function showMiniPinPanel(ctx: Context, edit = true) {
     preview,
     "",
     "ایموجی‌های شناخته‌شده (مثل 📱) در ارسال به‌صورت پریمیوم اعمال می‌شوند.",
+    "",
+    "«غیرفعال کردن پین»: پین خودکار را خاموش می‌کند و پیام پین‌شده را برای همه آن‌پین می‌کند.",
   ].join("\n");
   const kb = new InlineKeyboard()
     .text("✏️ ویرایش متن", "cc:minipin:edit")
     .primary()
     .row()
-    .text(auto ? "⭕️ خاموش کردن پین خودکار" : "✅ روشن کردن پین خودکار", "cc:minipin:auto")
+    .text(auto ? "⭕️ غیرفعال کردن پین" : "✅ فعال کردن پین خودکار", "cc:minipin:auto")
     .row()
     .text("👁 پیش‌نمایش روی من", "cc:minipin:me")
     .success()
@@ -1970,10 +1972,65 @@ export function registerControlCenter(bot: Bot) {
 
   bot.callbackQuery("cc:minipin:auto", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
-    const next = !(await isMiniAppPinAutoEnabled());
+    const currentlyOn = await isMiniAppPinAutoEnabled();
+    const next = !currentlyOn;
     await setMiniAppPinAuto(next);
-    await ctx.answerCallbackQuery({ text: next ? "پین خودکار روشن شد" : "پین خودکار خاموش شد" });
+
+    if (next) {
+      await ctx.answerCallbackQuery({ text: "پین خودکار روشن شد" });
+      await showMiniPinPanel(ctx);
+      return;
+    }
+
+    // Turning off: also unpin existing banners for everyone (otherwise "disable" looks broken).
+    if (miniPinBusy) {
+      await ctx.answerCallbackQuery({
+        text: "پین خودکار خاموش شد. برای آن‌پین کمی بعد دوباره بزنید.",
+        show_alert: true,
+      });
+      await showMiniPinPanel(ctx);
+      return;
+    }
+
+    await ctx.answerCallbackQuery({ text: "خاموش شد — در حال آن‌پین…" });
     await showMiniPinPanel(ctx);
+    miniPinBusy = true;
+    const progress = await ctx.reply("⏳ پین خودکار خاموش شد. در حال آن‌پین پیام برای همه…");
+    try {
+      const r = await broadcastUnpinMiniAppBanner(ctx.api, {
+        onProgress: async (done, total) => {
+          try {
+            await ctx.api.editMessageText(
+              ctx.chat!.id,
+              progress.message_id,
+              `⏳ آن‌پین: ${done}/${total}`,
+            );
+          } catch {
+            /* ignore */
+          }
+        },
+      });
+      await auditLog({
+        action: "minipin_disable_unpin",
+        actorTelegramId: ctx.from!.id,
+        detail: `sent=${r.sent} failed=${r.failed} total=${r.total}`,
+      });
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        progress.message_id,
+        `✅ پین غیرفعال شد و آن‌پین انجام شد\nموفق: ${r.sent}\nناموفق: ${r.failed}\nکل: ${r.total}`,
+        {
+          reply_markup: new InlineKeyboard()
+            .text("📌 مدیریت پین", "cc:minipin")
+            .row()
+            .text("🎛 کنترل سنتر", "cc:home"),
+        },
+      );
+    } catch (err) {
+      await ctx.reply(`❌ خطا در آن‌پین: ${String(err).replace(/^Error:\s*/, "")}`);
+    } finally {
+      miniPinBusy = false;
+    }
   });
 
   bot.callbackQuery("cc:minipin:reset", async (ctx) => {

@@ -68,8 +68,17 @@ export async function unpinMiniAppBanner(api: Api, chatId: number): Promise<PinC
   try {
     await api.unpinAllChatMessages(chatId);
     return { ok: true, messageId: 0 };
-  } catch (err) {
-    return { ok: false, error: String(err).replace(/^Error:\s*/, "") };
+  } catch (err1) {
+    try {
+      // Fallback: unpin the most recently pinned message
+      await api.unpinChatMessage(chatId);
+      return { ok: true, messageId: 0 };
+    } catch (err2) {
+      return {
+        ok: false,
+        error: String(err2 ?? err1).replace(/^Error:\s*/, ""),
+      };
+    }
   }
 }
 

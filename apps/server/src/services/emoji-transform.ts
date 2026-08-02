@@ -11,6 +11,10 @@ import {
 let cached: { style: EmojiStyle; at: number } | null = null;
 const CACHE_MS = 5_000;
 
+/** LRM — keep leading emoji/icon on the visual start across RTL mobile clients. */
+const LRM = "\u200E";
+const DIR_MARKS = /^[\u200E\u200F\u2066\u2067\u2068\u2069]+/u;
+
 export async function getEmojiStyle(): Promise<EmojiStyle> {
   const now = Date.now();
   if (cached && now - cached.at < CACHE_MS) return cached.style;
@@ -37,10 +41,21 @@ type TgEntity = {
   [k: string]: unknown;
 };
 
+function stripDirMarks(text: string): string {
+  return text.replace(DIR_MARKS, "");
+}
+
+/** Force LTR embedding so emoji/icon stays at the start of the label on mobile RTL. */
+function withLeadingLrm(text: string): string {
+  const t = stripDirMarks(text);
+  return t ? `${LRM}${t}` : t;
+}
+
 function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: string } | null {
+  const bare = stripDirMarks(text);
   for (const row of UNIVERSAL_BY_LENGTH) {
-    if (text.startsWith(row.glyph)) {
-      const rest = text.slice(row.glyph.length).replace(/^\s+/, "");
+    if (bare.startsWith(row.glyph)) {
+      const rest = bare.slice(row.glyph.length).replace(/^\s+/, "");
       if (!rest) return null;
       const id = resolvePremiumId(row.glyph, rest) || row.id;
       return { glyph: row.glyph, id, rest };
@@ -51,9 +66,10 @@ function matchLeadingGlyph(text: string): { glyph: string; id: string; rest: str
 
 /** Emoji after label (e.g. «قبلی ◀️» / «بعدی ▶️») — still maps to Premium button icon. */
 function matchTrailingGlyph(text: string): { glyph: string; id: string; rest: string } | null {
+  const bare = stripDirMarks(text);
   for (const row of UNIVERSAL_BY_LENGTH) {
-    if (text.endsWith(row.glyph)) {
-      const rest = text.slice(0, -row.glyph.length).replace(/\s+$/, "");
+    if (bare.endsWith(row.glyph)) {
+      const rest = bare.slice(0, -row.glyph.length).replace(/\s+$/, "");
       if (!rest) return null;
       const id = resolvePremiumId(row.glyph, rest) || row.id;
       return { glyph: row.glyph, id, rest };
@@ -62,20 +78,31 @@ function matchTrailingGlyph(text: string): { glyph: string; id: string; rest: st
   return null;
 }
 
-function transformButton(btn: Record<string, unknown>): Record<string, unknown> {
+function transformButtonPremium(btn: Record<string, unknown>): Record<string, unknown> {
   if (typeof btn.text !== "string") return btn;
-  if (btn.icon_custom_emoji_id) return btn;
+  if (btn.icon_custom_emoji_id) {
+    return { ...btn, text: withLeadingLrm(String(btn.text)) };
+  }
   const hit = matchLeadingGlyph(btn.text) || matchTrailingGlyph(btn.text);
-  if (!hit) return btn;
-  // Premium icon on the button; bare label text (no RLM) so reply-keyboard hears still match.
+  if (!hit) return { ...btn, text: withLeadingLrm(btn.text) };
+  // Premium icon + LRM so clients keep icon at the start of the label.
   return {
     ...btn,
-    text: hit.rest,
+    text: withLeadingLrm(hit.rest),
     icon_custom_emoji_id: hit.id,
   };
 }
 
-function transformReplyMarkup(markup: unknown): unknown {
+/** Universal style: only stabilize direction (keep unicode emoji in text). */
+function transformButtonDirection(btn: Record<string, unknown>): Record<string, unknown> {
+  if (typeof btn.text !== "string") return btn;
+  return { ...btn, text: withLeadingLrm(btn.text) };
+}
+
+function mapKeyboardButtons(
+  markup: unknown,
+  mapBtn: (btn: Record<string, unknown>) => Record<string, unknown>,
+): unknown {
   if (!markup || typeof markup !== "object") return markup;
   const m = markup as Record<string, unknown>;
 
@@ -84,7 +111,7 @@ function transformReplyMarkup(markup: unknown): unknown {
       ...m,
       keyboard: (m.keyboard as unknown[][]).map((row) =>
         Array.isArray(row)
-          ? row.map((b) => (b && typeof b === "object" ? transformButton(b as Record<string, unknown>) : b))
+          ? row.map((b) => (b && typeof b === "object" ? mapBtn(b as Record<string, unknown>) : b))
           : row,
       ),
     };
@@ -95,7 +122,7 @@ function transformReplyMarkup(markup: unknown): unknown {
       ...m,
       inline_keyboard: (m.inline_keyboard as unknown[][]).map((row) =>
         Array.isArray(row)
-          ? row.map((b) => (b && typeof b === "object" ? transformButton(b as Record<string, unknown>) : b))
+          ? row.map((b) => (b && typeof b === "object" ? mapBtn(b as Record<string, unknown>) : b))
           : row,
       ),
     };
@@ -104,10 +131,18 @@ function transformReplyMarkup(markup: unknown): unknown {
   return markup;
 }
 
+function transformReplyMarkupPremium(markup: unknown): unknown {
+  return mapKeyboardButtons(markup, transformButtonPremium);
+}
+
+function stabilizeReplyMarkupDirection(markup: unknown): unknown {
+  return mapKeyboardButtons(markup, transformButtonDirection);
+}
+
 /** For raw fetch sendMessage (outside grammy) — premium button icons. */
 export async function applyPremiumReplyMarkup(markup: unknown): Promise<unknown> {
-  if ((await getEmojiStyle()) !== "premium") return markup;
-  return transformReplyMarkup(markup);
+  if ((await getEmojiStyle()) !== "premium") return stabilizeReplyMarkupDirection(markup);
+  return transformReplyMarkupPremium(markup);
 }
 
 /** Always apply Premium icons/entities (ignores emoji_style) — e.g. pinned Mini App banner. */
@@ -118,7 +153,7 @@ export function forcePremiumTextAndMarkup(
   return {
     text,
     entities: attachPremiumTextEntities(text),
-    reply_markup: markup != null ? transformReplyMarkup(markup) : undefined,
+    reply_markup: markup != null ? transformReplyMarkupPremium(markup) : undefined,
   };
 }
 
@@ -169,13 +204,20 @@ type Payload = Record<string, unknown>;
 
 async function transformPayload(method: string, payload: Payload): Promise<Payload> {
   const style = await getEmojiStyle();
-  if (style !== "premium") return payload;
-
   let next = { ...payload };
 
+  // Always stabilize button emoji/icon to the start (desktop + mobile RTL).
   if (next.reply_markup) {
-    next = { ...next, reply_markup: transformReplyMarkup(next.reply_markup) };
+    next = {
+      ...next,
+      reply_markup:
+        style === "premium"
+          ? transformReplyMarkupPremium(next.reply_markup)
+          : stabilizeReplyMarkupDirection(next.reply_markup),
+    };
   }
+
+  if (style !== "premium") return next;
 
   if ((method === "sendMessage" || method === "editMessageText") && typeof next.text === "string") {
     if (!next.parse_mode) {

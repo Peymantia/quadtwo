@@ -21,7 +21,7 @@ export const BTN = {
   /** User / partner / wholesale / admin-demo: Mini App entry */
   miniAppDirect: "📱 ورود به وب پنل",
   /** Browser login with temporary credentials */
-  dashOtp: "🔐 ورود به وب اپ از طریق مرورگر",
+  dashOtp: "🔐 ورود به وب پنل (مرورگر)",
   configLookup: "🔎 مشاهده سریع",
   partner: "🤝 درخواست نمایندگی",
   allConfigs: "👀 نمایش کلیه سرویس‌ها",
