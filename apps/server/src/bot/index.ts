@@ -505,7 +505,9 @@ async function showFixedPlanPicker(ctx: Context, category: string, edit = false)
     kb.row();
   }
   kb.text("❌ انصراف", "buy:cat:cancel");
-  const text = `${star}${catLabel}\n\nیکی از پلن‌های ثابت را انتخاب کنید:`;
+  const text = isWholesale
+    ? "📦 پلن مورد نظر خود را انتخاب کنید:"
+    : `${star}${catLabel}\n\nیکی از پلن‌های ثابت را انتخاب کنید:`;
   if (edit && ctx.callbackQuery?.message) {
     try {
       await ctx.editMessageText(text, { reply_markup: kb });

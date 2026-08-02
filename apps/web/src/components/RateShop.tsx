@@ -570,7 +570,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                   : "این سرویس تک‌پلن است؛ حجم و مدت قابل کم و زیاد کردن نیست. یک پلن را انتخاب کنید."}
               </p>
             </>
-          ) : null}
+          ) : (
+            <p className="plan-pick-hint">📦 پلن مورد نظر خود را انتخاب کنید:</p>
+          )}
           {!fixedCells.length ? (
             <p className="muted" style={{ color: "var(--pink)", margin: 0 }}>
               هنوز پلنی در این دسته تعریف نشده است.

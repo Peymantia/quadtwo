@@ -1705,6 +1705,13 @@ button.stat.stat-link:active {
   gap: 8px;
 }
 
+.plan-pick-hint {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .plan-card--compact {
   flex-direction: row;
   align-items: center;
