@@ -3,14 +3,15 @@ import { upsertUserFromTelegram } from "../services/users.js";
 import { isControlAdmin } from "./admin-center.js";
 import { effectiveRole } from "../services/demo-role.js";
 import {
-  canManageDiscountCodes,
+  canUserManageDiscountCodes,
   createDiscountCode,
   isDiscountCodesEnabled,
   listDiscountCodesForUser,
-  getDiscountMaxPercentForRole,
+  getDiscountMaxPercentForUser,
   updateDiscountCode,
   deleteDiscountCode,
   setDiscountCodesEnabled,
+  type DiscountActor,
 } from "../services/discount-codes.js";
 import type { User } from "@prisma/client";
 
@@ -26,8 +27,13 @@ export function clearDiscountBotWaits(tid: number) {
   waitingCreate.delete(tid);
 }
 
-function actorFromAccess(access: { user: User; role: string }): Pick<User, "id" | "role"> {
-  return { id: access.user.id, role: access.role as User["role"] };
+function actorFromAccess(access: { user: User; role: string }): DiscountActor {
+  return {
+    id: access.user.id,
+    role: access.role as User["role"],
+    discountCodesAllowed: access.user.discountCodesAllowed,
+    discountMaxPercent: access.user.discountMaxPercent,
+  };
 }
 
 async function assertDiscountAccess(ctx: Context): Promise<{
@@ -38,8 +44,20 @@ async function assertDiscountAccess(ctx: Context): Promise<{
   const user = await upsertUserFromTelegram(ctx.from);
   const role = effectiveRole(ctx.from.id, user.role);
   const adminOk = await isControlAdmin(ctx.from.id);
-  if (!canManageDiscountCodes(role) && !adminOk) return null;
-  return { user, role: adminOk ? (role === "admin" ? "admin" : role) : role };
+  if (adminOk) {
+    return { user, role: role === "admin" ? "admin" : role };
+  }
+  if (
+    !canUserManageDiscountCodes({
+      id: user.id,
+      role: role as User["role"],
+      discountCodesAllowed: user.discountCodesAllowed,
+      discountMaxPercent: user.discountMaxPercent,
+    })
+  ) {
+    return null;
+  }
+  return { user, role };
 }
 
 async function showDiscountHome(ctx: Context, edit = true) {
@@ -49,7 +67,7 @@ async function showDiscountHome(ctx: Context, edit = true) {
     return;
   }
   const enabled = await isDiscountCodesEnabled();
-  const maxPercent = await getDiscountMaxPercentForRole(access.role);
+  const maxPercent = await getDiscountMaxPercentForUser(actorFromAccess(access));
   const items = await listDiscountCodesForUser(access.user.id, access.role);
   const lines = [
     "🎟 کدهای تخفیف",
@@ -111,7 +129,7 @@ export async function handleDiscountCreateText(ctx: Context, text: string): Prom
 
   if (wait.step === "code") {
     waitingCreate.set(tid, { step: "percent", code: text });
-    const max = await getDiscountMaxPercentForRole(access.role);
+    const max = await getDiscountMaxPercentForUser(actor);
     await ctx.reply(`درصد تخفیف را بفرستید (۱ تا ${max}):`);
     return true;
   }

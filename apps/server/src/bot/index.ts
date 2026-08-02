@@ -986,6 +986,21 @@ async function handlePartnerPanel(ctx: Context) {
   const role = effectiveRole(ctx.from!.id, user.role);
   if (role !== "partner" && role !== "wholesale" && role !== "reseller" && role !== "admin") return;
   const ready = assertAgentReadyForPurchase(user);
+  const { canUserManageDiscountCodes } = await import("../services/discount-codes.js");
+  const showDiscounts = canUserManageDiscountCodes({
+    id: user.id,
+    role: role as typeof user.role,
+    discountCodesAllowed: user.discountCodesAllowed,
+    discountMaxPercent: user.discountMaxPercent,
+  });
+  const kb = new InlineKeyboard()
+    .text(user.agentName ? "✏️ تغییر نام (نیاز به تأیید ادمین)" : "➕ تعریف نام نماینده", "agent:set")
+    .primary()
+    .row();
+  if (showDiscounts) {
+    kb.text("🎟 کدهای تخفیف", "disc:home").success().row();
+  }
+  kb.text("📊 گزارش فروش", "mysales:home").primary().row().text("« بازگشت", "menu:home");
   await ctx.reply(
     [
       "💼 پنل نماینده / عمده / ادمین",
@@ -998,19 +1013,7 @@ async function handlePartnerPanel(ctx: Context) {
         : "⚠️ قبل از خرید باید نام نماینده را تنظیم کنید.",
       "کاربران عادی → گروه Telegram",
     ].join("\n"),
-    {
-      reply_markup: new InlineKeyboard()
-        .text(user.agentName ? "✏️ تغییر نام (نیاز به تأیید ادمین)" : "➕ تعریف نام نماینده", "agent:set")
-        .primary()
-        .row()
-        .text("🎟 کدهای تخفیف", "disc:home")
-        .success()
-        .row()
-        .text("📊 گزارش فروش", "mysales:home")
-        .primary()
-        .row()
-        .text("« بازگشت", "menu:home"),
-    },
+    { reply_markup: kb },
   );
 }
 

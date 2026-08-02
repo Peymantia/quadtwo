@@ -54,6 +54,7 @@ export function DiscountCodesPanel({
   showOwner?: boolean;
 }) {
   const [enabled, setEnabled] = useState(false);
+  const [allowed, setAllowed] = useState(true);
   const [maxPercent, setMaxPercent] = useState(30);
   const [partnerCap, setPartnerCap] = useState(30);
   const [maxPercentDraft, setMaxPercentDraft] = useState("30");
@@ -71,14 +72,21 @@ export function DiscountCodesPanel({
 
   const load = useCallback(async () => {
     try {
-      const r = await api<{ enabled: boolean; maxPercent: number; items: DiscountItem[] }>("/me/discounts");
+      const r = await api<{
+        enabled: boolean;
+        allowed?: boolean;
+        maxPercent: number;
+        items: DiscountItem[];
+      }>("/me/discounts");
       setEnabled(r.enabled);
+      setAllowed(r.allowed !== false);
       setMaxPercent(r.maxPercent);
       setItems(r.items ?? []);
       if (showOwner) {
         const s = await api<{ settings: Record<string, string> }>("/admin/settings");
-        const cap = String(s.settings.discount_max_percent || "30");
-        setMaxPercentDraft(cap);
+        const cap = Math.max(1, Math.min(100, Number(s.settings.discount_max_percent || "30") || 30));
+        setPartnerCap(cap);
+        setMaxPercentDraft(String(cap));
       } else {
         setMaxPercentDraft(String(r.maxPercent));
       }
@@ -194,11 +202,17 @@ export function DiscountCodesPanel({
   return (
     <div className="panel">
       <h2>کدهای تخفیف</h2>
-      <p className="muted" style={{ marginTop: 0 }}>
-        کد ادمین برای همه خریداران معتبر است. کد همکار/همکار ویژه به‌صورت پیش‌فرض فقط برای خودش است؛ با «قابل‌اشتراک»
-        مشتری‌ها هم می‌توانند استفاده کنند. سقف درصد شما: {maxPercent}٪.
-        {!enabled ? " — فعلاً توسط ادمین خاموش است (ادمین همچنان می‌تواند کد بسازد)." : ""}
-      </p>
+      {!allowed && !showOwner ? (
+        <p className="muted" style={{ marginTop: 0 }}>
+          ساخت کد تخفیف برای حساب شما توسط ادمین غیرفعال است.
+        </p>
+      ) : (
+        <p className="muted" style={{ marginTop: 0 }}>
+          کد ادمین برای همه خریداران معتبر است. کد همکار/همکار ویژه به‌صورت پیش‌فرض فقط برای خودش است؛ با «قابل‌اشتراک»
+          مشتری‌ها هم می‌توانند استفاده کنند. سقف درصد شما: {maxPercent}٪.
+          {!enabled ? " — فعلاً توسط ادمین خاموش است (ادمین همچنان می‌تواند کد بسازد)." : ""}
+        </p>
+      )}
 
       {showOwner && (
         <div className="panel" style={{ marginBottom: 14, padding: 12 }}>
@@ -219,8 +233,10 @@ export function DiscountCodesPanel({
           </div>
           <div className="setting-row">
             <div>
-              <div className="t">سقف درصد تخفیف همکار / همکار ویژه</div>
-              <div className="d">ادمین تا ۱۰۰٪؛ نماینده‌ها حداکثر این عدد.</div>
+              <div className="t">پیش‌فرض سقف درصد نمایندگان جدید</div>
+              <div className="d">
+                هنگام تأیید همکار جدید اعمال می‌شود (پیش‌فرض ۳۰٪). سقف هر نماینده را جداگانه از تب کاربران تنظیم کنید.
+              </div>
             </div>
             <input
               className="num"
@@ -231,7 +247,7 @@ export function DiscountCodesPanel({
               onBlur={() => {
                 const n = Math.max(1, Math.min(100, Number(maxPercentDraft || "30") || 30));
                 setMaxPercentDraft(String(n));
-                void saveAdminDiscountSettings({ maxPercent: n });
+                if (n !== partnerCap) void saveAdminDiscountSettings({ maxPercent: n });
               }}
               style={{
                 width: 72,
@@ -246,6 +262,8 @@ export function DiscountCodesPanel({
         </div>
       )}
 
+      {allowed || showOwner ? (
+        <>
       <div className="grid discount-codes-form" style={{ marginBottom: 14 }}>
         <div className="field">
           <label>کد</label>
@@ -398,6 +416,8 @@ export function DiscountCodesPanel({
           ))}
         </div>
       )}
+        </>
+      ) : null}
     </div>
   );
 }

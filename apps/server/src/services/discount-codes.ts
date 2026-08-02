@@ -41,15 +41,25 @@ export async function setDiscountCodesEnabled(on: boolean): Promise<void> {
   await setSetting("discount_codes_enabled", on ? "true" : "false");
 }
 
-/** Max percent partners/wholesale may set when creating codes. Admin: 100. */
-export async function getDiscountMaxPercentForRole(role: UserRole | string): Promise<number> {
-  if (role === UserRole.admin || role === "admin") return 100;
+/** Global default max % for new agents (settings). Admin personal cap is always 100. */
+export async function getDefaultAgentDiscountMaxPercent(): Promise<number> {
   const n = Number(await getSetting("discount_max_percent"));
   if (!Number.isFinite(n) || n < 1) return 30;
   return Math.min(100, Math.floor(n));
 }
 
-export function canManageDiscountCodes(role: UserRole | string): boolean {
+/** @deprecated prefer getDiscountMaxPercentForUser */
+export async function getDiscountMaxPercentForRole(role: UserRole | string): Promise<number> {
+  if (role === UserRole.admin || role === "admin") return 100;
+  return getDefaultAgentDiscountMaxPercent();
+}
+
+export type DiscountActor = Pick<User, "id" | "role"> & {
+  discountCodesAllowed?: boolean | null;
+  discountMaxPercent?: number | null;
+};
+
+export function isSellerDiscountRole(role: UserRole | string): boolean {
   return (
     role === UserRole.admin ||
     role === UserRole.partner ||
@@ -60,6 +70,27 @@ export function canManageDiscountCodes(role: UserRole | string): boolean {
     role === "wholesale" ||
     role === "reseller"
   );
+}
+
+/** Role may manage codes in principle (ignore per-user flag). */
+export function canManageDiscountCodes(role: UserRole | string): boolean {
+  return isSellerDiscountRole(role);
+}
+
+/** Effective: role + per-user allow flag (admin always). */
+export function canUserManageDiscountCodes(user: DiscountActor): boolean {
+  const role = String(user.role);
+  if (role === "admin") return true;
+  if (!isSellerDiscountRole(role)) return false;
+  return user.discountCodesAllowed !== false;
+}
+
+/** Max % this user may set on codes they create. */
+export async function getDiscountMaxPercentForUser(user: DiscountActor): Promise<number> {
+  if (String(user.role) === "admin") return 100;
+  const n = Number(user.discountMaxPercent);
+  if (Number.isFinite(n) && n >= 1) return Math.min(100, Math.floor(n));
+  return getDefaultAgentDiscountMaxPercent();
 }
 
 export type AppliedDiscount = {
@@ -294,7 +325,7 @@ export function serializeDiscountCode(row: {
 }
 
 export async function createDiscountCode(opts: {
-  actor: Pick<User, "id" | "role">;
+  actor: DiscountActor;
   code: string;
   percentOff: number;
   maxUses?: number | null;
@@ -305,7 +336,7 @@ export async function createDiscountCode(opts: {
   /** Admin may create a code owned by another user */
   ownerUserId?: string | null;
 }) {
-  if (!canManageDiscountCodes(opts.actor.role)) {
+  if (!canUserManageDiscountCodes(opts.actor)) {
     throw new Error("اجازه ساخت کد تخفیف ندارید");
   }
   if (!(await isDiscountCodesEnabled()) && opts.actor.role !== UserRole.admin) {
@@ -317,20 +348,22 @@ export async function createDiscountCode(opts: {
     throw new Error("کد باید ۳ تا ۳۲ کاراکتر انگلیسی/عدد باشد (خط تیره مجاز)");
   }
 
-  const maxPct = await getDiscountMaxPercentForRole(opts.actor.role);
-  const percentOff = Math.floor(Number(opts.percentOff));
-  if (!Number.isFinite(percentOff) || percentOff < 1 || percentOff > maxPct) {
-    throw new Error(`درصد تخفیف باید بین ۱ تا ${maxPct} باشد`);
-  }
-
   let ownerId = opts.actor.id;
+  let ownerForCap: DiscountActor = opts.actor;
   if (opts.ownerUserId && opts.actor.role === UserRole.admin) {
     const owner = await prisma.user.findUnique({ where: { id: opts.ownerUserId } });
     if (!owner) throw new Error("کاربر مالک کد پیدا نشد");
-    if (!canManageDiscountCodes(owner.role)) {
-      throw new Error("مالک کد باید ادمین، همکار یا عمده‌فروش باشد");
+    if (!canUserManageDiscountCodes(owner)) {
+      throw new Error("مالک کد باید نماینده با دسترسی کد تخفیف باشد");
     }
     ownerId = owner.id;
+    ownerForCap = owner;
+  }
+
+  const maxPct = await getDiscountMaxPercentForUser(ownerForCap);
+  const percentOff = Math.floor(Number(opts.percentOff));
+  if (!Number.isFinite(percentOff) || percentOff < 1 || percentOff > maxPct) {
+    throw new Error(`درصد تخفیف باید بین ۱ تا ${maxPct} باشد`);
   }
 
   let expiresAt: Date | null = null;
@@ -373,7 +406,7 @@ export async function createDiscountCode(opts: {
 }
 
 export async function updateDiscountCode(opts: {
-  actor: Pick<User, "id" | "role">;
+  actor: DiscountActor;
   id: string;
   active?: boolean;
   percentOff?: number;
@@ -382,6 +415,9 @@ export async function updateDiscountCode(opts: {
   note?: string | null;
   shareable?: boolean;
 }) {
+  if (!canUserManageDiscountCodes(opts.actor)) {
+    throw new Error("اجازه ویرایش کد تخفیف ندارید");
+  }
   const row = await prisma.discountCode.findUnique({ where: { id: opts.id } });
   if (!row) throw new Error("کد پیدا نشد");
   if (opts.actor.role !== UserRole.admin && row.createdByUserId !== opts.actor.id) {
@@ -402,9 +438,7 @@ export async function updateDiscountCode(opts: {
     data.shareable = Boolean(opts.shareable);
   }
   if (opts.percentOff !== undefined) {
-    const maxPct = await getDiscountMaxPercentForRole(
-      opts.actor.role === UserRole.admin ? UserRole.admin : opts.actor.role,
-    );
+    const maxPct = await getDiscountMaxPercentForUser(opts.actor);
     const percentOff = Math.floor(Number(opts.percentOff));
     if (!Number.isFinite(percentOff) || percentOff < 1 || percentOff > maxPct) {
       throw new Error(`درصد تخفیف باید بین ۱ تا ${maxPct} باشد`);

@@ -10,7 +10,12 @@ export type HomeData = {
   demoMode?: boolean;
   demoRole?: Role | null;
   demoRoleLabel?: string | null;
-  user: SessionUser & { testClaimed?: boolean; dbRole?: Role };
+  user: SessionUser & {
+    testClaimed?: boolean;
+    dbRole?: Role;
+    discountCodesAllowed?: boolean;
+    discountMaxPercent?: number;
+  };
   wallet: { balance: number };
   stats: { subscriptions: number; active: number };
 };

@@ -37,12 +37,14 @@ import { provisionOrder, rotateSubId, serializeProvisionForApi, type ProvisionRe
 import {
   createDiscountCode,
   deleteDiscountCode,
-  getDiscountMaxPercentForRole,
+  getDiscountMaxPercentForUser,
+  getDefaultAgentDiscountMaxPercent,
   isDiscountCodesEnabled,
   listDiscountCodesForUser,
   previewDiscount,
   updateDiscountCode,
   canManageDiscountCodes,
+  canUserManageDiscountCodes,
 } from "../services/discount-codes.js";
 import {
   getAllSettings,
@@ -286,6 +288,13 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         hasPasskey: passkeyCount > 0,
         passkeyCount,
         testClaimed: Boolean(user.testClaimedAt),
+        discountCodesAllowed: canUserManageDiscountCodes({
+          id: user.id,
+          role: role as typeof user.role,
+          discountCodesAllowed: user.discountCodesAllowed,
+          discountMaxPercent: user.discountMaxPercent,
+        }),
+        discountMaxPercent: user.discountMaxPercent,
       },
       wallet: { balance: wallet.balance },
       stats: { subscriptions: subs, active },
@@ -1306,10 +1315,20 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/me/discounts", async (c) => {
     const role = c.get("role");
     if (!canManageDiscountCodes(role)) return c.json({ error: "Forbidden" }, 403);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+    const actor = { ...user, role: role as typeof user.role };
     const enabled = await isDiscountCodesEnabled();
-    const maxPercent = await getDiscountMaxPercentForRole(role);
-    const items = await listDiscountCodesForUser(c.get("userId"), role);
-    return c.json({ enabled, maxPercent, items });
+    const allowed = canUserManageDiscountCodes(actor);
+    const maxPercent = allowed ? await getDiscountMaxPercentForUser(actor) : 0;
+    const items = allowed ? await listDiscountCodesForUser(c.get("userId"), role) : [];
+    return c.json({
+      enabled,
+      allowed,
+      maxPercent,
+      discountCodesAllowed: user.discountCodesAllowed,
+      discountMaxPercent: user.discountMaxPercent,
+      items,
+    });
   });
 
   api.post("/me/discounts", async (c) => {
@@ -2440,6 +2459,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         panelGroup: u.panelGroup,
         balance: u.wallet?.balance ?? 0,
         hasPassword: Boolean(u.passwordHash),
+        discountCodesAllowed: u.discountCodesAllowed,
+        discountMaxPercent: u.discountMaxPercent,
       })),
     });
   });
@@ -2464,6 +2485,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         agentName: user.agentName,
         panelGroup: user.panelGroup,
         balance: user.wallet?.balance ?? 0,
+        discountCodesAllowed: user.discountCodesAllowed,
+        discountMaxPercent: user.discountMaxPercent,
         createdAt: user.createdAt.toISOString(),
       },
       txs: (user.wallet?.txs ?? []).map((t) => ({
@@ -2492,6 +2515,54 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     });
   });
 
+  /** Per-agent discount: allow codes + max percent (partner / reseller / wholesale). */
+  api.patch("/admin/users/:id/discount", async (c) => {
+    const body = await c.req.json<{
+      discountCodesAllowed?: boolean;
+      discountMaxPercent?: number;
+    }>();
+    const target = await prisma.user.findUnique({ where: { id: c.req.param("id") } });
+    if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    const isAgent =
+      target.role === UserRole.partner ||
+      target.role === UserRole.wholesale ||
+      target.role === UserRole.reseller;
+    if (!isAgent) {
+      return c.json({ error: "تنظیم کد تخفیف فقط برای نمایندگان است" }, 400);
+    }
+
+    const data: { discountCodesAllowed?: boolean; discountMaxPercent?: number } = {};
+    if (typeof body.discountCodesAllowed === "boolean") {
+      data.discountCodesAllowed = body.discountCodesAllowed;
+    }
+    if (body.discountMaxPercent !== undefined) {
+      const n = Math.floor(Number(body.discountMaxPercent));
+      if (!Number.isFinite(n) || n < 1 || n > 100) {
+        return c.json({ error: "درصد باید بین ۱ تا ۱۰۰ باشد" }, 400);
+      }
+      data.discountMaxPercent = n;
+    }
+    if (!Object.keys(data).length) {
+      return c.json({ error: "هیچ تغییری ارسال نشد" }, 400);
+    }
+
+    const updated = await prisma.user.update({ where: { id: target.id }, data });
+    await auditLog({
+      action: "web_user_discount",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: target.id,
+      detail: JSON.stringify(data),
+    });
+    return c.json({
+      ok: true,
+      user: {
+        id: updated.id,
+        discountCodesAllowed: updated.discountCodesAllowed,
+        discountMaxPercent: updated.discountMaxPercent,
+      },
+    });
+  });
+
   api.post("/admin/users/:id/role", async (c) => {
     const body = await c.req.json<{ role: UserRole }>();
     if (!["user", "partner", "wholesale", "reseller", "admin"].includes(body.role)) {
@@ -2504,9 +2575,21 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       target.role === UserRole.partner ||
       target.role === UserRole.wholesale ||
       target.role === UserRole.reseller;
+    const becomingSeller =
+      body.role === "partner" || body.role === "wholesale" || body.role === "reseller";
 
     if (body.role === "user" && wasSeller) {
       await demoteToUser(target.id);
+    } else if (becomingSeller && !wasSeller) {
+      const defaultPct = await getDefaultAgentDiscountMaxPercent();
+      await prisma.user.update({
+        where: { id: target.id },
+        data: {
+          role: body.role,
+          discountCodesAllowed: true,
+          discountMaxPercent: defaultPct,
+        },
+      });
     } else {
       await prisma.user.update({ where: { id: target.id }, data: { role: body.role } });
     }

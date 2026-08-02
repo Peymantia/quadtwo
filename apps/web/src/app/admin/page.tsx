@@ -57,6 +57,8 @@ type AdminUser = {
   agentName: string | null;
   panelGroup: string | null;
   balance: number;
+  discountCodesAllowed?: boolean;
+  discountMaxPercent?: number;
 };
 
 type PriceRow = {
@@ -736,6 +738,8 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
     }>
   >([]);
   const [partnerBusy, setPartnerBusy] = useState<string | null>(null);
+  const [discountPctDraft, setDiscountPctDraft] = useState("30");
+  const [discountBusy, setDiscountBusy] = useState(false);
   const [detail, setDetail] = useState<{
     txs: Array<{ id: string; amount: number; type: string; note: string | null; createdAt: string }>;
     subscriptions: Array<{ id: string; code: string; status: string; expiresAt: string }>;
@@ -768,10 +772,21 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       setDetail(null);
       return;
     }
-    void api<NonNullable<typeof detail> & { user: AdminUser }>(`/admin/users/${selected.id}`).then((r) =>
-      setDetail({ txs: r.txs, subscriptions: r.subscriptions }),
-    );
-  }, [selected]);
+    setDiscountPctDraft(String(selected.discountMaxPercent ?? 30));
+    void api<NonNullable<typeof detail> & { user: AdminUser }>(`/admin/users/${selected.id}`).then((r) => {
+      setDetail({ txs: r.txs, subscriptions: r.subscriptions });
+      setSelected((s) =>
+        s && s.id === r.user.id
+          ? {
+              ...s,
+              discountCodesAllowed: r.user.discountCodesAllowed ?? true,
+              discountMaxPercent: r.user.discountMaxPercent ?? 30,
+            }
+          : s,
+      );
+      setDiscountPctDraft(String(r.user.discountMaxPercent ?? 30));
+    });
+  }, [selected?.id]);
 
   const shown = q.trim()
     ? users.filter(
@@ -852,6 +867,32 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       }
     } catch (e) {
       flash(null, errText(e));
+    }
+  }
+
+  async function saveUserDiscount(patch: { discountCodesAllowed?: boolean; discountMaxPercent?: number }) {
+    if (!selected) return;
+    setDiscountBusy(true);
+    try {
+      const r = await api<{
+        user: { id: string; discountCodesAllowed: boolean; discountMaxPercent: number };
+      }>(`/admin/users/${selected.id}/discount`, { method: "PATCH", body: patch });
+      flash("تنظیمات تخفیف ذخیره شد");
+      setSelected((s) =>
+        s
+          ? {
+              ...s,
+              discountCodesAllowed: r.user.discountCodesAllowed,
+              discountMaxPercent: r.user.discountMaxPercent,
+            }
+          : s,
+      );
+      setDiscountPctDraft(String(r.user.discountMaxPercent));
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setDiscountBusy(false);
     }
   }
 
@@ -1082,11 +1123,58 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
           </div>
 
           {(selected.role === "partner" || selected.role === "wholesale" || selected.role === "reseller") && (
-            <div className="actions" style={{ marginTop: 12 }}>
-              <button type="button" className="btn danger" onClick={() => void removePartner(selected)}>
-                حذف از همکاری — تبدیل به مشتری عادی
-              </button>
-            </div>
+            <>
+              <div className="actions" style={{ marginTop: 12 }}>
+                <button type="button" className="btn danger" onClick={() => void removePartner(selected)}>
+                  حذف از همکاری — تبدیل به مشتری عادی
+                </button>
+              </div>
+
+              <h2 style={{ marginTop: 16, fontSize: "1rem" }}>کد تخفیف این نماینده</h2>
+              <div className="setting-row" style={{ marginBottom: 10 }}>
+                <div>
+                  <div className="t">اجازه ساخت کد تخفیف</div>
+                  <div className="d">اگر خاموش باشد، منوی کد تخفیف برای این نماینده دیده نمی‌شود.</div>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={selected.discountCodesAllowed !== false}
+                    disabled={discountBusy}
+                    onChange={(e) => void saveUserDiscount({ discountCodesAllowed: e.target.checked })}
+                  />
+                  <span className="track" />
+                </label>
+              </div>
+              <div className="setting-row">
+                <div>
+                  <div className="t">سقف درصد تخفیف</div>
+                  <div className="d">حداکثر درصدی که این نماینده می‌تواند روی کد بگذارد (پیش‌فرض ۳۰).</div>
+                </div>
+                <input
+                  className="num"
+                  inputMode="numeric"
+                  disabled={discountBusy || selected.discountCodesAllowed === false}
+                  value={discountPctDraft}
+                  onChange={(e) => setDiscountPctDraft(e.target.value.replace(/[^\d]/g, ""))}
+                  onBlur={() => {
+                    const n = Math.max(1, Math.min(100, Number(discountPctDraft || "30") || 30));
+                    setDiscountPctDraft(String(n));
+                    if (n !== (selected.discountMaxPercent ?? 30)) {
+                      void saveUserDiscount({ discountMaxPercent: n });
+                    }
+                  }}
+                  style={{
+                    width: 72,
+                    border: "1px solid var(--line)",
+                    background: "rgba(10,13,35,.6)",
+                    color: "var(--text)",
+                    borderRadius: 10,
+                    padding: "8px 12px",
+                  }}
+                />
+              </div>
+            </>
           )}
 
           <h2 style={{ marginTop: 4, fontSize: "1rem" }}>تغییر دستی شارژ حساب</h2>
@@ -5101,8 +5189,10 @@ function SettingsTab({
         </div>
         <div className="setting-row">
           <div>
-            <div className="t">سقف درصد تخفیف همکار / همکار ویژه</div>
-            <div className="d">ادمین تا ۱۰۰٪؛ همکار و همکار ویژه هنگام ساخت کد حداکثر این عدد را می‌توانند بزنند.</div>
+            <div className="t">پیش‌فرض سقف درصد نمایندگان جدید</div>
+            <div className="d">
+              هنگام تأیید همکار جدید اعمال می‌شود (پیش‌فرض ۳۰٪). سقف هر نماینده را جداگانه از تب کاربران تنظیم کنید.
+            </div>
           </div>
           <input
             className="num"

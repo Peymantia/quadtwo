@@ -170,12 +170,17 @@ export async function approvePartner(
         ? UserRole.reseller
         : UserRole.partner;
 
+  const { getDefaultAgentDiscountMaxPercent } = await import("./discount-codes.js");
+  const defaultPct = await getDefaultAgentDiscountMaxPercent();
+
   await prisma.user.update({
     where: { id: req.userId },
     data: {
       role,
       agentName,
       panelGroup: group,
+      discountCodesAllowed: true,
+      discountMaxPercent: defaultPct,
     },
   });
 

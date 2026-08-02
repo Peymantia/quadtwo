@@ -313,6 +313,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   }
 
   const userLabel = home.user.agentName || (home.user.username ? `@${home.user.username}` : "");
+  const discountAllowed = home.user.discountCodesAllowed !== false;
+  const tabs = useMemo(
+    () => (discountAllowed ? TABS : TABS.filter((t) => t.key !== "discounts")),
+    [discountAllowed],
+  );
 
   return (
     <DashShell
@@ -321,7 +326,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       role={home.user.role}
       userLabel={userLabel}
       walletLabel={formatToman(home.wallet.balance)}
-      tabs={TABS}
+      tabs={tabs}
       active={tab}
       onTab={setTab}
       demoMode={Boolean(home.demoMode)}
@@ -376,9 +381,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               <button type="button" className="btn light wide" onClick={() => setTab("reports")}>
                 گزارش فروش
               </button>
-              <button type="button" className="btn ghost wide" onClick={() => setTab("discounts")}>
-                کد تخفیف
-              </button>
+              {discountAllowed && (
+                <button type="button" className="btn ghost wide" onClick={() => setTab("discounts")}>
+                  کد تخفیف
+                </button>
+              )}
               <button type="button" className="btn light wide" onClick={() => setTab("settings")}>
                 تنظیمات
               </button>
