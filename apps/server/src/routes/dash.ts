@@ -34,6 +34,7 @@ import {
 } from "../services/orders.js";
 import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
+import { fulfillAfterPaid, isServerlessPending } from "../services/serverless.js";
 import {
   createDiscountCode,
   deleteDiscountCode,
@@ -135,13 +136,21 @@ import { createTelegramBot } from "../bot/telegram.js";
 type Vars = { userId: string; role: string; telegramId: string };
 
 function isWalletCreditResult(
-  r: ProvisionResult | { kind: "wallet_credit"; balance: number },
+  r: ProvisionResult | { kind: "wallet_credit"; balance: number } | { kind: "serverless_pending" },
 ): r is { kind: "wallet_credit"; balance: number } {
   return "kind" in r && r.kind === "wallet_credit";
 }
 
-async function provisionedJson(result: ProvisionResult | { kind: "wallet_credit"; balance: number }) {
-  if (isWalletCreditResult(result)) return result;
+function isServerlessPendingResult(
+  r: ProvisionResult | { kind: "wallet_credit"; balance: number } | { kind: "serverless_pending" },
+): r is { kind: "serverless_pending" } {
+  return "kind" in r && r.kind === "serverless_pending";
+}
+
+async function provisionedJson(
+  result: ProvisionResult | { kind: "wallet_credit"; balance: number } | { kind: "serverless_pending" },
+) {
+  if (isWalletCreditResult(result) || isServerlessPendingResult(result)) return result;
   return serializeProvisionForApi(result);
 }
 
@@ -1521,6 +1530,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       where: {
         OR: [
           { status: "awaiting_review" },
+          { status: "awaiting_delivery" },
           // Stuck after a failed provision attempt — still needs admin action
           { status: "paid", subscription: null, kind: { not: "wallet_charge" } },
         ],
@@ -1534,7 +1544,12 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       orders: orders.map((o) => ({
         id: o.id,
         kind: o.kind,
-        status: o.status === "paid" ? "awaiting_review" : o.status,
+        status:
+          o.status === "paid"
+            ? "awaiting_review"
+            : o.status === "awaiting_delivery"
+              ? "awaiting_delivery"
+              : o.status,
         price: o.price,
         paymentMethod: o.paymentMethod,
         summary: orderSummaryText(o),
@@ -1580,7 +1595,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         actorTelegramId: BigInt(c.get("telegramId")),
         target: orderId,
       });
-      const result = await provisionOrder(orderId);
+      const result = await fulfillAfterPaid(orderId);
       if (isWalletCreditResult(result)) {
         await notifyTelegram(
           order.user.telegramId,
@@ -1594,6 +1609,9 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           orderApprovedAdminStatus({ kind: order.kind, price: order.price, wallet: true }),
         );
         return c.json({ ok: true, walletBalance: result.balance });
+      }
+      if (isServerlessPending(result)) {
+        return c.json({ ok: true, serverlessPending: true });
       }
       const { deliverProvisionToUser } = await import("../services/provision-notify.js");
       const mode =

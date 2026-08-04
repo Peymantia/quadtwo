@@ -44,6 +44,51 @@ function isLocalDemoSub(sub: {
   return false;
 }
 
+function staticDbStatus(
+  sub: {
+    code: string;
+    email: string;
+    status: string;
+    isTest: boolean;
+    trafficGb: number | null;
+    expiresAt: Date;
+    startsOnConnect: boolean;
+    activatedAt: Date | null;
+    createdAt: Date;
+    subUrl: string | null;
+    limitIp: number;
+  },
+  onlineHint: string,
+  panelName: string | null = null,
+): LiveSubStatus {
+  const total = sub.isTest ? TEST_BYTES : sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
+  const lip = sub.limitIp ?? 0;
+  return {
+    code: sub.code,
+    email: sub.email,
+    status: sub.status,
+    isTest: sub.isTest,
+    trafficLabel: sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb),
+    usedLabel: "—",
+    remainingLabel: sub.isTest
+      ? formatBytes(TEST_BYTES)
+      : total <= 0
+        ? "نامحدود / نامشخص"
+        : formatBytes(total),
+    expiryLabel: formatExpiryLabel({
+      expiresAt: sub.expiresAt,
+      startsOnConnect: sub.startsOnConnect,
+      activatedAt: sub.activatedAt,
+      createdAt: sub.createdAt,
+    }),
+    onlineHint,
+    limitIpLabel: lip <= 0 ? "نامحدود" : `${lip} دستگاه`,
+    subUrl: sub.subUrl,
+    panelEnabled: null,
+    panelName,
+  };
+}
+
 function localDemoStatus(sub: {
   code: string;
   email: string;
@@ -57,32 +102,16 @@ function localDemoStatus(sub: {
   subUrl: string | null;
   limitIp: number;
 }): LiveSubStatus {
-  const total = sub.isTest ? TEST_BYTES : sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
-  const lip = sub.limitIp ?? 0;
-  return {
-    code: sub.code,
-    email: sub.email,
-    status: sub.status,
-    isTest: sub.isTest,
-    trafficLabel: sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb),
-    usedLabel: "۰",
-    remainingLabel: sub.isTest
-      ? formatBytes(TEST_BYTES)
-      : total <= 0
-        ? "نامحدود / نامشخص"
-        : formatBytes(total),
-    expiryLabel: formatExpiryLabel({
-      expiresAt: sub.expiresAt,
-      startsOnConnect: sub.startsOnConnect,
-      activatedAt: sub.activatedAt,
-      createdAt: sub.createdAt,
-    }),
-    onlineHint: "🎭 نمایشی — به پنل واقعی وصل نیست",
-    limitIpLabel: lip <= 0 ? "نامحدود" : `${lip} دستگاه`,
-    subUrl: sub.subUrl,
-    panelEnabled: null,
-    panelName: "دیتابیس نمایشی",
-  };
+  return staticDbStatus(sub, "🎭 نمایشی — به پنل واقعی وصل نیست", "دیتابیس نمایشی");
+}
+
+function isServerlessNativeSub(sub: {
+  serverless?: boolean;
+  panelServerId: string | null;
+  clientUuid: string | null;
+}): boolean {
+  if (sub.serverless) return true;
+  return !sub.panelServerId && !sub.clientUuid;
 }
 
 /** Fetch live traffic/expiry from the subscription's 3x-ui panel. */
@@ -94,8 +123,29 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     return localDemoStatus(sub);
   }
 
-  await syncSubscriptionExpiryFromPanel(sub.id);
-  const subUrl = await refreshSubscriptionSubUrl(sub.id);
+  // Serverless-delivered (no panel link): always show static order/DB data
+  if (isServerlessNativeSub(sub)) {
+    return staticDbStatus(sub, "📦 اطلاعات ثابت سفارش (سرورلس)", "بدون پنل");
+  }
+
+  const { isServerlessEnabled } = await import("./settings.js");
+  const serverlessMode = await isServerlessEnabled();
+
+  try {
+    await syncSubscriptionExpiryFromPanel(sub.id);
+  } catch {
+    if (serverlessMode) {
+      return staticDbStatus(sub, "⚠️ پنل سنایی در دسترس نیست — اطلاعات ثابت سفارش");
+    }
+  }
+  let subUrl: string | null = sub.subUrl;
+  try {
+    subUrl = await refreshSubscriptionSubUrl(sub.id);
+  } catch {
+    if (serverlessMode) {
+      return staticDbStatus(sub, "⚠️ پنل سنایی در دسترس نیست — اطلاعات ثابت سفارش");
+    }
+  }
   let fresh = (await prisma.subscription.findUnique({ where: { id: sub.id } })) ?? sub;
 
   let used = 0;
@@ -118,6 +168,9 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     const got = await resolved.xui.getClient(fresh.email).catch(() => null);
     const client = got?.obj?.client;
     if (!client) {
+      if (serverlessMode) {
+        return staticDbStatus(fresh, "⚠️ پنل سنایی در دسترس نیست — اطلاعات ثابت سفارش", panelName);
+      }
       onlineHint = "🔴 در پنل پیدا نشد";
       panelEnabled = false;
       if (fresh.status === "active") {
@@ -173,6 +226,9 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
       }
     }
   } catch {
+    if (serverlessMode) {
+      return staticDbStatus(fresh, "⚠️ پنل سنایی در دسترس نیست — اطلاعات ثابت سفارش");
+    }
     onlineHint = "⚠️ وضعیت پنل در دسترس نیست";
   }
 
@@ -214,6 +270,10 @@ export async function getSubscriptionTrafficBytes(
     if (sub.isTest) return { usedBytes: 0, totalBytes: TEST_BYTES, totalGb: 0.25 };
     const totalBytes = sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
     return { usedBytes: 0, totalBytes, totalGb: sub.trafficGb };
+  }
+  if (sub.serverless || (!sub.panelServerId && !sub.clientUuid)) {
+    const totalBytes = sub.isTest ? TEST_BYTES : sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
+    return { usedBytes: 0, totalBytes, totalGb: sub.isTest ? 0.25 : sub.trafficGb };
   }
   let usedBytes = 0;
   let totalBytes = sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;

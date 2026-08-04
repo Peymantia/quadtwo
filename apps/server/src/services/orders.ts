@@ -16,11 +16,11 @@ import {
   type PlanCategory,
 } from "./pricing.js";
 import { debitWallet } from "./wallet.js";
-import { provisionOrder } from "./provision.js";
 import { withEffectiveRole } from "./demo-role.js";
 import { isDemoMode } from "./license.js";
 import { assertAndApplyDiscount, recordDiscountUse, cancelOpenPendingForDiscount } from "./discount-codes.js";
 import { isWholesaleFixedRole } from "./roles.js";
+import { fulfillAfterPaid, isServerlessEnabled } from "./serverless.js";
 
 export async function createMatrixOrder(input: {
   userId: string;
@@ -61,6 +61,17 @@ export async function createMatrixOrder(input: {
   let panelServerId: string | null = null;
   let accountName = input.accountName;
   let orderUserId = user.id;
+  const serverlessOn = await isServerlessEnabled();
+
+  if (serverlessOn && kind === OrderKind.new) {
+    if (
+      category === "unlimited" ||
+      isWholesaleFixedCategory(category) ||
+      category === "reseller"
+    ) {
+      throw new Error("در حالت سرورلس فقط سرویس‌های کاربر و پیشنهاد ویژه فعال است");
+    }
+  }
 
   if (kind === OrderKind.renew) {
     if (!input.targetSubId) throw new Error("سرویس هدف برای تمدید مشخص نشده است");
@@ -77,13 +88,15 @@ export async function createMatrixOrder(input: {
     category = await inferRenewCategory(target);
     accountName = target.email;
     orderUserId = target.userId;
-    if (target.panelServerId) {
+    if (target.serverless) {
+      panelServerId = null;
+    } else if (target.panelServerId) {
       panelServerId = target.panelServerId;
-    } else if (!isDemoMode()) {
+    } else if (!isDemoMode() && !serverlessOn) {
       const resolved = await resolvePanelForSubscription(target);
       panelServerId = resolved.panel?.id ?? null;
     }
-  } else if (!isDemoMode()) {
+  } else if (!isDemoMode() && !serverlessOn) {
     const resolved = await resolvePanelForCategory(category);
     panelServerId = resolved.panel?.id ?? null;
   }
@@ -162,7 +175,10 @@ export async function createMatrixOrder(input: {
           })()
       : await resolvePrice(pricedUser, trafficGb, months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
-  const quantity = kind === OrderKind.renew ? 1 : Math.max(1, Math.min(50, input.quantity ?? 1));
+  const quantity =
+    kind === OrderKind.renew || serverlessOn
+      ? 1
+      : Math.max(1, Math.min(50, input.quantity ?? 1));
   const defaultIp = await getDefaultLimitIp();
   const cellLimitIp =
     selectedCell && typeof selectedCell.limitIp === "number" && selectedCell.limitIp > 0
@@ -237,7 +253,7 @@ export async function createWalletChargeOrder(userId: string, amount: number) {
   });
 }
 
-/** Pay with wallet: debit then provision immediately */
+/** Pay with wallet: debit then fulfill (panel provision or serverless queue) */
 export async function payOrderWithWallet(orderId: string, userId: string) {
   const order = await prisma.order.findFirst({
     where: { id: orderId, userId, status: OrderStatus.pending_payment },
@@ -258,10 +274,10 @@ export async function payOrderWithWallet(orderId: string, userId: string) {
     },
   });
   await recordDiscountUse(order.discountCodeId);
-  return provisionOrder(order.id);
+  return fulfillAfterPaid(order.id);
 }
 
-/** Admin complimentary create: mark paid without debit, then provision. */
+/** Admin complimentary create: mark paid without debit, then fulfill. */
 export async function provisionAdminComplimentary(orderId: string, _adminUserId?: string) {
   const order = await prisma.order.findFirst({
     where: { id: orderId, status: OrderStatus.pending_payment },
@@ -279,7 +295,7 @@ export async function provisionAdminComplimentary(orderId: string, _adminUserId?
     },
   });
   await recordDiscountUse(order.discountCodeId);
-  return provisionOrder(order.id);
+  return fulfillAfterPaid(order.id);
 }
 
 export async function attachReceipt(orderId: string, userId: string, fileId: string, caption?: string) {
@@ -372,6 +388,7 @@ export async function markPaid(orderId: string) {
   if (!existing) throw new Error("سفارش پیدا نشد");
   if (
     existing.status === OrderStatus.paid ||
+    existing.status === OrderStatus.awaiting_delivery ||
     existing.status === OrderStatus.provisioning ||
     existing.status === OrderStatus.completed
   ) {

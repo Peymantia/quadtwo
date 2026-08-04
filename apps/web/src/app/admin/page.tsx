@@ -628,8 +628,17 @@ function OrdersTab({ flash }: { flash: Flash }) {
           return n;
         });
       } else {
-        const r = await api<{ code?: string; walletBalance?: number }>(`/admin/orders/${id}/approve`, { body: {} });
-        flash(r.walletBalance !== undefined ? "کیف پول کاربر شارژ شد ✅" : `تأیید شد ✅ ${r.code ?? ""}`);
+        const r = await api<{ code?: string; walletBalance?: number; serverlessPending?: boolean }>(
+          `/admin/orders/${id}/approve`,
+          { body: {} },
+        );
+        flash(
+          r.walletBalance !== undefined
+            ? "کیف پول کاربر شارژ شد ✅"
+            : r.serverlessPending
+              ? "تأیید شد — منتظر ارسال لینک ساب از ربات (سرورلس)"
+              : `تأیید شد ✅ ${r.code ?? ""}`,
+        );
       }
       await load();
     } catch (e) {
@@ -655,8 +664,20 @@ function OrdersTab({ flash }: { flash: Flash }) {
           <div key={o.id} className="row-card" style={{ alignItems: "flex-start" }}>
             <div style={{ flex: 1, minWidth: 200 }}>
               <strong className="num">{formatToman(o.price)}</strong>{" "}
-              <span className={`badge ${o.status === "awaiting_review" ? "warn" : "info"}`}>
-                {o.status === "awaiting_review" ? "منتظر تأیید" : "منتظر پرداخت"}
+              <span
+                className={`badge ${
+                  o.status === "awaiting_review"
+                    ? "warn"
+                    : o.status === "awaiting_delivery"
+                      ? "info"
+                      : "info"
+                }`}
+              >
+                {o.status === "awaiting_review"
+                  ? "منتظر تأیید"
+                  : o.status === "awaiting_delivery"
+                    ? "سرورلس — لینک ساب"
+                    : "منتظر پرداخت"}
               </span>
               {payMethodLabel(o.paymentMethod) && (
                 <span className="badge info" style={{ marginInlineStart: 6 }}>
@@ -695,9 +716,15 @@ function OrdersTab({ flash }: { flash: Flash }) {
               </div>
             </div>
             <div className="actions" style={{ flexDirection: "column" }}>
-              <button type="button" className="btn success sm" disabled={busy === o.id} onClick={() => act(o.id, "approve")}>
-                تأیید و ساخت
-              </button>
+              {o.status === "awaiting_delivery" ? (
+                <div className="muted" style={{ maxWidth: 200 }}>
+                  لینک ساب را از ربات تلگرام (دکمه ارسال لینک ساب) بفرستید.
+                </div>
+              ) : (
+                <button type="button" className="btn success sm" disabled={busy === o.id} onClick={() => act(o.id, "approve")}>
+                  تأیید و ساخت
+                </button>
+              )}
               <div className="field" style={{ margin: 0, minWidth: 160 }}>
                 <label>دلیل رد (اختیاری)</label>
                 <input
@@ -5165,6 +5192,22 @@ function SettingsTab({
               type="checkbox"
               checked={settings.discount_codes_enabled === "true"}
               onChange={(e) => save({ discount_codes_enabled: e.target.checked ? "true" : "false" })}
+            />
+            <span className="track" />
+          </label>
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">سرورلس / Serverless</div>
+            <div className="d">
+              فروش بدون پنل ۳x-ui: فقط سرویس کاربر و پیشنهاد ویژه. بعد از پرداخت، ادمین لینک ساب را دستی ارسال می‌کند.
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={settings.serverless_enabled === "true"}
+              onChange={(e) => save({ serverless_enabled: e.target.checked ? "true" : "false" })}
             />
             <span className="track" />
           </label>

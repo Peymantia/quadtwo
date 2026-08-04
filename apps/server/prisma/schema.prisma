@@ -21,6 +21,8 @@ enum OrderStatus {
   pending_payment
   awaiting_review
   paid
+  /// Serverless: paid and waiting for admin to paste/send subscription URL
+  awaiting_delivery
   provisioning
   completed
   rejected
@@ -270,6 +272,8 @@ model Subscription {
   note            String?
   /// Max simultaneous IPs/devices (0 = unlimited); mirrored from panel limitIp
   limitIp         Int                @default(0)
+  /// Created without 3x-ui — admin pasted sub URL (serverless mode)
+  serverless      Boolean            @default(false)
   /// Last known raw 3x-ui expiryTime (ms). Negative = duration until first connect; positive = absolute.
   panelExpiryTime BigInt?
   status          SubscriptionStatus @default(active)

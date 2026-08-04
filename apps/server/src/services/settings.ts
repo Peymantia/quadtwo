@@ -83,6 +83,8 @@ const defaults: Record<string, string> = {
   discount_codes_enabled: "false",
   /** Max % for partner/wholesale when creating codes (admin always up to 100) */
   discount_max_percent: "30",
+  /** Sell without 3x-ui — admin pastes sub URL after payment */
+  serverless_enabled: "false",
   national_service_note: "این سرویس در شرایط اضطراری فعال می‌شود.",
   extra_admin_ids: "",
   /** Default IP/device limit for new configs (0 = unlimited) */
@@ -634,15 +636,23 @@ export async function listEnabledSalesCategories(): Promise<string[]> {
 
 /**
  * Role-aware sales categories:
+ * - serverless → only user packs (data/national) + offer (no unlimited / wholesale)
  * - wholesale (عمده‌فروش) → only fixed wholesale plans
  * - everyone else → enabled cats except wholesale fixed category
  */
 export async function listEnabledSalesCategoriesForRole(role: string): Promise<string[]> {
   const all = await listEnabledSalesCategories();
+  if ((await getSetting("serverless_enabled")) === "true") {
+    return all.filter((k) => k === "data" || k === "national" || k === "offer");
+  }
   if (role === "wholesale") {
     return all.includes("wholesale") ? ["wholesale"] : [];
   }
   return all.filter((k) => k !== "wholesale" && k !== "reseller");
+}
+
+export async function isServerlessEnabled(): Promise<boolean> {
+  return (await getSetting("serverless_enabled")) === "true";
 }
 
 export type PaymentMethodsConfig = {

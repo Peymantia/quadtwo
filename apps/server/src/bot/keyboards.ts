@@ -78,6 +78,8 @@ export type MainMenuOpts = {
   demoMode?: boolean;
   /** HTTPS Mini App URL — when set, shows a WebApp keyboard button */
   miniAppUrl?: string | null;
+  /** Serverless mode: hide partner application CTA */
+  hidePartner?: boolean;
 };
 
 /**
@@ -160,8 +162,10 @@ export function mainMenuReply(opts: MainMenuOpts) {
 
   if (isAgent) {
     kb.text(BTN.configLookup).primary().text(BTN.agentPanel).primary().row();
-  } else {
+  } else if (!opts.hidePartner) {
     kb.text(BTN.configLookup).primary().text(BTN.partner).primary().row();
+  } else {
+    kb.text(BTN.configLookup).primary().row();
   }
 
   if (mini) {
@@ -289,8 +293,10 @@ export function mainMenuInline(opts: MainMenuOpts) {
 
   if (isAgent) {
     kb.text(BTN.configLookup, "m:cfglookup").primary().text(BTN.agentPanel, "m:partnerpanel").primary().row();
-  } else {
+  } else if (!opts.hidePartner) {
     kb.text(BTN.configLookup, "m:cfglookup").primary().text(BTN.partner, "m:partner").primary().row();
+  } else {
+    kb.text(BTN.configLookup, "m:cfglookup").primary().row();
   }
 
   if (mini) {

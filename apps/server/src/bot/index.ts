@@ -20,12 +20,20 @@ import {
 import { isWholesaleFixedRole, roleLabelFa } from "../services/roles.js";
 import { listPriceMatrix, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, listOfferPlans, listFixedPlans, isWholesaleFixedCategory, WHOLESALE_FIXED_CATEGORY } from "../services/pricing.js";
 import {
-  provisionOrder,
   refreshSubscriptionSubUrl,
   rotateSubId,
   type ProvisionResult,
   type ProvisionResultWithBulk,
 } from "../services/provision.js";
+import {
+  completeServerlessDelivery,
+  fulfillAfterPaid,
+  isServerlessEnabled,
+  isServerlessPending,
+  normalizeSubUrl,
+  SERVERLESS_BUYER_WAIT_MSG,
+  serverlessConfirmKeyboard,
+} from "../services/serverless.js";
 import { claimTestService } from "../services/test-service.js";
 import { getChannels, getPaymentCard, getPaymentMethodsConfig, getPublicPaymentMethods, assertCheckoutPaymentMethod, getMaxPurchaseMonths, getSalesCategories, getCategoryLabels, getSetting, listEnabledSalesCategories, listEnabledSalesCategoriesForRole, canEditLimitIp, resolvePurchaseLimitIp, setSetting, isSalesCategoryEnabled, resolveMiniAppUrl } from "../services/settings.js";
 import { getConfiguredInboundIds, parseInboundIds } from "../services/inbounds.js";
@@ -147,6 +155,11 @@ const waitingPartner = new Map<number, { step: "compose" | "name" | "phone" | "n
 const waitingMatrix = new Map<number, string>();
 const waitingWalletAmount = new Set<number>();
 const waitingAgentName = new Set<number>();
+/** Admin serverless: paste sub URL then confirm send */
+const waitingServerless = new Map<
+  number,
+  { orderId: string; step: "url" | "confirm"; subUrl?: string }
+>();
 /** Renew wizard: telegramId → { subId, months } */
 const renewState = new Map<
   number,
@@ -224,6 +237,7 @@ async function replyMainMenu(ctx: Context, preface?: string) {
   const role = effectiveRole(ctx.from!.id, user.role);
   const demo = isDemoMode();
   const miniAppUrl = await resolveMiniAppUrl();
+  const serverless = await isServerlessEnabled();
   const lines = [preface?.trim() || "منوی اصلی"];
   if (demo) {
     lines.push("", `🎭 نسخه نمایشی — نقش فعلی: ${demoRoleLabel(role)}`);
@@ -236,6 +250,7 @@ async function replyMainMenu(ctx: Context, preface?: string) {
       isWholesale: role === "wholesale",
       demoMode: demo,
       miniAppUrl,
+      hidePartner: serverless,
     }),
   });
 }
@@ -951,6 +966,10 @@ async function handleSupport(ctx: Context) {
 }
 
 async function handlePartnerRequest(ctx: Context) {
+  if (await isServerlessEnabled()) {
+    await ctx.reply("در حالت سرورلس درخواست همکاری فعال نیست.");
+    return;
+  }
   const rl = limitPartnerRequest(ctx.from!.id);
   if (!rl.ok) {
     await ctx.reply(`درخواست‌های زیاد. ${rl.retryAfterSec} ثانیه دیگر دوباره تلاش کنید.`);
@@ -1027,6 +1046,7 @@ function clearWaits(tid: number) {
   waitingMatrix.delete(tid);
   waitingWalletAmount.delete(tid);
   waitingAgentName.delete(tid);
+  waitingServerless.delete(tid);
   renewState.delete(tid);
   waitingConfigLookup.delete(tid);
   ccWait.delete(tid);
@@ -1098,6 +1118,7 @@ export function createBot() {
         isReseller: role === "reseller",
         demoMode: demo,
         miniAppUrl: await resolveMiniAppUrl(),
+        hidePartner: await isServerlessEnabled(),
       }),
     });
     await pinMiniAppBanner(ctx);
@@ -1629,6 +1650,14 @@ export function createBot() {
         }
         const result = await payOrderWithWallet(order.id, user.id);
         if ("kind" in result && result.kind === "wallet_credit") return;
+        if (isServerlessPending(result)) {
+          try {
+            await ctx.editMessageText(`${orderSummaryText(order)}\n\n${SERVERLESS_BUYER_WAIT_MSG}`);
+          } catch {
+            await ctx.reply(SERVERLESS_BUYER_WAIT_MSG);
+          }
+          return;
+        }
         await deliverResult(
           ctx.api,
           ctx.from!.id,
@@ -1707,6 +1736,14 @@ export function createBot() {
         const result = await payOrderWithWallet(orderId, user.id);
         if ("kind" in result && result.kind === "wallet_credit") {
           await ctx.reply(`شارژ شد. موجودی: ${formatToman(result.balance)}`);
+          return;
+        }
+        if (isServerlessPending(result)) {
+          try {
+            await ctx.editMessageText(SERVERLESS_BUYER_WAIT_MSG);
+          } catch {
+            await ctx.reply(SERVERLESS_BUYER_WAIT_MSG);
+          }
           return;
         }
         const order = await getOrderForAdmin(orderId);
@@ -2051,6 +2088,34 @@ export function createBot() {
       return;
     }
 
+    const slWait = waitingServerless.get(tid);
+    if (slWait?.step === "url") {
+      if (!(await isControlAdmin(tid))) {
+        waitingServerless.delete(tid);
+        return next();
+      }
+      try {
+        const subUrl = normalizeSubUrl(text);
+        waitingServerless.set(tid, { orderId: slWait.orderId, step: "confirm", subUrl });
+        const order = await getOrderForAdmin(slWait.orderId);
+        await ctx.reply(
+          [
+            "✅ لینک دریافت شد",
+            order ? orderSummaryText(order) : `سفارش: ${slWait.orderId.slice(-8)}`,
+            "",
+            "لینک:",
+            subUrl,
+            "",
+            "برای ارسال به خریدار تأیید کنید:",
+          ].join("\n"),
+          { reply_markup: serverlessConfirmKeyboard(slWait.orderId) },
+        );
+      } catch (err) {
+        await ctx.reply(friendlyBotError(err) + "\nدوباره بفرستید یا /cancel");
+      }
+      return;
+    }
+
     const discWait = waitingDiscount.get(tid);
     if (discWait) {
       const code = normalizeDiscountCode(text);
@@ -2251,6 +2316,10 @@ export function createBot() {
       await ctx.reply("قبلاً تکمیل شده.");
       return;
     }
+    if (order.status === OrderStatus.awaiting_delivery) {
+      await ctx.reply("این سفارش در صف سرورلس است — از دکمه «ارسال لینک ساب» استفاده کنید.");
+      return;
+    }
     try {
       await markPaid(orderId);
       await auditLog({
@@ -2258,7 +2327,7 @@ export function createBot() {
         actorTelegramId: ctx.from?.id,
         target: orderId,
       });
-      const result = await provisionOrder(orderId);
+      const result = await fulfillAfterPaid(orderId);
       const { finalizeOrderAdminMessages, orderApprovedAdminStatus } = await import(
         "../services/order-notify.js"
       );
@@ -2273,6 +2342,12 @@ export function createBot() {
           wallet: true,
         });
         void finalizeOrderAdminMessages(orderId, status);
+        await ctx.editMessageCaption({ caption: status }).catch(() => undefined);
+        await ctx.editMessageText(status).catch(() => undefined);
+        return;
+      }
+      if (isServerlessPending(result)) {
+        const status = "🟣 تأیید شد — در انتظار ارسال لینک ساب (سرورلس)";
         await ctx.editMessageCaption({ caption: status }).catch(() => undefined);
         await ctx.editMessageText(status).catch(() => undefined);
         return;
@@ -2311,6 +2386,79 @@ export function createBot() {
       });
       await ctx.reply(friendlyBotError(err));
     }
+  });
+
+  bot.callbackQuery(/^adm:sl:paste:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) {
+      await ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
+      return;
+    }
+    const orderId = ctx.match![1]!;
+    const order = await getOrderForAdmin(orderId);
+    if (!order || (order.status !== OrderStatus.awaiting_delivery && order.status !== OrderStatus.paid)) {
+      await ctx.answerCallbackQuery({ text: "سفارش در صف ارسال نیست", show_alert: true });
+      return;
+    }
+    waitingServerless.set(ctx.from!.id, { orderId, step: "url" });
+    await ctx.answerCallbackQuery();
+    await ctx.reply(
+      [
+        "🔗 لینک اشتراک (sub) را بفرستید",
+        `سفارش: ${orderId.slice(-8)}`,
+        "",
+        "مثال: https://example.com/sub/xxxx",
+        "لغو: /cancel",
+      ].join("\n"),
+    );
+  });
+
+  bot.callbackQuery(/^adm:sl:send:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) {
+      await ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
+      return;
+    }
+    const orderId = ctx.match![1]!;
+    const wait = waitingServerless.get(ctx.from!.id);
+    if (!wait || wait.orderId !== orderId || wait.step !== "confirm" || !wait.subUrl) {
+      await ctx.answerCallbackQuery({
+        text: "ابتدا لینک ساب را بفرستید",
+        show_alert: true,
+      });
+      return;
+    }
+    await ctx.answerCallbackQuery({ text: "در حال ارسال…" });
+    try {
+      const order = await getOrderForAdmin(orderId);
+      if (!order) {
+        await ctx.reply("سفارش پیدا نشد.");
+        return;
+      }
+      const result = await completeServerlessDelivery(orderId, wait.subUrl);
+      waitingServerless.delete(ctx.from!.id);
+      const mode = order.kind === OrderKind.renew ? "renew" : "new";
+      await deliverResult(ctx.api, order.user.telegramId, result, order.trafficGb, mode);
+      await auditLog({
+        action: "serverless_delivered",
+        actorTelegramId: ctx.from?.id,
+        target: orderId,
+        detail: result.code,
+      });
+      const status = `✅ لینک سرورلس ارسال شد — ${result.code}`;
+      await ctx.editMessageText(status).catch(() => undefined);
+      await ctx.reply(status);
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery(/^adm:sl:cancel:(.+)$/, async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) {
+      await ctx.answerCallbackQuery({ text: "دسترسی ندارید", show_alert: true });
+      return;
+    }
+    waitingServerless.delete(ctx.from!.id);
+    await ctx.answerCallbackQuery({ text: "لغو شد" });
+    await ctx.editMessageText("ارسال لینک لغو شد. دوباره «ارسال لینک ساب» را بزنید.").catch(() => undefined);
   });
 
   bot.callbackQuery(/^adm:no:(.+)$/, async (ctx) => {
@@ -2928,6 +3076,14 @@ export function createBot() {
         await ctx.editMessageText(`${orderSummaryText(order)}\n\n✅ رایگان (ادمین) — در حال آماده‌سازی…`);
         const result = await payOrderWithWallet(order.id, user.id);
         if ("kind" in result && result.kind === "wallet_credit") return;
+        if (isServerlessPending(result)) {
+          try {
+            await ctx.editMessageText(`${orderSummaryText(order)}\n\n${SERVERLESS_BUYER_WAIT_MSG}`);
+          } catch {
+            await ctx.reply(SERVERLESS_BUYER_WAIT_MSG);
+          }
+          return;
+        }
         await deliverResult(
           ctx.api,
           ctx.from!.id,
