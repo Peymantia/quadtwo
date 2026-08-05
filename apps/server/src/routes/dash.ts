@@ -34,7 +34,7 @@ import {
 } from "../services/orders.js";
 import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
-import { fulfillAfterPaid, isServerlessPending } from "../services/serverless.js";
+import { fulfillAfterPaid, isServerlessEnabled, isServerlessPending } from "../services/serverless.js";
 import {
   createDiscountCode,
   deleteDiscountCode,
@@ -716,6 +716,57 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/me/catalog", async (c) => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
     const pricedUser = withEffectiveRole(user, c.get("telegramId"));
+
+    if (await isServerlessEnabled()) {
+      const {
+        getServerlessPricingConfig,
+        listServerlessDurations,
+        calcServerlessPrice,
+      } = await import("../services/serverless.js");
+      const cfg = await getServerlessPricingConfig();
+      const durations = listServerlessDurations(cfg);
+      const defaultLimitIp = await getDefaultLimitIp();
+      return c.json({
+        serverless: true,
+        pricingMode: "rate",
+        categories: ["serverless"],
+        categoryLabels: { serverless: "خرید سرویس" },
+        maxMonths: 2,
+        defaultLimitIp,
+        canEditLimitIp: canEditLimitIp(pricedUser.role),
+        discountsEnabled: await isDiscountCodesEnabled(),
+        serverlessPricing: {
+          pricePerGb: cfg.pricePerGb,
+          pricePerMonth: cfg.pricePerMonth,
+          durations: durations.map((d) => ({
+            id: d.id,
+            months: d.months,
+            label: d.label,
+            minGb: d.minGb,
+            maxGb: d.maxGb,
+            step: d.step,
+          })),
+        },
+        volumeRules: {
+          data: { min: cfg.monthlyMinGb, max: cfg.monthlyMaxGb, step: 1 },
+          national: { min: cfg.weeklyMinGb, max: cfg.weeklyMaxGb, step: 1 },
+          unlimited: null,
+        },
+        cells: [],
+        // sample quote helper for UI
+        quoteExample: durations[0]
+          ? {
+              months: durations[0].months,
+              trafficGb: durations[0].minGb,
+              price:
+                pricedUser.role === "admin"
+                  ? 0
+                  : calcServerlessPrice(durations[0].minGb, durations[0].months, cfg),
+            }
+          : null,
+      });
+    }
+
     const cats = await listEnabledSalesCategoriesForRole(pricedUser.role);
     const labels = await getCategoryLabels();
     const maxMonths = await getMaxPurchaseMonths();
@@ -799,6 +850,57 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     }>();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
     const pricedUser = withEffectiveRole(user, c.get("telegramId"));
+
+    if (await isServerlessEnabled()) {
+      const {
+        getServerlessPricingConfig,
+        snapServerlessGb,
+        assertServerlessPlanAllowed,
+        resolveServerlessPrice,
+      } = await import("../services/serverless.js");
+      const cfg = await getServerlessPricingConfig();
+      const monthsRaw = Number(body.months);
+      const months = monthsRaw <= 0 ? 0 : Math.min(2, Math.max(1, Math.floor(monthsRaw || 1)));
+      if (body.trafficGb == null) return c.json({ error: "حجم سرویس مشخص نشده است" }, 400);
+      const trafficGb = snapServerlessGb(body.trafficGb, months, cfg);
+      try {
+        assertServerlessPlanAllowed(trafficGb, months, cfg);
+      } catch (err) {
+        return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+      }
+      const priced = await resolveServerlessPrice(pricedUser, trafficGb, months);
+      if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
+      const priceBefore = priced.price;
+      let discountAmount = 0;
+      let price = priceBefore;
+      let discountCode: string | null = null;
+      let percentOff: number | null = null;
+      if (body.discountCode?.trim()) {
+        const prev = await previewDiscount({
+          buyer: pricedUser,
+          code: body.discountCode,
+          price: priceBefore,
+        });
+        if (!("error" in prev)) {
+          discountAmount = prev.discountAmount;
+          price = prev.priceAfter;
+          discountCode = prev.code;
+          percentOff = prev.percentOff;
+        }
+      }
+      return c.json({
+        trafficGb,
+        months,
+        category: "serverless",
+        quantity: 1,
+        priceBefore,
+        discountAmount,
+        price,
+        discountCode,
+        percentOff,
+      });
+    }
+
     let category = body.category || "data";
     let trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
     let months = Math.max(1, Number(body.months) || 1);

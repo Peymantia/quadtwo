@@ -636,7 +636,7 @@ function OrdersTab({ flash }: { flash: Flash }) {
           r.walletBalance !== undefined
             ? "کیف پول کاربر شارژ شد ✅"
             : r.serverlessPending
-              ? "تأیید شد — منتظر ارسال لینک ساب از ربات (سرورلس)"
+              ? "تأیید شد — منتظر ارسال لینک ساب از ربات"
               : `تأیید شد ✅ ${r.code ?? ""}`,
         );
       }
@@ -676,7 +676,7 @@ function OrdersTab({ flash }: { flash: Flash }) {
                 {o.status === "awaiting_review"
                   ? "منتظر تأیید"
                   : o.status === "awaiting_delivery"
-                    ? "سرورلس — لینک ساب"
+                    ? "ارسال دستی — لینک ساب"
                     : "منتظر پرداخت"}
               </span>
               {payMethodLabel(o.paymentMethod) && (
@@ -5124,6 +5124,192 @@ function SettingsTab({
       </SettingsAccordion>
 
       <SettingsAccordion
+        id="serverless"
+        title="سرورلس / Serverless"
+        icon="server"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
+        <p className="muted" style={{ marginTop: 0 }}>
+          فروش بدون اتصال به پنل ۳x-ui. بعد از پرداخت، خریدار پیام آماده‌سازی می‌گیرد و ادمین لینک ساب را دستی ارسال می‌کند.
+          پیام‌های مشتری کلمه «سرورلس» ندارند.
+        </p>
+        <div className="setting-row">
+          <div>
+            <div className="t">فعال‌سازی سرورلس</div>
+            <div className="d">
+              با روشن بودن، ماتریس/نامحدود/همکاری/عمده خاموش می‌شود و فقط پلن‌های همین بخش فروخته می‌شوند.
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={settings.serverless_enabled === "true"}
+              onChange={(e) => save({ serverless_enabled: e.target.checked ? "true" : "false" })}
+            />
+            <span className="track" />
+          </label>
+        </div>
+
+        <h3 style={{ margin: "18px 0 8px", fontSize: 15 }}>قیمت‌گذاری</h3>
+        <div className="setting-row">
+          <div>
+            <div className="t">قیمت هر گیگ (تومان)</div>
+            <div className="d">برای هفتگی و ماهانه اعمال می‌شود.</div>
+          </div>
+          <input
+            className="num"
+            inputMode="numeric"
+            value={settings.serverless_price_per_gb || "10000"}
+            onChange={(e) =>
+              setSettings((s) => ({ ...s, serverless_price_per_gb: e.target.value.replace(/[^\d]/g, "") }))
+            }
+            onBlur={() => {
+              const n = Math.max(0, Number(settings.serverless_price_per_gb || "10000") || 10000);
+              void save({ serverless_price_per_gb: String(n) });
+            }}
+            style={{ width: 110, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 12px" }}
+          />
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">قیمت هر ماه (تومان)</div>
+            <div className="d">فقط برای پلن‌های یک‌ماهه و دوماهه (علاوه بر قیمت گیگ).</div>
+          </div>
+          <input
+            className="num"
+            inputMode="numeric"
+            value={settings.serverless_price_per_month || "30000"}
+            onChange={(e) =>
+              setSettings((s) => ({ ...s, serverless_price_per_month: e.target.value.replace(/[^\d]/g, "") }))
+            }
+            onBlur={() => {
+              const n = Math.max(0, Number(settings.serverless_price_per_month || "30000") || 30000);
+              void save({ serverless_price_per_month: String(n) });
+            }}
+            style={{ width: 110, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 12px" }}
+          />
+        </div>
+
+        <h3 style={{ margin: "18px 0 8px", fontSize: 15 }}>اعتبار هفتگی</h3>
+        <div className="setting-row">
+          <div>
+            <div className="t">فعال</div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={settings.serverless_weekly_enabled !== "false"}
+              onChange={(e) => save({ serverless_weekly_enabled: e.target.checked ? "true" : "false" })}
+            />
+            <span className="track" />
+          </label>
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">حداقل / حداکثر گیگ</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              className="num"
+              inputMode="numeric"
+              title="حداقل"
+              value={settings.serverless_weekly_min_gb || "1"}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, serverless_weekly_min_gb: e.target.value.replace(/[^\d]/g, "") }))
+              }
+              onBlur={() => {
+                const n = Math.max(1, Number(settings.serverless_weekly_min_gb || "1") || 1);
+                void save({ serverless_weekly_min_gb: String(n) });
+              }}
+              style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
+            />
+            <input
+              className="num"
+              inputMode="numeric"
+              title="حداکثر"
+              value={settings.serverless_weekly_max_gb || "10"}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, serverless_weekly_max_gb: e.target.value.replace(/[^\d]/g, "") }))
+              }
+              onBlur={() => {
+                const n = Math.max(1, Number(settings.serverless_weekly_max_gb || "10") || 10);
+                void save({ serverless_weekly_max_gb: String(n) });
+              }}
+              style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
+            />
+          </div>
+        </div>
+
+        <h3 style={{ margin: "18px 0 8px", fontSize: 15 }}>اعتبار یک‌ماهه و دوماهه</h3>
+        <div className="setting-row">
+          <div>
+            <div className="t">یک‌ماهه</div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={settings.serverless_month1_enabled !== "false"}
+              onChange={(e) => save({ serverless_month1_enabled: e.target.checked ? "true" : "false" })}
+            />
+            <span className="track" />
+          </label>
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">دوماهه</div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={settings.serverless_month2_enabled !== "false"}
+              onChange={(e) => save({ serverless_month2_enabled: e.target.checked ? "true" : "false" })}
+            />
+            <span className="track" />
+          </label>
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">حداقل / حداکثر گیگ</div>
+            <div className="d">پیش‌فرض ۱۰ تا ۱۰۰ گیگ</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              className="num"
+              inputMode="numeric"
+              title="حداقل"
+              value={settings.serverless_monthly_min_gb || "10"}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, serverless_monthly_min_gb: e.target.value.replace(/[^\d]/g, "") }))
+              }
+              onBlur={() => {
+                const n = Math.max(1, Number(settings.serverless_monthly_min_gb || "10") || 10);
+                void save({ serverless_monthly_min_gb: String(n) });
+              }}
+              style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
+            />
+            <input
+              className="num"
+              inputMode="numeric"
+              title="حداکثر"
+              value={settings.serverless_monthly_max_gb || "100"}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, serverless_monthly_max_gb: e.target.value.replace(/[^\d]/g, "") }))
+              }
+              onBlur={() => {
+                const n = Math.max(1, Number(settings.serverless_monthly_max_gb || "100") || 100);
+                void save({ serverless_monthly_max_gb: String(n) });
+              }}
+              style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
+            />
+          </div>
+        </div>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          مثال: ۱۰ گیگ یک‌ماهه = (۱۰ × قیمت گیگ) + (۱ × قیمت ماه). هفتگی فقط قیمت گیگ است.
+        </p>
+      </SettingsAccordion>
+
+      <SettingsAccordion
         id="sales"
         title="قوانین فروش"
         icon="shop"
@@ -5192,22 +5378,6 @@ function SettingsTab({
               type="checkbox"
               checked={settings.discount_codes_enabled === "true"}
               onChange={(e) => save({ discount_codes_enabled: e.target.checked ? "true" : "false" })}
-            />
-            <span className="track" />
-          </label>
-        </div>
-        <div className="setting-row">
-          <div>
-            <div className="t">سرورلس / Serverless</div>
-            <div className="d">
-              فروش بدون پنل ۳x-ui: فقط سرویس کاربر و پیشنهاد ویژه. بعد از پرداخت، ادمین لینک ساب را دستی ارسال می‌کند.
-            </div>
-          </div>
-          <label className="switch">
-            <input
-              type="checkbox"
-              checked={settings.serverless_enabled === "true"}
-              onChange={(e) => save({ serverless_enabled: e.target.checked ? "true" : "false" })}
             />
             <span className="track" />
           </label>

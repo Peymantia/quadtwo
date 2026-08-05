@@ -13,6 +13,14 @@ import { clampLimitIp } from "../services/panel-groups.js";
 import { getDefaultLimitIp, getMaxPurchaseMonths, isSalesCategoryEnabled, resolvePurchaseLimitIp } from "../services/settings.js";
 import { withEffectiveRole } from "../services/demo-role.js";
 import type { User } from "@prisma/client";
+import {
+  getServerlessPricingConfig,
+  isServerlessCategory,
+  isServerlessEnabled,
+  listServerlessDurations,
+  SERVERLESS_CATEGORY,
+  snapServerlessGb,
+} from "../services/serverless.js";
 
 async function capMonths(m: number) {
   const max = await getMaxPurchaseMonths();
@@ -48,6 +56,16 @@ export async function getOrCreateDraft(telegramId: bigint) {
 
 export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
   const draft = await getOrCreateDraft(telegramId);
+  if (isServerlessCategory(draft.category)) {
+    const cfg = await getServerlessPricingConfig();
+    const months = draft.months <= 0 ? 0 : draft.months;
+    const cur = snapServerlessGb(draft.trafficGb ?? cfg.weeklyMinGb, months, cfg);
+    const next = snapServerlessGb(cur + dir, months, cfg);
+    return prisma.buyDraft.update({
+      where: { telegramId },
+      data: { trafficGb: next, unlimited: false, quantity: 1 },
+    });
+  }
   if (isFixedSingleServiceCategory(draft.category)) return draft;
   if (draft.category === "national") {
     const gb = nextNationalVolume(draft.trafficGb, dir);
@@ -106,7 +124,37 @@ export async function adjustDraftLimitIp(telegramId: bigint, dir: 1 | -1) {
   });
 }
 
+export async function setDraftServerlessDuration(
+  telegramId: bigint,
+  months: number,
+) {
+  await getOrCreateDraft(telegramId);
+  const cfg = await getServerlessPricingConfig();
+  const durations = listServerlessDurations(cfg);
+  const m = months <= 0 ? 0 : Math.min(2, Math.max(1, Math.floor(months)));
+  const d = durations.find((x) => x.months === m);
+  if (!d) throw new Error("این مدت اعتبار فعلاً فعال نیست");
+  const defaultIp = await getDefaultLimitIp();
+  return prisma.buyDraft.update({
+    where: { telegramId },
+    data: {
+      category: SERVERLESS_CATEGORY,
+      unlimited: false,
+      trafficGb: d.minGb,
+      months: d.months,
+      quantity: 1,
+      limitIp: defaultIp,
+      limitIpTouched: false,
+      priceCellId: null,
+      discountCode: null,
+    },
+  });
+}
+
 export async function setDraftCategory(telegramId: bigint, category: PlanCategory) {
+  if (await isServerlessEnabled()) {
+    return setDraftServerlessDuration(telegramId, 1);
+  }
   await getOrCreateDraft(telegramId);
   const months = await capMonths(1);
   const defaultIp = await getDefaultLimitIp();
@@ -205,9 +253,13 @@ export async function draftPrice(
   draft: { trafficGb: number | null; months: number; unlimited: boolean; category?: string },
   telegramId?: string | number | bigint,
 ) {
+  const pricedUser = withEffectiveRole(user, telegramId ?? user.telegramId);
+  if (isServerlessCategory(draft.category) || (await isServerlessEnabled())) {
+    const { resolveServerlessPrice } = await import("../services/serverless.js");
+    return resolveServerlessPrice(pricedUser, draft.trafficGb, draft.months);
+  }
   const gb = draft.unlimited || draft.category === "unlimited" ? null : draft.trafficGb;
   const category = (draft.category as PlanCategory) || (gb === null ? "unlimited" : "data");
-  const pricedUser = withEffectiveRole(user, telegramId ?? user.telegramId);
   return resolvePrice(pricedUser, gb, draft.months, category);
 }
 

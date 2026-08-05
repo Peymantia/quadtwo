@@ -85,6 +85,15 @@ const defaults: Record<string, string> = {
   discount_max_percent: "30",
   /** Sell without 3x-ui — admin pastes sub URL after payment */
   serverless_enabled: "false",
+  serverless_price_per_gb: "10000",
+  serverless_price_per_month: "30000",
+  serverless_weekly_min_gb: "1",
+  serverless_weekly_max_gb: "10",
+  serverless_monthly_min_gb: "10",
+  serverless_monthly_max_gb: "100",
+  serverless_weekly_enabled: "true",
+  serverless_month1_enabled: "true",
+  serverless_month2_enabled: "true",
   national_service_note: "این سرویس در شرایط اضطراری فعال می‌شود.",
   extra_admin_ids: "",
   /** Default IP/device limit for new configs (0 = unlimited) */
@@ -636,15 +645,15 @@ export async function listEnabledSalesCategories(): Promise<string[]> {
 
 /**
  * Role-aware sales categories:
- * - serverless → only user packs (data/national) + offer (no unlimited / wholesale)
+ * - serverless mode → dedicated serverless catalog (handled by buy flow / catalog API)
  * - wholesale (عمده‌فروش) → only fixed wholesale plans
  * - everyone else → enabled cats except wholesale fixed category
  */
 export async function listEnabledSalesCategoriesForRole(role: string): Promise<string[]> {
-  const all = await listEnabledSalesCategories();
   if ((await getSetting("serverless_enabled")) === "true") {
-    return all.filter((k) => k === "data" || k === "national" || k === "offer");
+    return ["serverless"];
   }
+  const all = await listEnabledSalesCategories();
   if (role === "wholesale") {
     return all.includes("wholesale") ? ["wholesale"] : [];
   }

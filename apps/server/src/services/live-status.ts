@@ -125,7 +125,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
 
   // Serverless-delivered (no panel link): always show static order/DB data
   if (isServerlessNativeSub(sub)) {
-    return staticDbStatus(sub, "📦 اطلاعات ثابت سفارش (سرورلس)", "بدون پنل");
+    return staticDbStatus(sub, "📦 در شرایط فعلی اطلاعات مصرف زنده در دسترس نیست — بر اساس سفارش", "بدون پنل");
   }
 
   const { isServerlessEnabled } = await import("./settings.js");
@@ -135,7 +135,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     await syncSubscriptionExpiryFromPanel(sub.id);
   } catch {
     if (serverlessMode) {
-      return staticDbStatus(sub, "⚠️ پنل سنایی در دسترس نیست — اطلاعات ثابت سفارش");
+        return staticDbStatus(sub, "⚠️ در شرایط فعلی وضعیت پنل در دسترس نیست — اطلاعات بر اساس سفارش");
     }
   }
   let subUrl: string | null = sub.subUrl;
@@ -143,7 +143,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     subUrl = await refreshSubscriptionSubUrl(sub.id);
   } catch {
     if (serverlessMode) {
-      return staticDbStatus(sub, "⚠️ پنل سنایی در دسترس نیست — اطلاعات ثابت سفارش");
+        return staticDbStatus(sub, "⚠️ در شرایط فعلی وضعیت پنل در دسترس نیست — اطلاعات بر اساس سفارش");
     }
   }
   let fresh = (await prisma.subscription.findUnique({ where: { id: sub.id } })) ?? sub;
@@ -169,7 +169,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     const client = got?.obj?.client;
     if (!client) {
       if (serverlessMode) {
-        return staticDbStatus(fresh, "⚠️ پنل سنایی در دسترس نیست — اطلاعات ثابت سفارش", panelName);
+      return staticDbStatus(fresh, "⚠️ در شرایط فعلی وضعیت پنل در دسترس نیست — اطلاعات بر اساس سفارش", panelName);
       }
       onlineHint = "🔴 در پنل پیدا نشد";
       panelEnabled = false;
@@ -227,7 +227,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     }
   } catch {
     if (serverlessMode) {
-      return staticDbStatus(fresh, "⚠️ پنل سنایی در دسترس نیست — اطلاعات ثابت سفارش");
+      return staticDbStatus(fresh, "⚠️ در شرایط فعلی وضعیت پنل در دسترس نیست — اطلاعات بر اساس سفارش");
     }
     onlineHint = "⚠️ وضعیت پنل در دسترس نیست";
   }

@@ -185,6 +185,11 @@ export async function resolvePrice(
     return { cell: null, price: 0, mode: "rate" as const };
   }
 
+  if ((category || "").trim().toLowerCase() === "serverless") {
+    const { resolveServerlessPrice } = await import("./serverless.js");
+    return resolveServerlessPrice(user, trafficGb, months);
+  }
+
   // Offer / عمده‌فروش fixed plans are always matrix cells (no rate formula / seek bars).
   if (isOfferCategory(category) || isWholesaleFixedCategory(category)) {
     const cell = await findPriceCell(

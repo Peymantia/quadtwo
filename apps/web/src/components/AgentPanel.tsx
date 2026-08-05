@@ -107,7 +107,18 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         canEditLimitIp?: boolean;
         discountsEnabled?: boolean;
         volumeRules?: RateShopCatalog["volumeRules"];
+        serverless?: boolean;
       }>("/me/catalog").then((r) => {
+        if (r.serverless) {
+          setRateCatalog({
+            categories: [],
+            categoryLabels: {},
+            maxMonths: 1,
+            pricingMode: "rate",
+            cells: [],
+          });
+          return;
+        }
         setCatLabels(r.categoryLabels ?? {});
         setRateCatalog({
           categories: r.categories ?? [],
@@ -403,7 +414,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               <RateShop catalog={rateCatalog} busy={busy} variant="agent" onSubmit={createRate} />
             ) : (
               <p className="muted" style={{ margin: 0 }}>
-                هنوز پلنی برای فروش تنظیم نشده است.
+                در شرایط فعلی ساخت کانفیگ از پنل همکار فعال نیست یا پلنی تنظیم نشده است.
               </p>
             )}
           </div>

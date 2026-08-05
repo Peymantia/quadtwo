@@ -1,4 +1,4 @@
-import { OrderKind, OrderStatus, SubscriptionStatus } from "@prisma/client";
+import { OrderKind, OrderStatus, SubscriptionStatus, type User } from "@prisma/client";
 import { env } from "../config/env.js";
 import { prisma } from "../db.js";
 import { monthsToMs, randomSubId, shortCode } from "../utils/format.js";
@@ -9,19 +9,230 @@ import {
   saveAdminReviewMessages,
   type AdminReviewMessage,
 } from "./admin-review-sync.js";
-import { isServerlessEnabled } from "./settings.js";
+import { getSetting, isServerlessEnabled, setSetting } from "./settings.js";
 import type { ProvisionResult } from "./provision.js";
 import QRCode from "qrcode";
 
 export { isServerlessEnabled };
 
+export const SERVERLESS_CATEGORY = "serverless";
+
+/** Buyer-facing — never mention serverless / no-server */
 export const SERVERLESS_BUYER_WAIT_MSG =
-  "سفارش شما در حال پردازش و آماده‌سازی است و به‌زودی ارسال می‌شود.";
+  "در شرایط فعلی سفارش شما در حال پردازش و آماده‌سازی است و به‌زودی ارسال می‌شود.";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+
+export type ServerlessDurationId = "weekly" | "month1" | "month2";
+
+export type ServerlessPricingConfig = {
+  pricePerGb: number;
+  pricePerMonth: number;
+  weeklyMinGb: number;
+  weeklyMaxGb: number;
+  monthlyMinGb: number;
+  monthlyMaxGb: number;
+  weeklyEnabled: boolean;
+  month1Enabled: boolean;
+  month2Enabled: boolean;
+};
+
+export type ServerlessDurationOption = {
+  id: ServerlessDurationId;
+  /** 0 = weekly (7 days) */
+  months: number;
+  label: string;
+  minGb: number;
+  maxGb: number;
+  step: number;
+};
 
 export type FulfillResult =
   | ProvisionResult
   | { kind: "wallet_credit"; balance: number }
   | { kind: "serverless_pending" };
+
+function numSetting(raw: string, fallback: number, min = 0, max = 10_000_000): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+export async function getServerlessPricingConfig(): Promise<ServerlessPricingConfig> {
+  const [
+    pricePerGb,
+    pricePerMonth,
+    weeklyMinGb,
+    weeklyMaxGb,
+    monthlyMinGb,
+    monthlyMaxGb,
+    weeklyEnabled,
+    month1Enabled,
+    month2Enabled,
+  ] = await Promise.all([
+    getSetting("serverless_price_per_gb"),
+    getSetting("serverless_price_per_month"),
+    getSetting("serverless_weekly_min_gb"),
+    getSetting("serverless_weekly_max_gb"),
+    getSetting("serverless_monthly_min_gb"),
+    getSetting("serverless_monthly_max_gb"),
+    getSetting("serverless_weekly_enabled"),
+    getSetting("serverless_month1_enabled"),
+    getSetting("serverless_month2_enabled"),
+  ]);
+
+  let wMin = numSetting(weeklyMinGb, 1, 1, 1000);
+  let wMax = numSetting(weeklyMaxGb, 10, 1, 1000);
+  if (wMax < wMin) [wMin, wMax] = [wMax, wMin];
+
+  let mMin = numSetting(monthlyMinGb, 10, 1, 1000);
+  let mMax = numSetting(monthlyMaxGb, 100, 1, 1000);
+  if (mMax < mMin) [mMin, mMax] = [mMax, mMin];
+
+  return {
+    pricePerGb: numSetting(pricePerGb, 10_000, 0),
+    pricePerMonth: numSetting(pricePerMonth, 30_000, 0),
+    weeklyMinGb: wMin,
+    weeklyMaxGb: wMax,
+    monthlyMinGb: mMin,
+    monthlyMaxGb: mMax,
+    weeklyEnabled: weeklyEnabled !== "false",
+    month1Enabled: month1Enabled !== "false",
+    month2Enabled: month2Enabled !== "false",
+  };
+}
+
+export async function saveServerlessPricingPatch(
+  patch: Partial<Record<keyof ServerlessPricingConfig, number | boolean>>,
+): Promise<ServerlessPricingConfig> {
+  const map: Array<[keyof ServerlessPricingConfig, string]> = [
+    ["pricePerGb", "serverless_price_per_gb"],
+    ["pricePerMonth", "serverless_price_per_month"],
+    ["weeklyMinGb", "serverless_weekly_min_gb"],
+    ["weeklyMaxGb", "serverless_weekly_max_gb"],
+    ["monthlyMinGb", "serverless_monthly_min_gb"],
+    ["monthlyMaxGb", "serverless_monthly_max_gb"],
+    ["weeklyEnabled", "serverless_weekly_enabled"],
+    ["month1Enabled", "serverless_month1_enabled"],
+    ["month2Enabled", "serverless_month2_enabled"],
+  ];
+  for (const [key, settingKey] of map) {
+    if (patch[key] === undefined) continue;
+    const v = patch[key]!;
+    if (typeof v === "boolean") {
+      await setSetting(settingKey, v ? "true" : "false");
+    } else {
+      await setSetting(settingKey, String(Math.max(0, Math.floor(Number(v) || 0))));
+    }
+  }
+  return getServerlessPricingConfig();
+}
+
+export function listServerlessDurations(cfg: ServerlessPricingConfig): ServerlessDurationOption[] {
+  const out: ServerlessDurationOption[] = [];
+  if (cfg.weeklyEnabled) {
+    out.push({
+      id: "weekly",
+      months: 0,
+      label: "اعتبار هفتگی",
+      minGb: cfg.weeklyMinGb,
+      maxGb: cfg.weeklyMaxGb,
+      step: 1,
+    });
+  }
+  if (cfg.month1Enabled) {
+    out.push({
+      id: "month1",
+      months: 1,
+      label: "اعتبار یک‌ماهه",
+      minGb: cfg.monthlyMinGb,
+      maxGb: cfg.monthlyMaxGb,
+      step: 1,
+    });
+  }
+  if (cfg.month2Enabled) {
+    out.push({
+      id: "month2",
+      months: 2,
+      label: "اعتبار دوماهه",
+      minGb: cfg.monthlyMinGb,
+      maxGb: cfg.monthlyMaxGb,
+      step: 1,
+    });
+  }
+  return out;
+}
+
+export function durationLabel(months: number): string {
+  if (months <= 0) return "هفتگی";
+  if (months === 1) return "یک‌ماهه";
+  if (months === 2) return "دوماهه";
+  return `${months} ماه`;
+}
+
+export function isServerlessCategory(category: string | null | undefined): boolean {
+  return (category || "").trim().toLowerCase() === SERVERLESS_CATEGORY;
+}
+
+/** weeks: months=0 → 7 days; else N×31-day months */
+export function serverlessDurationMs(months: number): number {
+  if (months <= 0) return WEEK_MS;
+  return monthsToMs(months);
+}
+
+export function snapServerlessGb(gb: number, months: number, cfg: ServerlessPricingConfig): number {
+  const weekly = months <= 0;
+  const min = weekly ? cfg.weeklyMinGb : cfg.monthlyMinGb;
+  const max = weekly ? cfg.weeklyMaxGb : cfg.monthlyMaxGb;
+  const n = Math.floor(Number(gb));
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+export function calcServerlessPrice(
+  trafficGb: number,
+  months: number,
+  cfg: ServerlessPricingConfig,
+): number {
+  const gb = snapServerlessGb(trafficGb, months, cfg);
+  if (months <= 0) {
+    return gb * cfg.pricePerGb;
+  }
+  return gb * cfg.pricePerGb + months * cfg.pricePerMonth;
+}
+
+export async function resolveServerlessPrice(
+  user: User,
+  trafficGb: number | null,
+  months: number,
+): Promise<{ cell: null; price: number; mode: "rate" } | null> {
+  if (user.role === "admin") {
+    return { cell: null, price: 0, mode: "rate" };
+  }
+  if (trafficGb == null || trafficGb <= 0) return null;
+  const cfg = await getServerlessPricingConfig();
+  const durations = listServerlessDurations(cfg);
+  const ok = durations.some((d) => d.months === (months <= 0 ? 0 : months));
+  if (!ok) return null;
+  const price = calcServerlessPrice(trafficGb, months, cfg);
+  if (price < 0) return null;
+  return { cell: null, price, mode: "rate" };
+}
+
+export function assertServerlessPlanAllowed(
+  trafficGb: number,
+  months: number,
+  cfg: ServerlessPricingConfig,
+): void {
+  const durations = listServerlessDurations(cfg);
+  const d = durations.find((x) => x.months === (months <= 0 ? 0 : months));
+  if (!d) throw new Error("این مدت اعتبار فعلاً فعال نیست");
+  const gb = Math.floor(trafficGb);
+  if (!Number.isFinite(gb) || gb < d.minGb || gb > d.maxGb) {
+    throw new Error(`حجم باید بین ${d.minGb} تا ${d.maxGb} گیگ باشد`);
+  }
+}
 
 function isServerlessNativeSub(sub: {
   serverless: boolean;
@@ -50,7 +261,6 @@ export async function orderNeedsServerlessDelivery(order: {
     order.kind === OrderKind.rotate_sub ||
     order.kind === OrderKind.rotate_uuid
   ) {
-    // Add-ons / rotate need panel API — not supported via manual URL paste
     return false;
   }
 
@@ -60,7 +270,6 @@ export async function orderNeedsServerlessDelivery(order: {
     return isServerlessNativeSub(target);
   }
 
-  // new (and any other create kinds)
   return true;
 }
 
@@ -142,18 +351,17 @@ export async function enterServerlessAwaitingDelivery(orderId: string): Promise<
     data: { status: OrderStatus.awaiting_delivery },
   });
 
-  // Clear old review-message buttons before sending the paste-URL prompt
   await finalizeAdminReviewMessages(
     "order",
     orderId,
-    "✅ پرداخت تأیید شد — صف ارسال سرورلس",
+    "✅ پرداخت تأیید شد — در انتظار ارسال لینک ساب",
   );
 
   await notifyBuyerWaiting(order.user.telegramId);
 
   const userLabel = `${order.user.firstName ?? ""} @${order.user.username ?? "—"}`.trim();
   const caption = [
-    "🟣 سفارش سرورلس — در انتظار لینک ساب",
+    "🟣 سفارش دستی — در انتظار لینک ساب",
     "",
     `کاربر: ${userLabel}`,
     `تلگرام: ${order.user.telegramId}`,
@@ -189,9 +397,6 @@ export async function enterServerlessAwaitingDelivery(orderId: string): Promise<
   return { kind: "serverless_pending" };
 }
 
-/**
- * Paid order fulfillment: wallet credit, serverless queue, or panel provision.
- */
 export async function fulfillAfterPaid(orderId: string): Promise<FulfillResult> {
   const { getOrderForAdmin } = await import("./orders.js");
   const order = await getOrderForAdmin(orderId);
@@ -236,11 +441,10 @@ export async function completeServerlessDelivery(
     order.status !== OrderStatus.awaiting_delivery &&
     order.status !== OrderStatus.paid
   ) {
-    throw new Error("این سفارش در صف ارسال سرورلس نیست");
+    throw new Error("این سفارش در صف ارسال دستی نیست");
   }
 
-  const months = order.months || 1;
-  const expiresAt = new Date(Date.now() + monthsToMs(months));
+  const expiresAt = new Date(Date.now() + serverlessDurationMs(order.months));
   const qrPng = await qrForSub(subUrl);
 
   if (order.kind === OrderKind.renew && order.targetSub) {
@@ -269,7 +473,7 @@ export async function completeServerlessDelivery(
     await finalizeAdminReviewMessages(
       "order",
       orderId,
-      `✅ لینک سرورلس ارسال شد — ${updated.code}`,
+      `✅ لینک ارسال شد — ${updated.code}`,
     );
     return {
       subscriptionId: updated.id,
@@ -282,11 +486,12 @@ export async function completeServerlessDelivery(
   }
 
   if (order.kind !== OrderKind.new && order.kind !== OrderKind.renew) {
-    throw new Error("این نوع سفارش در سرورلس پشتیبانی نمی‌شود");
+    throw new Error("این نوع سفارش در شرایط فعلی پشتیبانی نمی‌شود");
   }
 
   const code = shortCode("SL");
-  const emailBase = (order.accountName || order.customName || code).replace(/[^\w.-]/g, "").slice(0, 32) || code;
+  const emailBase =
+    (order.accountName || order.customName || code).replace(/[^\w.-]/g, "").slice(0, 32) || code;
   let email = emailBase;
   for (let i = 0; i < 8; i++) {
     const clash = await prisma.subscription.findFirst({ where: { email } });
@@ -321,7 +526,7 @@ export async function completeServerlessDelivery(
     where: { id: orderId },
     data: { status: OrderStatus.completed },
   });
-  await finalizeAdminReviewMessages("order", orderId, `✅ لینک سرورلس ارسال شد — ${code}`);
+  await finalizeAdminReviewMessages("order", orderId, `✅ لینک ارسال شد — ${code}`);
 
   return {
     subscriptionId: subscription.id,

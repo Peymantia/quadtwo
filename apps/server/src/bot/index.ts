@@ -90,6 +90,7 @@ import {
   setDraftDiscountCode,
   setDraftOfferPlan,
   setDraftFixedPlan,
+  setDraftServerlessDuration,
 } from "./draft.js";
 import {
   isDiscountCodesEnabled,
@@ -115,6 +116,7 @@ import {
   buyCategoryKeyboard,
   buyDraftText,
   buyWizardKeyboard,
+  serverlessDurationKeyboard,
   applyInlineButtonStyle,
   shuffledButtonStyles,
   guidePlatformPickerKeyboard,
@@ -322,8 +324,49 @@ async function showBuyCategoryPicker(ctx: Context, edit = false) {
 
 const NATIONAL_EMERGENCY_MSG = "این سرویس در شرایط اضطراری فعال می‌شود.";
 
+async function showServerlessDurationPicker(ctx: Context, edit = false) {
+  const {
+    getServerlessPricingConfig,
+    listServerlessDurations,
+  } = await import("../services/serverless.js");
+  const cfg = await getServerlessPricingConfig();
+  const durations = listServerlessDurations(cfg);
+  if (!durations.length) {
+    await ctx.reply("در شرایط فعلی هیچ پلنی برای خرید فعال نیست. با پشتیبانی تماس بگیرید.");
+    return;
+  }
+  const text = [
+    "🛒 خرید سرویس",
+    "",
+    "مدت اعتبار مورد نظر را انتخاب کنید:",
+    "",
+    `قیمت هر گیگ: ${formatToman(cfg.pricePerGb)}`,
+    cfg.month1Enabled || cfg.month2Enabled
+      ? `قیمت هر ماه: ${formatToman(cfg.pricePerMonth)}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const kb = serverlessDurationKeyboard(
+    durations.map((d) => ({ id: d.id, label: d.label, months: d.months })),
+  );
+  if (edit && ctx.callbackQuery?.message) {
+    try {
+      await ctx.editMessageText(text, { reply_markup: kb });
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  await ctx.reply(text, { reply_markup: kb });
+}
+
 async function startBuyFlow(ctx: Context) {
   if (!(await requireChannel(ctx))) return;
+  if (await isServerlessEnabled()) {
+    await showServerlessDurationPicker(ctx);
+    return;
+  }
   const user = await upsertUserFromTelegram(ctx.from!);
   const role = effectiveRole(ctx.from!.id, user.role);
   if (isWholesaleFixedRole(role)) {
@@ -566,7 +609,8 @@ async function showBuyWizard(ctx: Context, edit = false) {
   let priceAfterDiscount: number | null = null;
   const offer = isOfferCategory(draft.category);
   const wholesaleBuy = isWholesaleFixedCategory(draft.category) || isWholesaleFixedRole(roleUser.role);
-  const discountsOn = !offer && !wholesaleBuy && (await isDiscountCodesEnabled());
+  const discountsOn =
+    !offer && !wholesaleBuy && (await isDiscountCodesEnabled());
   if ((offer || wholesaleBuy) && draft.discountCode) {
     await setDraftDiscountCode(BigInt(ctx.from!.id), null);
     draft.discountCode = null;
@@ -967,7 +1011,7 @@ async function handleSupport(ctx: Context) {
 
 async function handlePartnerRequest(ctx: Context) {
   if (await isServerlessEnabled()) {
-    await ctx.reply("در حالت سرورلس درخواست همکاری فعال نیست.");
+    await ctx.reply("در شرایط فعلی درخواست همکاری فعال نیست.");
     return;
   }
   const rl = limitPartnerRequest(ctx.from!.id);
@@ -1178,6 +1222,10 @@ export function createBot() {
   // Back from buy wizard to category picker (or main menu when only one category)
   bot.callbackQuery("buy:back:cat", async (ctx) => {
     await ctx.answerCallbackQuery();
+    if (await isServerlessEnabled()) {
+      await showServerlessDurationPicker(ctx, true);
+      return;
+    }
     const enabled = await listEnabledSalesCategories();
     if (enabled.length <= 1) {
       await ctx.deleteMessage().catch(() => undefined);
@@ -1185,6 +1233,27 @@ export function createBot() {
       return;
     }
     await showBuyCategoryPicker(ctx, true);
+  });
+
+  bot.callbackQuery(/^sl:dur:(-?\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireChannel(ctx))) return;
+    if (!(await isServerlessEnabled())) {
+      await ctx.reply("این بخش فعلاً فعال نیست.");
+      return;
+    }
+    const months = Number(ctx.match![1]);
+    try {
+      await setDraftServerlessDuration(BigInt(ctx.from!.id), months);
+      await showBuyWizard(ctx, true);
+    } catch (err) {
+      await ctx.reply(friendlyBotError(err));
+    }
+  });
+
+  bot.callbackQuery("sl:back:dur", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showServerlessDurationPicker(ctx, true);
   });
 
   bot.callbackQuery(/^buy:cat:(?!cancel$)(.+)$/, async (ctx) => {
@@ -2317,7 +2386,7 @@ export function createBot() {
       return;
     }
     if (order.status === OrderStatus.awaiting_delivery) {
-      await ctx.reply("این سفارش در صف سرورلس است — از دکمه «ارسال لینک ساب» استفاده کنید.");
+      await ctx.reply("این سفارش در صف ارسال دستی است — از دکمه «ارسال لینک ساب» استفاده کنید.");
       return;
     }
     try {
@@ -2347,7 +2416,7 @@ export function createBot() {
         return;
       }
       if (isServerlessPending(result)) {
-        const status = "🟣 تأیید شد — در انتظار ارسال لینک ساب (سرورلس)";
+        const status = "🟣 تأیید شد — در انتظار ارسال لینک ساب";
         await ctx.editMessageCaption({ caption: status }).catch(() => undefined);
         await ctx.editMessageText(status).catch(() => undefined);
         return;
@@ -2443,7 +2512,7 @@ export function createBot() {
         target: orderId,
         detail: result.code,
       });
-      const status = `✅ لینک سرورلس ارسال شد — ${result.code}`;
+      const status = `✅ لینک ارسال شد — ${result.code}`;
       await ctx.editMessageText(status).catch(() => undefined);
       await ctx.reply(status);
     } catch (err) {

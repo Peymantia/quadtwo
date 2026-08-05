@@ -20,7 +20,16 @@ import { withEffectiveRole } from "./demo-role.js";
 import { isDemoMode } from "./license.js";
 import { assertAndApplyDiscount, recordDiscountUse, cancelOpenPendingForDiscount } from "./discount-codes.js";
 import { isWholesaleFixedRole } from "./roles.js";
-import { fulfillAfterPaid, isServerlessEnabled } from "./serverless.js";
+import {
+  assertServerlessPlanAllowed,
+  fulfillAfterPaid,
+  getServerlessPricingConfig,
+  isServerlessCategory,
+  isServerlessEnabled,
+  resolveServerlessPrice,
+  SERVERLESS_CATEGORY,
+  snapServerlessGb,
+} from "./serverless.js";
 
 export async function createMatrixOrder(input: {
   userId: string;
@@ -63,14 +72,12 @@ export async function createMatrixOrder(input: {
   let orderUserId = user.id;
   const serverlessOn = await isServerlessEnabled();
 
+  // When serverless mode is on, all new purchases use the dedicated plan catalog
   if (serverlessOn && kind === OrderKind.new) {
-    if (
-      category === "unlimited" ||
-      isWholesaleFixedCategory(category) ||
-      category === "reseller"
-    ) {
-      throw new Error("در حالت سرورلس فقط سرویس‌های کاربر و پیشنهاد ویژه فعال است");
-    }
+    category = SERVERLESS_CATEGORY;
+  }
+  if (serverlessOn && kind === OrderKind.new && isWholesaleFixedRole(pricedUser.role)) {
+    throw new Error("در شرایط فعلی خرید عمده‌فروشی فعال نیست");
   }
 
   if (kind === OrderKind.renew) {
@@ -85,7 +92,11 @@ export async function createMatrixOrder(input: {
       const eligibility = await checkRenewEligibility(target.id);
       if (!eligibility.ok) throw new Error(eligibility.message);
     }
-    category = await inferRenewCategory(target);
+    if (target.serverless || serverlessOn) {
+      category = SERVERLESS_CATEGORY;
+    } else {
+      category = await inferRenewCategory(target);
+    }
     accountName = target.email;
     orderUserId = target.userId;
     if (target.serverless) {
@@ -96,9 +107,64 @@ export async function createMatrixOrder(input: {
       const resolved = await resolvePanelForSubscription(target);
       panelServerId = resolved.panel?.id ?? null;
     }
-  } else if (!isDemoMode() && !serverlessOn) {
+  } else if (!isDemoMode() && !serverlessOn && !isServerlessCategory(category)) {
     const resolved = await resolvePanelForCategory(category);
     panelServerId = resolved.panel?.id ?? null;
+  }
+
+  // ——— Serverless formula plans (weekly months=0, or 1–2 months) ———
+  if (serverlessOn && (kind === OrderKind.new || kind === OrderKind.renew)) {
+    category = SERVERLESS_CATEGORY;
+    const cfg = await getServerlessPricingConfig();
+    const monthsRaw = Number(input.months);
+    const months = monthsRaw <= 0 ? 0 : Math.min(2, Math.max(1, Math.floor(monthsRaw)));
+    if (input.trafficGb == null) throw new Error("حجم سرویس مشخص نشده است");
+    const trafficGb = snapServerlessGb(input.trafficGb, months, cfg);
+    assertServerlessPlanAllowed(trafficGb, months, cfg);
+    const priced = await resolveServerlessPrice(pricedUser, trafficGb, months);
+    if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
+    const defaultIp = await getDefaultLimitIp();
+    const limitIp = !canEditLimitIp(pricedUser.role)
+      ? defaultIp
+      : input.limitIp === undefined
+        ? defaultIp
+        : Math.max(0, Math.min(10, Math.floor(input.limitIp)));
+    const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;
+    const priceBefore = priced.price;
+    const applied =
+      !input.discountCode?.trim()
+        ? null
+        : await assertAndApplyDiscount({
+            buyer: pricedUser,
+            code: input.discountCode,
+            price: priceBefore,
+          });
+    if (applied?.codeId) {
+      await cancelOpenPendingForDiscount(orderUserId, applied.codeId);
+    }
+    const finalPrice = applied ? applied.priceAfter : priceBefore;
+    return prisma.order.create({
+      data: {
+        userId: orderUserId,
+        kind,
+        trafficGb,
+        months,
+        quantity: 1,
+        limitIp,
+        note,
+        panelServerId: null,
+        price: finalPrice,
+        discountCodeId: applied?.codeId ?? null,
+        discountAmount: applied?.discountAmount ?? 0,
+        priceBeforeDiscount: applied ? applied.priceBefore : null,
+        accountName,
+        customName: accountName,
+        targetSubId: input.targetSubId,
+        status: OrderStatus.pending_payment,
+        paymentMethod: input.paymentMethod ?? PaymentMethod.card_to_card,
+      },
+      include: { user: true, targetSub: true, discountCode: true },
+    });
   }
 
   let trafficGb = normalizePurchaseTraffic(category, input.trafficGb);
@@ -441,9 +507,11 @@ export function orderSummaryText(order: {
           ? "نامحدود"
           : `${order.trafficGb} گیگ`;
   const durationLine =
-    order.kind === OrderKind.add_days || order.kind === OrderKind.add_gb || !(order.months > 0)
+    order.kind === OrderKind.add_days || order.kind === OrderKind.add_gb
       ? ""
-      : `مدت: ${order.months} ماه`;
+      : order.months <= 0
+        ? "مدت: هفتگی"
+        : `مدت: ${order.months} ماه`;
   const ip =
     order.limitIp === undefined
       ? ""

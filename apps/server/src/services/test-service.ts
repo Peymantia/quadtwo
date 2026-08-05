@@ -27,7 +27,7 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
   const enabled = (await getSetting("test_service_enabled")) === "true";
   if (!enabled) throw new Error("سرویس تست فعلاً غیرفعال است");
   if ((await getSetting("serverless_enabled")) === "true") {
-    throw new Error("در حالت سرورلس سرویس تست در دسترس نیست");
+    throw new Error("در شرایط فعلی سرویس تست در دسترس نیست");
   }
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });

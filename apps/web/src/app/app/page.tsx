@@ -11,6 +11,11 @@ import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "../../
 import { api, formatToman } from "../../lib/api";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
+import {
+  ServerlessShop,
+  type ServerlessCatalog,
+  type ServerlessOrderPayload,
+} from "../../components/ServerlessShop";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
 import { SubAddonsBar } from "../../components/SubAddonsBar";
@@ -79,6 +84,7 @@ export default function UserAppPage() {
   const [tab, setTab] = useState("shop");
   const [subs, setSubs] = useState<Sub[]>([]);
   const [rateCatalog, setRateCatalog] = useState<RateShopCatalog | null>(null);
+  const [serverlessCatalog, setServerlessCatalog] = useState<ServerlessCatalog | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -124,7 +130,19 @@ export default function UserAppPage() {
         canEditLimitIp?: boolean;
         discountsEnabled?: boolean;
         volumeRules?: RateShopCatalog["volumeRules"];
+        serverless?: boolean;
+        serverlessPricing?: ServerlessCatalog["serverlessPricing"];
       }>("/me/catalog").then((r) => {
+        if (r.serverless && r.serverlessPricing) {
+          setServerlessCatalog({
+            serverless: true,
+            discountsEnabled: Boolean(r.discountsEnabled),
+            serverlessPricing: r.serverlessPricing,
+          });
+          setRateCatalog(null);
+          return;
+        }
+        setServerlessCatalog(null);
         setRateCatalog({
           categories: r.categories ?? [],
           categoryLabels: r.categoryLabels ?? {},
@@ -155,7 +173,7 @@ export default function UserAppPage() {
 
   if (loading || !home) return <LoadingScreen />;
 
-  async function buyRate(payload: RateOrderPayload) {
+  async function buyRate(payload: RateOrderPayload | ServerlessOrderPayload) {
     setErr(null);
     setMsg(null);
     setBusy(true);
@@ -165,28 +183,34 @@ export default function UserAppPage() {
         card?: PayCard;
         crypto?: CryptoPayInfo;
         provisioned?: CreatedAccount;
+        serverlessPending?: boolean;
       }>("/me/orders", {
         body: {
           trafficGb: payload.trafficGb,
           months: payload.months,
           category: payload.category,
-          accountName: payload.accountName,
-          limitIp: payload.limitIp,
-          note: payload.note,
-          payWithWallet: payload.payWithWallet,
-          paymentMethod: payload.paymentMethod,
+          accountName: "accountName" in payload ? payload.accountName : undefined,
+          limitIp: "limitIp" in payload ? payload.limitIp : undefined,
+          note: "note" in payload ? payload.note : undefined,
+          payWithWallet: "payWithWallet" in payload ? payload.payWithWallet : undefined,
+          paymentMethod: "paymentMethod" in payload ? payload.paymentMethod : undefined,
           discountCode: payload.discountCode,
-          quantity: payload.quantity,
-          priceCellId: payload.priceCellId,
+          quantity: payload.quantity ?? 1,
+          priceCellId: "priceCellId" in payload ? payload.priceCellId : undefined,
         },
       });
+      if (r.serverlessPending) {
+        setMsg("در شرایط فعلی سفارش شما در حال پردازش و آماده‌سازی است و به‌زودی ارسال می‌شود.");
+        await reload();
+        return;
+      }
       if (r.provisioned?.code) {
         setCreated({
           ...r.provisioned,
           categoryLabel: rateCatalog?.categoryLabels?.[payload.category] || payload.category,
           months: payload.months,
           trafficGb: r.provisioned.trafficGb ?? payload.trafficGb,
-          note: r.provisioned.note ?? payload.note,
+          note: r.provisioned.note ?? ("note" in payload ? payload.note : null),
         });
         await reload();
         await loadSubs();
@@ -369,7 +393,12 @@ export default function UserAppPage() {
             </div>
           )}
 
-          {rateCatalog && rateCatalog.categories.length > 0 ? (
+          {serverlessCatalog ? (
+            <div className="panel">
+              <h2>خرید اشتراک</h2>
+              <ServerlessShop catalog={serverlessCatalog} busy={busy} onSubmit={buyRate} />
+            </div>
+          ) : rateCatalog && rateCatalog.categories.length > 0 ? (
             <div className="panel">
               <h2>خرید اشتراک</h2>
               <RateShop catalog={rateCatalog} busy={busy} variant="user" onSubmit={buyRate} />

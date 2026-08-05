@@ -311,6 +311,56 @@ export function partnerContactKeyboard() {
   return new Keyboard().requestContact("📱 ارسال شماره موبایل").resized().oneTime();
 }
 
+export function serverlessDurationKeyboard(
+  options: Array<{ id: string; label: string; months: number }>,
+) {
+  const kb = new InlineKeyboard();
+  for (const o of options) {
+    kb.text(o.label, `sl:dur:${o.months}`).row();
+  }
+  kb.text("❌ انصراف", "buy:cat:cancel");
+  return kb;
+}
+
+export function serverlessWizardKeyboard(opts: {
+  trafficGb: number | null;
+  months: number;
+  price: number | null;
+  discountsEnabled?: boolean;
+  discountCode?: string | null;
+}) {
+  const vol = formatTraffic(opts.trafficGb);
+  const dur =
+    opts.months <= 0 ? "هفتگی" : opts.months === 1 ? "یک‌ماهه" : opts.months === 2 ? "دوماهه" : `${opts.months} ماه`;
+  const unit = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
+  const kb = new InlineKeyboard();
+  kb.text(`⏳ ${dur}`, "wiz:noop").row();
+  kb.text("−", "wiz:vol:-")
+    .text(`📏 ${vol}`, "wiz:noop")
+    .text("+", "wiz:vol:+")
+    .row();
+  kb.text(`💰 ${unit}`, "wiz:noop").row();
+  if (opts.discountsEnabled) {
+    if (opts.discountCode) {
+      kb.text(`🎟 ${opts.discountCode}`, "wiz:discount:set")
+        .row()
+        .text("✖ حذف کد", "wiz:discount:clear")
+        .row();
+    } else {
+      kb.text("🎟 کد تخفیف", "wiz:discount:set").row();
+    }
+  }
+  return kb
+    .text("🎲 نام رندوم", "wiz:name:random")
+    .text("✍️ نام دلخواه", "wiz:name:custom")
+    .row()
+    .text("✅ ادامه خرید", "wiz:checkout")
+    .success()
+    .row()
+    .text("◀️ بازگشت", "sl:back:dur")
+    .text("❌ انصراف", "buy:cat:cancel");
+}
+
 export function buyWizardKeyboard(opts: {
   trafficGb: number | null;
   months: number;
@@ -330,6 +380,9 @@ export function buyWizardKeyboard(opts: {
   offerTitle?: string | null;
 }) {
   const cat = (opts.category || "").toLowerCase();
+  if (cat === "serverless") {
+    return serverlessWizardKeyboard(opts);
+  }
   const isOffer = cat === "offer";
   const isWholesale = cat === "wholesale" || cat === "reseller";
   const isFixed = isOffer || isWholesale || cat === "unlimited" || cat === "national";
@@ -789,7 +842,14 @@ export function buyDraftText(opts: {
   const qty = Math.max(1, opts.quantity ?? 1);
   const vol =
     opts.trafficGb === null || opts.category === "unlimited" ? "نامحدود" : formatTraffic(opts.trafficGb);
-  const dur = opts.months === 1 ? "۱ ماهه" : `${opts.months} ماهه`;
+  const dur =
+    opts.months <= 0
+      ? "هفتگی"
+      : opts.months === 1
+        ? "۱ ماهه"
+        : opts.months === 2
+          ? "۲ ماهه"
+          : `${opts.months} ماهه`;
   const unitPrice = opts.price;
   const totalPrice = unitPrice === null ? null : unitPrice * qty;
   const finalPrice =
