@@ -91,7 +91,10 @@ async function eachUserChat(
   },
   fn: (chatId: number) => Promise<boolean>,
 ): Promise<PinBroadcastResult> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const users = await prisma.user.findMany({
+    where: { tenantId },
     select: { telegramId: true },
     orderBy: { createdAt: "asc" },
   });

@@ -114,7 +114,7 @@ export type CreateTenantInput = {
   slug: string;
   botToken: string;
   brandName?: string;
-  ownerTelegramId?: bigint | number | null;
+  ownerTelegramId: bigint | number;
   welcomeText?: string | null;
   supportUsername?: string | null;
 };
@@ -124,6 +124,9 @@ export async function createTenant(input: CreateTenantInput) {
   if (slug === PLATFORM_TENANT_SLUG) throw new Error("slug رزرو شده است");
   const token = input.botToken.trim();
   if (token.length < 20) throw new Error("توکن ربات نامعتبر است");
+  if (input.ownerTelegramId == null) {
+    throw new Error("آی‌دی تلگرام ادمین خریدار لازم است");
+  }
 
   // Validate with Telegram
   const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then((r) => r.json()) as {
@@ -216,7 +219,25 @@ export async function updateTenant(
     data.botToken = encryptBotToken(token);
     data.botUsername = me.result?.username ?? null;
   }
-  return prisma.tenant.update({ where: { id }, data });
+  const tenant = await prisma.tenant.update({ where: { id }, data });
+
+  if (patch.brandName != null) {
+    await runWithTenantAsync({ tenantId: tenant.id, slug: tenant.slug }, async () => {
+      const { setSetting } = await import("./settings.js");
+      await setSetting("brand_name", tenant.brandName);
+    });
+  }
+
+  if (patch.ownerTelegramId != null) {
+    const tid = BigInt(patch.ownerTelegramId);
+    await prisma.user.upsert({
+      where: { tenantId_telegramId: { tenantId: tenant.id, telegramId: tid } },
+      create: { tenantId: tenant.id, telegramId: tid, role: "admin" },
+      update: { role: "admin" },
+    });
+  }
+
+  return tenant;
 }
 
 export async function suspendTenant(id: string) {

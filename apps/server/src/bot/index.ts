@@ -3233,8 +3233,11 @@ export function createBot(
 
   bot.command("pending", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const orders = await prisma.order.findMany({
       where: {
+        tenantId,
         OR: [
           { status: OrderStatus.awaiting_review },
           { status: OrderStatus.paid, subscription: null, kind: { not: OrderKind.wallet_charge } },

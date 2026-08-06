@@ -132,7 +132,9 @@ export async function findPriceCell(
 }
 
 export async function findPriceCellById(id: string) {
-  return prisma.priceCell.findFirst({ where: { id, active: true } });
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  return prisma.priceCell.findFirst({ where: { id, tenantId, active: true } });
 }
 
 export function priceFromCell(
@@ -346,8 +348,10 @@ export async function listDataMonths(): Promise<Array<{ months: number; count: n
 }
 
 export async function listDataPlansForMonth(months: number) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.priceCell.findMany({
-    where: { active: true, category: "data", months },
+    where: { tenantId, active: true, category: "data", months },
     orderBy: [{ sortOrder: "asc" }, { trafficGb: "asc" }],
   });
 }

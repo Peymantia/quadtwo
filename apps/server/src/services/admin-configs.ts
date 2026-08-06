@@ -201,8 +201,11 @@ async function listPanelGroupNames(): Promise<string[]> {
 }
 
 export async function listConfigGroups(): Promise<ConfigGroup[]> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const partners = await prisma.user.findMany({
     where: {
+      tenantId,
       role: { in: [UserRole.partner, UserRole.wholesale, UserRole.reseller, UserRole.admin] },
       OR: [{ panelGroup: { not: null } }, { agentName: { not: null } }],
     },
@@ -490,8 +493,11 @@ export async function listConfigsForGroup(
   const title = meta?.label ?? "کانفیگ‌ها";
 
   if (groupKey === "all") {
+    const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const [dbSubs, panelEmails] = await Promise.all([
       prisma.subscription.findMany({
+        where: { tenantId },
         include: { user: true },
         orderBy: { createdAt: "desc" },
       }),
@@ -517,15 +523,20 @@ export async function listConfigsForGroup(
   const panelEmails = await emailsInPanelGroup(panelGroup);
   const panelSet = new Set(panelEmails.map((e) => e.toLowerCase()));
   const partnerId = meta?.partnerUserId;
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
 
   const dbSubs = await prisma.subscription.findMany({
     where: partnerId
-      ? { OR: [{ userId: partnerId }, ...(panelEmails.length ? [{ email: { in: panelEmails } }] : [])] }
+      ? {
+          tenantId,
+          OR: [{ userId: partnerId }, ...(panelEmails.length ? [{ email: { in: panelEmails } }] : [])],
+        }
       : groupKey === "tg"
-        ? { user: { role: UserRole.user } }
+        ? { tenantId, user: { role: UserRole.user } }
         : panelEmails.length
-          ? { email: { in: panelEmails } }
-          : { id: { in: [] } },
+          ? { tenantId, email: { in: panelEmails } }
+          : { tenantId, id: { in: [] } },
     include: { user: true },
     orderBy: { createdAt: "desc" },
   });
@@ -1218,7 +1229,12 @@ export async function importPanelClientsToBot(emails?: string[]): Promise<Import
     : null;
 
   const panelClients = await listDetailedPanelClients();
-  const existing = await prisma.subscription.findMany({ select: { email: true } });
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const existing = await prisma.subscription.findMany({
+    where: { tenantId },
+    select: { email: true },
+  });
   const inDb = new Set(existing.map((s) => s.email.toLowerCase()));
 
   let imported = 0;
@@ -2107,8 +2123,10 @@ export async function selectiveSync(input: SyncApplyInput): Promise<SelectiveSyn
     panelUpdates: [],
   };
 
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const panelByEmail = new Map(panelClients.map((c) => [c.email.toLowerCase(), c]));
-  const subs = await prisma.subscription.findMany();
+  const subs = await prisma.subscription.findMany({ where: { tenantId } });
   const botByEmail = new Map(subs.map((s) => [s.email.toLowerCase(), s]));
 
   // ——— Structural: new accounts ———
@@ -2230,7 +2248,7 @@ export async function selectiveSync(input: SyncApplyInput): Promise<SelectiveSyn
   await assertPanelReachable(panelClients);
   panelByEmail.clear();
   for (const c of panelClients) panelByEmail.set(c.email.toLowerCase(), c);
-  const subsFresh = await prisma.subscription.findMany();
+  const subsFresh = await prisma.subscription.findMany({ where: { tenantId } });
   botByEmail.clear();
   for (const s of subsFresh) botByEmail.set(s.email.toLowerCase(), s);
 
@@ -2349,8 +2367,10 @@ export async function selectiveSync(input: SyncApplyInput): Promise<SelectiveSyn
 
 async function importOnePanelClient(c: DetailedPanelClient): Promise<Subscription | null> {
   const owner = await resolvePanelImportOwner();
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const existing = await prisma.subscription.findFirst({
-    where: { email: { equals: c.email } },
+    where: { tenantId, email: { equals: c.email } },
   });
   if (existing) return null;
 

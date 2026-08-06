@@ -154,7 +154,10 @@ export async function exportWorkbookBuffer(): Promise<Buffer> {
   const salesCategories = await getSalesCategories();
   const rates = await getPriceRates();
   const panels = await listPanelServers();
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const prices = await prisma.priceCell.findMany({
+    where: { tenantId },
     orderBy: [{ category: "asc" }, { trafficGb: "asc" }, { months: "asc" }],
   });
 

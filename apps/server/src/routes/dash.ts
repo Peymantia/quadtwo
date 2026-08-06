@@ -920,32 +920,30 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     let trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
     let months = Math.max(1, Number(body.months) || 1);
     const qty = Math.max(1, Math.min(50, Number(body.quantity) || 1));
-
-    if (body.priceCellId?.trim()) {
-      const cell = await prisma.priceCell.findFirst({
-        where: { id: body.priceCellId.trim(), active: true },
+    const priceCellId = body.priceCellId?.trim() || "";
+    let resolvedCell: Awaited<ReturnType<typeof prisma.priceCell.findFirst>> = null;
+    if (priceCellId) {
+      const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+      const tenantId = await resolveTenantIdOrPlatform();
+      resolvedCell = await prisma.priceCell.findFirst({
+        where: { id: priceCellId, tenantId, active: true },
       });
-      if (!cell) return c.json({ error: "پلن انتخاب‌شده پیدا نشد" }, 400);
-      trafficGb = cell.trafficGb;
-      months = cell.months;
-      category = cell.category;
+      if (!resolvedCell) return c.json({ error: "پلن انتخاب‌شده پیدا نشد" }, 400);
+      trafficGb = resolvedCell.trafficGb;
+      months = resolvedCell.months;
+      category = resolvedCell.category;
     }
 
     const offerLocked = isOfferCategory(category);
     const fixedSingle = isFixedSingleServiceCategory(category);
     let priced = await resolvePrice(pricedUser, trafficGb, months, category);
-    if (fixedSingle && body.priceCellId?.trim()) {
-      const cell = await prisma.priceCell.findFirst({
-        where: { id: body.priceCellId.trim(), active: true },
-      });
-      if (cell) {
-        const { priceFromCell } = await import("../services/pricing.js");
-        priced =
-          pricedUser.role === "admin"
-            ? { cell, price: 0, mode: "matrix" as const }
-            : { cell, price: priceFromCell(pricedUser.role, cell), mode: "matrix" as const };
-        if (priced.price <= 0 && pricedUser.role !== "admin") priced = null;
-      }
+    if (fixedSingle && resolvedCell) {
+      const { priceFromCell } = await import("../services/pricing.js");
+      priced =
+        pricedUser.role === "admin"
+          ? { cell: resolvedCell, price: 0, mode: "matrix" as const }
+          : { cell: resolvedCell, price: priceFromCell(pricedUser.role, resolvedCell), mode: "matrix" as const };
+      if (priced.price <= 0 && pricedUser.role !== "admin") priced = null;
     }
     if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
     const priceBefore = priced.price * (fixedSingle ? 1 : qty);
@@ -1789,7 +1787,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/prices", async (c) => {
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const cells = await prisma.priceCell.findMany({
+      where: { tenantId },
       orderBy: [{ category: "asc" }, { months: "asc" }, { trafficGb: "asc" }],
     });
     return c.json({
@@ -1887,12 +1888,23 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     } else if (data.trafficGb === null && typeof data.category === "string" && data.category !== "offer") {
       data.category = "unlimited";
     }
-    await prisma.priceCell.update({ where: { id: c.req.param("id") }, data });
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const result = await prisma.priceCell.updateMany({
+      where: { id: c.req.param("id"), tenantId },
+      data,
+    });
+    if (!result.count) return c.json({ error: "پیدا نشد" }, 404);
     return c.json({ ok: true });
   });
 
   api.delete("/admin/prices/:id", async (c) => {
-    await prisma.priceCell.delete({ where: { id: c.req.param("id") } });
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const result = await prisma.priceCell.deleteMany({
+      where: { id: c.req.param("id"), tenantId },
+    });
+    if (!result.count) return c.json({ error: "پیدا نشد" }, 404);
     await auditLog({
       action: "web_price_delete",
       actorTelegramId: BigInt(c.get("telegramId")),
@@ -1914,8 +1926,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     const value = Number(body.value);
     if (!Number.isFinite(value) || value === 0) return c.json({ error: "مقدار نامعتبر" }, 400);
     const roundTo = Math.max(1, Math.floor(body.roundTo ?? 1000));
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const cells = await prisma.priceCell.findMany({
-      where: { active: true, ...(body.category ? { category: body.category } : {}) },
+      where: { tenantId, active: true, ...(body.category ? { category: body.category } : {}) },
     });
     let updated = 0;
     for (const cell of cells) {
@@ -1941,9 +1955,11 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     const enabled = await getSalesCategories();
     const labels = await getCategoryLabels();
     const order = await getCategoryOrder();
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const counts = await prisma.priceCell.groupBy({
       by: ["category"],
-      where: { active: true },
+      where: { tenantId, active: true },
       _count: { _all: true },
     });
     const countMap = new Map(counts.map((x) => [x.category, x._count._all]));
@@ -2059,8 +2075,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       await saveCategoryLabels(labels);
       await removeCategoryFromOrder(key);
     }
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const res = await prisma.priceCell.updateMany({
-      where: { category: key, active: true },
+      where: { tenantId, category: key, active: true },
       data: { active: false },
     });
     await auditLog({

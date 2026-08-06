@@ -56,13 +56,16 @@ export function registerSuperadminRoutes(api: Hono<{ Variables: Vars }>) {
       welcomeText?: string;
       supportUsername?: string;
     }>();
+    if (!body.ownerTelegramId?.trim()) {
+      return c.json({ error: "آی‌دی تلگرام ادمین خریدار لازم است" }, 400);
+    }
     try {
       const tenant = await createTenant({
         name: body.name,
         slug: body.slug,
         botToken: body.botToken,
         brandName: body.brandName,
-        ownerTelegramId: body.ownerTelegramId ? BigInt(body.ownerTelegramId) : null,
+        ownerTelegramId: BigInt(body.ownerTelegramId),
         welcomeText: body.welcomeText,
         supportUsername: body.supportUsername,
       });

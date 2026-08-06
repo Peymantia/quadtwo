@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/Telegram-Bot-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram Bot" />
   <img src="https://img.shields.io/badge/3x--ui-Integrated-00C853?style=for-the-badge" alt="3x-ui" />
   <img src="https://img.shields.io/badge/SaaS-Multi--tenant-FF6D00?style=for-the-badge" alt="SaaS" />
-  <img src="https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/version-2.0.1-blue?style=for-the-badge" alt="Version" />
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node" />
   <img src="https://img.shields.io/badge/License-Private-6c757d?style=for-the-badge" alt="License" />
 </p>

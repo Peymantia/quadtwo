@@ -9,6 +9,7 @@ import {
   deactivateCell,
   listDataMonths,
   listDataPlansForMonth,
+  listGoldenOffers,
   listPriceMatrix,
   nextNationalVolume,
   setCellGolden,
@@ -389,11 +390,13 @@ function parsePriceNumber(text: string): number | null {
 }
 
 async function countByCategory() {
+  const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const [data, national, unlimited, golden] = await Promise.all([
-    prisma.priceCell.count({ where: { active: true, category: "data" } }),
-    prisma.priceCell.count({ where: { active: true, category: "national" } }),
-    prisma.priceCell.count({ where: { active: true, category: "unlimited" } }),
-    prisma.priceCell.count({ where: { active: true, isGolden: true } }),
+    prisma.priceCell.count({ where: { tenantId, active: true, category: "data" } }),
+    prisma.priceCell.count({ where: { tenantId, active: true, category: "national" } }),
+    prisma.priceCell.count({ where: { tenantId, active: true, category: "unlimited" } }),
+    prisma.priceCell.count({ where: { tenantId, active: true, isGolden: true } }),
   ]);
   return { data, national, unlimited, golden };
 }
@@ -589,7 +592,7 @@ async function showPricingDataMonth(ctx: Context, months: number, page = 0) {
 async function showPricingCategory(ctx: Context, category: PlanCategory | "golden", page = 0) {
   const cells =
     category === "golden"
-      ? await prisma.priceCell.findMany({ where: { active: true, isGolden: true }, orderBy: [{ months: "asc" }, { sortOrder: "asc" }] })
+      ? await listGoldenOffers()
       : await listPriceMatrix(category);
 
   const pageSize = 6;
@@ -986,8 +989,13 @@ async function showPanelDetail(ctx: Context, id: string) {
 }
 
 async function showDemote(ctx: Context) {
+  const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const users = await prisma.user.findMany({
-    where: { role: { in: [UserRole.partner, UserRole.wholesale, UserRole.reseller] } },
+    where: {
+      tenantId,
+      role: { in: [UserRole.partner, UserRole.wholesale, UserRole.reseller] },
+    },
     take: 20,
     orderBy: { updatedAt: "desc" },
   });
@@ -1901,8 +1909,11 @@ export function registerControlCenter(bot: Bot) {
   bot.callbackQuery("cc:pending", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const orders = await prisma.order.findMany({
       where: {
+        tenantId,
         OR: [
           { status: OrderStatus.awaiting_review },
           { status: OrderStatus.paid, subscription: null, kind: { not: OrderKind.wallet_charge } },
