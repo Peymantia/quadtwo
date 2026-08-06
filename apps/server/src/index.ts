@@ -11,69 +11,88 @@ const { serve } = await import("@hono/node-server");
 const { webhookCallback } = await import("grammy");
 const { Hono } = await import("hono");
 const { env } = await import("./config/env.js");
-const { createBot } = await import("./bot/index.js");
 const { healthRoutes } = await import("./routes/health.js");
 const { createApiApp } = await import("./routes/api.js");
 const { seedIfNeeded } = await import("./services/seed.js");
+const { ensurePlatformTenant } = await import("./services/tenants.js");
+const { startAllTenantBots, getWebhookBot } = await import("./services/bot-manager.js");
+const { runWithTenantAsync } = await import("./services/tenant-context.js");
 
+await ensurePlatformTenant();
 await seedIfNeeded();
 
 const { assertLicenseAtStartup } = await import("./services/license.js");
 assertLicenseAtStartup();
 
 const app = new Hono();
-const bot = createBot();
 
 app.route("/health", healthRoutes);
 app.route("/api", createApiApp());
 
+const { bots, byTenant } = await startAllTenantBots();
+
 if (env.BOT_MODE === "webhook") {
-  app.post(env.TELEGRAM_WEBHOOK_PATH, webhookCallback(bot, "hono"));
+  app.post(env.TELEGRAM_WEBHOOK_PATH + "/:tenantId", async (c) => {
+    const tenantId = c.req.param("tenantId");
+    if (!tenantId) return c.text("missing tenant", 400);
+    const bot = getWebhookBot(tenantId);
+    if (!bot) return c.text("unknown tenant", 404);
+    const handler = webhookCallback(bot, "hono");
+    return runWithTenantAsync({ tenantId }, () => handler(c));
+  });
+  // legacy single path → platform bot
+  const { getPlatformTenantId } = await import("./services/tenants.js");
+  try {
+    const platformId = await getPlatformTenantId();
+    const bot = byTenant.get(platformId) ?? bots[0];
+    if (bot) {
+      app.post(env.TELEGRAM_WEBHOOK_PATH, async (c) => {
+        const handler = webhookCallback(bot, "hono");
+        return runWithTenantAsync({ tenantId: platformId }, () => handler(c));
+      });
+    }
+  } catch (err) {
+    console.warn("legacy webhook mount skipped", err);
+  }
 }
 
 serve({ fetch: app.fetch, port: env.PORT }, () => {
-  console.log(`quadtwo server listening on :${env.PORT}`);
+  console.log(`quadtwo server listening on :${env.PORT} (${bots.length} bot(s))`);
 });
 
-const { startNotificationCron } = await import("./services/notifications.js");
-startNotificationCron(bot.api);
-console.log("notification cron started (every 20m)");
+const apiForTenant = (tenantId: string) => byTenant.get(tenantId)?.api;
 
-const { startPanelReconcileCron } = await import("./services/admin-configs.js");
-startPanelReconcileCron();
-console.log("panel reconcile cron started (every 10m)");
+if (bots.length) {
+  const { startNotificationCron } = await import("./services/notifications.js");
+  startNotificationCron(apiForTenant);
+  console.log("notification cron started (every 20m, per tenant)");
 
-const { startBackupCron } = await import("./services/backup.js");
-const { isDemoMode } = await import("./services/license.js");
-if (isDemoMode()) {
-  console.log("backup cron skipped (DEMO_MODE — scheduled backups only on main bot)");
-} else {
-  startBackupCron(bot.api);
-  console.log("backup cron started (checks every 1m)");
+  const { startPanelReconcileCron } = await import("./services/admin-configs.js");
+  startPanelReconcileCron();
+  console.log("panel reconcile cron started (every 10m, per tenant)");
+
+  const { startBackupCron } = await import("./services/backup.js");
+  const { isDemoMode } = await import("./services/license.js");
+  if (isDemoMode()) {
+    console.log("backup cron skipped (DEMO_MODE — scheduled backups only on main bot)");
+  } else {
+    // Full DB dump once; notify platform admins via platform bot
+    const { getPlatformTenantId } = await import("./services/tenants.js");
+    const platformId = await getPlatformTenantId();
+    const platformApi = apiForTenant(platformId) ?? bots[0]!.api;
+    startBackupCron(platformApi);
+    console.log("backup cron started (checks every 1m)");
+  }
 }
 
 const { cancelStalePendingDiscountOrders } = await import("./services/discount-codes.js");
+const { forEachActiveTenant } = await import("./services/tenants.js");
 const runStaleDiscountCleanup = () => {
-  void cancelStalePendingDiscountOrders({ olderThanMs: 30 * 60_000 })
-    .then((n) => {
-      if (n > 0) console.log(`cancelled ${n} stale pending discount order(s)`);
-    })
-    .catch((err) => console.warn("stale discount cleanup", err));
+  void forEachActiveTenant(async (t) => {
+    const n = await cancelStalePendingDiscountOrders({ olderThanMs: 30 * 60_000 });
+    if (n > 0) console.log(`cancelled ${n} stale pending discount order(s) [${t.slug}]`);
+  }).catch((err) => console.warn("stale discount cleanup", err));
 };
 runStaleDiscountCleanup();
 setInterval(runStaleDiscountCleanup, 15 * 60_000);
 console.log("stale discount-order cleanup started (every 15m)");
-
-if (env.BOT_MODE === "polling") {
-  try {
-    await bot.api.deleteWebhook({ drop_pending_updates: false });
-  } catch (err) {
-    console.warn("deleteWebhook failed:", String(err));
-  }
-
-  bot.start({
-    onStart: (info) => console.log(`bot @${info.username} polling`),
-  }).catch((err) => {
-    console.error("Telegram API unreachable. Run on VPS or set TELEGRAM_PROXY.", err);
-  });
-}

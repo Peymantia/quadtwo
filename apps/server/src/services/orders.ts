@@ -143,8 +143,11 @@ export async function createMatrixOrder(input: {
       await cancelOpenPendingForDiscount(orderUserId, applied.codeId);
     }
     const finalPrice = applied ? applied.priceAfter : priceBefore;
+    const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     return prisma.order.create({
       data: {
+        tenantId,
         userId: orderUserId,
         kind,
         trafficGb,
@@ -278,8 +281,11 @@ export async function createMatrixOrder(input: {
   }
   const finalPrice = applied ? applied.priceAfter : priceBefore;
 
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.order.create({
     data: {
+      tenantId,
       userId: orderUserId,
       kind,
       trafficGb,
@@ -304,8 +310,11 @@ export async function createMatrixOrder(input: {
 
 export async function createWalletChargeOrder(userId: string, amount: number) {
   if (amount < 10_000) throw new Error("حداقل شارژ ۱۰٬۰۰۰ تومان است");
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.order.create({
     data: {
+      tenantId,
       userId,
       kind: OrderKind.wallet_charge,
       trafficGb: null,

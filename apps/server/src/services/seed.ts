@@ -15,6 +15,7 @@ import {
   saveSalesCategories,
   setSetting,
 } from "./settings.js";
+import { PLATFORM_TENANT_SLUG, runWithTenantAsync } from "./tenant-context.js";
 
 const month1: Array<{
   trafficGb: number | null;
@@ -45,8 +46,10 @@ function scale(base: number, months: number) {
 
 /** ∞GB belongs under unlimited or fixed offer — strip bad VIP/national rows. */
 export async function cleanupInvalidUnlimitedCells() {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const result = await prisma.priceCell.deleteMany({
-    where: { trafficGb: null, NOT: { category: { in: ["unlimited", "offer"] } } },
+    where: { tenantId, trafficGb: null, NOT: { category: { in: ["unlimited", "offer"] } } },
   });
   if (result.count > 0) {
     console.log(`removed ${result.count} invalid ∞GB price cell(s) outside unlimited/offer`);
@@ -55,6 +58,8 @@ export async function cleanupInvalidUnlimitedCells() {
 
 /** Turn on unlimited sales when rates or matrix unlimited plans already exist. */
 export async function ensureUnlimitedSalesEnabled() {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const cats = await getSalesCategories();
   if (cats.unlimited) return;
   const rates = await getPriceRates();
@@ -63,7 +68,7 @@ export async function ensureUnlimitedSalesEnabled() {
     rates.partner.unlimitedPerMonth > 0 ||
     rates.wholesale.unlimitedPerMonth > 0;
   const matrixCount = await prisma.priceCell.count({
-    where: { category: "unlimited", active: true },
+    where: { tenantId, category: "unlimited", active: true },
   });
   if (!hasRate && matrixCount === 0) return;
   await saveSalesCategories({ ...cats, unlimited: true });
@@ -87,8 +92,10 @@ async function disableForcedChannelsInDemo() {
 
 /** Fold legacy `reseller` category into `wholesale` and keep sales settings clean. */
 export async function ensureWholesaleCategoryCanonical() {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const renamed = await prisma.priceCell.updateMany({
-    where: { category: "reseller" },
+    where: { tenantId, category: "reseller" },
     data: { category: WHOLESALE_FIXED_CATEGORY },
   });
   if (renamed.count > 0) {
@@ -147,18 +154,19 @@ export async function ensureWholesaleDefaultPlans() {
   console.log(`ensured ${plans.length} wholesale fixed plans`);
 }
 
-export async function seedIfNeeded() {
+async function seedForTenant(tenantId: string) {
   await ensureDefaultSettings();
   await disableForcedChannelsInDemo();
   await cleanupInvalidUnlimitedCells();
   await ensureUnlimitedSalesEnabled();
 
-  const count = await prisma.priceCell.count();
+  const count = await prisma.priceCell.count({ where: { tenantId } });
   if (count === 0) {
     const rows = [];
     for (const m of [1, 2, 3]) {
       for (const row of month1) {
         rows.push({
+          tenantId,
           trafficGb: row.trafficGb,
           months: m,
           category: row.category,
@@ -173,6 +181,7 @@ export async function seedIfNeeded() {
     }
     // mark one golden
     rows.push({
+      tenantId,
       trafficGb: 50,
       months: 1,
       category: "data",
@@ -195,4 +204,13 @@ export async function seedIfNeeded() {
     // e.g. demo.db not yet db:push'd after a schema change — don't kill the process
     console.error("wholesale ensure failed (continuing startup):", err);
   }
+}
+
+export async function seedIfNeeded() {
+  const { ensurePlatformTenant } = await import("./tenants.js");
+  const { id: tenantId } = await ensurePlatformTenant();
+  await runWithTenantAsync(
+    { tenantId, slug: PLATFORM_TENANT_SLUG, isPlatform: true },
+    () => seedForTenant(tenantId),
+  );
 }

@@ -282,13 +282,19 @@ export async function isControlAdmin(telegramId: number | undefined): Promise<bo
   if (isAdminTelegramId(telegramId)) return true;
   const extra = await getExtraAdminIds();
   if (extra.includes(BigInt(telegramId))) return true;
-  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(telegramId) } });
+  const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const user = await prisma.user.findUnique({
+    where: { tenantId_telegramId: { tenantId, telegramId: BigInt(telegramId) } },
+  });
   return user?.role === UserRole.admin;
 }
 
 export async function showControlCenter(ctx: Context, edit = true) {
-  const pending = await prisma.order.count({ where: { status: OrderStatus.awaiting_review } });
-  const partners = await prisma.partnerRequest.count({ where: { status: "pending" } });
+  const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const pending = await prisma.order.count({ where: { tenantId, status: OrderStatus.awaiting_review } });
+  const partners = await prisma.partnerRequest.count({ where: { tenantId, status: "pending" } });
   const admins = await listNotifyAdminTelegramIds();
   const text = [
     "🎛 کنترل سنتر ادمین",
@@ -2777,8 +2783,10 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
       return true;
     }
     await addExtraAdminId(BigInt(id));
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     await prisma.user.updateMany({
-      where: { telegramId: BigInt(id) },
+      where: { tenantId, telegramId: BigInt(id) },
       data: { role: UserRole.admin },
     });
     ccWait.delete(tid);

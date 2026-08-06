@@ -16,6 +16,7 @@ import { SubQrModal } from "../../components/SubQrModal";
 import { DiscountCodesPanel } from "../../components/DiscountCodesPanel";
 import { AgentsLeaderboardPanel, SalesReportPanel, AccountDetailModal } from "../../components/SalesReportPanel";
 import { SettingsAccordion } from "../../components/SettingsAccordion";
+import { SuperadminTenantsPanel } from "../../components/SuperadminTenantsPanel";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -32,6 +33,7 @@ const TABS: ShellTab[] = [
   { key: "reports", label: "گزارشات", icon: "chart" },
   { key: "import", label: "اکسل", icon: "file" },
   { key: "settings", label: "تنظیمات", icon: "gear", gapAfter: true },
+  { key: "super", label: "مستأجرها", icon: "layers" },
 ];
 
 type PendingOrder = {
@@ -59,6 +61,14 @@ type AdminUser = {
   balance: number;
   discountCodesAllowed?: boolean;
   discountMaxPercent?: number;
+  priceOverride?: {
+    category: string;
+    perGb: number | null;
+    perMonth: number | null;
+    unlimitedPerMonth: number | null;
+    partnerPricePercent: number;
+    note: string | null;
+  } | null;
 };
 
 type PriceRow = {
@@ -190,14 +200,17 @@ export default function AdminPage() {
   if (loading || !home) return <LoadingScreen />;
 
   const userLabel = home.user.username ? `@${home.user.username}` : home.user.firstName || "";
+  const isSuper = Boolean(home.user.isSuperAdmin);
+  const tabs = isSuper ? TABS : TABS.filter((t) => t.key !== "super");
 
   return (
     <DashShell
       brand={home.brand}
+      logoUrl={home.logoUrl}
       title="کنترل سنتر"
       role={home.user.role}
       userLabel={userLabel}
-      tabs={TABS}
+      tabs={tabs}
       active={tab}
       demoMode={Boolean(home.demoMode)}
       onTab={(k) => {
@@ -242,6 +255,7 @@ export default function AdminPage() {
       )}
       {tab === "reports" && <ReportsTab />}
       {tab === "import" && <ImportTab flash={flash} />}
+      {tab === "super" && isSuper && <SuperadminTenantsPanel flash={flash} />}
     </DashShell>
   );
 }
@@ -767,6 +781,14 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
   const [partnerBusy, setPartnerBusy] = useState<string | null>(null);
   const [discountPctDraft, setDiscountPctDraft] = useState("30");
   const [discountBusy, setDiscountBusy] = useState(false);
+  const [priceOv, setPriceOv] = useState({
+    perGb: "",
+    perMonth: "",
+    unlimitedPerMonth: "",
+    partnerPricePercent: "100",
+    note: "",
+  });
+  const [priceOvBusy, setPriceOvBusy] = useState(false);
   const [detail, setDetail] = useState<{
     txs: Array<{ id: string; amount: number; type: string; note: string | null; createdAt: string }>;
     subscriptions: Array<{ id: string; code: string; status: string; expiresAt: string }>;
@@ -808,10 +830,19 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               ...s,
               discountCodesAllowed: r.user.discountCodesAllowed ?? true,
               discountMaxPercent: r.user.discountMaxPercent ?? 30,
+              priceOverride: r.user.priceOverride ?? null,
             }
           : s,
       );
       setDiscountPctDraft(String(r.user.discountMaxPercent ?? 30));
+      const ov = r.user.priceOverride;
+      setPriceOv({
+        perGb: ov?.perGb != null ? String(ov.perGb) : "",
+        perMonth: ov?.perMonth != null ? String(ov.perMonth) : "",
+        unlimitedPerMonth: ov?.unlimitedPerMonth != null ? String(ov.unlimitedPerMonth) : "",
+        partnerPricePercent: String(ov?.partnerPricePercent ?? 100),
+        note: ov?.note ?? "",
+      });
     });
   }, [selected?.id]);
 
@@ -920,6 +951,35 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       flash(null, errText(e));
     } finally {
       setDiscountBusy(false);
+    }
+  }
+
+  async function savePriceOverride(clear = false) {
+    if (!selected) return;
+    setPriceOvBusy(true);
+    try {
+      const r = await api<{ priceOverride: AdminUser["priceOverride"] }>(`/admin/users/${selected.id}/price-override`, {
+        method: "PUT",
+        body: clear
+          ? { clear: true }
+          : {
+              perGb: priceOv.perGb === "" ? null : Number(priceOv.perGb),
+              perMonth: priceOv.perMonth === "" ? null : Number(priceOv.perMonth),
+              unlimitedPerMonth: priceOv.unlimitedPerMonth === "" ? null : Number(priceOv.unlimitedPerMonth),
+              partnerPricePercent: Number(priceOv.partnerPricePercent || "100"),
+              note: priceOv.note || null,
+            },
+      });
+      flash(clear ? "قیمت اختصاصی پاک شد" : "قیمت اختصاصی ذخیره شد");
+      setSelected((s) => (s ? { ...s, priceOverride: r.priceOverride } : s));
+      if (clear) {
+        setPriceOv({ perGb: "", perMonth: "", unlimitedPerMonth: "", partnerPricePercent: "100", note: "" });
+      }
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setPriceOvBusy(false);
     }
   }
 
@@ -1182,6 +1242,39 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                     padding: "8px 12px",
                   }}
                 />
+              </div>
+
+              <h2 style={{ marginTop: 16, fontSize: "1rem" }}>قیمت اختصاصی این نماینده</h2>
+              <p className="muted" style={{ marginBottom: 10, fontSize: "0.85rem" }}>
+                اگر گیگ/ماه پر شود، همان نرخ برای این کاربر استفاده می‌شود. در غیر این صورت درصد روی قیمت ماتریکس/نرخ اعمال می‌شود.
+              </p>
+              <div className="field">
+                <label>تومان به ازای هر گیگ</label>
+                <input className="num" inputMode="numeric" value={priceOv.perGb} onChange={(e) => setPriceOv((p) => ({ ...p, perGb: e.target.value.replace(/[^\d]/g, "") }))} placeholder="خالی = پیش‌فرض" />
+              </div>
+              <div className="field">
+                <label>تومان به ازای هر ماه</label>
+                <input className="num" inputMode="numeric" value={priceOv.perMonth} onChange={(e) => setPriceOv((p) => ({ ...p, perMonth: e.target.value.replace(/[^\d]/g, "") }))} placeholder="خالی = پیش‌فرض" />
+              </div>
+              <div className="field">
+                <label>تومان ماهانه نامحدود</label>
+                <input className="num" inputMode="numeric" value={priceOv.unlimitedPerMonth} onChange={(e) => setPriceOv((p) => ({ ...p, unlimitedPerMonth: e.target.value.replace(/[^\d]/g, "") }))} />
+              </div>
+              <div className="field">
+                <label>درصد قیمت ماتریکس (۱۰۰ = بدون تغییر)</label>
+                <input className="num" inputMode="numeric" value={priceOv.partnerPricePercent} onChange={(e) => setPriceOv((p) => ({ ...p, partnerPricePercent: e.target.value.replace(/[^\d]/g, "") }))} />
+              </div>
+              <div className="field">
+                <label>یادداشت</label>
+                <input value={priceOv.note} onChange={(e) => setPriceOv((p) => ({ ...p, note: e.target.value }))} />
+              </div>
+              <div className="actions">
+                <button type="button" className="btn primary" disabled={priceOvBusy} onClick={() => void savePriceOverride(false)}>
+                  ذخیره قیمت اختصاصی
+                </button>
+                <button type="button" className="btn" disabled={priceOvBusy || !selected.priceOverride} onClick={() => void savePriceOverride(true)}>
+                  پاک کردن
+                </button>
               </div>
             </>
           )}

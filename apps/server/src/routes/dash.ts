@@ -133,7 +133,7 @@ import { dashBaseUrl, env } from "../config/env.js";
 import { clearEmojiStyleCache, attachPremiumTextEntities, getEmojiStyle } from "../services/emoji-transform.js";
 import { createTelegramBot } from "../bot/telegram.js";
 
-type Vars = { userId: string; role: string; telegramId: string };
+type Vars = { userId: string; role: string; telegramId: string; tenantId: string };
 
 function isWalletCreditResult(
   r: ProvisionResult | { kind: "wallet_credit"; balance: number } | { kind: "serverless_pending" },
@@ -199,6 +199,7 @@ async function sessionForUser(userId: string) {
       panelGroup: user.panelGroup,
       agentName: user.agentName,
       hasPassword: Boolean(user.passwordHash),
+      isSuperAdmin: Boolean(user.isSuperAdmin),
     },
   };
 }
@@ -206,9 +207,15 @@ async function sessionForUser(userId: string) {
 export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/auth/meta", async (c) => {
     const brand = await getSetting("brand_name");
+    const { resolveTenantIdOrPlatform, tenantDashUrl } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
     return c.json({
-      brand: brand || "پیـنگ",
-      dashUrl: dashBaseUrl(),
+      brand: tenant?.brandName || brand || "پیـنگ",
+      logoUrl: tenant?.logoUrl ?? null,
+      slug: tenant?.slug ?? "platform",
+      isPlatform: Boolean(tenant?.isPlatform),
+      dashUrl: tenant ? tenantDashUrl(tenant.slug) : dashBaseUrl(),
       authModes: ["password", "otp", "passkey"],
       passkeyHint: "ورود با Face ID / اثرانگشت (Passkey)",
       demoMode: isDemoMode(),
@@ -278,8 +285,15 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const support = await getSetting("support_username");
     const passkeyCount = await userPasskeyCount(userId);
     const role = c.get("role") || effectiveRole(user.telegramId, user.role);
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: await resolveTenantIdOrPlatform() },
+      select: { brandName: true, logoUrl: true, slug: true },
+    });
     return c.json({
-      brand: brand || "پیـنگ",
+      brand: tenant?.brandName || brand || "پیـنگ",
+      logoUrl: tenant?.logoUrl ?? null,
+      tenantSlug: tenant?.slug ?? null,
       support,
       demoMode: isDemoMode(),
       demoRole: isDemoMode() ? role : null,
@@ -297,6 +311,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         hasPasskey: passkeyCount > 0,
         passkeyCount,
         testClaimed: Boolean(user.testClaimedAt),
+        isSuperAdmin: Boolean(user.isSuperAdmin),
         discountCodesAllowed: canUserManageDiscountCodes({
           id: user.id,
           role: role as typeof user.role,
@@ -1518,9 +1533,11 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
 
 export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/admin/home", async (c) => {
-    const pending = await prisma.order.count({ where: { status: "awaiting_review" } });
-    const users = await prisma.user.count();
-    const activeSubs = await prisma.subscription.count({ where: { status: "active" } });
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const pending = await prisma.order.count({ where: { tenantId, status: "awaiting_review" } });
+    const users = await prisma.user.count({ where: { tenantId } });
+    const activeSubs = await prisma.subscription.count({ where: { tenantId, status: "active" } });
     const sales = await adminSalesReport("today");
     return c.json({
       pendingOrders: pending,
@@ -1628,8 +1645,11 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/orders/pending", async (c) => {
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const orders = await prisma.order.findMany({
       where: {
+        tenantId,
         OR: [
           { status: "awaiting_review" },
           { status: "awaiting_delivery" },
@@ -2561,12 +2581,14 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/users", async (c) => {
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const role = c.req.query("role");
     const users = await prisma.user.findMany({
-      where: role ? { role: role as UserRole } : undefined,
+      where: { tenantId, ...(role ? { role: role as UserRole } : {}) },
       orderBy: { createdAt: "desc" },
       take: 100,
-      include: { wallet: true },
+      include: { wallet: true, priceOverride: true },
     });
     return c.json({
       users: users.map((u) => ({
@@ -2581,17 +2603,30 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         hasPassword: Boolean(u.passwordHash),
         discountCodesAllowed: u.discountCodesAllowed,
         discountMaxPercent: u.discountMaxPercent,
+        priceOverride: u.priceOverride
+          ? {
+              category: u.priceOverride.category,
+              perGb: u.priceOverride.perGb,
+              perMonth: u.priceOverride.perMonth,
+              unlimitedPerMonth: u.priceOverride.unlimitedPerMonth,
+              partnerPricePercent: u.priceOverride.partnerPricePercent,
+              note: u.priceOverride.note,
+            }
+          : null,
       })),
     });
   });
 
   api.get("/admin/users/:id", async (c) => {
-    const user = await prisma.user.findUnique({
-      where: { id: c.req.param("id") },
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const user = await prisma.user.findFirst({
+      where: { id: c.req.param("id"), tenantId },
       include: {
         wallet: { include: { txs: { orderBy: { createdAt: "desc" }, take: 20 } } },
         subscriptions: { orderBy: { createdAt: "desc" }, take: 20 },
         orders: { orderBy: { createdAt: "desc" }, take: 20 },
+        priceOverride: true,
       },
     });
     if (!user) return c.json({ error: "کاربر پیدا نشد" }, 404);
@@ -2608,6 +2643,16 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         discountCodesAllowed: user.discountCodesAllowed,
         discountMaxPercent: user.discountMaxPercent,
         createdAt: user.createdAt.toISOString(),
+        priceOverride: user.priceOverride
+          ? {
+              category: user.priceOverride.category,
+              perGb: user.priceOverride.perGb,
+              perMonth: user.priceOverride.perMonth,
+              unlimitedPerMonth: user.priceOverride.unlimitedPerMonth,
+              partnerPricePercent: user.priceOverride.partnerPricePercent,
+              note: user.priceOverride.note,
+            }
+          : null,
       },
       txs: (user.wallet?.txs ?? []).map((t) => ({
         id: t.id,
@@ -2641,7 +2686,9 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       discountCodesAllowed?: boolean;
       discountMaxPercent?: number;
     }>();
-    const target = await prisma.user.findUnique({ where: { id: c.req.param("id") } });
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
     if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
     const isAgent =
       target.role === UserRole.partner ||
@@ -2683,12 +2730,103 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     });
   });
 
+  /** Per-agent custom rates / matrix percent override. */
+  api.put("/admin/users/:id/price-override", async (c) => {
+    const body = await c.req.json<{
+      category?: string;
+      perGb?: number | null;
+      perMonth?: number | null;
+      unlimitedPerMonth?: number | null;
+      partnerPricePercent?: number | null;
+      note?: string | null;
+      clear?: boolean;
+    }>();
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
+    if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    const isAgent =
+      target.role === UserRole.partner ||
+      target.role === UserRole.wholesale ||
+      target.role === UserRole.reseller;
+    if (!isAgent) {
+      return c.json({ error: "قیمت اختصاصی فقط برای نمایندگان است" }, 400);
+    }
+
+    if (body.clear) {
+      await prisma.agentPriceOverride.deleteMany({ where: { userId: target.id } });
+      await auditLog({
+        action: "agent_price_override_clear",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: target.id,
+      });
+      return c.json({ ok: true, priceOverride: null });
+    }
+
+    const percent =
+      body.partnerPricePercent == null
+        ? 100
+        : Math.max(1, Math.min(200, Math.floor(Number(body.partnerPricePercent))));
+    const numOrNull = (v: unknown) => {
+      if (v === null || v === undefined || v === "") return null;
+      const n = Math.floor(Number(v));
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    };
+
+    const row = await prisma.agentPriceOverride.upsert({
+      where: { userId: target.id },
+      create: {
+        tenantId,
+        userId: target.id,
+        category: (body.category || "").trim().toLowerCase(),
+        perGb: numOrNull(body.perGb),
+        perMonth: numOrNull(body.perMonth),
+        unlimitedPerMonth: numOrNull(body.unlimitedPerMonth),
+        partnerPricePercent: percent,
+        note: body.note?.trim() || null,
+      },
+      update: {
+        category: body.category !== undefined ? (body.category || "").trim().toLowerCase() : undefined,
+        perGb: body.perGb !== undefined ? numOrNull(body.perGb) : undefined,
+        perMonth: body.perMonth !== undefined ? numOrNull(body.perMonth) : undefined,
+        unlimitedPerMonth:
+          body.unlimitedPerMonth !== undefined ? numOrNull(body.unlimitedPerMonth) : undefined,
+        partnerPricePercent: body.partnerPricePercent !== undefined ? percent : undefined,
+        note: body.note !== undefined ? body.note?.trim() || null : undefined,
+      },
+    });
+    await auditLog({
+      action: "agent_price_override",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: target.id,
+      detail: JSON.stringify({
+        perGb: row.perGb,
+        perMonth: row.perMonth,
+        unlimitedPerMonth: row.unlimitedPerMonth,
+        partnerPricePercent: row.partnerPricePercent,
+      }),
+    });
+    return c.json({
+      ok: true,
+      priceOverride: {
+        category: row.category,
+        perGb: row.perGb,
+        perMonth: row.perMonth,
+        unlimitedPerMonth: row.unlimitedPerMonth,
+        partnerPricePercent: row.partnerPricePercent,
+        note: row.note,
+      },
+    });
+  });
+
   api.post("/admin/users/:id/role", async (c) => {
     const body = await c.req.json<{ role: UserRole }>();
     if (!["user", "partner", "wholesale", "reseller", "admin"].includes(body.role)) {
       return c.json({ error: "نقش نامعتبر" }, 400);
     }
-    const target = await prisma.user.findUnique({ where: { id: c.req.param("id") } });
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
     if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
 
     const wasSeller =
@@ -3111,7 +3249,11 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 }
 
 export async function mintOtpPayloadForTelegramUser(telegramId: number) {
-  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(telegramId) } });
+  const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const user = await prisma.user.findUnique({
+    where: { tenantId_telegramId: { tenantId, telegramId: BigInt(telegramId) } },
+  });
   if (!user) throw new Error("کاربر یافت نشد — /start بزنید");
   const code = await issueOtpForUser(user.id);
   return { code, login: user.username ? `@${user.username}` : String(user.telegramId) };

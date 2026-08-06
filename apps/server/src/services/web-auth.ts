@@ -31,11 +31,15 @@ export function verifyPassword(password: string, stored: string): boolean {
 export async function findUserByLogin(login: string) {
   const q = login.trim().replace(/^@/, "");
   if (!q) return null;
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   if (/^\d+$/.test(q)) {
-    return prisma.user.findUnique({ where: { telegramId: BigInt(q) } });
+    return prisma.user.findUnique({
+      where: { tenantId_telegramId: { tenantId, telegramId: BigInt(q) } },
+    });
   }
   return prisma.user.findFirst({
-    where: { username: { equals: q } },
+    where: { tenantId, username: { equals: q } },
   });
 }
 
@@ -47,12 +51,24 @@ export async function setUserPassword(userId: string, password: string) {
   });
 }
 
+async function resolveBotTokenForTenant(): Promise<string> {
+  const { tryTenantId } = await import("./tenant-context.js");
+  const tid = tryTenantId();
+  if (tid) {
+    const { getTenantById, tenantBotTokenPlain } = await import("./tenants.js");
+    const t = await getTenantById(tid);
+    if (t?.botToken) return tenantBotTokenPlain(t);
+  }
+  return env.BOT_TOKEN;
+}
+
 async function sendTelegramText(
   chatId: bigint,
   text: string,
   opts?: { parseMode?: "HTML"; entities?: Array<Record<string, unknown>> },
 ) {
-  const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`;
+  const botToken = await resolveBotTokenForTenant();
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   let entities = opts?.entities;
   if (!opts?.parseMode) {
     const { getEmojiStyle, attachPremiumTextEntities } = await import("./emoji-transform.js");

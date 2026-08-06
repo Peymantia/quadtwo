@@ -13,6 +13,9 @@
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
 | A | `dash` | IP سرور | Proxied (نارنجی) |
+| A | `*.dash` | IP سرور | Proxied (نارنجی) — مستأجرها: `{slug}.dash.…` |
+
+> برای SaaS وایت‌لیبل، رکورد wildcard لازم است تا هر Tenant روی ساب‌دامین خودش باز شود.
 
 ### SSL/TLS (مهم)
 
@@ -188,3 +191,13 @@ ls -la /etc/nginx/sites-enabled/
 ```bash
 journalctl -u quadtwo -u quadtwo-web -f
 ```
+
+## فروش ربات وایت‌لیبل (چندمستأجری)
+
+یک نصب = چند ربات جدا (هر خریدار برند/لوگو/پنل خودش):
+
+1. با اکانت سوپرادمین (`ADMIN_TELEGRAM_IDS`) وارد `https://dash.…/admin` شوید.
+2. تب **مستأجرها** → نام، اسلاگ، توکن ربات خریدار را بسازید (ربات hot-reload می‌شود).
+3. لینک داشبورد خریدار: `https://{slug}.dash.…` (لوکال: `/?tenant=slug`).
+4. DNS wildcard (`*.dash`) و `server_name … *.dash.…` در Nginx را طبق بالا فعال کنید.
+5. خریدار در پنل خودش سرورهای 3x-ui، قیمت و برند را تنظیم می‌کند؛ قیمت per-agent در تب کاربران.

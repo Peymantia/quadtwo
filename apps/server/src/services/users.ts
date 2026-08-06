@@ -55,18 +55,28 @@ export type TgUserLike = {
 
 export async function upsertUserFromTelegram(tg: TgUserLike): Promise<User> {
   const telegramId = BigInt(tg.id);
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const envAdmins = adminIds();
   const extra = await getExtraAdminIds();
-  const shouldAdmin = envAdmins.includes(telegramId) || extra.includes(telegramId);
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  const isPlatform = Boolean(tenant?.isPlatform);
+  const shouldAdmin =
+    (isPlatform && (envAdmins.includes(telegramId) || extra.includes(telegramId))) ||
+    (tenant?.ownerTelegramId != null && tenant.ownerTelegramId === telegramId);
+  const shouldSuper =
+    isPlatform && (envAdmins.includes(telegramId) || extra.includes(telegramId));
 
   const user = await prisma.user.upsert({
-    where: { telegramId },
+    where: { tenantId_telegramId: { tenantId, telegramId } },
     create: {
+      tenantId,
       telegramId,
       username: tg.username ?? null,
       firstName: tg.first_name ?? null,
       lastName: tg.last_name ?? null,
       role: shouldAdmin ? UserRole.admin : UserRole.user,
+      isSuperAdmin: shouldSuper,
       wallet: { create: {} },
     },
     update: {
@@ -74,6 +84,7 @@ export async function upsertUserFromTelegram(tg: TgUserLike): Promise<User> {
       firstName: tg.first_name ?? null,
       lastName: tg.last_name ?? null,
       ...(shouldAdmin ? { role: UserRole.admin } : {}),
+      ...(shouldSuper ? { isSuperAdmin: true } : {}),
     },
   });
 
@@ -94,29 +105,39 @@ export async function upsertUserFromTelegram(tg: TgUserLike): Promise<User> {
 
 /** All telegram IDs that should receive admin alerts */
 export async function listNotifyAdminTelegramIds(): Promise<number[]> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
   const fromDb = await prisma.user.findMany({
-    where: { role: UserRole.admin },
+    where: { tenantId, role: UserRole.admin },
     select: { telegramId: true },
   });
   const set = new Set<string>();
-  for (const id of adminIds()) set.add(String(id));
-  for (const id of await getExtraAdminIds()) set.add(String(id));
+  if (tenant?.isPlatform) {
+    for (const id of adminIds()) set.add(String(id));
+    for (const id of await getExtraAdminIds()) set.add(String(id));
+  }
+  if (tenant?.ownerTelegramId != null) set.add(String(tenant.ownerTelegramId));
   for (const u of fromDb) set.add(String(u.telegramId));
   return [...set].map((s) => Number(s));
 }
 
 export async function submitPartnerRequest(userId: string, fullName: string, phone?: string, note?: string) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.partnerRequest.upsert({
     where: { userId },
-    create: { userId, fullName, phone, note, status: "pending" },
+    create: { tenantId, userId, fullName, phone, note, status: "pending" },
     update: { fullName, phone, note, status: "pending" },
   });
 }
 
 /** Pending partner / reseller applications for admin review. */
 export async function listPendingPartnerRequests() {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.partnerRequest.findMany({
-    where: { status: "pending" },
+    where: { tenantId, status: "pending" },
     include: {
       user: {
         select: {
@@ -225,8 +246,11 @@ export async function setAgentName(
       where: { userId: user.id, status: "pending" },
       data: { status: "rejected" },
     });
+    const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+    const tenantId = user.tenantId || (await resolveTenantIdOrPlatform());
     const req = await prisma.agentRenameRequest.create({
       data: {
+        tenantId,
         userId: user.id,
         oldName,
         oldGroup: oldGroup || oldName,

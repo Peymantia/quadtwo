@@ -241,6 +241,8 @@ export type ShellTab = {
 
 export function DashShell(props: {
   brand: string;
+  /** Optional tenant logo URL (falls back to /logo.png) */
+  logoUrl?: string | null;
   title: string;
   role: Role;
   userLabel?: string;
@@ -362,7 +364,7 @@ export function DashShell(props: {
       <div className="mobile-top">
         <div className="brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt={props.brand} />
+          <img src={props.logoUrl || "/logo.png"} alt={props.brand} />
           <span>{props.brand}</span>
         </div>
         <div className="topbar-side">
@@ -399,7 +401,7 @@ export function DashShell(props: {
         <aside className="sidebar">
           <div className="sidebar-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt={props.brand} />
+            <img src={props.logoUrl || "/logo.png"} alt={props.brand} />
             <div>
               <strong>{props.brand}</strong>
               <span>{roleLabel(props.role)}</span>

@@ -163,36 +163,60 @@ const defaults: Record<string, string> = {
 };
 
 export async function getSetting(key: string): Promise<string> {
-  const row = await prisma.setting.findUnique({ where: { key } });
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const row = await prisma.setting.findUnique({
+    where: { tenantId_key: { tenantId, key } },
+  });
   if (row) return row.value;
   return defaults[key] ?? "";
 }
 
 export async function setSetting(key: string, value: string): Promise<void> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   await prisma.setting.upsert({
-    where: { key },
-    create: { key, value },
+    where: { tenantId_key: { tenantId, key } },
+    create: { tenantId, key, value },
     update: { value },
   });
 }
 
 /**
  * HTTPS URL for Telegram Mini App / WebApp buttons.
- * Prefers `miniapp_url` setting, then DASH_DOMAIN / PUBLIC_DOMAIN.
+ * Prefers `miniapp_url` setting, then tenant subdomain dash, then DASH_DOMAIN.
  */
 export async function resolveMiniAppUrl(): Promise<string | null> {
   const { dashBaseUrl } = await import("../config/env.js");
   const stored = (await getSetting("miniapp_url")).trim().replace(/\/$/, "");
   if (stored.startsWith("https://")) return stored;
+  const { tryTenantId } = await import("./tenant-context.js");
+  const tid = tryTenantId();
+  if (tid) {
+    const t = await prisma.tenant.findUnique({ where: { id: tid } });
+    if (t && !t.isPlatform) {
+      const { tenantDashUrl } = await import("./tenants.js");
+      const url = tenantDashUrl(t.slug);
+      if (url.startsWith("https://")) return url;
+    }
+  }
   const dash = dashBaseUrl();
   if (dash.startsWith("https://")) return dash;
   return null;
 }
 
 export async function getAllSettings() {
-  const rows = await prisma.setting.findMany();
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const rows = await prisma.setting.findMany({ where: { tenantId } });
   const map: Record<string, string> = { ...defaults };
   for (const r of rows) map[r.key] = r.value;
+  // Overlay tenant branding fields
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (tenant?.brandName) map.brand_name = tenant.brandName;
+  if (tenant?.logoUrl) map.logo_url = tenant.logoUrl;
+  if (tenant?.welcomeText) map.welcome_text = tenant.welcomeText;
+  if (tenant?.supportUsername) map.support_username = tenant.supportUsername;
   return map;
 }
 
@@ -204,16 +228,25 @@ export async function getPaymentCard() {
 }
 
 export async function ensureDefaultSettings() {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   for (const [key, value] of Object.entries(defaults)) {
-    const existing = await prisma.setting.findUnique({ where: { key } });
+    const existing = await prisma.setting.findUnique({
+      where: { tenantId_key: { tenantId, key } },
+    });
     if (!existing) {
-      await prisma.setting.create({ data: { key, value } });
+      await prisma.setting.create({ data: { tenantId, key, value } });
     }
   }
   // Rename legacy English brand to Persian display name
-  const brand = await prisma.setting.findUnique({ where: { key: "brand_name" } });
+  const brand = await prisma.setting.findUnique({
+    where: { tenantId_key: { tenantId, key: "brand_name" } },
+  });
   if (brand && /^piing$/i.test(brand.value.trim())) {
-    await prisma.setting.update({ where: { key: "brand_name" }, data: { value: defaults.brand_name } });
+    await prisma.setting.update({
+      where: { tenantId_key: { tenantId, key: "brand_name" } },
+      data: { value: defaults.brand_name },
+    });
   }
 }
 

@@ -46,6 +46,8 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
     throw new Error("شما قبلاً سرویس تست را دریافت کرده‌اید.");
   }
 
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = user.tenantId || (await resolveTenantIdOrPlatform());
   const code = shortCode("TST");
   const tgTail = String(user.telegramId).slice(-4);
   const codeTail = code.replace(/^TST-/i, "").slice(-2).toLowerCase();
@@ -61,6 +63,7 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
     const [subscription] = await prisma.$transaction([
       prisma.subscription.create({
         data: {
+          tenantId,
           code,
           userId: user.id,
           panelServerId: null,
@@ -143,6 +146,7 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
   const [subscription] = await prisma.$transaction([
     prisma.subscription.create({
       data: {
+        tenantId,
         code,
         userId: user.id,
         panelServerId: resolved.panel?.id ?? null,

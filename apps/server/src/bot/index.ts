@@ -593,8 +593,10 @@ async function showBuyWizard(ctx: Context, edit = false) {
       select: { limitIp: true },
     });
     if (cell && cell.limitIp > 0) {
+      const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+      const tenantId = await resolveTenantIdOrPlatform();
       draft = await prisma.buyDraft.update({
-        where: { telegramId: BigInt(ctx.from!.id) },
+        where: { tenantId_telegramId: { tenantId, telegramId: BigInt(ctx.from!.id) } },
         data: { limitIp: cell.limitIp, limitIpTouched: true },
       });
     }
@@ -909,9 +911,12 @@ async function handleConfigLookup(ctx: Context) {
 }
 
 async function handleDashboard(ctx: Context) {
+  const { resolveTenantIdOrPlatform, tenantDashUrl, getTenantById } = await import("../services/tenants.js");
   const { dashBaseUrl } = await import("../config/env.js");
-  const url = dashBaseUrl();
+  const tenant = await getTenantById(await resolveTenantIdOrPlatform());
+  const url = tenant && !tenant.isPlatform ? tenantDashUrl(tenant.slug) : dashBaseUrl();
   const mini = await resolveMiniAppUrl();
+  const brand = tenant?.brandName || "پیـنگ";
   const kb = new InlineKeyboard();
   if (mini) {
     kb.webApp("📱 باز کردن پنل داخل تلگرام", mini).success().row();
@@ -919,7 +924,7 @@ async function handleDashboard(ctx: Context) {
   kb.url("🌐 باز کردن در مرورگر", url).row().text("🔐 دریافت کد OTP", "dash:otp");
   await ctx.reply(
     [
-      "🌐 پنل وب Piing",
+      `🌐 پنل وب ${brand}`,
       "",
       mini
         ? "از دکمه سبز، پنل را مستقیم داخل تلگرام باز کنید (بدون رمز)."
@@ -952,11 +957,14 @@ async function handleDashOtp(ctx: Context) {
       return;
     }
     const { mintOtpPayloadForTelegramUser } = await import("../routes/dash.js");
+    const { resolveTenantIdOrPlatform, tenantDashUrl, getTenantById } = await import("../services/tenants.js");
     const { dashBaseUrl } = await import("../config/env.js");
     const { buildDashboardOtpTelegramMessage } = await import("../services/web-auth.js");
     const user = await upsertUserFromTelegram(ctx.from!);
     const { code, login } = await mintOtpPayloadForTelegramUser(Number(user.telegramId));
-    const loginUrl = `${dashBaseUrl().replace(/\/$/, "")}/login`;
+    const tenant = await getTenantById(await resolveTenantIdOrPlatform());
+    const base = tenant && !tenant.isPlatform ? tenantDashUrl(tenant.slug) : dashBaseUrl();
+    const loginUrl = `${base.replace(/\/$/, "")}/login`;
     const msg = buildDashboardOtpTelegramMessage(loginUrl, login, String(code));
     await ctx.reply(msg.text, {
       ...(msg.entities?.length ? { entities: msg.entities as never } : {}),
@@ -970,11 +978,14 @@ async function handleDashOtp(ctx: Context) {
 async function handleDashOtpCode(ctx: Context) {
   try {
     const { mintOtpPayloadForTelegramUser } = await import("../routes/dash.js");
+    const { resolveTenantIdOrPlatform, tenantDashUrl, getTenantById } = await import("../services/tenants.js");
     const { dashBaseUrl } = await import("../config/env.js");
     const { buildDashboardOtpTelegramMessage } = await import("../services/web-auth.js");
     const user = await upsertUserFromTelegram(ctx.from!);
     const { code, login } = await mintOtpPayloadForTelegramUser(Number(user.telegramId));
-    const loginUrl = `${dashBaseUrl().replace(/\/$/, "")}/login`;
+    const tenant = await getTenantById(await resolveTenantIdOrPlatform());
+    const base = tenant && !tenant.isPlatform ? tenantDashUrl(tenant.slug) : dashBaseUrl();
+    const loginUrl = `${base.replace(/\/$/, "")}/login`;
     const msg = buildDashboardOtpTelegramMessage(loginUrl, login, String(code));
     await ctx.reply(msg.text, {
       ...(msg.entities?.length ? { entities: msg.entities as never } : {}),
@@ -1097,21 +1108,39 @@ function clearWaits(tid: number) {
   clearMyServicesWaits(tid);
 }
 
-export function createBot() {
-  const bot = createTelegramBot();
+export function createBot(
+  token?: string,
+  tenant?: { tenantId: string; slug?: string; isPlatform?: boolean },
+) {
+  const bot = createTelegramBot(token);
   installEmojiApiTransform(bot.api);
 
   bot.use(async (ctx, next) => {
-    if (ctx.from) await upsertUserFromTelegram(ctx.from);
-    // Normalize legacy premium button texts that prefixed RLM/LRM (broke hears matching)
-    const msg = ctx.message;
-    if (msg && "text" in msg && typeof msg.text === "string") {
-      const cleaned = msg.text.replace(/^[\u200E\u200F\u2066\u2067\u2068\u2069]+/u, "");
-      if (cleaned !== msg.text) {
-        Object.assign(msg, { text: cleaned });
+    const run = async () => {
+      if (ctx.from) await upsertUserFromTelegram(ctx.from);
+      // Normalize legacy premium button texts that prefixed RLM/LRM (broke hears matching)
+      const msg = ctx.message;
+      if (msg && "text" in msg && typeof msg.text === "string") {
+        const cleaned = msg.text.replace(/^[\u200E\u200F\u2066\u2067\u2068\u2069]+/u, "");
+        if (cleaned !== msg.text) {
+          Object.assign(msg, { text: cleaned });
+        }
       }
+      await next();
+    };
+    if (tenant?.tenantId) {
+      const { runWithTenantAsync } = await import("../services/tenant-context.js");
+      await runWithTenantAsync(
+        {
+          tenantId: tenant.tenantId,
+          slug: tenant.slug,
+          isPlatform: tenant.isPlatform,
+        },
+        run,
+      );
+    } else {
+      await run();
     }
-    await next();
   });
 
   registerControlCenter(bot);
@@ -1684,7 +1713,12 @@ export function createBot() {
           quantity: isFixedSingleServiceCategory(draft.category) ? 1 : draft.quantity,
           // Must match discount (and thus price); otherwise a code applied after first tap is ignored
           ...(draft.discountCode
-            ? { discountCode: { code: normalizeDiscountCode(draft.discountCode) } }
+            ? {
+                discountCode: {
+                  tenantId: user.tenantId,
+                  code: normalizeDiscountCode(draft.discountCode),
+                },
+              }
             : { discountCodeId: null }),
         },
         orderBy: { createdAt: "desc" },

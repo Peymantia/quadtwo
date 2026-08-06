@@ -118,13 +118,15 @@ export async function findPriceCell(
   months: number,
   category: PlanCategory = "data",
 ) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   let cat: string;
   if (isWholesaleFixedCategory(category)) cat = WHOLESALE_FIXED_CATEGORY;
   else if (isOfferCategory(category)) cat = "offer";
   else if (trafficGb === null) cat = "unlimited";
   else cat = category;
   return prisma.priceCell.findFirst({
-    where: { trafficGb, months, category: cat, active: true },
+    where: { tenantId, trafficGb, months, category: cat, active: true },
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
 }
@@ -185,6 +187,40 @@ export async function resolvePrice(
     return { cell: null, price: 0, mode: "rate" as const };
   }
 
+  // Per-agent custom rates / matrix percent
+  const override = await prisma.agentPriceOverride.findUnique({ where: { userId: user.id } });
+  if (override && (role === "partner" || role === "reseller" || role === "wholesale")) {
+    const cat = (category || "").trim().toLowerCase();
+    const scopeOk = !override.category || override.category === cat;
+    if (scopeOk && !(isOfferCategory(cat) || isWholesaleFixedCategory(cat))) {
+      const isUnlimited = trafficGb === null || cat === "unlimited";
+      if (isUnlimited && override.unlimitedPerMonth != null && override.unlimitedPerMonth > 0) {
+        return {
+          cell: null,
+          price: override.unlimitedPerMonth * Math.max(1, months),
+          mode: "rate" as const,
+        };
+      }
+      if (!isUnlimited && trafficGb != null) {
+        const perGb = override.perGb;
+        const perMonth = override.perMonth;
+        if (perGb != null || perMonth != null) {
+          const price =
+            (perGb ?? 0) * trafficGb + (perMonth ?? 0) * Math.max(1, months);
+          if (price > 0) return { cell: null, price, mode: "rate" as const };
+        }
+      }
+    }
+  }
+
+  const applyPartnerPercent = (price: number) => {
+    if (!override || override.partnerPricePercent == null || override.partnerPricePercent === 100) {
+      return price;
+    }
+    if (!(role === "partner" || role === "reseller" || role === "wholesale")) return price;
+    return Math.max(0, Math.round((price * override.partnerPricePercent) / 100));
+  };
+
   if ((category || "").trim().toLowerCase() === "serverless") {
     const { resolveServerlessPrice } = await import("./serverless.js");
     return resolveServerlessPrice(user, trafficGb, months);
@@ -198,7 +234,7 @@ export async function resolvePrice(
       isWholesaleFixedCategory(category) ? WHOLESALE_FIXED_CATEGORY : "offer",
     );
     if (!cell) return null;
-    const price = priceFromCell(role, cell);
+    const price = applyPartnerPercent(priceFromCell(role, cell));
     if (price <= 0) return null;
     return { cell, price, mode: "matrix" as const };
   }
@@ -210,16 +246,16 @@ export async function resolvePrice(
   if (isUnlimited) {
     const cell = await findPriceCell(null, months, "unlimited");
     if (cell?.isGolden) {
-      const goldenPrice = priceFromCell(role, cell);
+      const goldenPrice = applyPartnerPercent(priceFromCell(role, cell));
       if (goldenPrice > 0) return { cell, price: goldenPrice, mode: "rate" as const };
     }
     const rates = await getPriceRates();
     const ratePrice = calcRatePrice(role, null, months, rates, "unlimited");
     if (ratePrice > 0) {
-      return { cell: null, price: ratePrice, mode: "rate" as const };
+      return { cell: null, price: applyPartnerPercent(ratePrice), mode: "rate" as const };
     }
     if (cell) {
-      const matrixPrice = priceFromCell(role, cell);
+      const matrixPrice = applyPartnerPercent(priceFromCell(role, cell));
       if (matrixPrice > 0) return { cell, price: matrixPrice, mode: "matrix" as const };
     }
     return null;
@@ -229,17 +265,17 @@ export async function resolvePrice(
     // Golden/special matrix cells still override when an exact match exists
     const cell = await findPriceCell(trafficGb, months, category);
     if (cell?.isGolden) {
-      return { cell, price: priceFromCell(role, cell), mode: "rate" as const };
+      return { cell, price: applyPartnerPercent(priceFromCell(role, cell)), mode: "rate" as const };
     }
     const rates = await getPriceRates();
     const price = calcRatePrice(role, trafficGb, months, rates, category);
     if (!price || price <= 0) return null;
-    return { cell: null, price, mode: "rate" as const };
+    return { cell: null, price: applyPartnerPercent(price), mode: "rate" as const };
   }
 
   const cell = await findPriceCell(trafficGb, months, category);
   if (!cell) return null;
-  return { cell, price: priceFromCell(role, cell), mode: "matrix" as const };
+  return { cell, price: applyPartnerPercent(priceFromCell(role, cell)), mode: "matrix" as const };
 }
 
 export function matrixLine(trafficGb: number | null, months: number, price: number | null, qty = 1) {
@@ -251,15 +287,19 @@ export function matrixLine(trafficGb: number | null, months: number, price: numb
 }
 
 export async function listPriceMatrix(category?: string) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.priceCell.findMany({
-    where: { active: true, ...(category ? { category } : {}) },
+    where: { tenantId, active: true, ...(category ? { category } : {}) },
     orderBy: [{ isGolden: "desc" }, { sortOrder: "asc" }, { months: "asc" }],
   });
 }
 
 export async function listGoldenOffers() {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.priceCell.findMany({
-    where: { active: true, isGolden: true },
+    where: { tenantId, active: true, isGolden: true },
     orderBy: { sortOrder: "asc" },
   });
 }
@@ -276,6 +316,8 @@ export async function listResellerPlans() {
 
 /** Active priced plans for a fixed single-service category. */
 export async function listFixedPlans(category: string) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const cat = (category || "").trim().toLowerCase();
   if (!isFixedSingleServiceCategory(cat)) return [];
   const whereCat =
@@ -283,7 +325,7 @@ export async function listFixedPlans(category: string) {
       ? { in: ["wholesale", "reseller"] }
       : cat;
   return prisma.priceCell.findMany({
-    where: { active: true, category: whereCat },
+    where: { tenantId, active: true, category: whereCat },
     orderBy: [{ sortOrder: "asc" }, { months: "asc" }, { trafficGb: "asc" }],
   });
 }
@@ -322,6 +364,8 @@ export async function upsertPriceCell(input: {
   isGolden?: boolean;
   title?: string;
 }) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const requested = (input.category ?? "data").trim() || "data";
   const category = isWholesaleFixedCategory(requested)
     ? WHOLESALE_FIXED_CATEGORY
@@ -331,7 +375,7 @@ export async function upsertPriceCell(input: {
         ? "unlimited"
         : requested;
   const existing = await prisma.priceCell.findFirst({
-    where: { trafficGb: input.trafficGb, months: input.months, category },
+    where: { tenantId, trafficGb: input.trafficGb, months: input.months, category },
   });
   const data = {
     priceUser: input.priceUser,
@@ -351,6 +395,7 @@ export async function upsertPriceCell(input: {
   }
   return prisma.priceCell.create({
     data: {
+      tenantId,
       trafficGb: input.trafficGb,
       months: input.months,
       ...data,

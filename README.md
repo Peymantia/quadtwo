@@ -1,6 +1,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Telegram-Bot-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram Bot" />
   <img src="https://img.shields.io/badge/3x--ui-Integrated-00C853?style=for-the-badge" alt="3x-ui" />
+  <img src="https://img.shields.io/badge/SaaS-Multi--tenant-FF6D00?style=for-the-badge" alt="SaaS" />
+  <img src="https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge" alt="Version" />
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node" />
   <img src="https://img.shields.io/badge/License-Private-6c757d?style=for-the-badge" alt="License" />
 </p>
@@ -8,8 +10,8 @@
 <h1 align="center">⚡ Quadtwo</h1>
 
 <p align="center">
-  <b>ربات فروش VPN روی تلگرام</b><br/>
-  متصل به چند پنل <a href="https://github.com/MHSanaei/3x-ui">3x-ui</a> · خرید خودکار · کیف پول · نمایندگی · کنترل سنتر ادمین
+  <b>پلتفرم فروش VPN روی تلگرام — وایت‌لیبل چندمستأجری</b><br/>
+  چند ربات روی یک سرور · برند/لوگو جدا · پنل 3x-ui · نمایندگی · قیمت per-agent · داشبورد وب
 </p>
 
 <p align="center">
@@ -31,6 +33,16 @@
 | 💎 **نامحدود** | حجم ثابت نامحدود · اسلایدر حجم غیرفعال |
 | 🏷️ **دسته‌های فروش** | ادمین هر دسته را فعال/غیرفعال می‌کند |
 | ⏳ **مدت خرید** | پشتیبانی چندماهه (قابل محدود از کنترل سنتر) |
+| ☁️ **فروش سرورلس** | پلن‌های جدا با فرمول قیمت · تحویل دستی لینک ساب توسط ادمین |
+
+### 🏷 SaaS وایت‌لیبل (چندمستأجری)
+| | |
+|:--|:--|
+| 🤖 **چند ربات روی یک VPS** | هر خریدار توکن ربات خودش · hot-reload بدون ری‌استارت کل سرور |
+| 🎨 **برند + لوگو** | نام برند، لوگو، welcome و پشتیبانی per Tenant |
+| 🌐 **داشبورد ساب‌دامین** | `https://{slug}.dash…` · ایزوله کامل داده |
+| 💰 **قیمت per-agent** | نرخ گیگ/ماه یا درصد ماتریکس برای هر همکار |
+| 👑 **سوپرادمین دستی** | ساخت/تعلیق Tenant از تب مستأجرها |
 
 ### 📱 تجربه کاربر
 | | |
@@ -64,13 +76,15 @@
 | ⚙️ **ناوبری خلوت** | تنظیمات بالا · کیف پول بابل وسط · بدون خروج در پایین |
 
 ### 🎛 کنترل سنتر ادمین
-- 💰 قیمت‌گذاری ماتریکس یا نرخ (گیگ × ماه)
+- 💰 قیمت‌گذاری ماتریکس یا نرخ (گیگ × ماه) · قیمت اختصاصی per-agent
+- 🏷 **مستأجرها (SaaS)** — ساخت ربات وایت‌لیبل، لوگو، تعلیق (سوپرادمین)
 - 👑 مدیریت ادمین‌ها و تنزل نقش
 - 📢 کانال اجباری · 🆘 پشتیبانی · 💳 کارت بانکی
 - 🔔 اعلان انقضا / حجم / حذف
 - 📊 گزارش فروش · 🔍 جستجو · 📜 لاگ عملیات
 - 💾 پشتیبان خودکار دیتابیس به ادمین
 - 🖥 مدیریت سرورهای پنل
+- ☁️ آکاردئون سرورلس — قیمت و تحویل دستی ساب
 - 📥 **ورود از اکسل** — تنظیمات، قیمت‌ها، کانال‌ها، پیام‌های تبلیغ و پنل‌ها یکجا (`samples/quadtwo-import-sample.xlsx`)
 
 ---
@@ -240,6 +254,21 @@ npm run db:push -w @quadtwo/server
 
 نقش‌ها: ادمین · همکار (`partner`) · ریسلر (`wholesale`) · کاربر
 
+### 🏷 فروش ربات وایت‌لیبل (چندمستأجری)
+
+یک سرور، چند ربات جدا با برند/لوگو/پنل 3x-ui و قیمت‌گذاری خودشان:
+
+1. روی Tenant پلتفرم با اکانت سوپرادمین (همان `ADMIN_TELEGRAM_IDS` در `.env`) وارد داشبورد شوید.
+2. تب **مستأجرها** → نام، اسلاگ ساب‌دامین، و **توکن ربات** خریدار را وارد کنید.
+3. ربات همان Tenant بدون ری‌استارت کل سرور استارت می‌شود؛ لینک داشبورد: `https://{slug}.{DASH_DOMAIN}` (لوکال: `/?tenant=slug`).
+4. ادمین خریدار پنل‌های 3x-ui، برند، کارت و قیمت‌ها را فقط برای Tenant خودش تنظیم می‌کند.
+5. قیمت اختصاصی per-agent: در تب **کاربران** برای هر همکار، نرخ گیگ/ماه یا درصد ماتریکس.
+
+نکات ops:
+- `BOT_TOKEN` در `.env` فقط Tenant پلتفرم است؛ بقیه توکن‌ها در DB (رمزنگاری‌شده) ذخیره می‌شوند.
+- Wildcard DNS / Nginx برای `*.dash.…` لازم است تا ساب‌دامین کار کند.
+- تعلیق مستأجر رباتش را متوقف می‌کند؛ پلتفرم قابل تعلیق نیست.
+
 ### 📁 ساختار پروژه
 
 ```text
@@ -257,7 +286,8 @@ docs/             # معماری و رودمپ
 
 | فایل | محتوا |
 |:--|:--|
-| [`deploy/README.md`](deploy/README.md) | نصب وب‌پنل dash.* |
+| [`deploy/README.md`](deploy/README.md) | نصب وب‌پنل dash.* + wildcard SaaS |
+| [`docs/SAAS.md`](docs/SAAS.md) | فروش ربات وایت‌لیبل (ops) |
 | [`docs/PROJECT.md`](docs/PROJECT.md) | شرح محصول |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | معماری فنی |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | نقشه راه |

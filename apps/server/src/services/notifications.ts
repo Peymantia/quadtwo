@@ -64,8 +64,11 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
     return { sent: 0, checked: 0 };
   }
 
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+
   const subs = await prisma.subscription.findMany({
-    where: { status: SubscriptionStatus.active },
+    where: { tenantId, status: SubscriptionStatus.active },
     include: { user: true },
     take: 500,
     orderBy: { expiresAt: "asc" },
@@ -237,6 +240,7 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
 
   await prisma.subscription.updateMany({
     where: {
+      tenantId,
       status: SubscriptionStatus.active,
       expiresAt: { lt: new Date(now - 7 * MS_DAY) },
     },
@@ -246,13 +250,21 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
   return { sent, checked: subs.length };
 }
 
-export function startNotificationCron(api: Api, intervalMs = 20 * 60 * 1000) {
+export function startNotificationCron(
+  getApiForTenant: (tenantId: string) => Api | undefined,
+  intervalMs = 20 * 60 * 1000,
+) {
   const tick = async () => {
     try {
-      const r = await runNotificationSweep(api);
-      if (r.sent > 0 || r.checked > 0) {
-        console.log(`notif sweep: checked=${r.checked} sent=${r.sent}`);
-      }
+      const { forEachActiveTenant } = await import("./tenants.js");
+      await forEachActiveTenant(async (t) => {
+        const api = getApiForTenant(t.id);
+        if (!api) return;
+        const r = await runNotificationSweep(api);
+        if (r.sent > 0 || r.checked > 0) {
+          console.log(`notif sweep [${t.slug}]: checked=${r.checked} sent=${r.sent}`);
+        }
+      });
     } catch (err) {
       console.error("notif sweep error", err);
     }

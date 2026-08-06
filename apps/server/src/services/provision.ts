@@ -412,6 +412,7 @@ async function createDemoLocalClient(
 
   const subscription = await prisma.subscription.create({
     data: {
+      tenantId: (order as { tenantId?: string }).tenantId || user.tenantId,
       code,
       userId: user.id,
       orderId: opts.linkOrderId ? order.id : null,
@@ -519,6 +520,7 @@ async function createOnePanelClient(
   const note = order.note?.trim() ? order.note.trim().slice(0, 500) : null;
   const subscription = await prisma.subscription.create({
     data: {
+      tenantId: (order as { tenantId?: string }).tenantId || user.tenantId,
       code,
       userId: user.id,
       orderId: opts.linkOrderId ? order.id : null,

@@ -22,6 +22,15 @@ import {
   snapServerlessGb,
 } from "../services/serverless.js";
 
+async function buyDraftKey(telegramId: bigint) {
+  const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  return {
+    tenantId,
+    where: { tenantId_telegramId: { tenantId, telegramId } },
+  };
+}
+
 async function capMonths(m: number) {
   const max = await getMaxPurchaseMonths();
   return Math.max(1, Math.min(max, m));
@@ -29,9 +38,11 @@ async function capMonths(m: number) {
 
 export async function getOrCreateDraft(telegramId: bigint) {
   const defaultIp = await getDefaultLimitIp();
+  const { tenantId, where } = await buyDraftKey(telegramId);
   const draft = await prisma.buyDraft.upsert({
-    where: { telegramId },
+    where,
     create: {
+      tenantId,
       telegramId,
       trafficGb: 10,
       months: 1,
@@ -47,7 +58,7 @@ export async function getOrCreateDraft(telegramId: bigint) {
 
   if (!draft.limitIpTouched && draft.limitIp === 0 && defaultIp > 0) {
     return prisma.buyDraft.update({
-      where: { telegramId },
+      where,
       data: { limitIp: defaultIp },
     });
   }
@@ -56,13 +67,14 @@ export async function getOrCreateDraft(telegramId: bigint) {
 
 export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
   const draft = await getOrCreateDraft(telegramId);
+  const { where } = await buyDraftKey(telegramId);
   if (isServerlessCategory(draft.category)) {
     const cfg = await getServerlessPricingConfig();
     const months = draft.months <= 0 ? 0 : draft.months;
     const cur = snapServerlessGb(draft.trafficGb ?? cfg.weeklyMinGb, months, cfg);
     const next = snapServerlessGb(cur + dir, months, cfg);
     return prisma.buyDraft.update({
-      where: { telegramId },
+      where,
       data: { trafficGb: next, unlimited: false, quantity: 1 },
     });
   }
@@ -70,7 +82,7 @@ export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
   if (draft.category === "national") {
     const gb = nextNationalVolume(draft.trafficGb, dir);
     return prisma.buyDraft.update({
-      where: { telegramId },
+      where,
       data: { trafficGb: gb, unlimited: false, months: 1 },
     });
   }
@@ -79,7 +91,7 @@ export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
     return draft;
   }
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: {
       trafficGb: next.trafficGb,
       unlimited: next.unlimited,
@@ -90,36 +102,39 @@ export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
 
 export async function adjustDraftMonths(telegramId: bigint, dir: 1 | -1) {
   const draft = await getOrCreateDraft(telegramId);
+  const { where } = await buyDraftKey(telegramId);
   if (isFixedSingleServiceCategory(draft.category)) return draft;
   const max = await getMaxPurchaseMonths();
   if (max <= 1 || draft.category === "national") {
     return prisma.buyDraft.update({
-      where: { telegramId },
+      where,
       data: { months: 1 },
     });
   }
   const next = await capMonths(draft.months + dir);
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: { months: next },
   });
 }
 
 export async function adjustDraftQty(telegramId: bigint, dir: 1 | -1) {
   const draft = await getOrCreateDraft(telegramId);
+  const { where } = await buyDraftKey(telegramId);
   if (isFixedSingleServiceCategory(draft.category)) return draft;
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: { quantity: clampQty(draft.quantity + dir) },
   });
 }
 
 export async function adjustDraftLimitIp(telegramId: bigint, dir: 1 | -1) {
   const draft = await getOrCreateDraft(telegramId);
+  const { where } = await buyDraftKey(telegramId);
   if (isFixedSingleServiceCategory(draft.category)) return draft;
   const current = await resolvePurchaseLimitIp(draft);
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: { limitIp: clampLimitIp(current + dir), limitIpTouched: true },
   });
 }
@@ -129,6 +144,7 @@ export async function setDraftServerlessDuration(
   months: number,
 ) {
   await getOrCreateDraft(telegramId);
+  const { where } = await buyDraftKey(telegramId);
   const cfg = await getServerlessPricingConfig();
   const durations = listServerlessDurations(cfg);
   const m = months <= 0 ? 0 : Math.min(2, Math.max(1, Math.floor(months)));
@@ -136,7 +152,7 @@ export async function setDraftServerlessDuration(
   if (!d) throw new Error("این مدت اعتبار فعلاً فعال نیست");
   const defaultIp = await getDefaultLimitIp();
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: {
       category: SERVERLESS_CATEGORY,
       unlimited: false,
@@ -156,6 +172,7 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
     return setDraftServerlessDuration(telegramId, 1);
   }
   await getOrCreateDraft(telegramId);
+  const { where } = await buyDraftKey(telegramId);
   const months = await capMonths(1);
   const defaultIp = await getDefaultLimitIp();
 
@@ -164,7 +181,7 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
     const plans = await listFixedPlans(cat);
     const first = plans[0];
     return prisma.buyDraft.update({
-      where: { telegramId },
+      where,
       data: {
         category: cat,
         unlimited: cat === "unlimited" || (first ? first.trafficGb == null : false),
@@ -180,7 +197,7 @@ export async function setDraftCategory(telegramId: bigint, category: PlanCategor
   }
 
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: {
       category,
       unlimited: false,
@@ -200,6 +217,7 @@ export async function setDraftFixedPlan(
   plan: { id: string; trafficGb: number | null; months: number; category: string; limitIp?: number },
 ) {
   await getOrCreateDraft(telegramId);
+  const { where } = await buyDraftKey(telegramId);
   const defaultIp = await getDefaultLimitIp();
   const cat = plan.category.trim().toLowerCase();
   const limitIp =
@@ -207,7 +225,7 @@ export async function setDraftFixedPlan(
       ? Math.max(0, Math.min(10, Math.floor(plan.limitIp)))
       : defaultIp;
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: {
       category: cat === "reseller" ? "wholesale" : cat,
       unlimited: cat === "unlimited" || plan.trafficGb == null,
@@ -231,8 +249,9 @@ export async function setDraftOfferPlan(
 }
 
 export async function setDraftNameMode(telegramId: bigint, mode: "random" | "custom", name?: string) {
+  const { where } = await buyDraftKey(telegramId);
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: {
       accountMode: mode,
       accountName: mode === "custom" ? name ?? null : null,
@@ -242,8 +261,9 @@ export async function setDraftNameMode(telegramId: bigint, mode: "random" | "cus
 
 export async function setDraftDiscountCode(telegramId: bigint, code: string | null) {
   const { normalizeDiscountCode } = await import("../services/discount-codes.js");
+  const { where } = await buyDraftKey(telegramId);
   return prisma.buyDraft.update({
-    where: { telegramId },
+    where,
     data: { discountCode: code ? normalizeDiscountCode(code) : null },
   });
 }

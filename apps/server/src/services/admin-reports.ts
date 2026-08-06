@@ -119,7 +119,11 @@ export async function buildSalesStats(opts: {
   const recentLimit = opts.recentLimit ?? 12;
   const includeWallet = opts.includeWallet !== false && !opts.userId;
 
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+
   const orderWhere = {
+    tenantId,
     status: OrderStatus.completed,
     excludedFromSales: false,
     kind: { in: [OrderKind.new, OrderKind.renew] as OrderKind[] },
@@ -140,6 +144,7 @@ export async function buildSalesStats(opts: {
     }),
     prisma.subscription.count({
       where: {
+        tenantId,
         status: "active",
         ...(opts.userId ? { userId: opts.userId } : {}),
       },
@@ -147,6 +152,7 @@ export async function buildSalesStats(opts: {
     includeWallet
       ? prisma.order.aggregate({
           where: {
+            tenantId,
             status: OrderStatus.completed,
             kind: OrderKind.wallet_charge,
             ...(since ? { updatedAt: { gte: since } } : {}),
@@ -266,7 +272,7 @@ export async function agentsSalesLeaderboard(opts: {
         ? UserRole.reseller
         : UserRole.partner;
   const users = await prisma.user.findMany({
-    where: { role },
+    where: { tenantId: await (await import("./tenants.js")).resolveTenantIdOrPlatform(), role },
     select: {
       id: true,
       telegramId: true,
@@ -350,10 +356,13 @@ export async function searchUsersAndOrders(query: string) {
   const q = query.trim().replace(/^@/, "");
   if (!q) return { users: [], orders: [] };
 
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const asBig = /^\d+$/.test(q) ? BigInt(q) : null;
 
   const users = await prisma.user.findMany({
     where: {
+      tenantId,
       OR: [
         ...(asBig !== null ? [{ telegramId: asBig }] : []),
         { username: { contains: q } },
@@ -370,12 +379,13 @@ export async function searchUsersAndOrders(query: string) {
 
   const orders = await prisma.order.findMany({
     where: {
+      tenantId,
       OR: [
         { id: { contains: q } },
         { accountName: { contains: q } },
         ...(asBig !== null
-          ? [{ user: { telegramId: asBig } }]
-          : [{ user: { username: { contains: q } } }]),
+          ? [{ user: { tenantId, telegramId: asBig } }]
+          : [{ user: { tenantId, username: { contains: q } } }]),
       ],
     },
     include: { user: true },

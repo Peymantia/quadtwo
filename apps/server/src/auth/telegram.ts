@@ -11,7 +11,9 @@ export type TgInitUser = {
   last_name?: string;
 };
 
-export function parseAndValidateInitData(initData: string): TgInitUser {
+export function parseAndValidateInitData(initData: string, botToken?: string): TgInitUser {
+  const token = (botToken || env.BOT_TOKEN || "").trim();
+  if (!token) throw new Error("Missing bot token");
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
   if (!hash) throw new Error("Missing hash");
@@ -24,7 +26,7 @@ export function parseAndValidateInitData(initData: string): TgInitUser {
   entries.sort();
   const dataCheckString = entries.join("\n");
 
-  const secretKey = createHmac("sha256", "WebAppData").update(env.BOT_TOKEN).digest();
+  const secretKey = createHmac("sha256", "WebAppData").update(token).digest();
   const calculated = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
   const a = Buffer.from(calculated, "hex");

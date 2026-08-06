@@ -73,7 +73,12 @@ export function envPanelSnapshot(): {
 }
 
 export async function listPanelServers() {
-  return prisma.panelServer.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] });
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  return prisma.panelServer.findMany({
+    where: { tenantId },
+    orderBy: [{ active: "desc" }, { name: "asc" }],
+  });
 }
 
 export async function getPanelServer(id: string) {
@@ -81,11 +86,13 @@ export async function getPanelServer(id: string) {
 }
 
 export async function importPanelFromEnv() {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const snap = envPanelSnapshot();
   if (!snap) throw new Error("در .env مقدار XUI_BASE_URL و XUI_API_TOKEN یافت نشد");
 
   const existing = await prisma.panelServer.findFirst({
-    where: { baseUrl: snap.baseUrl },
+    where: { tenantId, baseUrl: snap.baseUrl },
   });
   if (existing) {
     return prisma.panelServer.update({
@@ -102,6 +109,7 @@ export async function importPanelFromEnv() {
 
   return prisma.panelServer.create({
     data: {
+      tenantId,
       name: snap.name,
       baseUrl: snap.baseUrl,
       apiToken: snap.apiToken,
@@ -126,6 +134,8 @@ export async function createPanelServer(input: {
   active?: boolean;
   sellEnabled?: boolean;
 }) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const name = input.name.trim();
   const baseUrl = input.baseUrl.trim().replace(/\/?$/, "/");
   if (!name) throw new Error("نام سرور الزامی است");
@@ -134,6 +144,7 @@ export async function createPanelServer(input: {
 
   return prisma.panelServer.create({
     data: {
+      tenantId,
       name,
       baseUrl,
       apiToken: input.apiToken.trim(),
@@ -185,6 +196,10 @@ export async function updatePanelServer(
   if (input.active !== undefined) data.active = input.active;
   if (input.sellEnabled !== undefined) data.sellEnabled = input.sellEnabled;
 
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const existing = await prisma.panelServer.findFirst({ where: { id, tenantId } });
+  if (!existing) throw new Error("سرور پنل یافت نشد");
   return prisma.panelServer.update({ where: { id }, data });
 }
 

@@ -21,6 +21,7 @@ export type SessionUser = {
   hasPassword?: boolean;
   hasPasskey?: boolean;
   passkeyCount?: number;
+  isSuperAdmin?: boolean;
 };
 
 const TOKEN_KEY = "piing_dash_token";
@@ -61,6 +62,11 @@ export async function api<T>(
   if (token) headers.Authorization = `Bearer ${token}`;
   const demoRole = getDemoRole();
   if (demoRole) headers["X-Demo-Role"] = demoRole;
+  // Dev / path-based tenancy: ?tenant=slug on the page URL
+  if (typeof window !== "undefined") {
+    const slug = new URLSearchParams(window.location.search).get("tenant");
+    if (slug) headers["X-Tenant-Slug"] = slug;
+  }
   if (opts?.body !== undefined && !opts.rawBody) {
     headers["Content-Type"] = "application/json";
   }

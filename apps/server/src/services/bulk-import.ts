@@ -429,8 +429,10 @@ export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {
   // ── Prices ──
   const priceRows = sheetRows(wb, "قیمت‌ها");
   if (priceRows.length) {
+    const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     if (replacePrices) {
-      await prisma.priceCell.deleteMany({});
+      await prisma.priceCell.deleteMany({ where: { tenantId } });
       result.pricesCleared = true;
     }
     for (const row of priceRows) {
@@ -452,6 +454,7 @@ export async function importWorkbook(wb: XLSX.WorkBook): Promise<ImportResult> {
       }
       await prisma.priceCell.create({
         data: {
+          tenantId,
           category,
           trafficGb,
           months: Math.max(1, Math.min(12, Math.floor(months))),

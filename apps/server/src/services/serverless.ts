@@ -501,6 +501,7 @@ export async function completeServerlessDelivery(
 
   const subscription = await prisma.subscription.create({
     data: {
+      tenantId: order.tenantId,
       code,
       userId: order.userId,
       orderId: order.id,

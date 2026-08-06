@@ -6,6 +6,8 @@ import { api, clearToken, formatToman, getToken, type Role, type SessionUser } f
 
 export type HomeData = {
   brand: string;
+  logoUrl?: string | null;
+  tenantSlug?: string | null;
   support: string;
   demoMode?: boolean;
   demoRole?: Role | null;
@@ -15,6 +17,7 @@ export type HomeData = {
     dbRole?: Role;
     discountCodesAllowed?: boolean;
     discountMaxPercent?: number;
+    isSuperAdmin?: boolean;
   };
   wallet: { balance: number };
   stats: { subscriptions: number; active: number };

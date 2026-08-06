@@ -281,6 +281,8 @@ export function verifyRequestHost(hostHeader: string | undefined): boolean {
   if (!host) return false;
   if (host === st.dashHost) return true;
   if (host === `www.${st.dashHost}`) return true;
+  // Tenant subdomains: {slug}.{dashHost}
+  if (host.endsWith(`.${st.dashHost}`)) return true;
   // local health / direct IP access for ops
   if (host === "127.0.0.1" || host === "localhost") return true;
   return false;

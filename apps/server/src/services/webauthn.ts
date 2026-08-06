@@ -171,10 +171,14 @@ export async function beginPasskeyAuthentication(loginHint?: string) {
 
   if (loginHint?.trim()) {
     const raw = loginHint.trim().replace(/^@/, "");
+    const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const user = /^\d+$/.test(raw)
-      ? await prisma.user.findUnique({ where: { telegramId: BigInt(raw) } })
+      ? await prisma.user.findUnique({
+          where: { tenantId_telegramId: { tenantId, telegramId: BigInt(raw) } },
+        })
       : await prisma.user.findFirst({
-          where: { username: { equals: raw } },
+          where: { tenantId, username: { equals: raw } },
         });
     if (user) {
       challengeOwner = user.id;

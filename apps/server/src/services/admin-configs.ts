@@ -1082,14 +1082,18 @@ export async function listDetailedPanelClients(): Promise<DetailedPanelClient[]>
 
 /** Owner for accounts created directly on the panel: first admin user. */
 export async function resolvePanelImportOwner() {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const admin = await prisma.user.findFirst({
-    where: { role: UserRole.admin },
+    where: { tenantId, role: UserRole.admin },
     orderBy: { createdAt: "asc" },
   });
   if (admin) return admin;
 
   for (const tid of adminIds()) {
-    const u = await prisma.user.findUnique({ where: { telegramId: tid } });
+    const u = await prisma.user.findUnique({
+      where: { tenantId_telegramId: { tenantId, telegramId: tid } },
+    });
     if (u) return u;
   }
 
@@ -1099,9 +1103,14 @@ export async function resolvePanelImportOwner() {
 }
 
 async function uniqueSubCode(): Promise<string> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   for (let i = 0; i < 8; i++) {
     const code = shortCode("QT");
-    const exists = await prisma.subscription.findUnique({ where: { code }, select: { id: true } });
+    const exists = await prisma.subscription.findFirst({
+      where: { tenantId, code },
+      select: { id: true },
+    });
     if (!exists) return code;
   }
   return shortCode("QT") + shortCode("").slice(-4);
@@ -1109,9 +1118,12 @@ async function uniqueSubCode(): Promise<string> {
 
 /** Compare live 3x-ui clients with bot Subscription rows. */
 export async function diffPanelVsBot(): Promise<SyncDiffResult> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const [panelClients, botSubs] = await Promise.all([
     listDetailedPanelClients(),
     prisma.subscription.findMany({
+      where: { tenantId },
       include: { user: { select: { username: true, agentName: true, telegramId: true } } },
     }),
   ]);
@@ -1267,6 +1279,7 @@ export async function importPanelClientsToBot(emails?: string[]): Promise<Import
       const code = await uniqueSubCode();
       await prisma.subscription.create({
         data: {
+          tenantId: owner.tenantId,
           code,
           userId: owner.id,
           orderId: null,
@@ -1353,8 +1366,11 @@ export async function reconcileSubscriptionsFromPanel(): Promise<ReconcileResult
   }
 
   const panelByEmail = new Map(panelClients.map((c) => [c.email.toLowerCase(), c]));
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const subs = await prisma.subscription.findMany({
     where: {
+      tenantId,
       status: { in: [SubscriptionStatus.active, SubscriptionStatus.disabled] },
     },
   });
@@ -1883,6 +1899,8 @@ const SYNC_UNDO_KEY = "panel_sync_undo";
 
 type BotSnap = {
   id: string;
+  /** Absent on older undo snapshots */
+  tenantId?: string;
   code: string;
   userId: string;
   orderId: string | null;
@@ -1946,6 +1964,7 @@ function hasOpt(opts: Set<SyncOption>, o: SyncOption) {
 function subToSnap(sub: Subscription): BotSnap {
   return {
     id: sub.id,
+    tenantId: sub.tenantId,
     code: sub.code,
     userId: sub.userId,
     orderId: sub.orderId,
@@ -2374,6 +2393,7 @@ async function importOnePanelClient(c: DetailedPanelClient): Promise<Subscriptio
   const code = await uniqueSubCode();
   return prisma.subscription.create({
     data: {
+      tenantId: owner.tenantId,
       code,
       userId: owner.id,
       orderId: null,
@@ -2656,11 +2676,14 @@ export async function undoLastSync(): Promise<{
   }
 
   // Restore deleted bot rows
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const fallbackTenantId = await resolveTenantIdOrPlatform();
   for (const s of snap.deletedSubs ?? []) {
     try {
       await prisma.subscription.create({
         data: {
           id: s.id,
+          tenantId: s.tenantId || fallbackTenantId,
           code: s.code,
           userId: s.userId,
           orderId: s.orderId,
@@ -2788,12 +2811,15 @@ export async function undoLastSync(): Promise<{
 export function startPanelReconcileCron(intervalMs = 10 * 60 * 1000) {
   const tick = async () => {
     try {
-      const r = await reconcileSubscriptionsFromPanel();
-      if (r.updated > 0 || r.errors > 0) {
-        console.log(
-          `panel reconcile: checked=${r.checked} updated=${r.updated} disabled=${r.disabledFromPanel} removed=${r.removedFromPanel} reactivated=${r.reactivated} errors=${r.errors}`,
-        );
-      }
+      const { forEachActiveTenant } = await import("./tenants.js");
+      await forEachActiveTenant(async (t) => {
+        const r = await reconcileSubscriptionsFromPanel();
+        if (r.updated > 0 || r.errors > 0) {
+          console.log(
+            `panel reconcile [${t.slug}]: checked=${r.checked} updated=${r.updated} disabled=${r.disabledFromPanel} removed=${r.removedFromPanel} reactivated=${r.reactivated} errors=${r.errors}`,
+          );
+        }
+      });
     } catch (err) {
       console.error("panel reconcile error", err);
     }

@@ -11,14 +11,18 @@ export function normalizeDiscountCode(raw: string): string {
 
 /** Find a discount row by code (case-insensitive); heals legacy mixed-case rows to uppercase. */
 export async function findDiscountCodeByInput(raw: string) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const normalized = normalizeDiscountCode(raw);
   if (!normalized) return null;
 
-  const exact = await prisma.discountCode.findUnique({ where: { code: normalized } });
+  const exact = await prisma.discountCode.findUnique({
+    where: { tenantId_code: { tenantId, code: normalized } },
+  });
   if (exact) return exact;
 
   const hits = await prisma.$queryRaw<Array<{ id: string; code: string }>>`
-    SELECT id, code FROM DiscountCode WHERE upper(code) = ${normalized} LIMIT 1
+    SELECT id, code FROM DiscountCode WHERE tenantId = ${tenantId} AND upper(code) = ${normalized} LIMIT 1
   `;
   const hit = hits[0];
   if (!hit) return null;
@@ -141,8 +145,11 @@ export async function cancelStalePendingDiscountOrders(opts?: {
 }): Promise<number> {
   const olderThanMs = opts?.olderThanMs ?? 30 * 60_000;
   const cutoff = new Date(Date.now() - olderThanMs);
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const result = await prisma.order.updateMany({
     where: {
+      tenantId,
       status: OrderStatus.pending_payment,
       discountCodeId: opts?.discountCodeId ? opts.discountCodeId : { not: null },
       createdAt: { lt: cutoff },
@@ -268,10 +275,12 @@ export async function recordDiscountUse(discountCodeId: string | null | undefine
 }
 
 export async function listDiscountCodesForUser(userId: string, role: string) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const where =
     role === "admin"
-      ? {}
-      : { createdByUserId: userId };
+      ? { tenantId }
+      : { tenantId, createdByUserId: userId };
   const rows = await prisma.discountCode.findMany({
     where,
     orderBy: { createdAt: "desc" },
@@ -380,10 +389,13 @@ export async function createDiscountCode(opts: {
 
   // Admin codes are already global via creator role; shareable is for partner/wholesale customer codes.
   const shareable = Boolean(opts.shareable);
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
 
   try {
     const row = await prisma.discountCode.create({
       data: {
+        tenantId,
         code: normalized,
         percentOff,
         createdByUserId: ownerId,
@@ -418,7 +430,9 @@ export async function updateDiscountCode(opts: {
   if (!canUserManageDiscountCodes(opts.actor)) {
     throw new Error("اجازه ویرایش کد تخفیف ندارید");
   }
-  const row = await prisma.discountCode.findUnique({ where: { id: opts.id } });
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const row = await prisma.discountCode.findFirst({ where: { id: opts.id, tenantId } });
   if (!row) throw new Error("کد پیدا نشد");
   if (opts.actor.role !== UserRole.admin && row.createdByUserId !== opts.actor.id) {
     throw new Error("اجازه ویرایش این کد را ندارید");
@@ -475,7 +489,9 @@ export async function deleteDiscountCode(opts: {
   actor: Pick<User, "id" | "role">;
   id: string;
 }) {
-  const row = await prisma.discountCode.findUnique({ where: { id: opts.id } });
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const row = await prisma.discountCode.findFirst({ where: { id: opts.id, tenantId } });
   if (!row) throw new Error("کد پیدا نشد");
   if (opts.actor.role !== UserRole.admin && row.createdByUserId !== opts.actor.id) {
     throw new Error("اجازه حذف این کد را ندارید");

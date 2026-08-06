@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [brand, setBrand] = useState("پیـنگ");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [passkeyOk, setPasskeyOk] = useState(false);
   const [tgBooting, setTgBooting] = useState(true);
 
@@ -60,9 +61,12 @@ export default function LoginPage() {
     }
 
     void boot();
-    api<{ brand: string }>("/auth/meta", { token: null })
+    api<{ brand: string; logoUrl?: string | null }>("/auth/meta", { token: null })
       .then((r) => {
-        if (!cancelled) setBrand(r.brand);
+        if (!cancelled) {
+          setBrand(r.brand);
+          setLogoUrl(r.logoUrl ?? null);
+        }
       })
       .catch(() => undefined);
     void canUsePasskey().then((ok) => {
@@ -158,7 +162,7 @@ export default function LoginPage() {
       <div className="login-inner">
         <div className="logo-orb">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt={brand} />
+          <img src={logoUrl || "/logo.png"} alt={brand} />
         </div>
         <p className="brand-word">{brand}</p>
         <h1 className="login-title">

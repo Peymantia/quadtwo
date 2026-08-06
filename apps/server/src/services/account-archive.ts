@@ -285,8 +285,11 @@ export async function archiveAccountSnapshot(opts: {
   reason?: string;
   actorTelegramId?: number | bigint | null;
 }): Promise<{ id: string }> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const row = await prisma.accountArchive.create({
     data: {
+      tenantId,
       email: opts.detail.email,
       payload: JSON.stringify(opts.detail),
       reason: opts.reason ?? "deleted",
@@ -299,8 +302,10 @@ export async function archiveAccountSnapshot(opts: {
 }
 
 export async function listAccountArchives(opts?: { limit?: number; reason?: string }) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const rows = await prisma.accountArchive.findMany({
-    where: opts?.reason ? { reason: opts.reason } : undefined,
+    where: { tenantId, ...(opts?.reason ? { reason: opts.reason } : {}) },
     orderBy: { createdAt: "desc" },
     take: opts?.limit ?? 50,
   });
@@ -426,13 +431,22 @@ export async function restoreAccountFromArchive(opts: {
 
   let ownerId = opts.ownerUserId ?? null;
   if (!ownerId) {
+    const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     const admin = await prisma.user.findFirst({
-      where: { role: "admin" },
+      where: { tenantId, role: "admin" },
       orderBy: { createdAt: "asc" },
     });
     if (!admin) throw new Error("کاربر ادمین برای مالکیت اکانت پیدا نشد");
     ownerId = admin.id;
   }
+
+  const owner = await prisma.user.findUnique({
+    where: { id: ownerId },
+    select: { tenantId: true },
+  });
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = owner?.tenantId || (await resolveTenantIdOrPlatform());
 
   const uuid = d.uuid || randomUUID();
   const panelSubId = d.panelSubId || shortCode("sub").toLowerCase();
@@ -505,6 +519,7 @@ export async function restoreAccountFromArchive(opts: {
       const code = d.code || shortCode("QT");
       const created = await prisma.subscription.create({
         data: {
+          tenantId,
           code,
           userId: ownerId,
           panelServerId,
@@ -546,6 +561,7 @@ export async function restoreAccountFromArchive(opts: {
   const code = d.code || shortCode("QT");
   const created = await prisma.subscription.create({
     data: {
+      tenantId,
       code,
       userId: ownerId,
       panelServerId: d.panelServerId,

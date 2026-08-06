@@ -61,9 +61,52 @@ enum SubscriptionStatus {
   disabled
 }
 
+enum TenantStatus {
+  active
+  suspended
+}
+
+/// SaaS white-label customer (one Telegram bot + branding + panels)
+model Tenant {
+  id               String       @id @default(cuid())
+  /// Subdomain / path slug e.g. acme → acme.dash.example.com
+  slug             String       @unique
+  name             String
+  /// Encrypted or plain bot token (same trust model as PanelServer.apiToken in v1)
+  botToken         String
+  botUsername      String?
+  brandName        String       @default("")
+  logoUrl          String?
+  welcomeText      String?
+  supportUsername  String?
+  /// Platform owner for this tenant (Telegram id of their admin)
+  ownerTelegramId  BigInt?
+  /// true = the original install / superadmin host tenant
+  isPlatform       Boolean      @default(false)
+  status           TenantStatus @default(active)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  users            User[]
+  settings         Setting[]
+  priceCells       PriceCell[]
+  panelServers     PanelServer[]
+  orders           Order[]
+  subscriptions    Subscription[]
+  discountCodes    DiscountCode[]
+  buyDrafts        BuyDraft[]
+  partnerRequests  PartnerRequest[]
+  agentRenames     AgentRenameRequest[]
+  plans            Plan[]
+  accountArchives  AccountArchive[]
+  auditLogs        AuditLog[]
+  agentPriceOverrides AgentPriceOverride[]
+}
+
 model User {
   id            String    @id @default(cuid())
-  telegramId    BigInt    @unique
+  tenantId      String
+  telegramId    BigInt
   username      String?
   firstName     String?
   lastName      String?
@@ -80,9 +123,12 @@ model User {
   discountCodesAllowed Boolean @default(true)
   /// Max % this agent may put on codes they create (1–100). Admin ignores (always 100). Default 30.
   discountMaxPercent   Int     @default(30)
+  /// Platform superadmin (only on platform tenant)
+  isSuperAdmin  Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   wallet         Wallet?
   orders         Order[]
   subscriptions  Subscription[]
@@ -91,6 +137,32 @@ model User {
   loginOtps      LoginOtp[]
   webAuthnCreds  WebAuthnCredential[]
   discountCodes  DiscountCode[]
+  priceOverride  AgentPriceOverride?
+
+  @@unique([tenantId, telegramId])
+  @@index([tenantId])
+  @@index([telegramId])
+}
+
+/// Per-agent rate overrides (custom pricing for one partner/reseller)
+model AgentPriceOverride {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  userId             String   @unique
+  /// Optional category scope; empty = all rate-mode categories
+  category           String   @default("")
+  perGb              Int?
+  perMonth           Int?
+  unlimitedPerMonth  Int?
+  /// Multiply matrix pricePartner (100 = no change)
+  partnerPricePercent Int     @default(100)
+  note               String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 /// WebAuthn / Passkey credentials for dashboard biometric login
@@ -114,7 +186,7 @@ model WebAuthnCredential {
   @@index([userId])
 }
 
-/// One-time codes for dash.anthropics.ir login (Telegram delivery)
+/// One-time codes for dash login (Telegram delivery)
 model LoginOtp {
   id        String   @id @default(cuid())
   userId    String
@@ -151,6 +223,7 @@ model WalletTransaction {
 
 model Plan {
   id            String   @id @default(cuid())
+  tenantId      String
   title         String
   trafficGb     Int?
   durationDays  Int
@@ -160,12 +233,16 @@ model Plan {
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   orders        Order[]
+
+  @@index([tenantId])
 }
 
 /// Manual price matrix: trafficGb null = unlimited
 model PriceCell {
   id             String  @id @default(cuid())
+  tenantId       String
   title          String?
   /// data | national | unlimited
   category       String  @default("data")
@@ -183,18 +260,20 @@ model PriceCell {
   sortOrder      Int     @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([category, months])
+  @@index([tenantId, category, months])
 }
 
 model PanelServer {
   id          String   @id @default(cuid())
+  tenantId    String
   /// Display name e.g. "سرور اصلی" / "نت ملی"
   name        String
   baseUrl     String
   /// API bearer token (plain in v1, same trust model as .env)
   apiToken    String
-  /// Comma / range inbound ids, e.g. "1,2,3"
+  /// Comma / space inbound ids, e.g. "1,2,3"
   inboundIds  String   @default("1")
   /// Optional subscription URL base override (like XUI_SUB_BASE)
   subBase     String?
@@ -205,12 +284,16 @@ model PanelServer {
   weight      Int      @default(100)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   subscriptions Subscription[]
   orders        Order[]
+
+  @@index([tenantId])
 }
 
 model Order {
   id              String        @id @default(cuid())
+  tenantId        String
   userId          String
   planId          String?
   kind            OrderKind     @default(new)
@@ -242,17 +325,22 @@ model Order {
   excludedFromSales Boolean @default(false)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user            User          @relation(fields: [userId], references: [id])
   plan            Plan?         @relation(fields: [planId], references: [id])
   panelServer     PanelServer?  @relation(fields: [panelServerId], references: [id])
   discountCode    DiscountCode? @relation(fields: [discountCodeId], references: [id])
   subscription    Subscription?
   targetSub       Subscription? @relation("OrderTargetSub", fields: [targetSubId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
 model Subscription {
   id              String             @id @default(cuid())
-  code            String             @unique
+  tenantId        String
+  code            String
   userId          String
   orderId         String?            @unique
   panelServerId   String?
@@ -279,14 +367,20 @@ model Subscription {
   status          SubscriptionStatus @default(active)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user            User               @relation(fields: [userId], references: [id])
   order           Order?             @relation(fields: [orderId], references: [id])
   panelServer     PanelServer?       @relation(fields: [panelServerId], references: [id])
   renewOrders     Order[]            @relation("OrderTargetSub")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, email])
 }
 
 model PartnerRequest {
   id        String   @id @default(cuid())
+  tenantId  String
   userId    String   @unique
   fullName  String
   phone     String?
@@ -294,12 +388,16 @@ model PartnerRequest {
   status    String   @default("pending")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
 }
 
 /// Partner/reseller asked to change display name + panel group (needs admin approval)
 model AgentRenameRequest {
   id        String   @id @default(cuid())
+  tenantId  String
   userId    String
   oldName   String
   oldGroup  String
@@ -308,23 +406,32 @@ model AgentRenameRequest {
   status    String   @default("pending")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@index([userId, status])
   @@index([status])
 }
 
 model Setting {
-  key       String   @id
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
   value     String
   updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
 }
 
-/// Promo codes: creator-scoped by default; admin codes are global; shareable = customer-facing.
+/// Promo codes: creator-scoped by default; admin codes are global within tenant; shareable = customer-facing.
 model DiscountCode {
   id              String    @id @default(cuid())
+  tenantId        String
   /// Normalized uppercase alphanumeric code
-  code            String    @unique
+  code            String
   percentOff      Int
   createdByUserId String
   active          Boolean   @default(true)
@@ -337,9 +444,12 @@ model DiscountCode {
   note            String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdBy       User      @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
   orders          Order[]
 
+  @@unique([tenantId, code])
+  @@index([tenantId])
   @@index([createdByUserId])
   @@index([active])
 }
@@ -347,6 +457,7 @@ model DiscountCode {
 /// Snapshot of a deleted (or archived) panel account for restore / audit detail
 model AccountArchive {
   id              String    @id @default(cuid())
+  tenantId        String
   email           String
   /// Full JSON payload (panel + bot fields)
   payload         String
@@ -355,7 +466,9 @@ model AccountArchive {
   panelServerId   String?
   restoredAt      DateTime?
   createdAt       DateTime  @default(now())
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@index([email])
   @@index([createdAt])
   @@index([reason])
@@ -376,20 +489,24 @@ model NotificationLog {
 /// Simple audit trail for admin debugging
 model AuditLog {
   id               String   @id @default(cuid())
+  tenantId         String?
   action           String
   actorTelegramId  BigInt?
   target           String?
   detail           String?
   createdAt        DateTime @default(now())
+  tenant           Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
+  @@index([tenantId])
   @@index([createdAt])
   @@index([action])
 }
 
-/// Temporary buy wizard state per telegram user
+/// Temporary buy wizard state per telegram user (per tenant)
 model BuyDraft {
   id          String   @id @default(cuid())
-  telegramId  BigInt   @unique
+  tenantId    String
+  telegramId  BigInt
   trafficGb   Int?     @default(10)
   months      Int      @default(1)
   unlimited   Boolean  @default(false)
@@ -406,4 +523,8 @@ model BuyDraft {
   /// Locked offer / matrix cell id when user picks a specific plan card
   priceCellId  String?
   updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, telegramId])
+  @@index([tenantId])
 }

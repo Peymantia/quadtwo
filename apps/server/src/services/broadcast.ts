@@ -15,10 +15,13 @@ function sleep(ms: number) {
 
 /** Count users that can receive a broadcast. */
 export async function countBroadcastRecipients(excludeTelegramId?: number): Promise<number> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.user.count({
-    where: excludeTelegramId
-      ? { telegramId: { not: BigInt(excludeTelegramId) } }
-      : undefined,
+    where: {
+      tenantId,
+      ...(excludeTelegramId ? { telegramId: { not: BigInt(excludeTelegramId) } } : {}),
+    },
   });
 }
 
@@ -34,7 +37,10 @@ export async function broadcastTextToAllUsers(
     onProgress?: (done: number, total: number) => void | Promise<void>;
   },
 ): Promise<BroadcastResult> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const users = await prisma.user.findMany({
+    where: { tenantId },
     select: { telegramId: true },
     orderBy: { createdAt: "asc" },
   });
@@ -76,7 +82,10 @@ export async function broadcastCopyToAllUsers(
     onProgress?: (done: number, total: number) => void | Promise<void>;
   },
 ): Promise<BroadcastResult> {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   const users = await prisma.user.findMany({
+    where: { tenantId },
     select: { telegramId: true },
     orderBy: { createdAt: "asc" },
   });

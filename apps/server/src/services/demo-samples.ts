@@ -75,9 +75,14 @@ export async function ensureDemoSampleSubscriptions(userId: string): Promise<voi
   });
   if (already > 0) return;
 
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, telegramId: true } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, telegramId: true, tenantId: true },
+  });
   if (!user) return;
 
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = user.tenantId || (await resolveTenantIdOrPlatform());
   const tgTail = String(user.telegramId).slice(-6);
   const now = Date.now();
 
@@ -94,6 +99,7 @@ export async function ensureDemoSampleSubscriptions(userId: string): Promise<voi
 
       await tx.subscription.create({
         data: {
+          tenantId,
           code,
           userId: user.id,
           panelServerId: null,

@@ -23,8 +23,11 @@ export async function auditLog(input: {
   detail?: string | null;
 }) {
   try {
+    const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
     await prisma.auditLog.create({
       data: {
+        tenantId,
         action: input.action,
         actorTelegramId: input.actorTelegramId != null ? BigInt(input.actorTelegramId) : null,
         target: input.target?.slice(0, 120) ?? null,
@@ -37,7 +40,10 @@ export async function auditLog(input: {
 }
 
 export async function listRecentAudit(limit = 20) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
   return prisma.auditLog.findMany({
+    where: { tenantId },
     orderBy: { createdAt: "desc" },
     take: limit,
   });

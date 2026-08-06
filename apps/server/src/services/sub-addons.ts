@@ -75,8 +75,11 @@ export async function createAddDaysOrder(input: {
   const sub = await ownedSub(user.id, input.subId);
   if (sub.isTest) throw new Error("سرویس تست قابل افزایش روز نیست");
   const quote = quoteAddDays(input.days);
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = user.tenantId || (await resolveTenantIdOrPlatform());
   return prisma.order.create({
     data: {
+      tenantId,
       userId: user.id,
       kind: OrderKind.add_days,
       trafficGb: null,
@@ -103,8 +106,11 @@ export async function createAddGbOrder(input: {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
   const quote = await quoteAddGb(user, input.subId, input.gb);
   const sub = await ownedSub(user.id, input.subId);
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = user.tenantId || (await resolveTenantIdOrPlatform());
   return prisma.order.create({
     data: {
+      tenantId,
       userId: user.id,
       kind: OrderKind.add_gb,
       trafficGb: quote.gb,
