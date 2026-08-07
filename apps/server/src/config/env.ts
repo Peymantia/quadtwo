@@ -25,7 +25,16 @@ const schema = z.object({
   LICENSE_REQUIRE: z.string().optional(),
   XUI_BASE_URL: z.string().optional(),
   XUI_API_TOKEN: z.string().optional(),
-  XUI_INBOUND_ID: z.coerce.number().default(1),
+  /** Single inbound; if a comma-list is pasted, first id is used (full list → XUI_INBOUND_IDS). */
+  XUI_INBOUND_ID: z
+    .string()
+    .optional()
+    .transform((v) => {
+      const raw = (v ?? "1").trim();
+      const first = raw.split(/[,\s]+/).map((s) => s.trim()).find((s) => /^\d+$/.test(s));
+      return first ? Number(first) : 1;
+    })
+    .pipe(z.number().int().positive()),
   XUI_INBOUND_IDS: z.string().default("1,2,3,4,5,6,7,8,9,10"),
   XUI_SUB_BASE: z.string().optional(),
   PUBLIC_DOMAIN: z.string().optional(),

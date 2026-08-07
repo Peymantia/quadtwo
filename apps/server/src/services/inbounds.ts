@@ -27,6 +27,12 @@ export async function getConfiguredInboundIds(): Promise<number[]> {
     const ids = parseInboundIds(fromSettings);
     if (ids.length) return ids;
   }
+  // Installers sometimes paste "1,2,3" into XUI_INBOUND_ID — prefer that list
+  const rawPrimary = (process.env.XUI_INBOUND_ID || "").trim();
+  if (rawPrimary.includes(",")) {
+    const ids = parseInboundIds(rawPrimary);
+    if (ids.length) return ids;
+  }
   if (env.XUI_INBOUND_IDS?.trim()) {
     const ids = parseInboundIds(env.XUI_INBOUND_IDS);
     if (ids.length) return ids;

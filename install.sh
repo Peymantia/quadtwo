@@ -93,6 +93,11 @@ prompt() {
 
 write_env() {
   local env_file="${INSTALL_DIR}/.env"
+  # Allow "1,2,3" in the inbound prompt — store list + primary id
+  local inbound_ids="${XUI_INBOUND_ID}"
+  local inbound_primary
+  inbound_primary="$(echo "${inbound_ids}" | tr ',' ' ' | awk '{print $1}')"
+  [[ -z "${inbound_primary}" ]] && inbound_primary="1"
   cat > "${env_file}" <<EOF
 NODE_ENV=production
 PORT=${PORT}
@@ -106,7 +111,8 @@ ADMIN_TELEGRAM_IDS=${ADMIN_TELEGRAM_IDS}
 
 XUI_BASE_URL=${XUI_BASE_URL}
 XUI_API_TOKEN=${XUI_API_TOKEN}
-XUI_INBOUND_ID=${XUI_INBOUND_ID}
+XUI_INBOUND_ID=${inbound_primary}
+XUI_INBOUND_IDS=${inbound_ids}
 XUI_SUB_BASE=${XUI_SUB_BASE}
 
 PUBLIC_DOMAIN=${PUBLIC_DOMAIN}
@@ -239,7 +245,7 @@ do_install() {
   prompt ADMIN_TELEGRAM_IDS "Admin Telegram numeric ID"
   prompt XUI_BASE_URL "3x-ui base URL (trailing slash required)" "http://127.0.0.1:2053/"
   prompt XUI_API_TOKEN "3x-ui API token"
-  prompt XUI_INBOUND_ID "Inbound ID" "1"
+  prompt XUI_INBOUND_ID "Inbound ID(s), comma-separated" "1"
   prompt XUI_SUB_BASE "Subscription base URL (optional)" ""
   prompt PUBLIC_DOMAIN "Public domain for Mini App / API" "app.anthropics.ir"
   prompt DASH_DOMAIN "Web dashboard domain" "dash.anthropics.ir"
