@@ -305,6 +305,23 @@ html[data-skin="studio"] .panel {
   border: 1px solid var(--line);
   box-shadow: var(--studio-shadow), var(--studio-inset);
   backdrop-filter: blur(14px);
+  background: var(--card);
+}
+
+html[data-skin="studio"][data-theme="light"] .panel,
+html[data-skin="studio"][data-theme="light"] .row-card,
+html[data-skin="studio"][data-theme="light"] .plan-card,
+html[data-skin="studio"][data-theme="light"] .stat,
+html[data-skin="studio"][data-theme="light"] .price-plan-card {
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+html[data-skin="studio"][data-theme="light"] .field input,
+html[data-skin="studio"][data-theme="light"] .field select,
+html[data-skin="studio"][data-theme="light"] .field textarea,
+html[data-skin="studio"][data-theme="light"] .configs-filters .field select {
+  background: #f8fafc;
 }
 
 html[data-skin="studio"] .panel > h2::before {
@@ -333,6 +350,16 @@ html[data-skin="studio"][data-theme="light"] .alert.err {
   color: #be123c;
   background: rgba(225, 29, 72, 0.08);
   border-color: rgba(225, 29, 72, 0.28);
+}
+
+html[data-skin="studio"][data-theme="light"] .preview-banner {
+  color: #92400e;
+  background: rgba(251, 191, 36, 0.12);
+}
+
+html[data-skin="studio"][data-theme="light"] .mobile-top,
+html[data-skin="studio"][data-theme="light"] .sidebar {
+  background: rgba(255, 255, 255, 0.92);
 }
 
 /* ---------- Bottom nav (mobile / Telegram) ---------- */
