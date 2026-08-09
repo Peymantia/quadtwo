@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, formatToman } from "../lib/api";
+import { ACCOUNT_NAME_HINT, filterAccountNameInput, isValidAccountName } from "../lib/account-name";
 import { Modal } from "./Modal";
 
 export type RateShopCatalog = {
@@ -493,7 +494,13 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   }
 
   function openConfirm() {
-    if (nameMode === "custom" && !customName.trim()) return;
+    if (nameMode === "custom") {
+      const name = customName.trim();
+      if (!name) return;
+      if (!isValidAccountName(name)) {
+        return;
+      }
+    }
     setPendingName(resolveAccountName());
     setConfirmOpen(true);
   }
@@ -523,7 +530,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     !quoting &&
     price != null &&
     (!isFixedSingle || Boolean(selectedFixed)) &&
-    (nameMode === "random" || Boolean(customName.trim()));
+    (nameMode === "random" || isValidAccountName(customName));
   const catLabel = catalog.categoryLabels[category] || category;
   const confirmLines = [
     `اکانت «${pendingName}»`,
@@ -781,13 +788,21 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
               </button>
               <input
                 className="name-mode-input"
+                dir="ltr"
                 value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                placeholder="مثلاً Ali"
+                onChange={(e) => setCustomName(filterAccountNameInput(e.target.value))}
+                placeholder="Ali_01"
                 disabled={busy || nameMode !== "custom"}
                 aria-label="نام شخصی"
+                autoComplete="off"
+                spellCheck={false}
               />
             </div>
+            {nameMode === "custom" && (
+              <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+                {ACCOUNT_NAME_HINT}
+              </p>
+            )}
           </div>
           <div className="field">
             <label>توضیحات (اختیاری)</label>
@@ -824,13 +839,21 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
             </button>
             <input
               className="name-mode-input"
+              dir="ltr"
               value={customName}
-              onChange={(e) => setCustomName(e.target.value)}
-              placeholder="مثلاً Ali"
+              onChange={(e) => setCustomName(filterAccountNameInput(e.target.value))}
+              placeholder="Ali_01"
               disabled={busy || nameMode !== "custom"}
               aria-label="نام شخصی"
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
+          {nameMode === "custom" && (
+            <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+              {ACCOUNT_NAME_HINT}
+            </p>
+          )}
         </div>
       )}
 

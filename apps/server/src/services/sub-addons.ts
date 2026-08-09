@@ -7,16 +7,12 @@ import { getPriceRates, ratesForRoleCategory } from "./settings.js";
 import { inferRenewCategory } from "./renew-eligibility.js";
 import { withEffectiveRole } from "./demo-role.js";
 import { gbToBytes } from "../utils/format.js";
+import { assertValidAccountName } from "../utils/account-name.js";
 import { expiryTimeForPanel } from "./panel-expiry.js";
 
 export const ADD_DAY_PRICE_TOMAN = 2_000;
 export const ADD_DAY_MAX = 10;
 export const ADD_GB_MAX = 100;
-
-function sanitizeAccountName(name: string) {
-  const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 32);
-  return cleaned || `qt${randomInt(100, 1000)}`;
-}
 
 async function ownedSub(userId: string, subId: string) {
   const sub = await prisma.subscription.findFirst({ where: { id: subId, userId } });
@@ -260,7 +256,7 @@ async function panelEmailExists(email: string, sub: Subscription): Promise<boole
 /** Rename subscription email (panel + DB). Free. */
 export async function renameSubscriptionEmail(userId: string, subId: string, desiredName: string) {
   const sub = await ownedSub(userId, subId);
-  let base = sanitizeAccountName(desiredName);
+  let base = assertValidAccountName(desiredName);
   if (base.length > 29) base = base.slice(0, 29);
 
   let candidate = base;

@@ -1613,7 +1613,7 @@ export function createBot(
     await ctx.answerCallbackQuery();
     waitingName.add(ctx.from!.id);
     await setDraftNameMode(BigInt(ctx.from!.id), "custom");
-    await ctx.reply("نام اکانت را ارسال کنید (فقط حروف و عدد انگلیسی):");
+    await ctx.reply("نام اکانت را ارسال کنید (فقط حروف و عدد انگلیسی، نقطه، دش و آندرلاین — ۳ تا ۳۲ کاراکتر):");
   });
 
   bot.callbackQuery("wiz:discount:set", async (ctx) => {
@@ -2181,7 +2181,7 @@ export function createBot(
     if (waitingName.has(tid)) {
       const name = text;
       if (!/^[a-zA-Z0-9._-]{3,32}$/.test(name)) {
-        await ctx.reply("نام نامعتبر است. فقط a-z 0-9 ._- و ۳ تا ۳۲ کاراکتر.\nبرای لغو: انصراف");
+        await ctx.reply("نام نامعتبر است. فقط حروف و عدد انگلیسی، نقطه (.)، دش (-) و آندرلاین (_) — ۳ تا ۳۲ کاراکتر.\nبرای لغو: انصراف");
         return;
       }
       waitingName.delete(tid);
@@ -2914,7 +2914,7 @@ export function createBot(
         "",
         `نام فعلی: <code>${sub.email}</code>`,
         "",
-        "نام جدید را بفرستید (حروف انگلیسی، عدد، . _ -).",
+        "نام جدید را بفرستید (فقط حروف و عدد انگلیسی، نقطه، دش و آندرلاین — ۳ تا ۳۲ کاراکتر).",
         "اگر تکراری باشد یک عدد سه‌رقمی به انتها اضافه می‌شود.",
         "لغو: انصراف",
       ].join("\n"),

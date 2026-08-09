@@ -20,6 +20,7 @@ import { withEffectiveRole } from "./demo-role.js";
 import { isDemoMode } from "./license.js";
 import { assertAndApplyDiscount, recordDiscountUse, cancelOpenPendingForDiscount } from "./discount-codes.js";
 import { isWholesaleFixedRole } from "./roles.js";
+import { assertValidAccountName } from "../utils/account-name.js";
 import {
   assertServerlessPlanAllowed,
   fulfillAfterPaid,
@@ -110,6 +111,10 @@ export async function createMatrixOrder(input: {
   } else if (!isDemoMode() && !serverlessOn && !isServerlessCategory(category)) {
     const resolved = await resolvePanelForCategory(category);
     panelServerId = resolved.panel?.id ?? null;
+  }
+
+  if (kind === OrderKind.new) {
+    accountName = assertValidAccountName(accountName);
   }
 
   // ——— Serverless formula plans (weekly months=0, or 1–2 months) ———

@@ -15,6 +15,7 @@ import type { PlanCategory } from "./pricing.js";
 import { getDefaultLimitIp } from "./settings.js";
 import { appendSubId, isValidSubBase, sanitizeSubBase } from "./sub-url.js";
 import { isDemoMode } from "./license.js";
+import { stripAccountName } from "../utils/account-name.js";
 
 export type ProvisionResult = {
   subscriptionId: string;
@@ -237,7 +238,7 @@ export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise
 }
 
 function sanitizeEmail(name: string) {
-  const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 32);
+  const cleaned = stripAccountName(name);
   return cleaned || `qt${randomBytes(3).toString("hex")}`;
 }
 

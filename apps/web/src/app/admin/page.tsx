@@ -6,7 +6,8 @@ import { Modal } from "../../components/Modal";
 import { ConfirmToast, Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { TrafficProgress } from "../../components/PaymentCard";
-import { api, apiBase, formatToman, getDemoRole, getToken } from "../../lib/api";
+import { api, formatToman, getDemoRole, getToken } from "../../lib/api";
+import { ACCOUNT_NAME_HINT, filterAccountNameInput, isValidAccountName } from "../../lib/account-name";
 import { formatExpiryDate, formatRemainDays, formatTrafficGb } from "../../lib/format-ui";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
@@ -417,6 +418,11 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
 
   async function create() {
     if (!selected) return;
+    const trimmed = accountName.trim();
+    if (trimmed && !isValidAccountName(trimmed)) {
+      flash(null, `نام اکانت نامعتبر است. ${ACCOUNT_NAME_HINT}`);
+      return;
+    }
     setMatrixConfirmOpen(false);
     setBusy(true);
     setCreated(null);
@@ -429,7 +435,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
           trafficGb: selected.trafficGb,
           months: selected.months,
           category: selected.category,
-          accountName: accountName.trim() || undefined,
+          accountName: trimmed || undefined,
           payWithWallet: true,
         },
       });
@@ -501,10 +507,16 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
             <div className="field">
               <label>نام اکانت (اختیاری)</label>
               <input
+                dir="ltr"
                 value={accountName}
-                onChange={(e) => setAccountName(e.target.value)}
-                placeholder="مثلاً customer01"
+                onChange={(e) => setAccountName(filterAccountNameInput(e.target.value))}
+                placeholder="customer01"
+                autoComplete="off"
+                spellCheck={false}
               />
+              <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+                {ACCOUNT_NAME_HINT}
+              </p>
             </div>
             <div className="plan-grid" style={{ marginTop: 12 }}>
               {cells.map((c) => (

@@ -2,6 +2,7 @@ import { OrderKind, OrderStatus, SubscriptionStatus, type User } from "@prisma/c
 import { env } from "../config/env.js";
 import { prisma } from "../db.js";
 import { monthsToMs, randomSubId, shortCode } from "../utils/format.js";
+import { stripAccountName } from "../utils/account-name.js";
 import { attachPremiumTextEntities, getEmojiStyle } from "./emoji-transform.js";
 import {
   finalizeAdminReviewMessages,
@@ -490,8 +491,7 @@ export async function completeServerlessDelivery(
   }
 
   const code = shortCode("SL");
-  const emailBase =
-    (order.accountName || order.customName || code).replace(/[^\w.-]/g, "").slice(0, 32) || code;
+  const emailBase = stripAccountName(order.accountName || order.customName || code) || code;
   let email = emailBase;
   for (let i = 0; i < 8; i++) {
     const clash = await prisma.subscription.findFirst({ where: { email } });

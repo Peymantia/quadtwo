@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatToman } from "../lib/api";
+import { ACCOUNT_NAME_HINT, filterAccountNameInput, isValidAccountName } from "../lib/account-name";
 
 export type ServerlessDuration = {
   id: string;
@@ -120,11 +121,17 @@ export function ServerlessShop({ catalog, busy, onSubmit }: Props) {
       <div className="field">
         <label>نام اکانت (اختیاری)</label>
         <input
+          dir="ltr"
           value={name}
           disabled={busy}
-          placeholder="مثلاً Ali"
-          onChange={(e) => setName(e.target.value)}
+          placeholder="Ali_01"
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(e) => setName(filterAccountNameInput(e.target.value))}
         />
+        <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+          {ACCOUNT_NAME_HINT}
+        </p>
       </div>
 
       {catalog.discountsEnabled && (
@@ -145,17 +152,19 @@ export function ServerlessShop({ catalog, busy, onSubmit }: Props) {
       <button
         type="button"
         className="btn success"
-        disabled={busy}
-        onClick={() =>
+        disabled={busy || (Boolean(name.trim()) && !isValidAccountName(name))}
+        onClick={() => {
+          const trimmed = name.trim();
+          if (trimmed && !isValidAccountName(trimmed)) return;
           void onSubmit({
             trafficGb: gb,
             months: duration.months,
             category: "serverless",
             quantity: 1,
-            accountName: name.trim() || undefined,
+            accountName: trimmed || undefined,
             discountCode: discountCode.trim() || null,
-          })
-        }
+          });
+        }}
       >
         ادامه خرید
       </button>

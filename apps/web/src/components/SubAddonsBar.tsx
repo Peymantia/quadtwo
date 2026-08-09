@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
 import { SubQrModal } from "./SubQrModal";
 import { api, formatToman } from "../lib/api";
+import { ACCOUNT_NAME_HINT, filterAccountNameInput, isValidAccountName } from "../lib/account-name";
 import type { CryptoPayInfo } from "./CryptoPayModal";
 
 type AddonsInfo = {
@@ -380,12 +381,15 @@ export function SubAddonsBar({
         </p>
         <div className="field">
           <label>نام جدید</label>
-          <input value={rename} onChange={(e) => setRename(e.target.value)} placeholder="english-name" />
+          <input value={rename} onChange={(e) => setRename(filterAccountNameInput(e.target.value))} placeholder="english-name" dir="ltr" autoComplete="off" spellCheck={false} />
         </div>
+        <p className="hint" style={{ marginTop: 0 }}>
+          {ACCOUNT_NAME_HINT}
+        </p>
         <button
           type="button"
           className="btn primary"
-          disabled={busy || !rename.trim()}
+          disabled={busy || !isValidAccountName(rename)}
           onClick={async () => {
             onBusy(true);
             try {
