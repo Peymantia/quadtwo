@@ -494,9 +494,6 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
     <>
       <div className="panel">
         <h2>ساخت اکانت</h2>
-        <p className="muted" style={{ marginTop: 0 }}>
-          ساخت فوری و رایگان توسط ادمین — بدون کسر از کیف پول. اگر گروه پنل اختصاصی ندارید، در گروه Telegram ساخته می‌شود.
-        </p>
         {rateCatalog && rateCatalog.categories.length > 0 ? (
           <RateShop catalog={rateCatalog} busy={busy} variant="admin" onSubmit={createRate} />
         ) : cells.length > 0 ? (
