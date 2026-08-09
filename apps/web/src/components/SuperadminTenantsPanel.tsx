@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getToken } from "../lib/api";
+import { Modal } from "./Modal";
 
 type TenantRow = {
   id: string;
@@ -23,19 +24,48 @@ function errText(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
+const emptyForm = {
+  name: "",
+  slug: "",
+  botToken: "",
+  brandName: "",
+  ownerTelegramId: "",
+  supportUsername: "",
+};
+
+async function postTenantLogo(id: string, file: File) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (typeof window !== "undefined") {
+    const slug = new URLSearchParams(window.location.search).get("tenant");
+    if (slug) headers["X-Tenant-Slug"] = slug;
+  }
+  const res = await fetch(`/api/super/tenants/${id}/logo`, { method: "POST", headers, body: fd });
+  const data = (await res.json()) as { error?: string; logoUrl?: string };
+  if (!res.ok) throw new Error(data.error || "آپلود لوگو ناموفق");
+  return data.logoUrl ?? null;
+}
+
 export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [createLogoFile, setCreateLogoFile] = useState<File | null>(null);
+  const [createLogoPreview, setCreateLogoPreview] = useState<string | null>(null);
+  const [createLogoModalOpen, setCreateLogoModalOpen] = useState(false);
+
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ ownerTelegramId: "", botToken: "", brandName: "" });
-  const [form, setForm] = useState({
-    name: "",
-    slug: "",
-    botToken: "",
-    brandName: "",
-    ownerTelegramId: "",
-    supportUsername: "",
-  });
+
+  const [logoTenantId, setLogoTenantId] = useState<string | null>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
+  const createFileRef = useRef<HTMLInputElement>(null);
+  const editFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const r = await api<{ tenants: TenantRow[] }>("/super/tenants");
@@ -45,6 +75,33 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
   useEffect(() => {
     void load().catch((e) => flash(null, errText(e)));
   }, [load, flash]);
+
+  useEffect(() => {
+    return () => {
+      if (createLogoPreview?.startsWith("blob:")) URL.revokeObjectURL(createLogoPreview);
+      if (logoPreview?.startsWith("blob:")) URL.revokeObjectURL(logoPreview);
+    };
+  }, [createLogoPreview, logoPreview]);
+
+  function pickCreateLogo(file: File | null) {
+    if (createLogoPreview?.startsWith("blob:")) URL.revokeObjectURL(createLogoPreview);
+    if (!file) {
+      setCreateLogoFile(null);
+      setCreateLogoPreview(null);
+      return;
+    }
+    setCreateLogoFile(file);
+    setCreateLogoPreview(URL.createObjectURL(file));
+    setCreateLogoModalOpen(true);
+  }
+
+  function clearCreateLogo() {
+    if (createLogoPreview?.startsWith("blob:")) URL.revokeObjectURL(createLogoPreview);
+    setCreateLogoFile(null);
+    setCreateLogoPreview(null);
+    setCreateLogoModalOpen(false);
+    if (createFileRef.current) createFileRef.current.value = "";
+  }
 
   async function createTenant() {
     if (!form.name.trim() || !form.slug.trim() || !form.botToken.trim()) {
@@ -57,7 +114,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
     }
     setBusy(true);
     try {
-      const r = await api<{ tenant: { dashUrl: string; botUsername?: string | null } }>("/super/tenants", {
+      const r = await api<{ tenant: { id: string; dashUrl: string; botUsername?: string | null } }>("/super/tenants", {
         body: {
           name: form.name.trim(),
           slug: form.slug.trim().toLowerCase(),
@@ -67,8 +124,20 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
           supportUsername: form.supportUsername.trim() || undefined,
         },
       });
+      if (createLogoFile && r.tenant.id) {
+        try {
+          await postTenantLogo(r.tenant.id, createLogoFile);
+        } catch (logoErr) {
+          flash(`مستأجر ساخته شد ولی لوگو آپلود نشد: ${errText(logoErr)}`);
+          clearCreateLogo();
+          setForm(emptyForm);
+          await load();
+          return;
+        }
+      }
       flash(`مستأجر ساخته شد — ${r.tenant.botUsername ? `@${r.tenant.botUsername}` : r.tenant.dashUrl}`);
-      setForm({ name: "", slug: "", botToken: "", brandName: "", ownerTelegramId: "", supportUsername: "" });
+      clearCreateLogo();
+      setForm(emptyForm);
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -118,23 +187,34 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
     }
   }
 
-  async function uploadLogo(id: string, file: File | null) {
+  function openLogoModal(t: TenantRow) {
+    if (logoPreview?.startsWith("blob:")) URL.revokeObjectURL(logoPreview);
+    setLogoTenantId(t.id);
+    setLogoFile(null);
+    setLogoPreview(t.logoUrl);
+    if (editFileRef.current) editFileRef.current.value = "";
+  }
+
+  function pickLogoFile(file: File | null) {
     if (!file) return;
+    if (logoPreview?.startsWith("blob:")) URL.revokeObjectURL(logoPreview);
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  }
+
+  async function saveLogo() {
+    if (!logoTenantId || !logoFile) {
+      flash(null, "ابتدا فایل لوگو را انتخاب کنید");
+      return;
+    }
     setBusy(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const token = getToken();
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
-      if (typeof window !== "undefined") {
-        const slug = new URLSearchParams(window.location.search).get("tenant");
-        if (slug) headers["X-Tenant-Slug"] = slug;
-      }
-      const res = await fetch(`/api/super/tenants/${id}/logo`, { method: "POST", headers, body: fd });
-      const data = (await res.json()) as { error?: string; logoUrl?: string };
-      if (!res.ok) throw new Error(data.error || "آپلود ناموفق");
+      await postTenantLogo(logoTenantId, logoFile);
       flash("لوگو ذخیره شد");
+      setLogoTenantId(null);
+      setLogoFile(null);
+      if (logoPreview?.startsWith("blob:")) URL.revokeObjectURL(logoPreview);
+      setLogoPreview(null);
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -144,161 +224,323 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
   }
 
   const editing = editId ? tenants.find((t) => t.id === editId) : null;
+  const logoTenant = logoTenantId ? tenants.find((t) => t.id === logoTenantId) : null;
 
   return (
-    <div className="panel">
+    <div className="panel tenants-panel">
       <h2 style={{ marginTop: 0 }}>مستأجرها (SaaS)</h2>
-      <p className="muted" style={{ marginBottom: 16 }}>
-        توکن ربات خریدار را بگیرید، مستأجر بسازید، سپس لینک داشبورد را به او بدهید. فعال‌سازی دستی است.
+      <p className="muted tenants-panel__lead">
+        توکن ربات خریدار را بگیرید، مستأجر بسازید، سپس لینک داشبورد را به او بدهید.
       </p>
 
-      <div className="field">
-        <label>نام مستأجر</label>
-        <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="مثلاً Acme VPN" />
-      </div>
-      <div className="field">
-        <label>اسلاگ ساب‌دامین</label>
-        <input
-          value={form.slug}
-          onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))}
-          placeholder="acme"
-        />
-      </div>
-      <div className="field">
-        <label>توکن ربات تلگرام</label>
-        <input
-          value={form.botToken}
-          onChange={(e) => setForm((f) => ({ ...f, botToken: e.target.value }))}
-          placeholder="123456:ABC..."
-          autoComplete="off"
-        />
-      </div>
-      <div className="field">
-        <label>برند (اختیاری)</label>
-        <input value={form.brandName} onChange={(e) => setForm((f) => ({ ...f, brandName: e.target.value }))} />
-      </div>
-      <div className="field">
-        <label>تلگرام ادمین خریدار (الزامی)</label>
-        <input
-          value={form.ownerTelegramId}
-          onChange={(e) => setForm((f) => ({ ...f, ownerTelegramId: e.target.value.replace(/\D/g, "") }))}
-          placeholder="آی‌دی عددی"
-        />
-      </div>
-      <div className="field">
-        <label>یوزرنیم پشتیبانی (اختیاری)</label>
-        <input value={form.supportUsername} onChange={(e) => setForm((f) => ({ ...f, supportUsername: e.target.value }))} />
-      </div>
-      <div className="actions">
-        <button type="button" className="btn primary" disabled={busy} onClick={() => void createTenant()}>
-          ساخت مستأجر + استارت ربات
-        </button>
-      </div>
-
-      {editing && (
-        <div className="panel" style={{ marginTop: 20, border: "1px solid var(--line)" }}>
-          <h3 style={{ marginTop: 0 }}>ویرایش — {editing.brandName || editing.name}</h3>
+      <div className="tenants-create">
+        <div className="tenants-create__grid">
           <div className="field">
-            <label>برند</label>
-            <input value={editForm.brandName} onChange={(e) => setEditForm((f) => ({ ...f, brandName: e.target.value }))} />
+            <label>نام مستأجر</label>
+            <input
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="مثلاً Acme VPN"
+            />
+          </div>
+          <div className="field">
+            <label>اسلاگ ساب‌دامین</label>
+            <input
+              dir="ltr"
+              className="num"
+              value={form.slug}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))
+              }
+              placeholder="acme"
+            />
+          </div>
+          <div className="field tenants-create__span2">
+            <label>توکن ربات تلگرام</label>
+            <input
+              dir="ltr"
+              value={form.botToken}
+              onChange={(e) => setForm((f) => ({ ...f, botToken: e.target.value }))}
+              placeholder="123456:ABC…"
+              autoComplete="off"
+            />
+          </div>
+          <div className="field">
+            <label>برند (اختیاری)</label>
+            <input
+              value={form.brandName}
+              onChange={(e) => setForm((f) => ({ ...f, brandName: e.target.value }))}
+              placeholder="نام نمایشی"
+            />
           </div>
           <div className="field">
             <label>آی‌دی ادمین خریدار</label>
             <input
-              value={editForm.ownerTelegramId}
-              onChange={(e) => setEditForm((f) => ({ ...f, ownerTelegramId: e.target.value.replace(/\D/g, "") }))}
+              dir="ltr"
+              className="num"
+              value={form.ownerTelegramId}
+              onChange={(e) => setForm((f) => ({ ...f, ownerTelegramId: e.target.value.replace(/\D/g, "") }))}
               placeholder="آی‌دی عددی"
             />
           </div>
           <div className="field">
-            <label>توکن ربات جدید (خالی = بدون تغییر)</label>
+            <label>پشتیبانی (اختیاری)</label>
             <input
-              value={editForm.botToken}
-              onChange={(e) => setEditForm((f) => ({ ...f, botToken: e.target.value }))}
-              placeholder="چرخش توکن"
-              autoComplete="off"
+              dir="ltr"
+              value={form.supportUsername}
+              onChange={(e) => setForm((f) => ({ ...f, supportUsername: e.target.value }))}
+              placeholder="@support"
             />
           </div>
+          <div className="field tenants-logo-field">
+            <label>لوگو (اختیاری)</label>
+            <div className="tenants-logo-pick">
+              <div className="tenants-logo-thumb" aria-hidden>
+                {createLogoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={createLogoPreview} alt="" />
+                ) : (
+                  <span>بدون لوگو</span>
+                )}
+              </div>
+              <div className="tenants-logo-pick__actions">
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  disabled={busy}
+                  onClick={() => createFileRef.current?.click()}
+                >
+                  انتخاب لوگو
+                </button>
+                {createLogoPreview && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      disabled={busy}
+                      onClick={() => setCreateLogoModalOpen(true)}
+                    >
+                      پیش‌نمایش
+                    </button>
+                    <button type="button" className="btn ghost sm" disabled={busy} onClick={clearCreateLogo}>
+                      حذف
+                    </button>
+                  </>
+                )}
+              </div>
+              <input
+                ref={createFileRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => pickCreateLogo(e.target.files?.[0] ?? null)}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="tenants-create__footer">
+          <button type="button" className="btn primary" disabled={busy} onClick={() => void createTenant()}>
+            {busy ? "…" : "ساخت مستأجر + استارت ربات"}
+          </button>
+        </div>
+      </div>
+
+      <div className="tenants-list-head">
+        <h3>لیست</h3>
+        <span className="muted num">{tenants.length.toLocaleString("fa-IR")} مورد</span>
+      </div>
+
+      <div className="tenants-cards">
+        {tenants.map((t) => (
+          <article key={t.id} className={`tenants-card${t.isPlatform ? " is-platform" : ""}`}>
+            <div className="tenants-card__top">
+              <div className="tenants-card__brand">
+                <div className="tenants-card__avatar">
+                  {t.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={t.logoUrl} alt="" />
+                  ) : (
+                    <span>{(t.brandName || t.name || "?").slice(0, 1)}</span>
+                  )}
+                </div>
+                <div className="tenants-card__meta">
+                  <strong>
+                    {t.brandName || t.name}
+                    {t.isPlatform ? <span className="tenants-pill">پلتفرم</span> : null}
+                  </strong>
+                  <span className="muted" dir="ltr">
+                    {t.slug}
+                    {t.botUsername ? ` · @${t.botUsername}` : ""}
+                  </span>
+                </div>
+              </div>
+              <span className={`tenants-status${t.status === "active" ? " is-on" : " is-off"}`}>
+                {t.status === "active" ? "فعال" : "تعلیق"}
+              </span>
+            </div>
+            <div className="tenants-card__facts">
+              <div>
+                <span className="muted">ادمین</span>
+                <span dir="ltr">{t.ownerTelegramId || "—"}</span>
+              </div>
+              <div>
+                <span className="muted">داشبورد</span>
+                <a href={t.dashUrl} target="_blank" rel="noreferrer">
+                  باز کردن
+                </a>
+              </div>
+            </div>
+            <div className="tenants-card__actions">
+              <button type="button" className="btn ghost sm" disabled={busy} onClick={() => openEdit(t)}>
+                ویرایش
+              </button>
+              <button type="button" className="btn ghost sm" disabled={busy} onClick={() => openLogoModal(t)}>
+                لوگو
+              </button>
+              {!t.isPlatform && t.status === "active" && (
+                <button
+                  type="button"
+                  className="btn danger sm"
+                  disabled={busy}
+                  onClick={() => void setStatus(t.id, "suspend")}
+                >
+                  تعلیق
+                </button>
+              )}
+              {!t.isPlatform && t.status !== "active" && (
+                <button
+                  type="button"
+                  className="btn primary sm"
+                  disabled={busy}
+                  onClick={() => void setStatus(t.id, "activate")}
+                >
+                  فعال‌سازی
+                </button>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <Modal
+        open={createLogoModalOpen && Boolean(createLogoPreview)}
+        title="پیش‌نمایش لوگو"
+        onClose={() => setCreateLogoModalOpen(false)}
+      >
+        <div className="tenants-logo-modal">
+          <div className="tenants-logo-modal__preview">
+            {createLogoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={createLogoPreview} alt="پیش‌نمایش لوگو" />
+            ) : null}
+          </div>
+          <p className="muted" style={{ marginTop: 0 }}>
+            بعد از ساخت مستأجر، این لوگو به‌صورت خودکار آپلود می‌شود.
+          </p>
           <div className="actions">
-            <button type="button" className="btn primary" disabled={busy} onClick={() => void saveEdit()}>
-              ذخیره
+            <button type="button" className="btn primary" onClick={() => setCreateLogoModalOpen(false)}>
+              تأیید
             </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => setEditId(null)}>
-              انصراف
+            <button type="button" className="btn ghost" onClick={clearCreateLogo}>
+              حذف لوگو
             </button>
           </div>
         </div>
-      )}
+      </Modal>
 
-      <h3 style={{ marginTop: 28 }}>لیست</h3>
-      <div className="table-wrap">
-        <table className="data">
-          <thead>
-            <tr>
-              <th>برند</th>
-              <th>اسلاگ</th>
-              <th>ربات</th>
-              <th>ادمین</th>
-              <th>وضعیت</th>
-              <th>داشبورد</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {tenants.map((t) => (
-              <tr key={t.id}>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {t.logoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={t.logoUrl} alt="" width={28} height={28} style={{ borderRadius: 6, objectFit: "cover" }} />
-                    ) : null}
-                    <span>{t.brandName || t.name}</span>
-                    {t.isPlatform ? <span className="muted"> (پلتفرم)</span> : null}
-                  </div>
-                </td>
-                <td>
-                  <code>{t.slug}</code>
-                </td>
-                <td>{t.botUsername ? `@${t.botUsername}` : "—"}</td>
-                <td>{t.ownerTelegramId || "—"}</td>
-                <td>{t.status === "active" ? "فعال" : "تعلیق"}</td>
-                <td>
-                  <a href={t.dashUrl} target="_blank" rel="noreferrer">
-                    باز کردن
-                  </a>
-                </td>
-                <td>
-                  <div className="actions" style={{ flexWrap: "wrap", gap: 6 }}>
-                    <button type="button" className="btn" disabled={busy} onClick={() => openEdit(t)}>
-                      ویرایش
-                    </button>
-                    <label className="btn" style={{ cursor: "pointer", margin: 0 }}>
-                      لوگو
-                      <input
-                        type="file"
-                        accept="image/*"
-                        hidden
-                        onChange={(e) => void uploadLogo(t.id, e.target.files?.[0] ?? null)}
-                      />
-                    </label>
-                    {!t.isPlatform && t.status === "active" && (
-                      <button type="button" className="btn danger" disabled={busy} onClick={() => void setStatus(t.id, "suspend")}>
-                        تعلیق
-                      </button>
-                    )}
-                    {!t.isPlatform && t.status !== "active" && (
-                      <button type="button" className="btn primary" disabled={busy} onClick={() => void setStatus(t.id, "activate")}>
-                        فعال‌سازی
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Modal open={Boolean(editing)} title={editing ? `ویرایش — ${editing.brandName || editing.name}` : "ویرایش"} onClose={() => setEditId(null)}>
+        {editing && (
+          <div className="tenants-edit-modal">
+            <div className="field">
+              <label>برند</label>
+              <input
+                value={editForm.brandName}
+                onChange={(e) => setEditForm((f) => ({ ...f, brandName: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label>آی‌دی ادمین خریدار</label>
+              <input
+                dir="ltr"
+                className="num"
+                value={editForm.ownerTelegramId}
+                onChange={(e) => setEditForm((f) => ({ ...f, ownerTelegramId: e.target.value.replace(/\D/g, "") }))}
+                placeholder="آی‌دی عددی"
+              />
+            </div>
+            <div className="field">
+              <label>توکن ربات جدید (خالی = بدون تغییر)</label>
+              <input
+                dir="ltr"
+                value={editForm.botToken}
+                onChange={(e) => setEditForm((f) => ({ ...f, botToken: e.target.value }))}
+                placeholder="چرخش توکن"
+                autoComplete="off"
+              />
+            </div>
+            <div className="actions">
+              <button type="button" className="btn primary" disabled={busy} onClick={() => void saveEdit()}>
+                ذخیره
+              </button>
+              <button type="button" className="btn ghost" disabled={busy} onClick={() => setEditId(null)}>
+                انصراف
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(logoTenant)}
+        title={logoTenant ? `لوگو — ${logoTenant.brandName || logoTenant.name}` : "لوگو"}
+        onClose={() => {
+          setLogoTenantId(null);
+          setLogoFile(null);
+          if (logoPreview?.startsWith("blob:")) URL.revokeObjectURL(logoPreview);
+          setLogoPreview(null);
+        }}
+      >
+        {logoTenant && (
+          <div className="tenants-logo-modal">
+            <div className="tenants-logo-modal__preview">
+              {logoPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoPreview} alt="لوگو" />
+              ) : (
+                <span className="muted">هنوز لوگویی نیست</span>
+              )}
+            </div>
+            <div className="actions" style={{ marginBottom: 12 }}>
+              <button type="button" className="btn ghost" disabled={busy} onClick={() => editFileRef.current?.click()}>
+                انتخاب فایل
+              </button>
+              <input
+                ref={editFileRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => pickLogoFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+            <div className="actions">
+              <button type="button" className="btn primary" disabled={busy || !logoFile} onClick={() => void saveLogo()}>
+                ذخیره لوگو
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={busy}
+                onClick={() => {
+                  setLogoTenantId(null);
+                  setLogoFile(null);
+                }}
+              >
+                بستن
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
