@@ -617,6 +617,17 @@ export function DashShell(props: {
                   <span>{t.label}</span>
                 </button>
               ))}
+              <button
+                type="button"
+                className="more-sheet-item more-sheet-item--logout"
+                onClick={() => {
+                  setMoreOpen(false);
+                  logout();
+                }}
+              >
+                <Icon name="logout" size={22} />
+                <span>خروج</span>
+              </button>
             </div>
           </div>
         </div>

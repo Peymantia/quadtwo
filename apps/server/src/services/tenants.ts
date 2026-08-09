@@ -258,17 +258,17 @@ export async function activateTenant(id: string) {
 
 /** Public dash URL for a tenant slug */
 export function tenantDashUrl(slug: string, baseUrl?: string): string {
-  const base = baseUrl ?? dashBaseUrl();
+  const base = (baseUrl ?? dashBaseUrl()).replace(/\/$/, "");
+  // Platform tenant is served on the main dash host — no platform.dash.* subdomain.
+  if (slug === PLATFORM_TENANT_SLUG) return base;
   try {
     const u = new URL(base);
     if (u.hostname.includes(".")) {
-      const host = u.hostname.startsWith("dash.")
-        ? `${slug}.${u.hostname}`
-        : `${slug}.${u.hostname}`;
+      const host = `${slug}.${u.hostname}`;
       return `${u.protocol}//${host}${u.port ? `:${u.port}` : ""}`;
     }
   } catch {
     /* fall through */
   }
-  return `${base.replace(/\/$/, "")}/?tenant=${encodeURIComponent(slug)}`;
+  return `${base}/?tenant=${encodeURIComponent(slug)}`;
 }

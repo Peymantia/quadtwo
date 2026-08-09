@@ -10,8 +10,10 @@ import {
   tenantDashUrl,
   updateTenant,
 } from "../services/tenants.js";
+import { dashBaseUrl } from "../config/env.js";
 import { restartTenantBot, stopTenantBot } from "../services/bot-manager.js";
 import { auditLog } from "../services/audit.js";
+import { PLATFORM_TENANT_SLUG } from "../services/tenant-context.js";
 
 type Vars = { userId: string; role: string; telegramId: string; tenantId: string };
 
@@ -38,7 +40,7 @@ export function registerSuperadminRoutes(api: Hono<{ Variables: Vars }>) {
         status: t.status,
         isPlatform: t.isPlatform,
         ownerTelegramId: t.ownerTelegramId != null ? String(t.ownerTelegramId) : null,
-        dashUrl: tenantDashUrl(t.slug),
+        dashUrl: t.isPlatform || t.slug === PLATFORM_TENANT_SLUG ? dashBaseUrl() : tenantDashUrl(t.slug),
         createdAt: t.createdAt.toISOString(),
       })),
     });

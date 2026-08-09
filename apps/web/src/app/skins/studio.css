@@ -389,6 +389,24 @@ html[data-skin="studio"] .login-foot {
   color: color-mix(in srgb, var(--mute) 92%, var(--login-primary));
 }
 
+html[data-skin="studio"] .settings-sticky-bar__btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+}
+
+html[data-skin="studio"] .more-sheet-item:hover {
+  border-color: color-mix(in srgb, var(--login-primary) 35%, transparent);
+  color: var(--login-primary);
+  background: color-mix(in srgb, var(--login-primary) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+html[data-skin="studio"] .more-sheet-item--logout:hover {
+  color: var(--pink);
+  border-color: color-mix(in srgb, var(--pink) 40%, transparent);
+  background: color-mix(in srgb, var(--pink) 10%, transparent);
+}
+
 /* ---------- Fields ---------- */
 html[data-skin="studio"] .field input:not(.otp-input),
 html[data-skin="studio"] .field select,

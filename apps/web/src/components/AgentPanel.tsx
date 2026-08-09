@@ -16,6 +16,8 @@ import { AccountCreatedModal, type CreatedAccount } from "./AccountCreatedModal"
 import { SubQrModal } from "./SubQrModal";
 import { DiscountCodesPanel } from "./DiscountCodesPanel";
 import { SalesReportPanel } from "./SalesReportPanel";
+import { ConfigCardActions } from "./ConfigCardActions";
+import { RenewModal, type RenewInfo } from "./RenewModal";
 
 type PayCard = { number: string; holder: string };
 type PayModalState =
@@ -74,6 +76,9 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [payCard, setPayCard] = useState<PayCard | null>(null);
   const [txs, setTxs] = useState<Array<{ id: string; type: string; amount: number; createdAt: string; note?: string | null }>>([]);
   const [confirmRotate, setConfirmRotate] = useState<ConfigItem | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ConfigItem | null>(null);
+  const [confirmToggle, setConfirmToggle] = useState<{ item: ConfigItem; enable: boolean } | null>(null);
+  const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
   const [payModal, setPayModal] = useState<PayModalState>(null);
   const [qrSub, setQrSub] = useState<{ url: string; title: string } | null>(null);
 
@@ -330,6 +335,146 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     }
   }
 
+  async function refreshConfig(c: ConfigItem) {
+    if (!c.subId) {
+      setErr("این کانفیگ در دیتابیس ربات نیست");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ changed: string[] }>("/partner/configs/refresh-from-panel", {
+        method: "POST",
+        body: { email: c.email, subId: c.subId },
+      });
+      setMsg(r.changed.length ? `بروزرسانی شد: ${r.changed.join("، ")}` : "اطلاعات با پنل یکسان بود");
+      await loadConfigs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleEnable(c: ConfigItem, enable: boolean) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ message?: string }>("/partner/configs/update", {
+        method: "PUT",
+        body: { email: c.email, subId: c.subId, enable },
+      });
+      setMsg(r.message || (enable ? "اکانت فعال شد" : "اکانت غیرفعال شد"));
+      await loadConfigs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteConfigItem(c: ConfigItem) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ message?: string }>("/partner/configs/delete", {
+        method: "POST",
+        body: { email: c.email, subId: c.subId },
+      });
+      setMsg(r.message || "اکانت حذف شد");
+      await loadConfigs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveEdit(c: ConfigItem, patch: { title: string | null; note: string | null }) {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api("/partner/configs/update", {
+        method: "PUT",
+        body: { email: c.email, subId: c.subId, title: patch.title, note: patch.note },
+      });
+      await loadConfigs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openRenew(c: ConfigItem) {
+    if (!c.subId) {
+      setErr("این کانفیگ در دیتابیس ربات نیست");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const info = await api<RenewInfo>(`/me/subscriptions/${c.subId}/renew`);
+      setRenewInfo(info);
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitRenew(payload: {
+    trafficGb: number | null;
+    months: number;
+    category: string;
+    payWithWallet: boolean;
+    paymentMethod?: "wallet" | "card_to_card" | "crypto";
+    discountCode?: string | null;
+  }) {
+    if (!renewInfo) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{
+        order?: { id: string; price: number };
+        card?: PayCard;
+        crypto?: CryptoPayInfo;
+        provisioned?: CreatedAccount;
+      }>("/me/orders", {
+        body: {
+          kind: "renew",
+          targetSubId: renewInfo.subscription.id,
+          trafficGb: payload.trafficGb,
+          months: payload.months,
+          category: payload.category,
+          accountName: renewInfo.subscription.email,
+          payWithWallet: payload.payWithWallet,
+          paymentMethod: payload.paymentMethod,
+          discountCode: payload.discountCode,
+        },
+      });
+      setRenewInfo(null);
+      if (r.provisioned?.code) {
+        setResult(r.provisioned);
+        await reload();
+        await loadConfigs();
+      } else if (r.order && r.crypto?.address) {
+        setPayModal({ kind: "crypto", orderId: r.order.id, price: r.order.price, crypto: r.crypto });
+      } else if (r.order && r.card) {
+        setPayCard(r.card);
+        setPayModal({ kind: "card", orderId: r.order.id, price: r.order.price, card: r.card });
+      } else if (r.order) {
+        setMsg(`سفارش تمدید ${formatToman(r.order.price)} ثبت شد`);
+        await reload();
+      }
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const userLabel = home.user.agentName || (home.user.username ? `@${home.user.username}` : "");
 
   return (
@@ -354,6 +499,37 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             void rotateSubLink(c);
           }}
           onNo={() => setConfirmRotate(null)}
+        />
+      )}
+      {confirmDelete && (
+        <ConfirmToast
+          message={`اکانت ${confirmDelete.email} حذف شود؟`}
+          onYes={() => {
+            const c = confirmDelete;
+            setConfirmDelete(null);
+            void deleteConfigItem(c);
+          }}
+          onNo={() => setConfirmDelete(null)}
+        />
+      )}
+      {confirmToggle && (
+        <ConfirmToast
+          message={`اکانت ${confirmToggle.item.email} ${confirmToggle.enable ? "فعال" : "غیرفعال"} شود؟`}
+          onYes={() => {
+            const t = confirmToggle;
+            setConfirmToggle(null);
+            void toggleEnable(t.item, t.enable);
+          }}
+          onNo={() => setConfirmToggle(null)}
+        />
+      )}
+      {renewInfo && (
+        <RenewModal
+          open
+          info={renewInfo}
+          busy={busy}
+          onClose={() => setRenewInfo(null)}
+          onSubmit={submitRenew}
         />
       )}
 
@@ -509,16 +685,21 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   </div>
                   {c.note && <div className="muted" style={{ marginTop: 6 }}>نوت: {c.note}</div>}
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
-                  <div className="config-card-actions">
-                    <div className="config-card-actions-row">
-                      <button type="button" className="btn primary sm" disabled={busy || !c.subUrl} onClick={() => void copySubLink(c)}>
-                        کپی لینک
-                      </button>
-                      <button type="button" className="btn ghost sm" disabled={busy || !c.subId} onClick={() => setConfirmRotate(c)}>
-                        لینک جدید
-                      </button>
-                    </div>
-                  </div>
+                  <ConfigCardActions
+                    item={c}
+                    busy={busy}
+                    onBusy={setBusy}
+                    onMsg={setMsg}
+                    onErr={setErr}
+                    onReload={loadConfigs}
+                    onRenew={() => void openRenew(c)}
+                    onCopy={() => void copySubLink(c)}
+                    onRotate={() => setConfirmRotate(c)}
+                    onRefresh={() => void refreshConfig(c)}
+                    onToggleEnable={(enable) => setConfirmToggle({ item: c, enable })}
+                    onDelete={() => setConfirmDelete(c)}
+                    onSaveEdit={(patch) => saveEdit(c, patch)}
+                  />
                 </div>
               );
             })}

@@ -1369,6 +1369,18 @@ h3 {
     font-size: 0.78rem;
     font-weight: 700;
     cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  .more-sheet-item:hover {
+    border-color: rgba(56, 189, 248, 0.4);
+    color: var(--cyan);
+    background: rgba(56, 189, 248, 0.1);
+    transform: translateY(-1px);
   }
 
   .more-sheet-item.active {
@@ -1377,9 +1389,16 @@ h3 {
     color: var(--cyan);
   }
 
-  .more-sheet-item.danger {
+  .more-sheet-item.danger,
+  .more-sheet-item--logout {
     color: var(--pink);
     border-color: color-mix(in srgb, var(--pink) 28%, transparent);
+  }
+
+  .more-sheet-item--logout:hover {
+    color: var(--pink);
+    border-color: color-mix(in srgb, var(--pink) 45%, transparent);
+    background: color-mix(in srgb, var(--pink) 12%, transparent);
   }
 
   .main {
@@ -4938,6 +4957,11 @@ button.pay-dest-number:active,
   cursor: not-allowed;
 }
 
+.settings-sticky-bar__btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
 .settings-sticky-bar__btn:not(:disabled):active {
   transform: scale(0.98);
 }
@@ -4948,16 +4972,30 @@ button.pay-dest-number:active,
   box-shadow: 0 8px 20px rgba(56, 189, 248, 0.28);
 }
 
+.settings-sticky-bar__btn--save:not(:disabled):hover {
+  box-shadow: 0 12px 26px rgba(56, 189, 248, 0.38);
+}
+
 .settings-sticky-bar__btn--cancel {
   color: var(--text);
   background: color-mix(in srgb, var(--elev, rgba(255, 255, 255, 0.06)) 90%, transparent);
   border: 1px solid var(--line);
 }
 
+.settings-sticky-bar__btn--cancel:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--cyan, #38bdf8) 40%, transparent);
+  background: color-mix(in srgb, var(--cyan, #38bdf8) 10%, transparent);
+}
+
 .settings-sticky-bar__btn--default {
   color: var(--amber, #fbbf24);
   background: color-mix(in srgb, var(--amber, #fbbf24) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--amber, #fbbf24) 35%, transparent);
+}
+
+.settings-sticky-bar__btn--default:not(:disabled):hover {
+  background: color-mix(in srgb, var(--amber, #fbbf24) 20%, transparent);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--amber, #fbbf24) 22%, transparent);
 }
 
 @media (max-width: 900px) {
@@ -5039,8 +5077,16 @@ html[data-skin="studio"][data-theme="light"] .settings-sticky-bar__inner {
 .tenants-create__grid .field input {
   width: 100%;
   box-sizing: border-box;
+  min-height: 48px;
+  height: 48px;
   padding: 10px 12px;
   font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.tenants-create__grid .field input.num {
+  font-size: 0.9rem;
+  line-height: 1.25;
 }
 
 .tenants-create__span2 {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
-import { Toast } from "../../components/Toast";
+import { Toast, ConfirmToast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { CardPayModal } from "../../components/CardPayModal";
 import { CryptoPayModal, type CryptoPayInfo } from "../../components/CryptoPayModal";
@@ -19,7 +19,7 @@ import {
 } from "../../components/ServerlessShop";
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
-import { SubAddonsBar } from "../../components/SubAddonsBar";
+import { ConfigCardActions } from "../../components/ConfigCardActions";
 
 type Sub = {
   id: string;
@@ -99,6 +99,9 @@ export default function UserAppPage() {
   const [subSort, setSubSort] = useState<ListSort>("newest");
   const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
   const [created, setCreated] = useState<CreatedAccount | null>(null);
+  const [confirmRotate, setConfirmRotate] = useState<Sub | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Sub | null>(null);
+  const [confirmToggle, setConfirmToggle] = useState<{ sub: Sub; enable: boolean } | null>(null);
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -242,6 +245,97 @@ export default function UserAppPage() {
     }
   }
 
+  async function copySubLink(s: Sub) {
+    if (!s.subUrl) {
+      setErr("لینک اشتراک موجود نیست");
+      return;
+    }
+    await navigator.clipboard.writeText(s.subUrl);
+    setMsg("لینک اشتراک کپی شد");
+  }
+
+  async function rotateSubLink(s: Sub) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ subUrl?: string | null }>(`/me/subscriptions/${s.id}/rotate-sub`, { method: "POST" });
+      if (r.subUrl) {
+        await navigator.clipboard.writeText(r.subUrl);
+        setMsg("لینک ساب جدید ساخته و کپی شد");
+      } else {
+        setMsg("لینک ساب جدید ساخته شد");
+      }
+      await loadSubs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshSub(s: Sub) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ changed: string[] }>(`/me/subscriptions/${s.id}/refresh-from-panel`, { method: "POST" });
+      setMsg(r.changed.length ? `بروزرسانی شد: ${r.changed.join("، ")}` : "اطلاعات با پنل یکسان بود");
+      await loadSubs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleSub(s: Sub, enable: boolean) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ message?: string }>(`/me/subscriptions/${s.id}/enable`, {
+        method: "PUT",
+        body: { enable },
+      });
+      setMsg(r.message || (enable ? "اکانت فعال شد" : "اکانت غیرفعال شد"));
+      await loadSubs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteSub(s: Sub) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ message?: string }>(`/me/subscriptions/${s.id}/delete`, { method: "POST" });
+      setMsg(r.message || "اکانت حذف شد");
+      await loadSubs();
+      await reload();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSubEdit(s: Sub, patch: { title: string | null; note: string | null }) {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/me/subscriptions/${s.id}`, {
+        method: "PATCH",
+        body: patch,
+      });
+      await loadSubs();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submitRenew(payload: {
     trafficGb: number | null;
     months: number;
@@ -379,6 +473,39 @@ export default function UserAppPage() {
       demoMode={Boolean(home.demoMode)}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
+      {confirmRotate && (
+        <ConfirmToast
+          message="با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟"
+          onYes={() => {
+            const s = confirmRotate;
+            setConfirmRotate(null);
+            void rotateSubLink(s);
+          }}
+          onNo={() => setConfirmRotate(null)}
+        />
+      )}
+      {confirmDelete && (
+        <ConfirmToast
+          message={`اکانت ${confirmDelete.email} حذف شود؟`}
+          onYes={() => {
+            const s = confirmDelete;
+            setConfirmDelete(null);
+            void deleteSub(s);
+          }}
+          onNo={() => setConfirmDelete(null)}
+        />
+      )}
+      {confirmToggle && (
+        <ConfirmToast
+          message={`اکانت ${confirmToggle.sub.email} ${confirmToggle.enable ? "فعال" : "غیرفعال"} شود؟`}
+          onYes={() => {
+            const t = confirmToggle;
+            setConfirmToggle(null);
+            void toggleSub(t.sub, t.enable);
+          }}
+          onNo={() => setConfirmToggle(null)}
+        />
+      )}
 
       {tab === "shop" && (
         <>
@@ -484,34 +611,29 @@ export default function UserAppPage() {
                     </div>
                     <TrafficProgress usedBytes={used} totalGb={totalGb} />
                   </div>
-                  <div className="config-card-actions">
-                    <SubAddonsBar
-                      subId={s.id}
-                      email={s.email}
-                      subUrl={s.subUrl}
-                      isTest={s.isTest}
-                      trafficGb={s.trafficGb}
-                      note={s.note}
+                  <ConfigCardActions
+                      item={{
+                        email: s.email,
+                        subId: s.id,
+                        subUrl: s.subUrl,
+                        status: s.status,
+                        title: s.title,
+                        note: s.note,
+                        expiresAt: s.expiresAt,
+                      }}
                       busy={busy}
-                      walletBalance={home.wallet.balance}
-                      showRenew={!s.isTest}
                       onBusy={setBusy}
-                      onDone={() => {
-                        void reload();
-                        void loadSubs();
-                      }}
-                      onPayCard={(orderId, price, card) => {
-                        setPayCard(card);
-                        setPayModal({ kind: "card", orderId, price, card });
-                      }}
-                      onPayCrypto={(orderId, price, crypto) => {
-                        setPayModal({ kind: "crypto", orderId, price, crypto });
-                      }}
-                      onError={(m) => setErr(m || null)}
                       onMsg={setMsg}
+                      onErr={setErr}
+                      onReload={loadSubs}
                       onRenew={() => void openRenew(s.id)}
+                      onCopy={() => void copySubLink(s)}
+                      onRotate={() => setConfirmRotate(s)}
+                      onRefresh={() => void refreshSub(s)}
+                      onToggleEnable={(enable) => setConfirmToggle({ sub: s, enable })}
+                      onDelete={() => setConfirmDelete(s)}
+                      onSaveEdit={(patch) => saveSubEdit(s, patch)}
                     />
-                  </div>
                 </div>
               );
             })}

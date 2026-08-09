@@ -476,20 +476,77 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.post("/me/subscriptions/:id/refresh-from-panel", async (c) => {
-    if (c.get("role") !== "admin") return c.json({ error: "فقط ادمین" }, 403);
+    const role = c.get("role");
     const sub = await prisma.subscription.findFirst({
-      where: { id: c.req.param("id") },
+      where:
+        role === "admin"
+          ? { id: c.req.param("id") }
+          : { id: c.req.param("id"), userId: c.get("userId") },
     });
     if (!sub) return c.json({ error: "Not found" }, 404);
     try {
       const result = await refreshSubscriptionFromPanel(sub.id);
       await auditLog({
-        action: "admin_config_refresh",
+        action: "config_refresh",
         actorTelegramId: BigInt(c.get("telegramId")),
         target: result.email,
         detail: result.changed.length ? result.changed.join(",") : "no_change",
       });
       return c.json({ ok: true, ...result });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.put("/me/subscriptions/:id/enable", async (c) => {
+    const body = await c.req.json<{ enable?: boolean }>();
+    const sub = await prisma.subscription.findFirst({
+      where: { id: c.req.param("id"), userId: c.get("userId") },
+    });
+    if (!sub) return c.json({ error: "Not found" }, 404);
+    try {
+      const result = await updateConfig({
+        email: sub.email,
+        subId: sub.id,
+        enable: body.enable !== false,
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/me/subscriptions/:id/delete", async (c) => {
+    const sub = await prisma.subscription.findFirst({
+      where: { id: c.req.param("id"), userId: c.get("userId") },
+    });
+    if (!sub) return c.json({ error: "Not found" }, 404);
+    try {
+      const result = await deleteConfig({
+        email: sub.email,
+        subId: sub.id,
+        actorTelegramId: BigInt(c.get("telegramId")),
+      });
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.patch("/me/subscriptions/:id", async (c) => {
+    const body = await c.req.json<{ title?: string | null; note?: string | null }>();
+    const sub = await prisma.subscription.findFirst({
+      where: { id: c.req.param("id"), userId: c.get("userId") },
+    });
+    if (!sub) return c.json({ error: "Not found" }, 404);
+    try {
+      const result = await updateConfig({
+        email: sub.email,
+        subId: sub.id,
+        title: body.title,
+        note: body.note,
+      });
+      return c.json(result);
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }
@@ -1374,6 +1431,33 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
       if (!access.subId) return c.json({ error: "اکانت در دیتابیس ربات نیست" }, 404);
       const result = await rotateSubId(access.subId);
       return c.json({ code: result.code, subUrl: result.subUrl });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/partner/configs/refresh-from-panel", async (c) => {
+    const body = await c.req.json<{ email?: string; subId?: string | null }>();
+    try {
+      const access = await resolvePartnerConfigAccess(c.get("userId"), c.get("role"), body.email, body.subId);
+      if (!access.subId) return c.json({ error: "اکانت در دیتابیس ربات نیست" }, 404);
+      const result = await refreshSubscriptionFromPanel(access.subId);
+      return c.json({ ok: true, ...result });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/partner/configs/delete", async (c) => {
+    const body = await c.req.json<{ email?: string; subId?: string | null }>();
+    try {
+      const access = await resolvePartnerConfigAccess(c.get("userId"), c.get("role"), body.email, body.subId);
+      const result = await deleteConfig({
+        email: access.email,
+        subId: access.subId,
+        actorTelegramId: BigInt(c.get("telegramId")),
+      });
+      return c.json(result);
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }
