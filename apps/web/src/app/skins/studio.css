@@ -394,10 +394,31 @@ html[data-skin="studio"] .more-sheet {
   box-shadow: var(--studio-shadow);
 }
 
+html[data-skin="studio"] .more-sheet-item {
+  background: var(--elev);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+html[data-skin="studio"][data-theme="light"] .more-sheet-item {
+  background: #f1f5f9;
+  border-color: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+html[data-skin="studio"][data-theme="light"] .more-sheet-item:hover {
+  background: #e2e8f0;
+}
+
 html[data-skin="studio"] .more-sheet-item.active {
   color: var(--studio-accent);
   border-color: color-mix(in srgb, var(--studio-accent) 35%, transparent);
   background: color-mix(in srgb, var(--studio-accent) 10%, transparent);
+}
+
+html[data-skin="studio"][data-theme="light"] .more-sheet-item.active {
+  background: color-mix(in srgb, var(--studio-accent) 12%, #ffffff);
+  color: var(--studio-accent);
 }
 
 /* ---------- Modals / tables ---------- */

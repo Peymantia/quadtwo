@@ -1172,7 +1172,7 @@ h3 {
   .more-sheet {
     position: relative;
     z-index: 1;
-    background: linear-gradient(180deg, #161b3f 0%, #0e1230 100%);
+    background: var(--card-solid);
     border-top: 1px solid var(--line-strong);
     border-radius: 22px 22px 0 0;
     padding: 10px 16px calc(18px + env(safe-area-inset-bottom, 0px));
@@ -1197,7 +1197,7 @@ h3 {
     width: 42px;
     height: 4px;
     border-radius: 999px;
-    background: rgba(148, 163, 255, 0.28);
+    background: var(--line-strong);
     margin: 2px auto 12px;
   }
 
@@ -1224,7 +1224,7 @@ h3 {
     padding: 12px 8px;
     border: 1px solid var(--line);
     border-radius: 16px;
-    background: rgba(24, 29, 63, 0.65);
+    background: var(--elev);
     color: var(--text);
     font-size: 0.78rem;
     font-weight: 700;
@@ -1232,14 +1232,14 @@ h3 {
   }
 
   .more-sheet-item.active {
-    border-color: rgba(56, 189, 248, 0.55);
-    background: rgba(56, 189, 248, 0.12);
+    border-color: color-mix(in srgb, var(--cyan) 55%, transparent);
+    background: color-mix(in srgb, var(--cyan) 12%, transparent);
     color: var(--cyan);
   }
 
   .more-sheet-item.danger {
     color: var(--pink);
-    border-color: rgba(251, 113, 133, 0.28);
+    border-color: color-mix(in srgb, var(--pink) 28%, transparent);
   }
 
   .main {
