@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/piing-promo.png" alt="Piing PRIVATE ACCESS — هر نیازی، یک راه حل" width="920" />
+  <img src="docs/piing-promo.png" alt="پینگ PRIVATE ACCESS — هر نیازی، یک راه حل" width="920" />
 </p>
 
 <p align="center">
@@ -10,7 +10,9 @@
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node" />
 </p>
 
-<h1 align="center">⚡ Piing · Quadtwo</h1>
+<div dir="rtl" align="right">
+
+<h1 align="center">⚡ پینگ · Quadtwo</h1>
 
 <p align="center">
   <b>هر نیازی، یک راه حل</b><br/>
@@ -19,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="#-چرا-انگشت-به-دهان-میمانند">چرا Piing؟</a> ·
+  <a href="#-چرا-انگشت-به-دهان-میمانند">چرا پینگ؟</a> ·
   <a href="#-همه-قابلیت‌ها">همه قابلیت‌ها</a> ·
   <a href="#-نقش‌ها">نقش‌ها</a> ·
   <a href="#-نصب-یکخطی">نصب</a> ·
@@ -30,7 +32,7 @@
 
 ## 🔥 چرا انگشت به دهان می‌مانند؟
 
-Piing فقط «یک ربات فروش کانفیگ» نیست.  
+**پینگ** فقط «یک ربات فروش کانفیگ» نیست.  
 یک **سیستم فروش، مدیریت و نمایندگی** است که ربات تلگرام، داشبورد وب، کیف پول، قیمت‌گذاری چندلایه، همگام‌سازی پنل 3x-ui و فروش وایت‌لیبل را در یک پلتفرم جمع کرده.
 
 | مخاطب | چه می‌گیرد؟ |
@@ -88,7 +90,7 @@ Piing فقط «یک ربات فروش کانفیگ» نیست.
 - 📌 پیام پین وب‌پنل برای همه کاربران
 - 😄 ایموجی **Universal** یا **Premium** تلگرام
 
-### 🌐 داشبورد وب (Piing)
+### 🌐 داشبورد وب (پینگ)
 - 🔐 ورود با **OTP ۴رقمی از ربات** · **رمز عبور** · **Passkey / Face ID**
 - 📲 ورود بی‌صدا از **Telegram Mini App**
 - 🎨 دو پوسته: **Classic** و **Studio** (روشن / تیره / سیستم / تلگرام)
@@ -158,6 +160,8 @@ Piing فقط «یک ربات فروش کانفیگ» نیست.
 
 ## 🧭 منوی اصلی ربات
 
+</div>
+
 ```text
 🛒 خرید سرویس جدید
 📦 سرویس‌های من     |  ♻️ تمدید سرویس
@@ -168,15 +172,21 @@ Piing فقط «یک ربات فروش کانفیگ» نیست.
 🎛 کنترل سنتر ادمین |  💼 مشخصات نماینده   ← فقط ادمین
 ```
 
+<div dir="rtl" align="right">
+
 ---
 
 ## 🚀 نصب یک‌خطی
 
 > مناسب Ubuntu / Debian — با دسترسی **root**
 
+</div>
+
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install.sh)
 ```
+
+<div dir="rtl" align="right">
 
 اسکریپت Node.js، کلون در `/opt/quadtwo`، دیتابیس SQLite و سرویس `systemd` را آماده می‌کند.
 
@@ -192,10 +202,14 @@ bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install
 
 ### 🏁 بعد از نصب
 
+</div>
+
 ```text
 /setcard 6037-xxxx-xxxx-xxxx|نام صاحب حساب
 /setsupport @username
 ```
+
+<div dir="rtl" align="right">
 
 سپس در کنترل سنتر:
 1. 📥 **ورود از .env** برای ثبت پنل فعلی  
@@ -205,6 +219,8 @@ bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install
 ---
 
 ## 🛠 مدیریت سرور
+
+</div>
 
 ```bash
 q2
@@ -230,7 +246,11 @@ quadtwo
   0) exit
 ```
 
+<div dir="rtl" align="right">
+
 فروش لایسنس و دمو: [docs/SELLING.md](docs/SELLING.md)
+
+</div>
 
 ```bash
 q2 status          # وضعیت سرویس‌ها
@@ -244,7 +264,11 @@ q2 activate        # فعال‌سازی لایسنس خریدار
 q2 license         # وضعیت لایسنس
 ```
 
+<div dir="rtl" align="right">
+
 ### 🔁 عوض کردن توکن ربات (rebrand)
+
+</div>
 
 ```bash
 q2 set-token
@@ -252,9 +276,13 @@ q2 set-token
 q2 set-token 123456789:AAH...new-token
 ```
 
+<div dir="rtl" align="right">
+
 توکن اعتبارسنجی می‌شود، `.env` به‌روز و سرویس ری‌استارت می‌شود. **دیتابیس حفظ می‌ماند.**
 
 ### 👑 عوض کردن ادمین
+
+</div>
 
 ```bash
 q2 set-admin
@@ -264,15 +292,23 @@ q2 set-admin 123456789
 q2 set-admin 111111111,222222222
 ```
 
+<div dir="rtl" align="right">
+
 ### 🗑 حذف
+
+</div>
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install.sh) --uninstall
 ```
 
+<div dir="rtl" align="right">
+
 ---
 
 ## 💻 توسعه لوکال
+
+</div>
 
 ```bash
 cp .env.example .env
@@ -282,6 +318,8 @@ npm run dev -w @quadtwo/server
 # ترمینال دیگر:
 npm run dev -w @quadtwo/web
 ```
+
+<div dir="rtl" align="right">
 
 اگر از ایران به `api.telegram.org` وصل نمی‌شوید، روی VPS اجرا کنید یا `TELEGRAM_PROXY` بگذارید.
 
@@ -295,9 +333,13 @@ npm run dev -w @quadtwo/web
 
 در حالت دمو، **بازیابی پشتیبان** عمداً غیرفعال است.
 
+</div>
+
 ```bash
 npm run db:push -w @quadtwo/server
 ```
+
+<div dir="rtl" align="right">
 
 ### 🌐 داشبورد وب
 
@@ -319,14 +361,18 @@ npm run db:push -w @quadtwo/server
 
 ### 📁 ساختار پروژه
 
+</div>
+
 ```text
 apps/server       # API + ربات (Hono · grammY · Prisma/SQLite)
-apps/web          # داشبورد وب Piing (Next.js)
+apps/web          # داشبورد وب پینگ (Next.js)
 packages/shared   # تایپ‌های مشترک
 deploy/           # نمونه Nginx برای dash.*
 install.sh        # نصب‌کننده و CLI روی سرور
 docs/             # معماری · رودمپ · تصویر تبلیغاتی
 ```
+
+<div dir="rtl" align="right">
 
 ---
 
@@ -334,7 +380,7 @@ docs/             # معماری · رودمپ · تصویر تبلیغاتی
 
 | فایل | محتوا |
 |:--|:--|
-| [`docs/piing-promo.png`](docs/piing-promo.png) | پوستر تبلیغاتی Piing |
+| [`docs/piing-promo.png`](docs/piing-promo.png) | پوستر تبلیغاتی پینگ |
 | [`deploy/README.md`](deploy/README.md) | نصب وب‌پنل dash.* + wildcard SaaS |
 | [`docs/SAAS.md`](docs/SAAS.md) | فروش ربات وایت‌لیبل |
 | [`docs/PROJECT.md`](docs/PROJECT.md) | شرح محصول |
@@ -347,5 +393,7 @@ docs/             # معماری · رودمپ · تصویر تبلیغاتی
 
 <p align="center">
   <b>همه و همه در یک سیستم پیشرفته و حرفه‌ای…</b><br/>
-  <sub>Piing PRIVATE ACCESS · ساخته‌شده برای فروش حرفه‌ای VPN روی تلگرام · قدرت‌گرفته از 3x-ui</sub>
+  <sub>پینگ PRIVATE ACCESS · ساخته‌شده برای فروش حرفه‌ای VPN روی تلگرام · قدرت‌گرفته از 3x-ui</sub>
 </p>
+
+</div>
