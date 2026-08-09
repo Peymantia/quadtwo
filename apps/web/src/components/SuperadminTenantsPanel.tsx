@@ -292,54 +292,57 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
               placeholder="@support"
             />
           </div>
-          <div className="field tenants-logo-field">
-            <label>لوگو (اختیاری)</label>
-            <div className="tenants-logo-pick">
-              <div className="tenants-logo-thumb" aria-hidden>
-                {createLogoPreview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={createLogoPreview} alt="" />
-                ) : (
-                  <span>بدون لوگو</span>
-                )}
-              </div>
-              <div className="tenants-logo-pick__actions">
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  disabled={busy}
-                  onClick={() => createFileRef.current?.click()}
-                >
-                  انتخاب لوگو
-                </button>
-                {createLogoPreview && (
-                  <>
-                    <button
-                      type="button"
-                      className="btn ghost sm"
-                      disabled={busy}
-                      onClick={() => setCreateLogoModalOpen(true)}
-                    >
-                      پیش‌نمایش
-                    </button>
-                    <button type="button" className="btn ghost sm" disabled={busy} onClick={clearCreateLogo}>
-                      حذف
-                    </button>
-                  </>
-                )}
-              </div>
-              <input
-                ref={createFileRef}
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(e) => pickCreateLogo(e.target.files?.[0] ?? null)}
-              />
+        </div>
+
+        {(createLogoPreview || createLogoFile) && (
+          <div className="tenants-create__logo-status">
+            <div className="tenants-logo-thumb" aria-hidden>
+              {createLogoPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={createLogoPreview} alt="" />
+              ) : (
+                <span>لوگو</span>
+              )}
+            </div>
+            <div className="tenants-logo-pick__actions">
+              <button
+                type="button"
+                className="btn ghost sm"
+                disabled={busy}
+                onClick={() => setCreateLogoModalOpen(true)}
+              >
+                پیش‌نمایش
+              </button>
+              <button type="button" className="btn ghost sm" disabled={busy} onClick={clearCreateLogo}>
+                حذف لوگو
+              </button>
             </div>
           </div>
-        </div>
+        )}
+
+        <input
+          ref={createFileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => pickCreateLogo(e.target.files?.[0] ?? null)}
+        />
+
         <div className="tenants-create__footer">
-          <button type="button" className="btn primary" disabled={busy} onClick={() => void createTenant()}>
+          <button
+            type="button"
+            className="btn ghost tenants-create__btn"
+            disabled={busy}
+            onClick={() => createFileRef.current?.click()}
+          >
+            {createLogoPreview ? "تغییر لوگو" : "انتخاب لوگو"}
+          </button>
+          <button
+            type="button"
+            className="btn primary tenants-create__btn"
+            disabled={busy}
+            onClick={() => void createTenant()}
+          >
             {busy ? "…" : "ساخت مستأجر + استارت ربات"}
           </button>
         </div>
@@ -391,16 +394,16 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
               </div>
             </div>
             <div className="tenants-card__actions">
-              <button type="button" className="btn ghost sm" disabled={busy} onClick={() => openEdit(t)}>
+              <button type="button" className="btn ghost sm tenants-card__action" disabled={busy} onClick={() => openEdit(t)}>
                 ویرایش
               </button>
-              <button type="button" className="btn ghost sm" disabled={busy} onClick={() => openLogoModal(t)}>
+              <button type="button" className="btn ghost sm tenants-card__action" disabled={busy} onClick={() => openLogoModal(t)}>
                 لوگو
               </button>
               {!t.isPlatform && t.status === "active" && (
                 <button
                   type="button"
-                  className="btn danger sm"
+                  className="btn danger sm tenants-card__action"
                   disabled={busy}
                   onClick={() => void setStatus(t.id, "suspend")}
                 >
@@ -410,7 +413,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
               {!t.isPlatform && t.status !== "active" && (
                 <button
                   type="button"
-                  className="btn primary sm"
+                  className="btn primary sm tenants-card__action"
                   disabled={busy}
                   onClick={() => void setStatus(t.id, "activate")}
                 >

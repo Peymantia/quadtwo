@@ -4733,8 +4733,8 @@ button.pay-dest-number:active,
 
 /* —— Tenants (SaaS superadmin) —— */
 .tenants-panel__lead {
-  margin: 0 0 16px;
-  max-width: 42rem;
+  margin: 0 0 14px;
+  max-width: 40rem;
   line-height: 1.55;
 }
 
@@ -4750,59 +4750,78 @@ button.pay-dest-number:active,
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px 12px;
+  align-items: start;
 }
 
 .tenants-create__grid .field {
   margin-bottom: 0;
+  min-width: 0;
 }
 
 .tenants-create__grid .field input {
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px 12px;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
 }
 
-@media (min-width: 720px) {
-  .tenants-create__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .tenants-create__span2 {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (min-width: 1100px) {
-  .tenants-create__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    max-width: 920px;
-  }
-
-  .tenants-create__span2 {
-    grid-column: span 2;
-  }
-}
-
-.tenants-create__footer {
-  margin-top: 14px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.tenants-logo-field {
+.tenants-create__span2 {
   grid-column: 1 / -1;
 }
 
-.tenants-logo-pick {
+@media (min-width: 640px) {
+  .tenants-create__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 960px) {
+  .tenants-create {
+    max-width: 680px;
+    margin-inline: auto 0;
+  }
+}
+
+.tenants-create__logo-status {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.tenants-create__footer {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.tenants-create__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+  padding-block: 12px;
+}
+
+@media (min-width: 640px) {
+  .tenants-create__footer {
+    max-width: 420px;
+    margin-inline: auto;
+    margin-top: 16px;
+  }
 }
 
 .tenants-logo-thumb {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--card);
@@ -4811,7 +4830,7 @@ button.pay-dest-number:active,
   overflow: hidden;
   flex-shrink: 0;
   color: var(--mute);
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   text-align: center;
   padding: 4px;
 }
@@ -4882,6 +4901,7 @@ button.pay-dest-number:active,
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1;
 }
 
 .tenants-card__avatar {
@@ -4978,10 +4998,16 @@ button.pay-dest-number:active,
 
 .tenants-card__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-  padding-top: 2px;
+  padding-top: 8px;
   border-top: 1px solid var(--line);
+}
+
+.tenants-card__action {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
 }
 
 .tenants-logo-modal__preview {
