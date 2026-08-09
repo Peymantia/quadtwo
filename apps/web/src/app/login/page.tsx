@@ -3,12 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Toast } from "../../components/Toast";
+import { Icon } from "../../components/DashShell";
 import { api, getToken, homePathForRole, setToken, type Role, type SessionUser } from "../../lib/api";
 import { canUsePasskey, loginWithPasskey, passkeyErrorMessage } from "../../lib/passkey";
 import { isTelegramMiniApp, loginWithTelegramWebApp } from "../../lib/telegram";
-import { applyAppearance, parseColorMode, parseUiSkin } from "../../lib/theme";
+import {
+  applyAppearance,
+  parseColorMode,
+  parseUiSkin,
+  readCachedAppearance,
+  resolveTheme,
+  toggleStudioTheme,
+} from "../../lib/theme";
 
 const OTP_LEN = 4;
+const SUCCESS_MS = 1100;
 
 function toEnglishDigits(value: string): string {
   return value
@@ -18,6 +27,58 @@ function toEnglishDigits(value: string): string {
 
 function digitsOnly(value: string): string {
   return toEnglishDigits(value).replace(/\D/g, "");
+}
+
+function LoginThemeToggle() {
+  const [resolved, setResolved] = useState<"light" | "dark">("dark");
+
+  useEffect(() => {
+    const sync = () => {
+      const cached = readCachedAppearance();
+      setResolved(resolveTheme(cached.colorMode));
+      const dt = document.documentElement.dataset.theme;
+      if (dt === "light" || dt === "dark") setResolved(dt);
+    };
+    sync();
+    window.addEventListener("piing:appearance", sync);
+    return () => window.removeEventListener("piing:appearance", sync);
+  }, []);
+
+  return (
+    <button
+      type="button"
+      className="theme-toggle login-theme-toggle"
+      aria-label={resolved === "light" ? "حالت تاریک" : "حالت روشن"}
+      title={resolved === "light" ? "حالت تاریک" : "حالت روشن"}
+      onClick={() => {
+        const cached = readCachedAppearance();
+        applyAppearance("studio", cached.colorMode);
+        const next = toggleStudioTheme(cached.colorMode);
+        setResolved(next);
+        window.dispatchEvent(
+          new CustomEvent("piing:appearance", { detail: { skin: "studio", colorMode: cached.colorMode } }),
+        );
+      }}
+    >
+      <Icon name={resolved === "light" ? "moon" : "sun"} size={18} />
+    </button>
+  );
+}
+
+function AuthSuccessOverlay({ show }: { show: boolean }) {
+  return (
+    <div className={`login-success-overlay${show ? " show" : ""}`} aria-hidden={!show}>
+      <div className="login-success-glow" />
+      <div className="login-success-wrap">
+        <div className="login-success-ring" />
+        <div className="login-success-circle">
+          <svg className="login-success-icon" viewBox="0 0 52 52" aria-hidden>
+            <path className="login-success-path" d="M14 27l7 7 16-16" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function LoginPage() {
@@ -30,6 +91,7 @@ export default function LoginPage() {
   const [hint, setHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [authSuccess, setAuthSuccess] = useState(false);
   const [brand, setBrand] = useState("پیـنگ");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [passkeyOk, setPasskeyOk] = useState(false);
@@ -51,26 +113,23 @@ export default function LoginPage() {
     });
   }, []);
 
-  const applyOtpPaste = useCallback(
-    (raw: string, startIndex = 0) => {
-      const cleaned = digitsOnly(raw).slice(0, OTP_LEN - startIndex);
-      if (!cleaned) return;
-      setDigits((prev) => {
-        const next = [...prev];
-        for (let i = 0; i < cleaned.length; i++) {
-          next[startIndex + i] = cleaned[i]!;
-        }
-        return next;
-      });
-      const focusAt = Math.min(startIndex + cleaned.length, OTP_LEN - 1);
-      requestAnimationFrame(() => {
-        const el = otpRefs.current[focusAt];
-        el?.focus();
-        el?.select();
-      });
-    },
-    [],
-  );
+  const applyOtpPaste = useCallback((raw: string, startIndex = 0) => {
+    const cleaned = digitsOnly(raw).slice(0, OTP_LEN - startIndex);
+    if (!cleaned) return;
+    setDigits((prev) => {
+      const next = [...prev];
+      for (let i = 0; i < cleaned.length; i++) {
+        next[startIndex + i] = cleaned[i]!;
+      }
+      return next;
+    });
+    const focusAt = Math.min(startIndex + cleaned.length, OTP_LEN - 1);
+    requestAnimationFrame(() => {
+      const el = otpRefs.current[focusAt];
+      el?.focus();
+      el?.select();
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,9 +190,17 @@ export default function LoginPage() {
     }
   }, [otpSent]);
 
-  function finishLogin(r: { token: string; user: SessionUser }) {
+  async function finishLogin(r: { token: string; user: SessionUser }, withFx = false) {
     setToken(r.token);
-    router.replace(homePathForRole(r.user.role as Role));
+    const dest = homePathForRole(r.user.role as Role);
+    if (!withFx) {
+      router.replace(dest);
+      return;
+    }
+    setAuthSuccess(true);
+    setBusy(true);
+    await new Promise((resolve) => setTimeout(resolve, SUCCESS_MS));
+    router.replace(dest);
   }
 
   async function requestOtp() {
@@ -161,12 +228,11 @@ export default function LoginPage() {
         token: null,
         body: { login, code },
       });
-      finishLogin(r);
+      await finishLogin(r, true);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
       setDigits(Array.from({ length: OTP_LEN }, () => ""));
       requestAnimationFrame(() => otpRefs.current[0]?.focus());
-    } finally {
       setBusy(false);
     }
   }
@@ -180,10 +246,9 @@ export default function LoginPage() {
         token: null,
         body: { login, password },
       });
-      finishLogin(r);
+      await finishLogin(r, true);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
-    } finally {
       setBusy(false);
     }
   }
@@ -193,10 +258,9 @@ export default function LoginPage() {
     clearFlash();
     try {
       const r = await loginWithPasskey(login.trim() || undefined);
-      finishLogin(r);
+      await finishLogin(r, true);
     } catch (err) {
       setError(passkeyErrorMessage(err));
-    } finally {
       setBusy(false);
     }
   }
@@ -259,6 +323,8 @@ export default function LoginPage() {
         <div className="login-orb login-orb-b" />
       </div>
 
+      <LoginThemeToggle />
+
       <Toast msg={hint} err={error} onClear={clearFlash} />
 
       <div className="login-inner">
@@ -276,7 +342,8 @@ export default function LoginPage() {
             : "برای ورود یکی از روش‌های زیر را انتخاب کنید"}
         </p>
 
-        <div className="login-card">
+        <div className={`login-card${authSuccess ? " auth-success" : ""}`}>
+          <AuthSuccessOverlay show={authSuccess} />
           <form onSubmit={verifyOtp}>
             <div className="field">
               <label htmlFor="login-id">آی‌دی عددی تلگرام یا یوزرنیم</label>
@@ -287,7 +354,7 @@ export default function LoginPage() {
                 style={{ textAlign: "center" }}
                 value={login}
                 onChange={(e) => setLogin(e.target.value)}
-                placeholder="@username یا 123456789"
+                placeholder="یوزرنیم تلگرام با @ یا عدد"
                 autoComplete="username"
                 required
               />

@@ -215,6 +215,7 @@ h3 {
 }
 
 .login-card {
+  position: relative;
   width: 100%;
   background: var(--card);
   border: 1px solid var(--line);
@@ -388,6 +389,228 @@ h3 {
 
 .password-form {
   margin-top: 10px;
+}
+
+.login-theme-toggle {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top, 0px));
+  left: max(14px, env(safe-area-inset-left, 0px));
+  z-index: 5;
+}
+
+.login-success-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--card-solid, var(--card)) 55%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.login-success-overlay.show {
+  opacity: 1;
+}
+
+.login-success-glow {
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(14, 164, 114, 0.35), transparent 70%);
+  opacity: 0;
+  scale: 0.4;
+}
+
+.login-success-overlay.show .login-success-glow {
+  animation: login-merge-glow-pop 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes login-merge-glow-pop {
+  0% {
+    opacity: 0;
+    scale: 0.3;
+  }
+  45% {
+    opacity: 1;
+    scale: 1.1;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.5;
+  }
+}
+
+.login-success-wrap {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-success-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid #0ea472;
+  opacity: 0;
+  scale: 0.4;
+}
+
+.login-success-overlay.show .login-success-ring {
+  animation: login-merge-ring-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
+}
+
+@keyframes login-merge-ring-in {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.login-success-circle {
+  position: absolute;
+  inset: 6px;
+  border-radius: 9999px;
+  background: rgba(14, 164, 114, 0.14);
+  border: 2px solid #0ea472;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  scale: 0.5;
+}
+
+.login-success-overlay.show .login-success-circle {
+  animation: login-merge-circle-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.18s both;
+}
+
+@keyframes login-merge-circle-in {
+  0% {
+    opacity: 0;
+    scale: 0.5;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.login-success-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.login-success-path {
+  stroke: #0ea472;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  fill: none;
+}
+
+.login-success-overlay.show .login-success-path {
+  animation: login-draw-check 0.45s ease 0.4s forwards;
+}
+
+@keyframes login-draw-check {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.login-card.auth-success .otp-grid .otp-cell {
+  animation: login-cell-collapse 0.5s cubic-bezier(0.5, 0, 0.4, 1) both;
+}
+
+.login-card.auth-success .otp-grid .otp-cell:nth-child(1) {
+  animation-delay: 0s;
+}
+.login-card.auth-success .otp-grid .otp-cell:nth-child(2) {
+  animation-delay: 0.04s;
+}
+.login-card.auth-success .otp-grid .otp-cell:nth-child(3) {
+  animation-delay: 0.08s;
+}
+.login-card.auth-success .otp-grid .otp-cell:nth-child(4) {
+  animation-delay: 0.12s;
+}
+
+@keyframes login-cell-collapse {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4) translateY(6px);
+  }
+}
+
+.login-card.auth-success .passkey-block,
+.login-card.auth-success .login-submit,
+.login-card.auth-success .login-request-otp,
+.login-card.auth-success .password-form,
+.login-card.auth-success .collapse-toggle,
+.login-card.auth-success .or-divider,
+.login-card.auth-success .field:not(.otp-field) {
+  transition: opacity 0.25s ease;
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-success-glow,
+  .login-success-ring,
+  .login-success-circle,
+  .login-success-path,
+  .login-card.auth-success .otp-grid .otp-cell {
+    animation: none !important;
+  }
+  .login-success-overlay.show {
+    opacity: 1;
+  }
+  .login-success-overlay.show .login-success-circle,
+  .login-success-overlay.show .login-success-ring {
+    opacity: 1;
+    scale: 1;
+  }
+  .login-success-overlay.show .login-success-path {
+    stroke-dashoffset: 0;
+  }
+}
+
+.env-server-card {
+  border: 1px dashed color-mix(in srgb, var(--cyan, #38bdf8) 40%, transparent);
+  background: color-mix(in srgb, var(--cyan, #38bdf8) 8%, var(--elev));
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+
+.audit-modal-list {
+  max-height: min(60dvh, 520px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 8px;
 }
 
 /* ---------- Fields & buttons ---------- */
@@ -641,11 +864,11 @@ h3 {
   min-width: 160px;
   max-width: 280px;
   border: 1px solid var(--line);
-  background-color: #10142f;
+  background-color: var(--elev);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e96c9' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: left 12px center;
-  color: #eef0ff;
+  color: var(--text);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
   padding-left: 32px;
@@ -653,19 +876,18 @@ h3 {
   font: inherit;
   appearance: none;
   -webkit-appearance: none;
-  color-scheme: dark;
 }
 
 .sort-bar select:focus {
   border-color: rgba(56, 189, 248, 0.6);
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
-  color: #eef0ff;
-  background-color: #10142f;
+  color: var(--text);
+  background-color: var(--elev);
 }
 
 .sort-bar select option {
-  background: #10142f;
-  color: #eef0ff;
+  background: var(--card-solid, var(--elev));
+  color: var(--text);
 }
 
 .config-pager {
@@ -1432,7 +1654,7 @@ h3 {
 .users-mcard {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(10, 13, 35, 0.35);
+  background: var(--elev);
   padding: 12px 14px;
   direction: ltr;
   text-align: left;
@@ -2275,7 +2497,7 @@ button.stat.stat-link:active {
 .table input,
 .table select {
   border: 1px solid var(--line);
-  background: rgba(10, 13, 35, 0.6);
+  background: var(--elev);
   color: var(--text);
   border-radius: 9px;
   padding: 7px 9px;
@@ -2508,7 +2730,7 @@ button.stat.stat-link:active {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--line);
-  background: rgba(10, 13, 35, 0.55);
+  background: var(--elev);
   color: var(--text);
   border-radius: 10px;
   padding: 8px 10px;
@@ -2663,6 +2885,26 @@ button.stat.stat-link:active {
   margin-top: 3px;
 }
 
+.settings-input {
+  border: 1px solid var(--line);
+  background: var(--elev);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font: inherit;
+  outline: none;
+}
+
+.settings-input:focus {
+  border-color: color-mix(in srgb, var(--cyan, #38bdf8) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan, #38bdf8) 14%, transparent);
+}
+
+.settings-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* ---------- Toast ---------- */
 
 .toast-wrap {
@@ -2735,14 +2977,15 @@ button.stat.stat-link:active {
   margin-top: 16px;
   padding: 10px;
   border-radius: 16px;
-  background: #0d1130;
+  background: color-mix(in srgb, var(--card-solid, var(--card)) 94%, transparent);
   border: 1px solid var(--line-strong);
-  box-shadow: 0 10px 28px rgba(4, 6, 20, 0.55);
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 28%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .save-bar .btn {
   width: 100%;
-  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.35);
 }
 
 @media (max-width: 900px) {
@@ -3175,12 +3418,11 @@ button.pay-dest-number:active,
   flex: 0 0 auto;
   min-width: 120px;
   border: 1px solid var(--line);
-  background: #10142f;
+  background: var(--elev);
   color: var(--text);
   border-radius: 11px;
   padding: 9px 12px;
   font: inherit;
-  color-scheme: dark;
   cursor: pointer;
 }
 
@@ -3188,7 +3430,7 @@ button.pay-dest-number:active,
   flex: 1 1 140px;
   min-width: 120px;
   border: 1px solid var(--line);
-  background: rgba(10, 13, 35, 0.6);
+  background: var(--elev);
   color: var(--text);
   border-radius: 11px;
   padding: 9px 12px;
@@ -3416,7 +3658,7 @@ button.pay-dest-number:active,
   font-size: 0.92rem;
   text-align: center;
   border: 1px solid var(--line);
-  background: rgba(10, 13, 35, 0.65);
+  background: var(--elev);
   color: var(--text);
   border-radius: var(--radius-sm);
   outline: none;
@@ -3583,7 +3825,7 @@ button.pay-dest-number:active,
   font-size: 0.9rem;
   font-weight: 700;
   line-height: 1.4;
-  color: #eef0ff;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -3591,11 +3833,11 @@ button.pay-dest-number:active,
 .panel-route-row .combo-select {
   width: 100%;
   border: 1px solid var(--line);
-  background-color: #10142f;
+  background-color: var(--elev);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e96c9' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: left 14px center;
-  color: #eef0ff;
+  color: var(--text);
   border-radius: 12px;
   padding: 11px 14px;
   padding-left: 36px;
@@ -3604,7 +3846,6 @@ button.pay-dest-number:active,
   font-weight: 600;
   appearance: none;
   -webkit-appearance: none;
-  color-scheme: dark;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -3614,8 +3855,8 @@ button.pay-dest-number:active,
 }
 
 .panel-route-row .combo-select option {
-  background: #10142f;
-  color: #eef0ff;
+  background: var(--card-solid, var(--elev));
+  color: var(--text);
 }
 
 .panel-route-actions {
@@ -3873,7 +4114,7 @@ button.pay-dest-number:active,
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--line);
-  background: rgba(10, 13, 35, 0.65);
+  background: var(--elev);
   color: var(--text);
   border-radius: var(--radius-sm);
   padding: 11px 12px;
@@ -4690,8 +4931,8 @@ button.pay-dest-number:active,
   text-align: right;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px dashed rgba(56, 189, 248, 0.45);
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(15, 23, 42, 0.35));
+  border: 1px dashed color-mix(in srgb, var(--cyan, #38bdf8) 45%, transparent);
+  background: color-mix(in srgb, var(--cyan, #38bdf8) 8%, var(--elev));
   color: inherit;
   cursor: pointer;
   transition:
@@ -4701,8 +4942,8 @@ button.pay-dest-number:active,
 }
 
 .backup-restore__pick:hover:not(:disabled) {
-  border-color: rgba(56, 189, 248, 0.75);
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(15, 23, 42, 0.4));
+  border-color: color-mix(in srgb, var(--cyan, #38bdf8) 75%, transparent);
+  background: color-mix(in srgb, var(--cyan, #38bdf8) 14%, var(--elev));
   transform: translateY(-1px);
 }
 

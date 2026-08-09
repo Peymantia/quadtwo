@@ -1232,7 +1232,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                   <div className="d">حداکثر درصدی که این نماینده می‌تواند روی کد بگذارد (پیش‌فرض ۳۰).</div>
                 </div>
                 <input
-                  className="num"
+                  className="num settings-input"
                   inputMode="numeric"
                   disabled={discountBusy || selected.discountCodesAllowed === false}
                   value={discountPctDraft}
@@ -1244,14 +1244,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                       void saveUserDiscount({ discountMaxPercent: n });
                     }
                   }}
-                  style={{
-                    width: 72,
-                    border: "1px solid var(--line)",
-                    background: "rgba(10,13,35,.6)",
-                    color: "var(--text)",
-                    borderRadius: 10,
-                    padding: "8px 12px",
-                  }}
+                  style={{ width: 72 }}
                 />
               </div>
 
@@ -3758,11 +3751,21 @@ function buildRouteMap(panels: PanelRow[], categories: Array<{ key: string }>): 
   return map;
 }
 
+type EnvPanelSnap = {
+  name: string;
+  baseUrl: string;
+  hasToken: boolean;
+  inboundIds: string;
+  subBase?: string | null;
+};
+
 function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [panels, setPanels] = useState<PanelRow[]>([]);
+  const [envPanel, setEnvPanel] = useState<EnvPanelSnap | null>(null);
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [form, setForm] = useState({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const [importingEnv, setImportingEnv] = useState(false);
   const [routingBusy, setRoutingBusy] = useState(false);
   const [routeMap, setRouteMap] = useState<Record<string, string>>({});
   const [savedRouteMap, setSavedRouteMap] = useState<Record<string, string>>({});
@@ -3780,7 +3783,14 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     sellEnabled: true,
   });
 
-  const load = useCallback(() => api<{ panels: PanelRow[] }>("/admin/panels").then((r) => setPanels(r.panels)), []);
+  const load = useCallback(
+    () =>
+      api<{ panels: PanelRow[]; envPanel?: EnvPanelSnap | null }>("/admin/panels").then((r) => {
+        setPanels(r.panels);
+        setEnvPanel(r.envPanel ?? null);
+      }),
+    [],
+  );
 
   useEffect(() => {
     void load();
@@ -3893,6 +3903,19 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     }
   }
 
+  async function importFromEnv() {
+    setImportingEnv(true);
+    try {
+      const r = await api<{ id: string; name: string }>("/admin/panels/import-env", { body: {} });
+      flash(`سرور «${r.name}» از .env وارد شد`);
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setImportingEnv(false);
+    }
+  }
+
   function toggleCat(key: string) {
     setEditForm((s) => {
       const set = new Set(s.categories);
@@ -3953,10 +3976,47 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
       <div className="panel">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>سرورها</h2>
-          <button type="button" className="btn success sm" onClick={() => setShowAddPanel(true)}>
-            افزودن سرور جدید
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {envPanel && (
+              <button type="button" className="btn light sm" disabled={importingEnv} onClick={() => void importFromEnv()}>
+                {importingEnv ? "…" : "وارد کردن از .env"}
+              </button>
+            )}
+            <button type="button" className="btn success sm" onClick={() => setShowAddPanel(true)}>
+              افزودن سرور جدید
+            </button>
+          </div>
         </div>
+
+        {envPanel && (
+          <div className="env-server-card">
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <strong>{envPanel.name}</strong>
+                <div className="muted num url-break" style={{ marginTop: 4 }}>
+                  {envPanel.baseUrl}
+                </div>
+                <div className="muted" style={{ marginTop: 4, fontSize: "0.82rem" }}>
+                  اینباند: <span className="num">{envPanel.inboundIds}</span> · توکن {envPanel.hasToken ? "✓" : "✗"}
+                  {envPanel.subBase ? (
+                    <>
+                      {" "}
+                      · ساب: <span className="num url-break">{envPanel.subBase}</span>
+                    </>
+                  ) : null}
+                </div>
+                <p className="muted" style={{ margin: "8px 0 0", fontSize: "0.8rem" }}>
+                  {panels.length
+                    ? "این مقادیر از فایل .env خوانده شده‌اند. می‌توانید آن‌ها را به‌عنوان سرور دیتابیس وارد کنید."
+                    : "فعلاً سروری در دیتابیس نیست — سیستم از همین سرور .env استفاده می‌کند."}
+                </p>
+              </div>
+              <button type="button" className="btn primary sm" disabled={importingEnv} onClick={() => void importFromEnv()}>
+                {importingEnv ? "…" : panels.length ? "همگام‌سازی با .env" : "ثبت در دیتابیس"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {!!panels.length && !!categories.length && (
           <div className="panel-route-card">
@@ -4076,7 +4136,9 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
               </div>
             );
           })}
-          {!panels.length && <p className="muted">سروری ثبت نشده — از .env استفاده می‌شود.</p>}
+          {!panels.length && (
+            <p className="muted">{envPanel ? "هنوز سروری در دیتابیس ثبت نشده." : "سروری ثبت نشده و در .env هم یافت نشد."}</p>
+          )}
         </div>
       </div>
 
@@ -5312,11 +5374,11 @@ function SettingsTab({
             <div className="d">برای هفتگی و ماهانه اعمال می‌شود.</div>
           </div>
           <input
-            className="num"
+            className="num settings-input"
             inputMode="decimal"
             value={formatSettingNumber(settings.serverless_price_per_gb, 10000)}
             onChange={(e) => onSettingNumberChange("serverless_price_per_gb", e.target.value, 10000)}
-            style={{ width: 110, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 12px" }}
+            style={{ width: 110 }}
           />
         </div>
         <div className="setting-row">
@@ -5325,11 +5387,11 @@ function SettingsTab({
             <div className="d">فقط برای پلن‌های یک‌ماهه و دوماهه (علاوه بر قیمت گیگ).</div>
           </div>
           <input
-            className="num"
+            className="num settings-input"
             inputMode="decimal"
             value={formatSettingNumber(settings.serverless_price_per_month, 30000)}
             onChange={(e) => onSettingNumberChange("serverless_price_per_month", e.target.value, 30000)}
-            style={{ width: 110, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 12px" }}
+            style={{ width: 110 }}
           />
         </div>
 
@@ -5358,20 +5420,20 @@ function SettingsTab({
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <input
-              className="num"
+              className="num settings-input"
               inputMode="decimal"
               title="حداقل"
               value={formatSettingNumber(settings.serverless_weekly_min_gb, 1)}
               onChange={(e) => onSettingNumberChange("serverless_weekly_min_gb", e.target.value, 1)}
-              style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
+              style={{ width: 64 }}
             />
             <input
-              className="num"
+              className="num settings-input"
               inputMode="decimal"
               title="حداکثر"
               value={formatSettingNumber(settings.serverless_weekly_max_gb, 10)}
               onChange={(e) => onSettingNumberChange("serverless_weekly_max_gb", e.target.value, 10)}
-              style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
+              style={{ width: 64 }}
             />
           </div>
         </div>
@@ -5420,20 +5482,20 @@ function SettingsTab({
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <input
-              className="num"
+              className="num settings-input"
               inputMode="decimal"
               title="حداقل"
               value={formatSettingNumber(settings.serverless_monthly_min_gb, 10)}
               onChange={(e) => onSettingNumberChange("serverless_monthly_min_gb", e.target.value, 10)}
-              style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
+              style={{ width: 64 }}
             />
             <input
-              className="num"
+              className="num settings-input"
               inputMode="decimal"
               title="حداکثر"
               value={formatSettingNumber(settings.serverless_monthly_max_gb, 100)}
               onChange={(e) => onSettingNumberChange("serverless_monthly_max_gb", e.target.value, 100)}
-              style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
+              style={{ width: 64 }}
             />
           </div>
         </div>
@@ -5476,13 +5538,7 @@ function SettingsTab({
             <select
               value={settings.max_purchase_months || "12"}
               onChange={(e) => setSettings((s) => ({ ...s, max_purchase_months: e.target.value }))}
-              style={{
-                border: "1px solid var(--line)",
-                background: "rgba(10,13,35,.6)",
-                color: "var(--text)",
-                borderRadius: 10,
-                padding: "8px 12px",
-              }}
+              className="settings-input"
             >
               {[2, 3, 6, 12].map((m) => (
                 <option key={m} value={String(m)}>
@@ -5538,18 +5594,11 @@ function SettingsTab({
             </div>
           </div>
           <input
-            className="num"
+            className="num settings-input"
             inputMode="decimal"
             value={formatSettingNumber(settings.discount_max_percent, 30)}
             onChange={(e) => onSettingNumberChange("discount_max_percent", e.target.value, 30)}
-            style={{
-              width: 72,
-              border: "1px solid var(--line)",
-              background: "rgba(10,13,35,.6)",
-              color: "var(--text)",
-              borderRadius: 10,
-              padding: "8px 12px",
-            }}
+            style={{ width: 72 }}
           />
         </div>
         <div className="setting-row">
@@ -5560,13 +5609,7 @@ function SettingsTab({
           <select
             value={settings.default_limit_ip || "2"}
             onChange={(e) => setSettings((s) => ({ ...s, default_limit_ip: e.target.value }))}
-            style={{
-              border: "1px solid var(--line)",
-              background: "rgba(10,13,35,.6)",
-              color: "var(--text)",
-              borderRadius: 10,
-              padding: "8px 12px",
-            }}
+            className="settings-input"
           >
             {[0, 1, 2, 3, 4, 5, 10].map((n) => (
               <option key={n} value={String(n)}>
@@ -5583,13 +5626,7 @@ function SettingsTab({
           <select
             value={String(Number(settings.web_session_hours || "168"))}
             onChange={(e) => setSettings((s) => ({ ...s, web_session_hours: e.target.value }))}
-            style={{
-              border: "1px solid var(--line)",
-              background: "rgba(10,13,35,.6)",
-              color: "var(--text)",
-              borderRadius: 10,
-              padding: "8px 12px",
-            }}
+            className="settings-input"
           >
             {[1, 3, 6, 12, 24, 48, 72, 168, 336, 720].map((h) => (
               <option key={h} value={String(h)}>
@@ -5822,6 +5859,7 @@ function ReportsTab() {
     }>
   >([]);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<{
     email?: string | null;
     archiveId?: string | null;
@@ -5896,8 +5934,19 @@ function ReportsTab() {
         </div>
       </div>
       <div className="panel">
-        <h2>لاگ عملیات</h2>
-        <div className="list">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>لاگ عملیات</h2>
+          <button type="button" className="btn primary sm" onClick={() => setAuditOpen(true)}>
+            مشاهده لاگ عملیات
+            {audit.length ? ` (${audit.length})` : ""}
+          </button>
+        </div>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          تاریخچه اقدامات ادمین در یک پنجره قابل اسکرول باز می‌شود.
+        </p>
+      </div>
+      <Modal open={auditOpen} title="لاگ عملیات" onClose={() => setAuditOpen(false)} wide>
+        <div className="audit-modal-list">
           {audit.map((a) => {
             const label = AUDIT_LABELS[a.action] || a.action;
             const canDetail = Boolean(a.target) || /archive=/i.test(a.detail || "");
@@ -5926,7 +5975,7 @@ function ReportsTab() {
           })}
           {!audit.length && <p className="muted">لاگی ثبت نشده.</p>}
         </div>
-      </div>
+      </Modal>
       <AccountDetailModal
         open={detailOpen}
         onClose={() => setDetailOpen(false)}

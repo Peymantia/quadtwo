@@ -711,6 +711,82 @@ html[data-skin="studio"][data-theme="light"] .configs-filters .field select {
   background: rgba(255, 255, 255, 0.95);
 }
 
+/* Theme-aware controls that used hardcoded dark fills */
+html[data-skin="studio"] .sort-bar select,
+html[data-skin="studio"] .panel-route-row .combo-select,
+html[data-skin="studio"] .bulk-price-row select,
+html[data-skin="studio"] .bulk-price-row input,
+html[data-skin="studio"] .pricing-mode-card select,
+html[data-skin="studio"] .settings-input,
+html[data-skin="studio"] .cat-card__input,
+html[data-skin="studio"] .users-mrole,
+html[data-skin="studio"] .table input,
+html[data-skin="studio"] .table select,
+html[data-skin="studio"] .bulk-stepper input {
+  border: 2px solid var(--login-input-border, var(--line));
+  background: var(--login-input-bg, var(--elev));
+  color: var(--text);
+  border-radius: 14px;
+}
+
+html[data-skin="studio"][data-theme="light"] .sort-bar select,
+html[data-skin="studio"][data-theme="light"] .panel-route-row .combo-select {
+  background-color: rgba(255, 255, 255, 0.95);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+html[data-skin="studio"][data-theme="light"] .users-mcard {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 16px 36px -28px rgba(30, 64, 175, 0.18),
+    0 0 0 1px var(--login-card-border, var(--line));
+}
+
+html[data-skin="studio"] .users-mcard {
+  background: var(--login-card-bg, var(--elev));
+  border-color: var(--login-card-border, var(--line));
+}
+
+html[data-skin="studio"] .save-bar {
+  background: color-mix(in srgb, var(--login-card-bg, var(--card)) 92%, transparent);
+  border: 1px solid var(--login-card-border, var(--line-strong));
+  box-shadow:
+    0 18px 40px -24px color-mix(in srgb, var(--login-primary) 35%, transparent),
+    0 0 0 1px var(--login-card-border, var(--line));
+}
+
+html[data-skin="studio"] .save-bar .btn.primary {
+  box-shadow: 0 14px 30px -12px color-mix(in srgb, var(--login-primary) 55%, transparent);
+}
+
+html[data-skin="studio"][data-theme="light"] .backup-restore__pick {
+  background: color-mix(in srgb, var(--login-primary) 6%, #fff);
+  border-color: color-mix(in srgb, var(--login-primary) 35%, transparent);
+}
+
+html[data-skin="studio"] .pricing-mode-card {
+  background: var(--login-card-bg, var(--elev));
+  border-color: var(--login-card-border, var(--line));
+}
+
+html[data-skin="studio"] .env-server-card {
+  border: 1px dashed color-mix(in srgb, var(--login-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--login-primary) 8%, var(--elev));
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+
+html[data-skin="studio"] .audit-modal-list {
+  max-height: min(60dvh, 520px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 8px;
+}
+
 html[data-skin="studio"] .panel > h2::before {
   background: linear-gradient(180deg, var(--login-primary), var(--login-primary-dark));
 }

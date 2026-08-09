@@ -106,7 +106,9 @@ import {
 import {
   createPanelServer,
   deletePanelServer,
+  envPanelSnapshot,
   getPanelServer,
+  importPanelFromEnv,
   listPanelServers,
   parsePanelCategories,
   testPanelConnection,
@@ -2621,6 +2623,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/admin/panels", async (c) => {
     const panels = await listPanelServers();
+    const envSnap = envPanelSnapshot();
     return c.json({
       panels: panels.map((p) => ({
         id: p.id,
@@ -2634,7 +2637,29 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         active: p.active,
         sellEnabled: p.sellEnabled,
       })),
+      envPanel: envSnap
+        ? {
+            name: envSnap.name,
+            baseUrl: envSnap.baseUrl,
+            hasToken: Boolean(envSnap.apiToken),
+            inboundIds: envSnap.inboundIds,
+            subBase: envSnap.subBase,
+          }
+        : null,
     });
+  });
+
+  api.post("/admin/panels/import-env", async (c) => {
+    try {
+      const p = await importPanelFromEnv();
+      return c.json({
+        id: p.id,
+        name: p.name,
+        baseUrl: p.baseUrl,
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
   });
 
   api.post("/admin/panels", async (c) => {
