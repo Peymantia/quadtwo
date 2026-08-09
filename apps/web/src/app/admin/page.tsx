@@ -237,7 +237,7 @@ export default function AdminPage() {
         />
       )}
 
-      {tab === "home" && <HomeTab onGo={setTab} />}
+      {tab === "home" && <HomeTab onGo={setTab} showTenants={isSuper} />}
       {tab === "create" && <AdminCreateTab flash={flash} />}
       {tab === "orders" && <OrdersTab flash={flash} />}
       {tab === "users" && <UsersTab flash={flash} askConfirm={askConfirm} />}
@@ -279,7 +279,7 @@ function formatFileSize(bytes: number) {
 
 /* ---------------- Home ---------------- */
 
-function HomeTab({ onGo }: { onGo: (t: string) => void }) {
+function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants?: boolean }) {
   const [stats, setStats] = useState<{
     pendingOrders: number;
     users: number;
@@ -319,47 +319,51 @@ function HomeTab({ onGo }: { onGo: (t: string) => void }) {
       <div className="panel">
         <h2>دسترسی سریع</h2>
         <div className="quick-actions">
-          <button type="button" className="btn success wide quick-action-btn" onClick={() => onGo("create")}>
+          <button type="button" className="btn success quick-action-btn" onClick={() => onGo("create")}>
             <Icon name="shop" size={18} />
             ساخت اکانت
           </button>
-          <button type="button" className="btn primary wide quick-action-btn" onClick={() => onGo("orders")}>
+          <button type="button" className="btn primary quick-action-btn" onClick={() => onGo("orders")}>
             <Icon name="orders" size={18} />
             بررسی سفارش‌ها
           </button>
-          <button type="button" className="btn light wide quick-action-btn" onClick={() => onGo("users")}>
+          <button type="button" className="btn light quick-action-btn" onClick={() => onGo("users")}>
             <Icon name="users" size={18} />
             مدیریت کاربران
           </button>
-          <button type="button" className="btn ghost wide quick-action-btn" onClick={() => onGo("prices")}>
+          <button type="button" className="btn ghost quick-action-btn" onClick={() => onGo("prices")}>
             <Icon name="tag" size={18} />
             قیمت‌گذاری
           </button>
-          <button type="button" className="btn ghost wide quick-action-btn" onClick={() => onGo("settings")}>
-            <Icon name="gear" size={18} />
-            تنظیمات
-          </button>
-        </div>
-        <div className="quick-actions-more">
-          <button type="button" className="btn ghost sm quick-action-btn" data-qa="categories" onClick={() => onGo("categories")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("categories")}>
             <Icon name="layers" size={15} />
             دسته‌ها
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" data-qa="panels" onClick={() => onGo("panels")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("panels")}>
             <Icon name="server" size={15} />
             سرورها
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" data-qa="discounts" onClick={() => onGo("discounts")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("discounts")}>
             <Icon name="tag" size={15} />
             کد تخفیف
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" data-qa="reports" onClick={() => onGo("reports")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("reports")}>
             <Icon name="chart" size={15} />
             گزارشات
           </button>
-          <button type="button" className="btn ghost sm quick-action-btn" data-qa="sync" onClick={() => onGo("sync")}>
+          <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("sync")}>
             <Icon name="sync" size={15} />
             همگام‌سازی
+          </button>
+          {showTenants && (
+            <button type="button" className="btn ghost sm quick-action-btn" onClick={() => onGo("super")}>
+              <Icon name="layers" size={15} />
+              مستأجرها
+            </button>
+          )}
+          <button type="button" className="btn ghost quick-action-btn quick-action-btn--full" onClick={() => onGo("settings")}>
+            <Icon name="gear" size={18} />
+            تنظیمات
           </button>
         </div>
       </div>
