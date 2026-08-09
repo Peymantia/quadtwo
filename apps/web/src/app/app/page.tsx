@@ -9,6 +9,7 @@ import { CryptoPayModal, type CryptoPayInfo } from "../../components/CryptoPayMo
 import { PaymentCardBlock, TrafficProgress } from "../../components/PaymentCard";
 import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "../../components/SortSelect";
 import { api, formatToman } from "../../lib/api";
+import { formatTrafficGb } from "../../lib/format-ui";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 import {
@@ -465,7 +466,7 @@ export default function UserAppPage() {
                     <div className="muted" style={{ marginTop: 8 }}>
                       حجم کل:{" "}
                       <strong className="num">
-                        {totalGb == null || totalGb <= 0 ? "نامحدود" : `${totalGb} GB`}
+                        {formatTrafficGb(totalGb)}
                       </strong>
                       {" · "}
                       مصرف‌شده: <strong className="num">{usedLabel}</strong>

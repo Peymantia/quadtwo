@@ -7,6 +7,7 @@ import { ConfirmToast, Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { TrafficProgress } from "../../components/PaymentCard";
 import { api, apiBase, formatToman, getDemoRole, getToken } from "../../lib/api";
+import { formatExpiryDate, formatRemainDays, formatTrafficGb } from "../../lib/format-ui";
 import { useDashAuth } from "../../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "../../components/RateShop";
 import { type ListSort } from "../../components/SortSelect";
@@ -517,7 +518,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
                   onClick={() => setSelected(c)}
                 >
                   <div className="plan-name">
-                    {c.title || (c.trafficGb === null ? "نامحدود" : `${c.trafficGb} گیگ`)}
+                    {c.title || (c.trafficGb === null ? "∞" : `${c.trafficGb} گیگ`)}
                   </div>
                   <div className="plan-meta">
                     <span>{catLabels[c.category] || c.category}</span>
@@ -556,7 +557,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
             {[
               `اکانت «${accountName.trim() || "رندوم"}»`,
               `نوع: ${catLabels[selected.category] || selected.category}`,
-              `حجم: ${selected.trafficGb == null ? "نامحدود" : `${selected.trafficGb.toLocaleString("fa-IR")} گیگابایت`}`,
+              `حجم: ${selected.trafficGb == null ? "∞" : `${selected.trafficGb.toLocaleString("fa-IR")} گیگابایت`}`,
               `مدت: ${selected.months.toLocaleString("fa-IR")} ماه`,
               `مبلغ: ${formatToman(selected.price)}`,
             ].join("\n")}
@@ -3237,20 +3238,11 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   }
 
   function fmtDate(isoDate: string | null | undefined): string {
-    if (!isoDate) return "—";
-    try {
-      return new Date(isoDate).toLocaleDateString("fa-IR");
-    } catch {
-      return isoDate;
-    }
+    return formatExpiryDate(isoDate);
   }
 
   function daysLabel(isoDate: string | null | undefined): string {
-    const days = remainDays(isoDate);
-    if (days == null) return "—";
-    if (days < 0) return `${Math.abs(days)} روز گذشته`;
-    if (days === 0) return "کمتر از یک روز";
-    return `${days} روز`;
+    return formatRemainDays(isoDate);
   }
 
   function fmtUsedBytes(bytes: number): string {
@@ -3521,7 +3513,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                   <div className="muted" style={{ marginTop: 8 }}>
                     حجم کل:{" "}
                     <strong className="num">
-                      {c.trafficGb == null || c.trafficGb <= 0 ? "نامحدود" : `${c.trafficGb} GB`}
+                      {formatTrafficGb(c.trafficGb)}
                     </strong>
                     {" · "}
                     مصرف‌شده: <strong className="num">{fmtUsedBytes(c.usedTrafficBytes ?? 0)}</strong>

@@ -283,7 +283,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
               placeholder="آی‌دی عددی"
             />
           </div>
-          <div className="field">
+          <div className="field tenants-create__span2">
             <label>پشتیبانی (اختیاری)</label>
             <input
               dir="ltr"

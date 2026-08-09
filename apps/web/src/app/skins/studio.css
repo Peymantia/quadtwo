@@ -20,9 +20,9 @@ html[data-skin="studio"][data-theme="dark"] {
   --violet: #7dd3fc;
   --radius: 18px;
   --radius-sm: 12px;
-  --studio-accent: #22d3ee;
-  --studio-accent-2: #38bdf8;
-  --studio-glow: rgba(34, 211, 238, 0.18);
+  --studio-accent: #60a5fa;
+  --studio-accent-2: #3b82f6;
+  --studio-glow: rgba(96, 165, 250, 0.18);
   --studio-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   --studio-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   color-scheme: dark;
@@ -48,9 +48,9 @@ html[data-skin="studio"][data-theme="light"] {
   --violet: #2563eb;
   --radius: 18px;
   --radius-sm: 12px;
-  --studio-accent: #0891b2;
-  --studio-accent-2: #0284c7;
-  --studio-glow: rgba(8, 145, 178, 0.14);
+  --studio-accent: #2563eb;
+  --studio-accent-2: #1d4ed8;
+  --studio-glow: rgba(37, 99, 235, 0.14);
   --studio-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
   --studio-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
   color-scheme: light;
@@ -393,37 +393,61 @@ html[data-skin="studio"] .login-foot {
 html[data-skin="studio"] .field input:not(.otp-input),
 html[data-skin="studio"] .field select,
 html[data-skin="studio"] .field textarea {
-  border-radius: var(--radius-sm);
-  border-color: var(--line);
-  background: var(--elev);
+  border-radius: 14px;
+  border: 2px solid var(--login-input-border, var(--line));
+  background: var(--login-input-bg, var(--elev));
   transition:
     border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.12s ease;
 }
 
 html[data-skin="studio"] .field input:not(.otp-input):focus,
 html[data-skin="studio"] .field select:focus,
 html[data-skin="studio"] .field textarea:focus {
-  border-color: color-mix(in srgb, var(--studio-accent) 55%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--studio-accent) 18%, transparent);
+  border-color: var(--login-primary);
+  background: color-mix(in srgb, var(--login-primary) 8%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--login-primary) 14%, transparent);
+  transform: translateY(-1px);
   outline: none;
 }
 
 /* ---------- Buttons ---------- */
 html[data-skin="studio"] .btn {
-  border-radius: 12px;
+  border-radius: 14px;
   letter-spacing: -0.01em;
+  transition:
+    transform 0.15s ease,
+    filter 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    opacity 0.15s ease;
 }
 
 html[data-skin="studio"] .btn.primary {
-  background: linear-gradient(135deg, var(--studio-accent) 0%, var(--studio-accent-2) 100%);
-  color: #041018;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--studio-accent) 35%, transparent);
+  background: linear-gradient(135deg, var(--login-primary), var(--login-primary-dark));
+  color: #fff;
+  box-shadow: 0 14px 30px -12px color-mix(in srgb, var(--login-primary) 55%, transparent);
 }
 
 html[data-skin="studio"][data-theme="light"] .btn.primary {
   color: #fff;
-  box-shadow: 0 8px 22px rgba(2, 132, 199, 0.28);
+  box-shadow: 0 14px 30px -12px rgba(37, 99, 235, 0.4);
+}
+
+html[data-skin="studio"] .btn.primary:hover:not(:disabled),
+html[data-skin="studio"] .btn.success:hover:not(:disabled),
+html[data-skin="studio"] .btn.light:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+html[data-skin="studio"] .btn.primary:active:not(:disabled),
+html[data-skin="studio"] .btn.success:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.97);
 }
 
 html[data-skin="studio"] .btn.ghost {
@@ -432,13 +456,15 @@ html[data-skin="studio"] .btn.ghost {
 }
 
 html[data-skin="studio"] .btn.ghost:not(:disabled):hover {
-  background: color-mix(in srgb, var(--studio-accent) 12%, transparent);
-  border-color: color-mix(in srgb, var(--studio-accent) 40%, transparent);
+  background: color-mix(in srgb, var(--login-primary) 10%, transparent);
+  border-color: color-mix(in srgb, var(--login-primary) 35%, transparent);
+  color: var(--login-primary);
   box-shadow: none;
+  transform: translateY(-1px);
 }
 
 html[data-skin="studio"] .btn.light {
-  background: color-mix(in srgb, var(--studio-accent) 12%, var(--elev));
+  background: color-mix(in srgb, var(--login-primary) 12%, var(--elev));
   border: 1px solid var(--line-strong);
   box-shadow: none;
 }
@@ -550,13 +576,29 @@ html[data-skin="studio"] .settings-btn {
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--elev);
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.15s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+
+html[data-skin="studio"] .icon-btn:hover,
+html[data-skin="studio"] .settings-btn:hover {
+  border-color: color-mix(in srgb, var(--login-primary) 45%, transparent);
+  color: var(--login-primary);
+  background: color-mix(in srgb, var(--login-primary) 10%, var(--elev));
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--login-primary) 18%, transparent);
 }
 
 html[data-skin="studio"] .icon-btn.on,
 html[data-skin="studio"] .settings-btn.on {
-  border-color: color-mix(in srgb, var(--studio-accent) 45%, transparent);
-  color: var(--studio-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--studio-accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--login-primary) 45%, transparent);
+  color: var(--login-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-primary) 12%, transparent);
 }
 
 html[data-skin="studio"] .theme-toggle {
@@ -570,46 +612,95 @@ html[data-skin="studio"] .theme-toggle {
   color: var(--text);
   cursor: pointer;
   flex-shrink: 0;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.15s ease,
+    box-shadow 0.18s ease;
 }
 
 html[data-skin="studio"] .theme-toggle:hover {
-  border-color: color-mix(in srgb, var(--studio-accent) 40%, transparent);
-  color: var(--studio-accent);
+  border-color: color-mix(in srgb, var(--login-primary) 45%, transparent);
+  color: var(--login-primary);
+  background: color-mix(in srgb, var(--login-primary) 10%, var(--elev));
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--login-primary) 18%, transparent);
+}
+
+html[data-skin="studio"] .panel-switcher-select {
+  border-radius: 10px;
+  border-color: var(--line);
+  background: var(--elev);
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+html[data-skin="studio"] .panel-switcher-select:hover {
+  border-color: color-mix(in srgb, var(--login-primary) 45%, transparent);
+  color: var(--login-primary);
+  background: color-mix(in srgb, var(--login-primary) 8%, var(--elev));
+}
+
+html[data-skin="studio"] .panel-switcher-select:focus {
+  border-color: var(--login-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-primary) 14%, transparent);
+  outline: none;
 }
 
 /* ---------- Cards / stats / panels ---------- */
+html[data-skin="studio"] .panel,
+html[data-skin="studio"] .row-card,
+html[data-skin="studio"] .plan-card,
+html[data-skin="studio"] .tenants-create,
+html[data-skin="studio"] .tenants-card,
+html[data-skin="studio"] .modal-card {
+  border-radius: 20px;
+  border: 1px solid var(--login-card-border, var(--line));
+  background: var(--login-card-bg, var(--card));
+  box-shadow:
+    0 24px 56px -28px rgba(0, 0, 0, 0.45),
+    0 0 0 1px var(--login-card-border, var(--line));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
 html[data-skin="studio"] .panel {
   border-radius: var(--radius);
-  border: 1px solid var(--line);
-  box-shadow: var(--studio-shadow), var(--studio-inset);
-  backdrop-filter: blur(14px);
-  background: var(--card);
 }
 
 html[data-skin="studio"][data-theme="light"] .panel,
 html[data-skin="studio"][data-theme="light"] .row-card,
 html[data-skin="studio"][data-theme="light"] .plan-card,
 html[data-skin="studio"][data-theme="light"] .stat,
-html[data-skin="studio"][data-theme="light"] .price-plan-card {
-  background: #ffffff;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+html[data-skin="studio"][data-theme="light"] .price-plan-card,
+html[data-skin="studio"][data-theme="light"] .tenants-create,
+html[data-skin="studio"][data-theme="light"] .tenants-card,
+html[data-skin="studio"][data-theme="light"] .modal-card {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 24px 56px -28px rgba(30, 64, 175, 0.16),
+    0 0 0 1px var(--login-card-border, var(--line));
 }
 
 html[data-skin="studio"][data-theme="light"] .field input,
 html[data-skin="studio"][data-theme="light"] .field select,
 html[data-skin="studio"][data-theme="light"] .field textarea,
 html[data-skin="studio"][data-theme="light"] .configs-filters .field select {
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.95);
 }
 
 html[data-skin="studio"] .panel > h2::before {
-  background: linear-gradient(180deg, var(--studio-accent), var(--studio-accent-2));
+  background: linear-gradient(180deg, var(--login-primary), var(--login-primary-dark));
 }
 
 html[data-skin="studio"] .stat {
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
-  background: var(--card);
+  border: 1px solid var(--login-card-border, var(--line));
+  background: var(--login-card-bg, var(--card));
   box-shadow: var(--studio-inset);
 }
 
@@ -700,14 +791,8 @@ html[data-skin="studio"][data-theme="light"] .more-sheet-item.active {
 }
 
 /* ---------- Modals / tables ---------- */
-html[data-skin="studio"] .modal-card {
-  border: 1px solid var(--line);
-  box-shadow: var(--studio-shadow);
-  border-radius: 20px;
-}
-
 html[data-skin="studio"] .modal-x:hover {
-  background: color-mix(in srgb, var(--studio-accent) 12%, transparent);
+  background: color-mix(in srgb, var(--login-primary) 12%, transparent);
 }
 
 html[data-skin="studio"] .table th {
@@ -716,11 +801,11 @@ html[data-skin="studio"] .table th {
 }
 
 html[data-skin="studio"] .settings-acc__head:hover {
-  background: color-mix(in srgb, var(--studio-accent) 6%, transparent);
+  background: color-mix(in srgb, var(--login-primary) 6%, transparent);
 }
 
 html[data-skin="studio"] .settings-acc__icon {
-  color: var(--studio-accent);
+  color: var(--login-primary);
 }
 
 html[data-skin="studio"] .preview-banner {
@@ -729,10 +814,10 @@ html[data-skin="studio"] .preview-banner {
   background: color-mix(in srgb, var(--amber) 10%, transparent);
 }
 
-html[data-skin="studio"] .panel-switcher-select {
-  border-radius: 10px;
-  border-color: var(--line);
-  background: var(--elev);
+html[data-skin="studio"] .tenants-create__btn:hover:not(:disabled),
+html[data-skin="studio"] .tenants-card__action:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
 }
 
 @media (prefers-reduced-motion: reduce) {

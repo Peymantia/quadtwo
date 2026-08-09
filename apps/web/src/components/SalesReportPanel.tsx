@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, formatToman } from "../lib/api";
+import { formatTrafficGbFa } from "../lib/format-ui";
 import { Modal } from "./Modal";
 
 export type SalesPeriod = "today" | "week" | "month" | "jalali_month" | "all";
@@ -282,7 +283,11 @@ export function SalesReportPanel({
                   </strong>
                   <div className="muted">
                     {o.who ? `${o.who} · ` : ""}
-                    {o.trafficGb != null ? `${o.trafficGb} گیگ · ` : ""}
+                    {o.trafficGb === undefined
+                      ? ""
+                      : o.trafficGb == null || o.trafficGb <= 0
+                        ? "∞ · "
+                        : `${formatTrafficGbFa(o.trafficGb)} · `}
                     {new Date(o.at).toLocaleString("fa-IR")}
                   </div>
                   {canDetail && (

@@ -9,6 +9,7 @@ import { CardPayModal } from "./CardPayModal";
 import { CryptoPayModal, type CryptoPayInfo } from "./CryptoPayModal";
 import { SortSelect, endingUrgencyDays, sortByMode, type ListSort } from "./SortSelect";
 import { api, formatToman, type Role } from "../lib/api";
+import { formatExpiryDate, formatTrafficGb } from "../lib/format-ui";
 import { useDashAuth } from "../lib/useDashAuth";
 import { RateShop, type RateOrderPayload, type RateShopCatalog } from "./RateShop";
 import { AccountCreatedModal, type CreatedAccount } from "./AccountCreatedModal";
@@ -484,14 +485,14 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                     <div className="muted" style={{ marginTop: 8 }}>
                       حجم کل:{" "}
                       <strong className="num">
-                        {c.trafficGb == null || c.trafficGb <= 0 ? "نامحدود" : `${c.trafficGb} GB`}
+                        {formatTrafficGb(c.trafficGb)}
                       </strong>
                       {" · "}
                       مصرف‌شده: <strong className="num">{usedLabel}</strong>
                       {" · "}
                       انقضا:{" "}
                       <strong className="num">
-                        {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString("fa-IR") : "—"}
+                        {formatExpiryDate(c.expiresAt)}
                       </strong>
                       {" · "}
                       باقی‌مانده:{" "}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
 import { SubAddonsBar } from "./SubAddonsBar";
 import type { CryptoPayInfo } from "./CryptoPayModal";
+import { formatExpiryDate, formatTrafficGbFa } from "../lib/format-ui";
 
 export type CreatedAccount = {
   subscriptionId?: string;
@@ -21,17 +22,11 @@ export type CreatedAccount = {
 };
 
 function fmtExpiry(iso?: string | null) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("fa-IR");
-  } catch {
-    return iso;
-  }
+  return formatExpiryDate(iso);
 }
 
 function trafficLabel(gb?: number | null) {
-  if (gb == null || gb <= 0) return "نامحدود";
-  return `${gb.toLocaleString("fa-IR")} گیگابایت`;
+  return formatTrafficGbFa(gb);
 }
 
 /** Success dialog after account provision — details + full service action grid. */

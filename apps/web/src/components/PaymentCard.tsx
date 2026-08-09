@@ -81,7 +81,7 @@ export function TrafficProgress({
       <div className="traffic-progress-meta num">
         {totalBytes > 0
           ? `${pct}% · ${usedLabel} از ${totalLabel} GB`
-          : `${usedLabel} مصرف‌شده${totalGb === null ? " (نامحدود)" : ""}`}
+          : `${usedLabel} مصرف‌شده${totalGb === null ? " (∞)" : ""}`}
       </div>
     </div>
   );

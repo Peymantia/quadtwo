@@ -1248,11 +1248,20 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/partner/configs", async (c) => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
-    if (!user.panelGroup) return c.json({ items: [], total: 0, title: "بدون گروه" });
-    const groups = await listConfigGroups();
-    const mine = groups.find((g) => g.panelGroup === user.panelGroup);
-    if (!mine) return c.json({ items: [], total: 0, title: user.panelGroup });
-    const result = await listConfigsForGroup(mine.key, 0, 0);
+    const role = c.get("role");
+    let groupKey: string | null = null;
+    if (user.panelGroup) {
+      const groups = await listConfigGroups();
+      const mine = groups.find((g) => g.panelGroup === user.panelGroup);
+      if (!mine) return c.json({ items: [], total: 0, title: user.panelGroup });
+      groupKey = mine.key;
+    } else if (role === "admin") {
+      // Admin panel preview without a personal panelGroup: show all configs
+      groupKey = "all";
+    } else {
+      return c.json({ items: [], total: 0, title: "بدون گروه" });
+    }
+    const result = await listConfigsForGroup(groupKey, 0, 0);
     const items = await Promise.all(
       result.items.map(async (item) => {
         if (!item.subId) return { ...item, usedTrafficBytes: 0, subUrl: null as string | null };
