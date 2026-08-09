@@ -17,6 +17,8 @@ import { DiscountCodesPanel } from "../../components/DiscountCodesPanel";
 import { AgentsLeaderboardPanel, SalesReportPanel, AccountDetailModal } from "../../components/SalesReportPanel";
 import { SettingsAccordion } from "../../components/SettingsAccordion";
 import { SuperadminTenantsPanel } from "../../components/SuperadminTenantsPanel";
+import { broadcastAppearance } from "../../components/ThemeBoot";
+import { parseColorMode, setUserColorOverride, type ColorMode, type UiSkin } from "../../lib/theme";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -377,7 +379,6 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
   };
   const [cells, setCells] = useState<Cell[]>([]);
   const [catLabels, setCatLabels] = useState<Record<string, string>>({});
-  const [pricingMode, setPricingMode] = useState<"matrix" | "rate">("matrix");
   const [rateCatalog, setRateCatalog] = useState<RateShopCatalog | null>(null);
   const [selected, setSelected] = useState<Cell | null>(null);
   const [accountName, setAccountName] = useState("");
@@ -399,7 +400,6 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
     }>("/me/catalog").then((r) => {
       setCells(r.cells ?? []);
       setCatLabels(r.categoryLabels ?? {});
-      setPricingMode(r.pricingMode === "rate" ? "rate" : "matrix");
       setRateCatalog({
         categories: r.categories ?? [],
         categoryLabels: r.categoryLabels ?? {},
@@ -496,9 +496,9 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
         <p className="muted" style={{ marginTop: 0 }}>
           ساخت فوری و رایگان توسط ادمین — بدون کسر از کیف پول. اگر گروه پنل اختصاصی ندارید، در گروه Telegram ساخته می‌شود.
         </p>
-        {pricingMode === "rate" && rateCatalog ? (
+        {rateCatalog && rateCatalog.categories.length > 0 ? (
           <RateShop catalog={rateCatalog} busy={busy} variant="admin" onSubmit={createRate} />
-        ) : (
+        ) : cells.length > 0 ? (
           <>
             <div className="field">
               <label>نام اکانت (اختیاری)</label>
@@ -527,7 +527,6 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
                 </button>
               ))}
             </div>
-            {!cells.length && <p className="muted">پلنی برای فروش فعال نیست.</p>}
             <button
               type="button"
               className="btn success wide"
@@ -538,6 +537,8 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
               {busy ? "در حال ساخت…" : "ساخت اکانت"}
             </button>
           </>
+        ) : (
+          <p className="muted">پلنی برای فروش فعال نیست.</p>
         )}
       </div>
       <AccountCreatedModal
@@ -5614,6 +5615,75 @@ function SettingsTab({
           </div>
         </Modal>
       )}
+
+      <SettingsAccordion
+        id="appearance"
+        title="ظاهر و قالب"
+        icon="layers"
+        openId={openSection}
+        onToggle={toggleSection}
+      >
+        <p className="muted" style={{ marginTop: 0 }}>
+          قالب Classic ظاهر فعلی است. قالب Studio ظاهر مدرن با حالت روشن و تاریک است — بدون تغییر امکانات.
+        </p>
+        <div className="appearance-preview">
+          <button
+            type="button"
+            className={`appearance-preview__card${(settings.ui_skin ?? "classic") === "classic" ? " on" : ""}`}
+            onClick={() => {
+              const ui_skin: UiSkin = "classic";
+              const ui_color_mode = settings.ui_color_mode || "system";
+              setSettings((s) => ({ ...s, ui_skin, ui_color_mode }));
+              void save({ ui_skin, ui_color_mode }).then(() => {
+                setUserColorOverride(null);
+                broadcastAppearance(ui_skin, parseColorMode(ui_color_mode));
+              });
+            }}
+          >
+            <strong>Classic</strong>
+            <span>قالب فعلی</span>
+          </button>
+          <button
+            type="button"
+            className={`appearance-preview__card${settings.ui_skin === "studio" ? " on" : ""}`}
+            onClick={() => {
+              const ui_skin: UiSkin = "studio";
+              const ui_color_mode = settings.ui_color_mode || "system";
+              setSettings((s) => ({ ...s, ui_skin, ui_color_mode }));
+              void save({ ui_skin, ui_color_mode }).then(() => {
+                setUserColorOverride(null);
+                broadcastAppearance(ui_skin, parseColorMode(ui_color_mode));
+              });
+            }}
+          >
+            <strong>Studio</strong>
+            <span>مدرن · لایت/دارک</span>
+          </button>
+        </div>
+        <div className="field" style={{ marginTop: 14 }}>
+          <label>حالت رنگ (Studio)</label>
+          <select
+            value={settings.ui_color_mode || "system"}
+            disabled={(settings.ui_skin ?? "classic") !== "studio"}
+            onChange={(e) => {
+              const ui_color_mode = e.target.value as ColorMode;
+              setSettings((s) => ({ ...s, ui_skin: "studio", ui_color_mode }));
+              void save({ ui_skin: "studio", ui_color_mode }).then(() => {
+                setUserColorOverride(null);
+                broadcastAppearance("studio", parseColorMode(ui_color_mode));
+              });
+            }}
+          >
+            <option value="system">خودکار (سیستم)</option>
+            <option value="dark">تیره</option>
+            <option value="light">روشن</option>
+            <option value="telegram">تلگرام</option>
+          </select>
+        </div>
+        <p className="muted" style={{ fontSize: "0.82rem" }}>
+          در حالت Studio، کاربران می‌توانند با دکمه خورشید/ماه در هدر بین روشن و تیره جابه‌جا شوند.
+        </p>
+      </SettingsAccordion>
 
       <SettingsAccordion
         id="basics"

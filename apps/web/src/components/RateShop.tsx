@@ -115,35 +115,54 @@ function SeekBar({
   onChange: (index: number) => void;
 }) {
   const max = Math.max(0, steps.length - 1);
-  const pct = max <= 0 ? 0 : (Math.min(max, Math.max(0, index)) / max) * 100;
+  const safeIndex = Math.min(max, Math.max(0, index));
+  const pct = max <= 0 ? 0 : (safeIndex / max) * 100;
   const markEvery = steps.length > 14 ? 2 : 1;
+  const showDots = steps.length > 1 && steps.length <= 24;
+  const seekStyle = { ["--seek-pct" as string]: String(pct) };
 
   return (
     <div className={`seek-block${disabled ? " is-disabled" : ""}`}>
       <div className="seek-head">
         <span className="seek-title">{title}</span>
-        <strong className="seek-metric" dir="ltr">
-          {value}
-        </strong>
       </div>
-      <div className="seek-track-wrap">
+      <div className="seek-track-wrap" style={seekStyle}>
+        <div className="seek-bubble" aria-hidden="true">
+          <span className="seek-bubble-inner" dir="ltr">
+            {value}
+          </span>
+        </div>
+        {showDots ? (
+          <div className="seek-dots" aria-hidden="true">
+            {steps.map((s, i) => (
+              <span
+                key={`${s.value}-${i}`}
+                className={`seek-dot${i <= safeIndex ? " is-active" : ""}${i === safeIndex ? " is-current" : ""}`}
+                style={{ ["--i" as string]: i, ["--n" as string]: max || 1 }}
+              />
+            ))}
+          </div>
+        ) : null}
         <input
           type="range"
           className="seek-range"
           min={0}
           max={max}
           step={1}
-          value={Math.min(max, Math.max(0, index))}
+          value={safeIndex}
           disabled={disabled || max <= 0}
           aria-label={title}
           onChange={(e) => onChange(Number(e.target.value))}
-          style={{ ["--seek-pct" as string]: `${pct}%` }}
         />
       </div>
       <div className="seek-marks" aria-hidden="true">
         {steps.map((s, i) =>
           i % markEvery === 0 || i === steps.length - 1 ? (
-            <span key={`${s.value}-${i}`} className="seek-mark num" style={{ ["--i" as string]: i, ["--n" as string]: max || 1 }}>
+            <span
+              key={`${s.value}-${i}`}
+              className={`seek-mark num${i === safeIndex ? " is-on" : ""}`}
+              style={{ ["--i" as string]: i, ["--n" as string]: max || 1 }}
+            >
               {s.label}
             </span>
           ) : null,

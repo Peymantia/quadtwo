@@ -4,6 +4,13 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, roleLabel, type Role } from "../lib/api";
 import { lockBodyScroll, unlockBodyScroll } from "../lib/body-scroll-lock";
+import {
+  parseColorMode,
+  readCachedAppearance,
+  resolveTheme,
+  toggleStudioTheme,
+  type ColorMode,
+} from "../lib/theme";
 import { DemoModeBar } from "./DemoModeBar";
 
 const PREVIEW_PANELS = [
@@ -13,6 +20,45 @@ const PREVIEW_PANELS = [
   { path: "/reseller", label: "همکار ویژه" },
   { path: "/wholesaler", label: "عمده‌فروش" },
 ] as const;
+
+function ThemeToggleBtn() {
+  const [skin, setSkin] = useState<"classic" | "studio">("classic");
+  const [colorMode, setColorMode] = useState<ColorMode>("system");
+  const [resolved, setResolved] = useState<"light" | "dark">("dark");
+
+  useEffect(() => {
+    const sync = () => {
+      const cached = readCachedAppearance();
+      setSkin(cached.skin);
+      setColorMode(cached.colorMode);
+      setResolved(resolveTheme(cached.colorMode));
+      const ds = document.documentElement.dataset.skin;
+      if (ds === "studio" || ds === "classic") setSkin(ds);
+      const dt = document.documentElement.dataset.theme;
+      if (dt === "light" || dt === "dark") setResolved(dt);
+    };
+    sync();
+    window.addEventListener("piing:appearance", sync);
+    return () => window.removeEventListener("piing:appearance", sync);
+  }, []);
+
+  if (skin !== "studio") return null;
+
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      aria-label={resolved === "light" ? "حالت تاریک" : "حالت روشن"}
+      title={resolved === "light" ? "حالت تاریک" : "حالت روشن"}
+      onClick={() => {
+        const next = toggleStudioTheme(colorMode || parseColorMode(localStorage.getItem("piing_ui_color_mode")));
+        setResolved(next);
+      }}
+    >
+      <Icon name={resolved === "light" ? "moon" : "sun"} size={18} />
+    </button>
+  );
+}
 
 function AdminPanelSwitcher() {
   const router = useRouter();
@@ -61,7 +107,9 @@ export type IconName =
   | "shield"
   | "menu"
   | "close"
-  | "sync";
+  | "sync"
+  | "sun"
+  | "moon";
 
 export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
   const p = {
@@ -220,6 +268,19 @@ export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
           <path d="M21 20v-5h-5" />
         </svg>
       );
+    case "sun":
+      return (
+        <svg {...p}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      );
+    case "moon":
+      return (
+        <svg {...p}>
+          <path d="M21 14.5A8.5 8.5 0 1 1 9.5 3a7 7 0 0 0 11.5 11.5Z" />
+        </svg>
+      );
   }
 }
 
@@ -368,6 +429,7 @@ export function DashShell(props: {
           <span>{props.brand}</span>
         </div>
         <div className="topbar-side">
+          <ThemeToggleBtn />
           {isAdmin ? (
             <AdminPanelSwitcher />
           ) : (
@@ -434,6 +496,9 @@ export function DashShell(props: {
               {props.userLabel && <p className="sub">{props.userLabel}</p>}
             </div>
             <div className="topbar-side">
+              <span className="hide-mobile">
+                <ThemeToggleBtn />
+              </span>
               {isAdmin && (
                 <span className="hide-mobile">
                   <AdminPanelSwitcher />

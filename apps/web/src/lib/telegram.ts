@@ -12,6 +12,8 @@ export type TelegramWebApp = {
   setBackgroundColor?: (color: string) => void;
   themeParams?: Record<string, string>;
   colorScheme?: "light" | "dark";
+  onEvent?: (eventType: string, callback: () => void) => void;
+  offEvent?: (eventType: string, callback: () => void) => void;
 };
 
 declare global {
@@ -103,6 +105,23 @@ export function prepareTelegramUi(wa: TelegramWebApp) {
     /* ignore */
   }
   document.documentElement.classList.add("tg-webapp");
+
+  const skin = document.documentElement.dataset.skin;
+  if (skin === "studio") {
+    const resolved = (document.documentElement.dataset.theme === "light" ? "light" : "dark") as
+      | "light"
+      | "dark";
+    const fromCss = getComputedStyle(document.documentElement).getPropertyValue("--bg0").trim();
+    const bg = fromCss || (resolved === "light" ? "#F4F6FA" : "#0B0F14");
+    try {
+      wa.setHeaderColor?.(bg);
+      wa.setBackgroundColor?.(bg);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
   const bg = wa.themeParams?.bg_color;
   if (bg) {
     try {

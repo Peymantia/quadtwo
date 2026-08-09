@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./skins/studio.css";
+import { ThemeBoot } from "../components/ThemeBoot";
+import { THEME_BOOT_SCRIPT } from "../lib/theme";
 
 export const metadata: Metadata = {
   title: "داشبورد پیـنگ",
@@ -16,7 +19,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fa" dir="rtl">
+    <html lang="fa" dir="rtl" data-skin="classic" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
@@ -24,10 +27,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Vazirmatn:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       {/* Telegram SDK is loaded on-demand via lib/telegram.ts — not here.
           Loading telegram.org beforeInteractive breaks the app when CDN is blocked. */}
-      <body>{children}</body>
+      <body>
+        <ThemeBoot />
+        {children}
+      </body>
     </html>
   );
 }

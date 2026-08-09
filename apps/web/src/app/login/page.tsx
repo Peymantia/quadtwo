@@ -6,6 +6,7 @@ import { Toast } from "../../components/Toast";
 import { api, getToken, homePathForRole, setToken, type Role, type SessionUser } from "../../lib/api";
 import { canUsePasskey, loginWithPasskey, passkeyErrorMessage } from "../../lib/passkey";
 import { isTelegramMiniApp, loginWithTelegramWebApp } from "../../lib/telegram";
+import { applyAppearance, parseColorMode, parseUiSkin } from "../../lib/theme";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -61,11 +62,14 @@ export default function LoginPage() {
     }
 
     void boot();
-    api<{ brand: string; logoUrl?: string | null }>("/auth/meta", { token: null })
+    api<{ brand: string; logoUrl?: string | null; uiSkin?: string; uiColorMode?: string }>("/auth/meta", {
+      token: null,
+    })
       .then((r) => {
         if (!cancelled) {
           setBrand(r.brand);
           setLogoUrl(r.logoUrl ?? null);
+          applyAppearance(parseUiSkin(r.uiSkin), parseColorMode(r.uiColorMode));
         }
       })
       .catch(() => undefined);

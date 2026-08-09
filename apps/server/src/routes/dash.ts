@@ -207,6 +207,8 @@ async function sessionForUser(userId: string) {
 export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
   api.get("/auth/meta", async (c) => {
     const brand = await getSetting("brand_name");
+    const uiSkin = await getSetting("ui_skin");
+    const uiColorMode = await getSetting("ui_color_mode");
     const { resolveTenantIdOrPlatform, tenantDashUrl } = await import("../services/tenants.js");
     const tenantId = await resolveTenantIdOrPlatform();
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
@@ -219,6 +221,14 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
       authModes: ["password", "otp", "passkey"],
       passkeyHint: "ورود با Face ID / اثرانگشت (Passkey)",
       demoMode: isDemoMode(),
+      uiSkin: uiSkin === "studio" ? "studio" : "classic",
+      uiColorMode:
+        uiColorMode === "light" ||
+        uiColorMode === "dark" ||
+        uiColorMode === "system" ||
+        uiColorMode === "telegram"
+          ? uiColorMode
+          : "system",
     });
   });
 
@@ -3190,6 +3200,16 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         } catch {
           /* ignore */
         }
+        continue;
+      }
+      if (k === "ui_skin") {
+        await setSetting("ui_skin", v === "studio" ? "studio" : "classic");
+        continue;
+      }
+      if (k === "ui_color_mode") {
+        const mode =
+          v === "light" || v === "dark" || v === "system" || v === "telegram" ? v : "system";
+        await setSetting("ui_color_mode", mode);
         continue;
       }
       await setSetting(k, String(v));

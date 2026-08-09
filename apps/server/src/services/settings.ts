@@ -83,6 +83,10 @@ const defaults: Record<string, string> = {
   discount_codes_enabled: "false",
   /** Max % for partner/wholesale when creating codes (admin always up to 100) */
   discount_max_percent: "30",
+  /** UI skin: classic (current) | studio (modern light/dark) */
+  ui_skin: "classic",
+  /** Studio color mode: dark | light | system | telegram */
+  ui_color_mode: "system",
   /** Sell without 3x-ui — admin pastes sub URL after payment */
   serverless_enabled: "false",
   serverless_price_per_gb: "10000",
