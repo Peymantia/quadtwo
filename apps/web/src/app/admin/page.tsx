@@ -18,7 +18,7 @@ import { AgentsLeaderboardPanel, SalesReportPanel, AccountDetailModal } from "..
 import { SettingsAccordion } from "../../components/SettingsAccordion";
 import { SuperadminTenantsPanel } from "../../components/SuperadminTenantsPanel";
 import { broadcastAppearance } from "../../components/ThemeBoot";
-import { parseColorMode, setUserColorOverride, type ColorMode, type UiSkin } from "../../lib/theme";
+import { parseColorMode, parseUiSkin, setUserColorOverride, type ColorMode } from "../../lib/theme";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -4255,6 +4255,61 @@ function parsePayMethods(raw: string | undefined): PayMethodsState {
   }
 }
 
+function clonePayMethods(m: PayMethodsState): PayMethodsState {
+  return parsePayMethods(JSON.stringify(m));
+}
+
+/** Format setting numbers with en-US thousand separators (up to 3 fraction digits). */
+function formatSettingNumber(raw: unknown, fallback = 0): string {
+  const n = parseSettingNumber(raw, fallback);
+  return n.toLocaleString("en-US", { maximumFractionDigits: 3 });
+}
+
+/** Parse a setting number from user input (strips commas); up to 3 fraction digits. */
+function parseSettingNumber(raw: unknown, fallback = 0): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  const s = String(raw ?? "")
+    .replace(/,/g, "")
+    .trim();
+  if (!s) return fallback;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+const SETTINGS_DEFAULTS: Record<string, string> = {
+  brand_name: "پیـنگ",
+  support_username: "",
+  miniapp_url: "",
+  welcome_text: `سلام به ربات پینگ خوش اومدی 🌸
+ما اینجاییم تا شما را بدون هیچ محدویتی به شبکه جهانی متصل کنیم ❤️
+
+✅ کیفیت بالا در انواع کانکشن ها
+📡 برقرای امنیت در ارتباط
+🇮🇷 سرویس ویژه اینترنت ملی
+☎️ پشتیبانی تا لحظه آخر`,
+  card_number: "6037-0000-0000-0000",
+  card_holder: "Card Holder",
+  emoji_style: "universal",
+  ui_skin: "classic",
+  ui_color_mode: "system",
+  serverless_enabled: "false",
+  serverless_price_per_gb: "10000",
+  serverless_price_per_month: "30000",
+  serverless_weekly_min_gb: "1",
+  serverless_weekly_max_gb: "10",
+  serverless_monthly_min_gb: "10",
+  serverless_monthly_max_gb: "100",
+  serverless_weekly_enabled: "true",
+  serverless_month1_enabled: "true",
+  serverless_month2_enabled: "true",
+  test_service_enabled: "true",
+  discount_codes_enabled: "false",
+  discount_max_percent: "30",
+  default_limit_ip: "2",
+  max_purchase_months: "1",
+  web_session_hours: "168",
+};
+
 const GUIDE_PLATFORMS = [
   { id: "android", label: "اندروید", textKey: "guide_android_text", urlKey: "guide_android_url" },
   { id: "ios", label: "آیفون", textKey: "guide_ios_text", urlKey: "guide_ios_url" },
@@ -4312,7 +4367,9 @@ function SettingsTab({
   const [notifBusy, setNotifBusy] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [payMethods, setPayMethods] = useState<PayMethodsState>(defaultPayMethods);
-  const [payBusy, setPayBusy] = useState(false);
+  const [baselineSettings, setBaselineSettings] = useState<Record<string, string>>({});
+  const [baselinePayMethods, setBaselinePayMethods] = useState<PayMethodsState>(defaultPayMethods);
+  const [saveBusy, setSaveBusy] = useState(false);
 
   function toggleSection(id: string) {
     setOpenSection((cur) => (cur === id ? null : id));
@@ -4320,8 +4377,12 @@ function SettingsTab({
 
   useEffect(() => {
     void api<{ settings: Record<string, string> }>("/admin/settings").then((r) => {
-      setSettings(r.settings);
-      setPayMethods(parsePayMethods(r.settings.payment_methods_json));
+      const nextSettings = { ...r.settings };
+      const nextPay = parsePayMethods(r.settings.payment_methods_json);
+      setSettings(nextSettings);
+      setBaselineSettings({ ...nextSettings });
+      setPayMethods(nextPay);
+      setBaselinePayMethods(clonePayMethods(nextPay));
       setLoaded(true);
     });
     void api<{ channels: Array<{ username: string; required: boolean }>; forceMembership: boolean }>("/admin/channels").then(
@@ -4354,12 +4415,16 @@ function SettingsTab({
     setGuideEdit(null);
   }
 
+  /** Immediate API save for guide modal (and similar); also updates baselines. */
   async function save(patch: Record<string, string>) {
     try {
       await api("/admin/settings", { method: "PUT", body: patch });
       setSettings((s) => ({ ...s, ...patch }));
+      setBaselineSettings((s) => ({ ...s, ...patch }));
       if (patch.payment_methods_json) {
-        setPayMethods(parsePayMethods(patch.payment_methods_json));
+        const nextPay = parsePayMethods(patch.payment_methods_json);
+        setPayMethods(nextPay);
+        setBaselinePayMethods(clonePayMethods(nextPay));
       }
       flash("تنظیمات ذخیره شد");
     } catch (e) {
@@ -4367,22 +4432,44 @@ function SettingsTab({
     }
   }
 
-  async function savePayMethods(
-    next: PayMethodsState,
-    cardPatch?: { card_number?: string; card_holder?: string },
-  ) {
-    setPayBusy(true);
+  async function persistDraft() {
+    setSaveBusy(true);
     try {
+      const skinChanged =
+        (settings.ui_skin ?? "classic") !== (baselineSettings.ui_skin ?? "classic") ||
+        (settings.ui_color_mode ?? "system") !== (baselineSettings.ui_color_mode ?? "system");
       const patch: Record<string, string> = {
-        payment_methods_json: JSON.stringify(next),
+        ...settings,
+        payment_methods_json: JSON.stringify(payMethods),
       };
-      if (cardPatch?.card_number != null) patch.card_number = cardPatch.card_number;
-      if (cardPatch?.card_holder != null) patch.card_holder = cardPatch.card_holder;
-      await save(patch);
-      setPayMethods(next);
+      await api("/admin/settings", { method: "PUT", body: patch });
+      setSettings(patch);
+      setBaselineSettings({ ...patch });
+      setBaselinePayMethods(clonePayMethods(payMethods));
+      if (skinChanged) {
+        const skin = parseUiSkin(patch.ui_skin);
+        const mode = parseColorMode(patch.ui_color_mode);
+        setUserColorOverride(null);
+        broadcastAppearance(skin, mode);
+      }
+      flash("تنظیمات ذخیره شد");
+    } catch (e) {
+      flash(null, errText(e));
     } finally {
-      setPayBusy(false);
+      setSaveBusy(false);
     }
+  }
+
+  function revertDraft() {
+    setSettings({ ...baselineSettings });
+    setPayMethods(clonePayMethods(baselinePayMethods));
+    flash("تغییرات لغو شد");
+  }
+
+  function applyDefaultsDraft() {
+    setSettings((s) => ({ ...s, ...SETTINGS_DEFAULTS }));
+    setPayMethods(defaultPayMethods());
+    flash("مقادیر پیش‌فرض اعمال شد — برای ذخیره دکمهٔ ذخیره را بزنید");
   }
 
   async function persistChannels(
@@ -4570,9 +4657,20 @@ function SettingsTab({
   if (!loaded) return <p className="muted">در حال دریافت تنظیمات…</p>;
 
   const multiMonth = Number(settings.max_purchase_months || "1") > 1;
+  const skinIsClassic = parseUiSkin(settings.ui_skin) === "classic";
+
+  function onSettingNumberChange(key: string, raw: string, fallback: number) {
+    const cleaned = raw.replace(/,/g, "");
+    if (cleaned !== "" && !/^\d*\.?\d{0,3}$/.test(cleaned)) return;
+    setSettings((s) => ({
+      ...s,
+      [key]: cleaned === "" ? String(fallback) : cleaned,
+    }));
+  }
 
   return (
-    <>
+    <div className="settings-page">
+      <div className="settings-page__body">
       <SettingsAccordion
         id="auth"
         title="ورود و امنیت"
@@ -4604,9 +4702,9 @@ function SettingsTab({
               <input
                 type="checkbox"
                 checked={payMethods.card.enabled}
-                disabled={payBusy}
+                disabled={saveBusy}
                 onChange={(e) =>
-                  void savePayMethods({ ...payMethods, card: { enabled: e.target.checked } })
+                  setPayMethods((m) => ({ ...m, card: { enabled: e.target.checked } }))
                 }
               />
               <span className="track" />
@@ -4620,22 +4718,16 @@ function SettingsTab({
                   dir="ltr"
                   className="num"
                   value={settings.card_number ?? ""}
-                  disabled={payBusy}
+                  disabled={saveBusy}
                   onChange={(e) => setSettings((s) => ({ ...s, card_number: e.target.value }))}
-                  onBlur={() =>
-                    void savePayMethods(payMethods, { card_number: settings.card_number ?? "" })
-                  }
                 />
               </div>
               <div className="field">
                 <label>نام صاحب کارت</label>
                 <input
                   value={settings.card_holder ?? ""}
-                  disabled={payBusy}
+                  disabled={saveBusy}
                   onChange={(e) => setSettings((s) => ({ ...s, card_holder: e.target.value }))}
-                  onBlur={() =>
-                    void savePayMethods(payMethods, { card_holder: settings.card_holder ?? "" })
-                  }
                 />
               </div>
             </>
@@ -4652,9 +4744,9 @@ function SettingsTab({
               <input
                 type="checkbox"
                 checked={payMethods.wallet.enabled}
-                disabled={payBusy}
+                disabled={saveBusy}
                 onChange={(e) =>
-                  void savePayMethods({ ...payMethods, wallet: { enabled: e.target.checked } })
+                  setPayMethods((m) => ({ ...m, wallet: { enabled: e.target.checked } }))
                 }
               />
               <span className="track" />
@@ -4672,12 +4764,12 @@ function SettingsTab({
               <input
                 type="checkbox"
                 checked={payMethods.online.enabled}
-                disabled={payBusy}
+                disabled={saveBusy}
                 onChange={(e) =>
-                  void savePayMethods({
-                    ...payMethods,
-                    online: { ...payMethods.online, enabled: e.target.checked },
-                  })
+                  setPayMethods((m) => ({
+                    ...m,
+                    online: { ...m.online, enabled: e.target.checked },
+                  }))
                 }
               />
               <span className="track" />
@@ -4700,12 +4792,12 @@ function SettingsTab({
               <input
                 type="checkbox"
                 checked={payMethods.crypto.enabled}
-                disabled={payBusy}
+                disabled={saveBusy}
                 onChange={(e) =>
-                  void savePayMethods({
-                    ...payMethods,
-                    crypto: { ...payMethods.crypto, enabled: e.target.checked },
-                  })
+                  setPayMethods((m) => ({
+                    ...m,
+                    crypto: { ...m.crypto, enabled: e.target.checked },
+                  }))
                 }
               />
               <span className="track" />
@@ -4719,14 +4811,13 @@ function SettingsTab({
                   <input
                     dir="ltr"
                     value={payMethods.crypto.asset}
-                    disabled={payBusy}
+                    disabled={saveBusy}
                     onChange={(e) =>
                       setPayMethods((m) => ({
                         ...m,
                         crypto: { ...m.crypto, asset: e.target.value },
                       }))
                     }
-                    onBlur={() => void savePayMethods(payMethods)}
                   />
                 </div>
                 <div className="field" style={{ margin: 0, flex: "1 1 120px" }}>
@@ -4734,14 +4825,13 @@ function SettingsTab({
                   <input
                     dir="ltr"
                     value={payMethods.crypto.network}
-                    disabled={payBusy}
+                    disabled={saveBusy}
                     onChange={(e) =>
                       setPayMethods((m) => ({
                         ...m,
                         crypto: { ...m.crypto, network: e.target.value },
                       }))
                     }
-                    onBlur={() => void savePayMethods(payMethods)}
                   />
                 </div>
               </div>
@@ -4751,7 +4841,7 @@ function SettingsTab({
                   dir="ltr"
                   className="num"
                   value={payMethods.crypto.address}
-                  disabled={payBusy}
+                  disabled={saveBusy}
                   placeholder="T… / 0x…"
                   onChange={(e) =>
                     setPayMethods((m) => ({
@@ -4759,7 +4849,6 @@ function SettingsTab({
                       crypto: { ...m.crypto, address: e.target.value },
                     }))
                   }
-                  onBlur={() => void savePayMethods(payMethods)}
                 />
               </div>
               <div className="field">
@@ -4767,7 +4856,7 @@ function SettingsTab({
                 <textarea
                   rows={2}
                   value={payMethods.crypto.note}
-                  disabled={payBusy}
+                  disabled={saveBusy}
                   placeholder="مثلاً فقط USDT روی شبکه TRC20"
                   onChange={(e) =>
                     setPayMethods((m) => ({
@@ -4775,46 +4864,11 @@ function SettingsTab({
                       crypto: { ...m.crypto, note: e.target.value },
                     }))
                   }
-                  onBlur={() => void savePayMethods(payMethods)}
                 />
               </div>
             </>
           )}
         </div>
-      </SettingsAccordion>
-
-      <SettingsAccordion
-        id="emoji"
-        title="نمایش ایموجی ربات"
-        icon="chat"
-        openId={openSection}
-        onToggle={toggleSection}
-      >
-        <p className="muted" style={{ marginTop: 0 }}>
-          برای استفاده از ایموجی‌های پریمیوم، تلگرام سازنده ربات باید پریمیوم باشد.
-        </p>
-        <div className="chip-row" style={{ marginTop: 8 }}>
-          <button
-            type="button"
-            className={`chip${(settings.emoji_style || "universal") !== "premium" ? " on" : ""}`}
-            onClick={() => void save({ emoji_style: "universal" })}
-          >
-            Universal
-          </button>
-          <button
-            type="button"
-            className={`chip${settings.emoji_style === "premium" ? " on" : ""}`}
-            onClick={() => void save({ emoji_style: "premium" })}
-          >
-            Premium
-          </button>
-        </div>
-        <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>
-          فعلی:{" "}
-          <strong>{settings.emoji_style === "premium" ? "Premium" : "Universal"}</strong>
-          {" · "}
-          بعد از تغییر، یک‌بار منوی ربات را با /update یا دکمه منو رفرش کنید.
-        </p>
       </SettingsAccordion>
 
       <SettingsAccordion
@@ -5239,7 +5293,12 @@ function SettingsTab({
             <input
               type="checkbox"
               checked={settings.serverless_enabled === "true"}
-              onChange={(e) => save({ serverless_enabled: e.target.checked ? "true" : "false" })}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  serverless_enabled: e.target.checked ? "true" : "false",
+                }))
+              }
             />
             <span className="track" />
           </label>
@@ -5253,15 +5312,9 @@ function SettingsTab({
           </div>
           <input
             className="num"
-            inputMode="numeric"
-            value={settings.serverless_price_per_gb || "10000"}
-            onChange={(e) =>
-              setSettings((s) => ({ ...s, serverless_price_per_gb: e.target.value.replace(/[^\d]/g, "") }))
-            }
-            onBlur={() => {
-              const n = Math.max(0, Number(settings.serverless_price_per_gb || "10000") || 10000);
-              void save({ serverless_price_per_gb: String(n) });
-            }}
+            inputMode="decimal"
+            value={formatSettingNumber(settings.serverless_price_per_gb, 10000)}
+            onChange={(e) => onSettingNumberChange("serverless_price_per_gb", e.target.value, 10000)}
             style={{ width: 110, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 12px" }}
           />
         </div>
@@ -5272,15 +5325,9 @@ function SettingsTab({
           </div>
           <input
             className="num"
-            inputMode="numeric"
-            value={settings.serverless_price_per_month || "30000"}
-            onChange={(e) =>
-              setSettings((s) => ({ ...s, serverless_price_per_month: e.target.value.replace(/[^\d]/g, "") }))
-            }
-            onBlur={() => {
-              const n = Math.max(0, Number(settings.serverless_price_per_month || "30000") || 30000);
-              void save({ serverless_price_per_month: String(n) });
-            }}
+            inputMode="decimal"
+            value={formatSettingNumber(settings.serverless_price_per_month, 30000)}
+            onChange={(e) => onSettingNumberChange("serverless_price_per_month", e.target.value, 30000)}
             style={{ width: 110, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 12px" }}
           />
         </div>
@@ -5294,7 +5341,12 @@ function SettingsTab({
             <input
               type="checkbox"
               checked={settings.serverless_weekly_enabled !== "false"}
-              onChange={(e) => save({ serverless_weekly_enabled: e.target.checked ? "true" : "false" })}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  serverless_weekly_enabled: e.target.checked ? "true" : "false",
+                }))
+              }
             />
             <span className="track" />
           </label>
@@ -5306,30 +5358,18 @@ function SettingsTab({
           <div style={{ display: "flex", gap: 8 }}>
             <input
               className="num"
-              inputMode="numeric"
+              inputMode="decimal"
               title="حداقل"
-              value={settings.serverless_weekly_min_gb || "1"}
-              onChange={(e) =>
-                setSettings((s) => ({ ...s, serverless_weekly_min_gb: e.target.value.replace(/[^\d]/g, "") }))
-              }
-              onBlur={() => {
-                const n = Math.max(1, Number(settings.serverless_weekly_min_gb || "1") || 1);
-                void save({ serverless_weekly_min_gb: String(n) });
-              }}
+              value={formatSettingNumber(settings.serverless_weekly_min_gb, 1)}
+              onChange={(e) => onSettingNumberChange("serverless_weekly_min_gb", e.target.value, 1)}
               style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
             />
             <input
               className="num"
-              inputMode="numeric"
+              inputMode="decimal"
               title="حداکثر"
-              value={settings.serverless_weekly_max_gb || "10"}
-              onChange={(e) =>
-                setSettings((s) => ({ ...s, serverless_weekly_max_gb: e.target.value.replace(/[^\d]/g, "") }))
-              }
-              onBlur={() => {
-                const n = Math.max(1, Number(settings.serverless_weekly_max_gb || "10") || 10);
-                void save({ serverless_weekly_max_gb: String(n) });
-              }}
+              value={formatSettingNumber(settings.serverless_weekly_max_gb, 10)}
+              onChange={(e) => onSettingNumberChange("serverless_weekly_max_gb", e.target.value, 10)}
               style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
             />
           </div>
@@ -5344,7 +5384,12 @@ function SettingsTab({
             <input
               type="checkbox"
               checked={settings.serverless_month1_enabled !== "false"}
-              onChange={(e) => save({ serverless_month1_enabled: e.target.checked ? "true" : "false" })}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  serverless_month1_enabled: e.target.checked ? "true" : "false",
+                }))
+              }
             />
             <span className="track" />
           </label>
@@ -5357,7 +5402,12 @@ function SettingsTab({
             <input
               type="checkbox"
               checked={settings.serverless_month2_enabled !== "false"}
-              onChange={(e) => save({ serverless_month2_enabled: e.target.checked ? "true" : "false" })}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  serverless_month2_enabled: e.target.checked ? "true" : "false",
+                }))
+              }
             />
             <span className="track" />
           </label>
@@ -5370,30 +5420,18 @@ function SettingsTab({
           <div style={{ display: "flex", gap: 8 }}>
             <input
               className="num"
-              inputMode="numeric"
+              inputMode="decimal"
               title="حداقل"
-              value={settings.serverless_monthly_min_gb || "10"}
-              onChange={(e) =>
-                setSettings((s) => ({ ...s, serverless_monthly_min_gb: e.target.value.replace(/[^\d]/g, "") }))
-              }
-              onBlur={() => {
-                const n = Math.max(1, Number(settings.serverless_monthly_min_gb || "10") || 10);
-                void save({ serverless_monthly_min_gb: String(n) });
-              }}
+              value={formatSettingNumber(settings.serverless_monthly_min_gb, 10)}
+              onChange={(e) => onSettingNumberChange("serverless_monthly_min_gb", e.target.value, 10)}
               style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
             />
             <input
               className="num"
-              inputMode="numeric"
+              inputMode="decimal"
               title="حداکثر"
-              value={settings.serverless_monthly_max_gb || "100"}
-              onChange={(e) =>
-                setSettings((s) => ({ ...s, serverless_monthly_max_gb: e.target.value.replace(/[^\d]/g, "") }))
-              }
-              onBlur={() => {
-                const n = Math.max(1, Number(settings.serverless_monthly_max_gb || "100") || 100);
-                void save({ serverless_monthly_max_gb: String(n) });
-              }}
+              value={formatSettingNumber(settings.serverless_monthly_max_gb, 100)}
+              onChange={(e) => onSettingNumberChange("serverless_monthly_max_gb", e.target.value, 100)}
               style={{ width: 64, border: "1px solid var(--line)", background: "rgba(10,13,35,.6)", color: "var(--text)", borderRadius: 10, padding: "8px 10px" }}
             />
           </div>
@@ -5419,7 +5457,12 @@ function SettingsTab({
             <input
               type="checkbox"
               checked={multiMonth}
-              onChange={(e) => save({ max_purchase_months: e.target.checked ? "12" : "1" })}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  max_purchase_months: e.target.checked ? "12" : "1",
+                }))
+              }
             />
             <span className="track" />
           </label>
@@ -5431,7 +5474,7 @@ function SettingsTab({
             </div>
             <select
               value={settings.max_purchase_months || "12"}
-              onChange={(e) => save({ max_purchase_months: e.target.value })}
+              onChange={(e) => setSettings((s) => ({ ...s, max_purchase_months: e.target.value }))}
               style={{
                 border: "1px solid var(--line)",
                 background: "rgba(10,13,35,.6)",
@@ -5457,7 +5500,12 @@ function SettingsTab({
             <input
               type="checkbox"
               checked={settings.test_service_enabled !== "false"}
-              onChange={(e) => save({ test_service_enabled: e.target.checked ? "true" : "false" })}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  test_service_enabled: e.target.checked ? "true" : "false",
+                }))
+              }
             />
             <span className="track" />
           </label>
@@ -5471,7 +5519,12 @@ function SettingsTab({
             <input
               type="checkbox"
               checked={settings.discount_codes_enabled === "true"}
-              onChange={(e) => save({ discount_codes_enabled: e.target.checked ? "true" : "false" })}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  discount_codes_enabled: e.target.checked ? "true" : "false",
+                }))
+              }
             />
             <span className="track" />
           </label>
@@ -5485,16 +5538,9 @@ function SettingsTab({
           </div>
           <input
             className="num"
-            inputMode="numeric"
-            value={settings.discount_max_percent || "30"}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/[^\d]/g, "");
-              setSettings((s) => ({ ...s, discount_max_percent: raw }));
-            }}
-            onBlur={() => {
-              const n = Math.max(1, Math.min(100, Number(settings.discount_max_percent || "30") || 30));
-              void save({ discount_max_percent: String(n) });
-            }}
+            inputMode="decimal"
+            value={formatSettingNumber(settings.discount_max_percent, 30)}
+            onChange={(e) => onSettingNumberChange("discount_max_percent", e.target.value, 30)}
             style={{
               width: 72,
               border: "1px solid var(--line)",
@@ -5512,7 +5558,7 @@ function SettingsTab({
           </div>
           <select
             value={settings.default_limit_ip || "2"}
-            onChange={(e) => save({ default_limit_ip: e.target.value })}
+            onChange={(e) => setSettings((s) => ({ ...s, default_limit_ip: e.target.value }))}
             style={{
               border: "1px solid var(--line)",
               background: "rgba(10,13,35,.6)",
@@ -5535,7 +5581,7 @@ function SettingsTab({
           </div>
           <select
             value={String(Number(settings.web_session_hours || "168"))}
-            onChange={(e) => save({ web_session_hours: e.target.value })}
+            onChange={(e) => setSettings((s) => ({ ...s, web_session_hours: e.target.value }))}
             style={{
               border: "1px solid var(--line)",
               background: "rgba(10,13,35,.6)",
@@ -5618,70 +5664,70 @@ function SettingsTab({
 
       <SettingsAccordion
         id="appearance"
-        title="ظاهر و قالب"
+        title="ظاهر و ایموجی"
         icon="layers"
         openId={openSection}
         onToggle={toggleSection}
       >
         <p className="muted" style={{ marginTop: 0 }}>
-          قالب Classic ظاهر فعلی است. قالب Studio ظاهر مدرن با حالت روشن و تاریک است — بدون تغییر امکانات.
+          قالب، حالت رنگ و سبک ایموجی ربات را یکجا تنظیم کنید. تغییرات با دکمهٔ ذخیره در پایین صفحه اعمال می‌شود.
         </p>
-        <div className="appearance-preview">
-          <button
-            type="button"
-            className={`appearance-preview__card${(settings.ui_skin ?? "classic") === "classic" ? " on" : ""}`}
-            onClick={() => {
-              const ui_skin: UiSkin = "classic";
-              const ui_color_mode = settings.ui_color_mode || "system";
-              setSettings((s) => ({ ...s, ui_skin, ui_color_mode }));
-              void save({ ui_skin, ui_color_mode }).then(() => {
-                setUserColorOverride(null);
-                broadcastAppearance(ui_skin, parseColorMode(ui_color_mode));
-              });
-            }}
-          >
-            <strong>Classic</strong>
-            <span>قالب فعلی</span>
-          </button>
-          <button
-            type="button"
-            className={`appearance-preview__card${settings.ui_skin === "studio" ? " on" : ""}`}
-            onClick={() => {
-              const ui_skin: UiSkin = "studio";
-              const ui_color_mode = settings.ui_color_mode || "system";
-              setSettings((s) => ({ ...s, ui_skin, ui_color_mode }));
-              void save({ ui_skin, ui_color_mode }).then(() => {
-                setUserColorOverride(null);
-                broadcastAppearance(ui_skin, parseColorMode(ui_color_mode));
-              });
-            }}
-          >
-            <strong>Studio</strong>
-            <span>مدرن · لایت/دارک</span>
-          </button>
+        <div className="settings-appearance-row">
+          <div className="field settings-appearance-row__field">
+            <label>قالب</label>
+            <select
+              value={parseUiSkin(settings.ui_skin)}
+              disabled={saveBusy}
+              onChange={(e) => {
+                const ui_skin = parseUiSkin(e.target.value);
+                setSettings((s) => ({ ...s, ui_skin }));
+              }}
+            >
+              <option value="classic">Classic</option>
+              <option value="studio">Studio</option>
+            </select>
+          </div>
+          <div className="field settings-appearance-row__field">
+            <label>مود</label>
+            <select
+              value={parseColorMode(settings.ui_color_mode)}
+              disabled={saveBusy || skinIsClassic}
+              onChange={(e) => {
+                const ui_color_mode = e.target.value as ColorMode;
+                setSettings((s) => ({ ...s, ui_color_mode }));
+              }}
+            >
+              <option value="system">خودکار</option>
+              <option value="dark">تیره</option>
+              <option value="light">روشن</option>
+              <option value="telegram">تلگرام</option>
+            </select>
+          </div>
+          <div className="field settings-appearance-row__field">
+            <label>ایموجی</label>
+            <select
+              value={(settings.emoji_style || "universal") === "premium" ? "premium" : "universal"}
+              disabled={saveBusy}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  emoji_style: e.target.value === "premium" ? "premium" : "universal",
+                }))
+              }
+            >
+              <option value="universal">Universal</option>
+              <option value="premium">Premium</option>
+            </select>
+          </div>
         </div>
-        <div className="field" style={{ marginTop: 14 }}>
-          <label>حالت رنگ (Studio)</label>
-          <select
-            value={settings.ui_color_mode || "system"}
-            disabled={(settings.ui_skin ?? "classic") !== "studio"}
-            onChange={(e) => {
-              const ui_color_mode = e.target.value as ColorMode;
-              setSettings((s) => ({ ...s, ui_skin: "studio", ui_color_mode }));
-              void save({ ui_skin: "studio", ui_color_mode }).then(() => {
-                setUserColorOverride(null);
-                broadcastAppearance("studio", parseColorMode(ui_color_mode));
-              });
-            }}
-          >
-            <option value="system">خودکار (سیستم)</option>
-            <option value="dark">تیره</option>
-            <option value="light">روشن</option>
-            <option value="telegram">تلگرام</option>
-          </select>
-        </div>
-        <p className="muted" style={{ fontSize: "0.82rem" }}>
-          در حالت Studio، کاربران می‌توانند با دکمه خورشید/ماه در هدر بین روشن و تیره جابه‌جا شوند.
+        {settings.emoji_style === "premium" && (
+          <p className="hint settings-appearance-note">
+            برای ایموجی پریمیوم، حساب تلگرام سازنده ربات باید Premium باشد. بعد از ذخیره، یک‌بار منوی ربات را با /update
+            رفرش کنید.
+          </p>
+        )}
+        <p className="muted" style={{ fontSize: "0.82rem", marginBottom: 0 }}>
+          در Studio کاربران می‌توانند با دکمه خورشید/ماه در هدر بین روشن و تیره جابه‌جا شوند. مود فقط برای Studio فعال است.
         </p>
       </SettingsAccordion>
 
@@ -5710,17 +5756,38 @@ function SettingsTab({
             )}
           </div>
         ))}
-        <div className="settings-acc__save">
+      </SettingsAccordion>
+      </div>
+
+      <div className="settings-sticky-bar" role="toolbar" aria-label="ذخیره تنظیمات">
+        <div className="settings-sticky-bar__inner">
           <button
             type="button"
-            className="btn primary wide"
-            onClick={() => save(Object.fromEntries(TEXT_SETTINGS.map((f) => [f.key, settings[f.key] ?? ""])))}
+            className="settings-sticky-bar__btn settings-sticky-bar__btn--save"
+            disabled={saveBusy}
+            onClick={() => void persistDraft()}
           >
-            ذخیره اطلاعات پایه
+            {saveBusy ? "…" : "ذخیره"}
+          </button>
+          <button
+            type="button"
+            className="settings-sticky-bar__btn settings-sticky-bar__btn--cancel"
+            disabled={saveBusy}
+            onClick={revertDraft}
+          >
+            انصراف
+          </button>
+          <button
+            type="button"
+            className="settings-sticky-bar__btn settings-sticky-bar__btn--default"
+            disabled={saveBusy}
+            onClick={applyDefaultsDraft}
+          >
+            دیفالت
           </button>
         </div>
-      </SettingsAccordion>
-    </>
+      </div>
+    </div>
   );
 }
 
