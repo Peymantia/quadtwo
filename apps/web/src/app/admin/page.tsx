@@ -6,7 +6,7 @@ import { Modal } from "../../components/Modal";
 import { ConfirmToast, Toast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { TrafficProgress } from "../../components/PaymentCard";
-import { api, formatToman, getDemoRole, getToken } from "../../lib/api";
+import { api, apiBase, formatToman, getDemoRole, getToken } from "../../lib/api";
 import { ACCOUNT_NAME_HINT, filterAccountNameInput, isValidAccountName } from "../../lib/account-name";
 import { formatExpiryDate, formatRemainDays, formatTrafficGb } from "../../lib/format-ui";
 import { useDashAuth } from "../../lib/useDashAuth";
