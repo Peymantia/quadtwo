@@ -90,6 +90,19 @@ h3 {
   place-items: center;
   padding: 28px 20px 48px;
   position: relative;
+  overflow: hidden;
+}
+
+.login-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.login-bg-grid,
+.login-orb {
+  display: none;
 }
 
 .login-inner {
@@ -97,6 +110,8 @@ h3 {
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
+  z-index: 1;
 }
 
 .logo-orb {
@@ -270,6 +285,109 @@ h3 {
 
 .collapse-toggle .chev.open {
   transform: rotate(180deg);
+}
+
+.otp-field {
+  margin-bottom: 16px;
+}
+
+.otp-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.otp-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  --otp-acc-1: #38bdf8;
+  --otp-acc-2: #a78bfa;
+  --otp-acc-3: #22d3ee;
+  --otp-acc-4: #2dd4bf;
+}
+
+.otp-input {
+  width: 100%;
+  height: 58px;
+  border: 2px solid var(--line);
+  background: var(--elev);
+  color: var(--text);
+  border-radius: 16px;
+  text-align: center;
+  font-size: 1.45rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  outline: none;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.12s ease;
+}
+
+.otp-input:focus {
+  border-color: rgba(56, 189, 248, 0.75);
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.14);
+  transform: translateY(-1px);
+}
+
+.otp-cell.filled .otp-input {
+  border-color: color-mix(in srgb, var(--cell-acc, var(--cyan)) 70%, transparent);
+}
+
+.otp-bar-track {
+  width: 72%;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mute) 22%, transparent);
+  overflow: hidden;
+}
+
+.otp-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cell-acc, var(--cyan)), color-mix(in srgb, var(--cell-acc, var(--cyan)) 55%, white));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--cell-acc, var(--cyan)) 55%, transparent);
+  transition: width 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.otp-cell.filled .otp-bar-fill {
+  width: 100%;
+}
+
+.otp-puff {
+  display: none;
+}
+
+.otp-hint {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: var(--mute);
+  text-align: center;
+}
+
+.login-submit {
+  margin-bottom: 12px;
+}
+
+.passkey-block {
+  margin-top: 14px;
+}
+
+.passkey-hint {
+  text-align: center;
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+.password-form {
+  margin-top: 10px;
 }
 
 /* ---------- Fields & buttons ---------- */

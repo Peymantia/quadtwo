@@ -7,9 +7,22 @@ import { auditLog } from "./audit.js";
 const SCRYPT_N = 16384;
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
+const OTP_LEN = 4;
 
 function hashOtp(code: string): string {
   return createHash("sha256").update(`quadtwo-otp:${code}`).digest("hex");
+}
+
+/** Persian/Arabic digits → Latin, strip non-digits (Telegram paste often mixes these). */
+export function normalizeOtpCode(code: string): string {
+  return code
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/\D/g, "");
+}
+
+function generateOtpCode(): string {
+  return String(randomInt(10 ** (OTP_LEN - 1), 10 ** OTP_LEN - 1));
 }
 
 export function hashPassword(password: string): string {
@@ -131,7 +144,7 @@ export async function requestLoginOtp(login: string): Promise<{ ok: true; hint: 
     return { ok: true, hint: "اگر حساب وجود داشته باشد، کد به تلگرام ارسال شد" };
   }
 
-  const code = String(randomInt(100000, 999999));
+  const code = generateOtpCode();
   await prisma.loginOtp.create({
     data: {
       userId: user.id,
@@ -164,7 +177,7 @@ export async function requestLoginOtp(login: string): Promise<{ ok: true; hint: 
 /** Issue OTP for the currently authenticated Telegram user (from bot button). */
 export async function issueOtpForUser(userId: string): Promise<string> {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const code = String(randomInt(100000, 999999));
+  const code = generateOtpCode();
   await prisma.loginOtp.create({
     data: {
       userId: user.id,
@@ -182,6 +195,9 @@ export async function verifyLoginOtp(
   const rl = checkRateLimit(`otp-ver:${login.toLowerCase()}`, { max: 20, windowMs: 15 * 60 * 1000 });
   if (!rl.ok) return { ok: false, error: `لطفاً ${rl.retryAfterSec} ثانیه صبر کنید` };
 
+  const normalized = normalizeOtpCode(code);
+  if (normalized.length !== OTP_LEN) return { ok: false, error: "کد یا شناسه نامعتبر است" };
+
   const user = await findUserByLogin(login);
   if (!user) return { ok: false, error: "کد یا شناسه نامعتبر است" };
 
@@ -198,9 +214,10 @@ export async function verifyLoginOtp(
     return { ok: false, error: "تعداد تلاش بیش از حد — کد جدید بگیرید" };
   }
 
+  const candidateHash = hashOtp(normalized);
   const match =
-    otp.codeHash.length === hashOtp(code.trim()).length &&
-    timingSafeEqual(Buffer.from(otp.codeHash), Buffer.from(hashOtp(code.trim())));
+    otp.codeHash.length === candidateHash.length &&
+    timingSafeEqual(Buffer.from(otp.codeHash), Buffer.from(candidateHash));
   await prisma.loginOtp.update({
     where: { id: otp.id },
     data: { attempts: { increment: 1 }, ...(match ? { consumedAt: new Date() } : {}) },

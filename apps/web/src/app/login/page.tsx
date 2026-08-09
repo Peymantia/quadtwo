@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Toast } from "../../components/Toast";
 import { api, getToken, homePathForRole, setToken, type Role, type SessionUser } from "../../lib/api";
@@ -8,11 +8,23 @@ import { canUsePasskey, loginWithPasskey, passkeyErrorMessage } from "../../lib/
 import { isTelegramMiniApp, loginWithTelegramWebApp } from "../../lib/telegram";
 import { applyAppearance, parseColorMode, parseUiSkin } from "../../lib/theme";
 
+const OTP_LEN = 4;
+
+function toEnglishDigits(value: string): string {
+  return value
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+}
+
+function digitsOnly(value: string): string {
+  return toEnglishDigits(value).replace(/\D/g, "");
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
+  const [digits, setDigits] = useState<string[]>(() => Array.from({ length: OTP_LEN }, () => ""));
   const [otpSent, setOtpSent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
@@ -22,11 +34,43 @@ export default function LoginPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [passkeyOk, setPasskeyOk] = useState(false);
   const [tgBooting, setTgBooting] = useState(true);
+  const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  const code = digits.join("");
 
   const clearFlash = useCallback(() => {
     setHint(null);
     setError(null);
   }, []);
+
+  const setDigitAt = useCallback((index: number, value: string) => {
+    setDigits((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  }, []);
+
+  const applyOtpPaste = useCallback(
+    (raw: string, startIndex = 0) => {
+      const cleaned = digitsOnly(raw).slice(0, OTP_LEN - startIndex);
+      if (!cleaned) return;
+      setDigits((prev) => {
+        const next = [...prev];
+        for (let i = 0; i < cleaned.length; i++) {
+          next[startIndex + i] = cleaned[i]!;
+        }
+        return next;
+      });
+      const focusAt = Math.min(startIndex + cleaned.length, OTP_LEN - 1);
+      requestAnimationFrame(() => {
+        const el = otpRefs.current[focusAt];
+        el?.focus();
+        el?.select();
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +90,6 @@ export default function LoginPage() {
       }
 
       try {
-        // Browser: don't wait on telegram.org CDN. Mini App bridge is usually pre-injected.
         const tg = await loginWithTelegramWebApp();
         if (tg && !cancelled) {
           router.replace(homePathForRole(tg.user.role as Role));
@@ -82,6 +125,12 @@ export default function LoginPage() {
     };
   }, [router]);
 
+  useEffect(() => {
+    if (otpSent) {
+      requestAnimationFrame(() => otpRefs.current[0]?.focus());
+    }
+  }, [otpSent]);
+
   function finishLogin(r: { token: string; user: SessionUser }) {
     setToken(r.token);
     router.replace(homePathForRole(r.user.role as Role));
@@ -94,6 +143,7 @@ export default function LoginPage() {
       const r = await api<{ hint: string }>("/auth/otp/request", { token: null, body: { login } });
       setHint(r.hint);
       setOtpSent(true);
+      setDigits(Array.from({ length: OTP_LEN }, () => ""));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -103,6 +153,7 @@ export default function LoginPage() {
 
   async function verifyOtp(e: React.FormEvent) {
     e.preventDefault();
+    if (code.length < OTP_LEN) return;
     setBusy(true);
     clearFlash();
     try {
@@ -113,6 +164,8 @@ export default function LoginPage() {
       finishLogin(r);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
+      setDigits(Array.from({ length: OTP_LEN }, () => ""));
+      requestAnimationFrame(() => otpRefs.current[0]?.focus());
     } finally {
       setBusy(false);
     }
@@ -148,6 +201,45 @@ export default function LoginPage() {
     }
   }
 
+  function onOtpInput(index: number, raw: string) {
+    const cleaned = digitsOnly(raw);
+    if (cleaned.length > 1) {
+      applyOtpPaste(cleaned, index);
+      return;
+    }
+    const digit = cleaned.slice(-1);
+    setDigitAt(index, digit);
+    if (digit && index < OTP_LEN - 1) {
+      requestAnimationFrame(() => {
+        otpRefs.current[index + 1]?.focus();
+        otpRefs.current[index + 1]?.select();
+      });
+    }
+  }
+
+  function onOtpKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Backspace") {
+      if (!digits[index] && index > 0) {
+        e.preventDefault();
+        setDigitAt(index - 1, "");
+        otpRefs.current[index - 1]?.focus();
+      }
+      return;
+    }
+    if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      otpRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < OTP_LEN - 1) {
+      e.preventDefault();
+      otpRefs.current[index + 1]?.focus();
+    }
+  }
+
+  function onOtpPaste(index: number, e: React.ClipboardEvent<HTMLInputElement>) {
+    e.preventDefault();
+    applyOtpPaste(e.clipboardData.getData("text"), index === 0 ? 0 : index);
+  }
+
   if (tgBooting) {
     return (
       <div className="loading-page">
@@ -161,6 +253,12 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
+      <div className="login-bg" aria-hidden>
+        <div className="login-bg-grid" />
+        <div className="login-orb login-orb-a" />
+        <div className="login-orb login-orb-b" />
+      </div>
+
       <Toast msg={hint} err={error} onClear={clearFlash} />
 
       <div className="login-inner">
@@ -181,9 +279,11 @@ export default function LoginPage() {
         <div className="login-card">
           <form onSubmit={verifyOtp}>
             <div className="field">
-              <label>آی‌دی عددی تلگرام یا یوزرنیم</label>
+              <label htmlFor="login-id">آی‌دی عددی تلگرام یا یوزرنیم</label>
               <input
+                id="login-id"
                 dir="ltr"
+                className="login-input"
                 style={{ textAlign: "center" }}
                 value={login}
                 onChange={(e) => setLogin(e.target.value)}
@@ -193,30 +293,53 @@ export default function LoginPage() {
               />
             </div>
 
-            <div className="field">
-              <label>کد یکبار مصرف (۶ رقمی)</label>
-              <input
-                className="num"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                inputMode="numeric"
-                maxLength={6}
-                autoFocus={otpSent}
-                placeholder="کد را از ربات دریافت کنید"
-                style={{ textAlign: "center", letterSpacing: "0.35em", fontSize: "1.15rem" }}
-              />
+            <div className="field otp-field">
+              <label>کد یکبار مصرف (۴ رقمی)</label>
+              <div className="otp-grid" dir="ltr" role="group" aria-label="ارقام کد تایید">
+                {digits.map((digit, index) => (
+                  <div
+                    key={index}
+                    className={`otp-cell${digit ? " filled" : ""}`}
+                    style={{ ["--cell-acc" as string]: `var(--otp-acc-${index + 1})` }}
+                  >
+                    <div className="otp-puff" aria-hidden />
+                    <input
+                      ref={(el) => {
+                        otpRefs.current[index] = el;
+                      }}
+                      className="otp-input"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete={index === 0 ? "one-time-code" : "off"}
+                      maxLength={OTP_LEN}
+                      value={digit}
+                      disabled={busy}
+                      aria-label={`رقم ${index + 1}`}
+                      onChange={(e) => onOtpInput(index, e.target.value)}
+                      onKeyDown={(e) => onOtpKeyDown(index, e)}
+                      onPaste={(e) => onOtpPaste(index, e)}
+                      onFocus={(e) => e.target.select()}
+                    />
+                    <div className="otp-bar-track" aria-hidden>
+                      <div className="otp-bar-fill" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="otp-hint">کد را از ربات کپی کنید — هر ۴ رقم یکجا پیست می‌شود</p>
             </div>
+
             <button
-              className="btn primary wide"
-              disabled={busy || !login.trim() || code.length < 6}
+              className="btn primary wide login-submit"
+              disabled={busy || !login.trim() || code.length < OTP_LEN}
               type="submit"
-              style={{ marginBottom: 12 }}
             >
               ورود
             </button>
 
             <button
-              className="btn success wide"
+              className="btn success wide login-request-otp"
               type="button"
               disabled={busy || !login.trim()}
               onClick={requestOtp}
@@ -225,7 +348,7 @@ export default function LoginPage() {
             </button>
 
             {passkeyOk && (
-              <div style={{ marginTop: 14 }}>
+              <div className="passkey-block">
                 <button
                   type="button"
                   className="btn primary wide passkey-btn"
@@ -240,7 +363,7 @@ export default function LoginPage() {
                   </span>
                   ورود با Face ID / اثرانگشت
                 </button>
-                <p className="hint" style={{ textAlign: "center", marginTop: 10, marginBottom: 0 }}>
+                <p className="hint passkey-hint">
                   اگر Passkey ثبت کرده‌اید، بدون OTP وارد شوید
                   {!login.trim() && (
                     <>
@@ -275,10 +398,12 @@ export default function LoginPage() {
           </button>
 
           {showPassword && (
-            <form onSubmit={onPassword} style={{ marginTop: 10 }}>
+            <form onSubmit={onPassword} className="password-form">
               <div className="field">
-                <label>رمز عبور</label>
+                <label htmlFor="login-password">رمز عبور</label>
                 <input
+                  id="login-password"
+                  className="login-input"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -287,7 +412,7 @@ export default function LoginPage() {
                 />
               </div>
               <button className="btn primary wide" disabled={busy || !login.trim() || !password} type="submit">
-                ورود
+                ورود با رمز
               </button>
             </form>
           )}
