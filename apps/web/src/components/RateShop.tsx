@@ -117,32 +117,32 @@ function SeekBar({
   const max = Math.max(0, steps.length - 1);
   const safeIndex = Math.min(max, Math.max(0, index));
   const pct = max <= 0 ? 0 : (safeIndex / max) * 100;
-  const markEvery = steps.length > 14 ? 2 : 1;
-  const showDots = steps.length > 1 && steps.length <= 24;
+  const showDots = steps.length > 1 && steps.length <= 20;
   const seekStyle = { ["--seek-pct" as string]: String(pct) };
 
   return (
     <div className={`seek-block${disabled ? " is-disabled" : ""}`}>
       <div className="seek-head">
         <span className="seek-title">{title}</span>
+        <strong className="seek-metric" dir="ltr">
+          {value}
+        </strong>
       </div>
       <div className="seek-track-wrap" style={seekStyle}>
-        <div className="seek-bubble" aria-hidden="true">
-          <span className="seek-bubble-inner" dir="ltr">
-            {value}
-          </span>
+        <div className="seek-rail" aria-hidden="true">
+          <div className="seek-rail-fill" />
+          {showDots ? (
+            <div className="seek-dots">
+              {steps.map((s, i) => (
+                <span
+                  key={`${s.value}-${i}`}
+                  className={`seek-dot${i === safeIndex ? " is-current" : i < safeIndex ? " is-passed" : ""}`}
+                  style={{ ["--i" as string]: i, ["--n" as string]: max || 1 }}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
-        {showDots ? (
-          <div className="seek-dots" aria-hidden="true">
-            {steps.map((s, i) => (
-              <span
-                key={`${s.value}-${i}`}
-                className={`seek-dot${i <= safeIndex ? " is-active" : ""}${i === safeIndex ? " is-current" : ""}`}
-                style={{ ["--i" as string]: i, ["--n" as string]: max || 1 }}
-              />
-            ))}
-          </div>
-        ) : null}
         <input
           type="range"
           className="seek-range"
@@ -154,19 +154,6 @@ function SeekBar({
           aria-label={title}
           onChange={(e) => onChange(Number(e.target.value))}
         />
-      </div>
-      <div className="seek-marks" aria-hidden="true">
-        {steps.map((s, i) =>
-          i % markEvery === 0 || i === steps.length - 1 ? (
-            <span
-              key={`${s.value}-${i}`}
-              className={`seek-mark num${i === safeIndex ? " is-on" : ""}`}
-              style={{ ["--i" as string]: i, ["--n" as string]: max || 1 }}
-            >
-              {s.label}
-            </span>
-          ) : null,
-        )}
       </div>
     </div>
   );
@@ -364,7 +351,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const volumeValue = volumeFixed || trafficGb == null ? (
     "نامحدود"
   ) : (
-    <SeekValueLabel num={trafficGb ?? 0} unit="گیگابایت" />
+    <SeekValueLabel num={trafficGb ?? 0} unit="گیگ" />
   );
   const monthValue = <SeekValueLabel num={months} unit="ماه" />;
   const ipValue = limitIp <= 0 ? "نامحدود" : <SeekValueLabel num={limitIp} unit="کاربر" />;

@@ -417,66 +417,43 @@ html[data-skin="studio"] .panel-switcher-select {
   }
 }
 
-/* Seek slider polish (Studio) */
+/* Seek slider — Studio */
 html[data-skin="studio"] .seek-track-wrap {
-  --seek-thumb: 30px;
-  --seek-track-h: 12px;
-  --seek-fill: var(--studio-accent-2, #38bdf8);
-  --seek-rest: color-mix(in srgb, var(--mute) 28%, transparent);
+  --seek-thumb: 22px;
+  --seek-track-h: 4px;
+  --seek-fill: var(--studio-accent, #22d3ee);
+  --seek-rest: color-mix(in srgb, var(--mute) 26%, transparent);
 }
 
 html[data-skin="studio"][data-theme="light"] .seek-track-wrap {
   --seek-fill: var(--studio-accent, #0891b2);
-  --seek-rest: rgba(148, 163, 184, 0.45);
+  --seek-rest: rgba(100, 116, 139, 0.28);
 }
 
-html[data-skin="studio"] .seek-bubble-inner {
-  background: color-mix(in srgb, var(--card-solid) 92%, #0f172a);
+html[data-skin="studio"] .seek-metric {
   color: var(--text);
-  border: 1px solid var(--line);
-  box-shadow: var(--studio-shadow);
-}
-
-html[data-skin="studio"][data-theme="dark"] .seek-bubble-inner {
-  background: #0f172a;
-  color: #f8fafc;
-  border-color: rgba(148, 163, 184, 0.2);
-}
-
-html[data-skin="studio"] .seek-bubble-inner::after {
-  background: inherit;
-  border: none;
-  box-shadow: none;
-}
-
-html[data-skin="studio"][data-theme="dark"] .seek-bubble-inner::after {
-  background: #0f172a;
-}
-
-html[data-skin="studio"] .seek-range::-webkit-slider-thumb {
-  background: var(--seek-fill);
-  border: 4px solid #fff;
-  box-shadow:
-    0 4px 14px color-mix(in srgb, var(--seek-fill) 45%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--seek-fill) 30%, transparent);
-}
-
-html[data-skin="studio"] .seek-range::-moz-range-thumb {
-  background: var(--seek-fill);
-  border: 4px solid #fff;
 }
 
 html[data-skin="studio"] .seek-title {
-  letter-spacing: -0.01em;
   color: var(--mute);
 }
 
-html[data-skin="studio"] .seek-mark.is-on {
-  color: var(--studio-accent);
+html[data-skin="studio"] .seek-dot.is-passed {
+  background: #fff;
+}
+
+html[data-skin="studio"][data-theme="light"] .seek-dot.is-passed {
+  background: color-mix(in srgb, var(--seek-fill) 70%, #fff);
 }
 
 html[data-skin="studio"] .seek-block {
   border-bottom-color: var(--line);
+}
+
+html[data-skin="studio"] .seek-range::-webkit-slider-thumb,
+html[data-skin="studio"] .seek-range::-moz-range-thumb {
+  background: var(--seek-fill);
+  border-color: #fff;
 }
 
 /* Telegram Mini App + mobile safe areas under Studio */

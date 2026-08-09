@@ -4043,11 +4043,11 @@ button.pay-dest-number:active,
 .seek-shop {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .seek-block {
-  padding: 10px 2px 14px;
+  padding: 12px 2px 14px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -4056,19 +4056,20 @@ button.pay-dest-number:active,
 }
 
 .seek-block.is-disabled {
-  opacity: 0.55;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .seek-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .seek-title {
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--mute);
 }
@@ -4076,9 +4077,10 @@ button.pay-dest-number:active,
 .seek-metric {
   font-size: 1.05rem;
   font-weight: 800;
-  color: var(--cyan);
+  color: var(--text);
   direction: ltr !important;
   unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
 }
 
 .seek-metric-pair {
@@ -4092,85 +4094,70 @@ button.pay-dest-number:active,
   color: inherit;
 }
 
+.seek-metric-unit {
+  color: var(--mute);
+  font-weight: 700;
+  font-size: 0.92em;
+}
+
+/* Custom rail + transparent range = thumb always vertically centered */
 .seek-track-wrap {
-  --seek-thumb: 28px;
-  --seek-track-h: 10px;
-  --seek-fill: #3b82f6;
-  --seek-rest: rgba(148, 163, 184, 0.28);
+  --seek-thumb: 22px;
+  --seek-track-h: 4px;
+  --seek-fill: var(--cyan, #38bdf8);
+  --seek-rest: rgba(148, 163, 184, 0.22);
   --seek-pct: 0;
   position: relative;
-  height: 56px;
-  display: flex;
-  align-items: flex-end;
-  padding-bottom: 6px;
+  height: 32px;
+  display: grid;
+  place-items: center;
   direction: ltr;
-  box-sizing: border-box;
+  touch-action: none;
 }
 
-.seek-bubble {
+.seek-rail {
   position: absolute;
-  top: 0;
-  left: calc((var(--seek-thumb) / 2) + ((100% - var(--seek-thumb)) * var(--seek-pct) / 100));
-  transform: translateX(-50%);
-  z-index: 3;
+  left: calc(var(--seek-thumb) / 2);
+  right: calc(var(--seek-thumb) / 2);
+  top: 50%;
+  height: var(--seek-track-h);
+  margin-top: calc(var(--seek-track-h) / -2);
+  border-radius: 999px;
+  background: var(--seek-rest);
+  overflow: visible;
   pointer-events: none;
-  transition: left 0.12s ease;
+  z-index: 0;
 }
 
-.seek-bubble-inner {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3em;
-  min-width: 2.4rem;
-  padding: 5px 10px;
-  border-radius: 10px;
-  background: #1e293b;
-  color: #f8fafc;
-  font-size: 0.88rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.28);
-  white-space: nowrap;
-  line-height: 1.2;
-}
-
-.seek-bubble-inner::after {
-  content: "";
+.seek-rail-fill {
   position: absolute;
-  left: 50%;
-  bottom: -5px;
-  width: 10px;
-  height: 10px;
-  background: #1e293b;
-  transform: translateX(-50%) rotate(45deg);
-  border-radius: 2px;
-  z-index: -1;
+  inset: 0 auto 0 0;
+  width: calc(var(--seek-pct) * 1%);
+  border-radius: inherit;
+  background: var(--seek-fill);
 }
 
 .seek-dots {
   position: absolute;
-  left: calc(var(--seek-thumb) / 2);
-  right: calc(var(--seek-thumb) / 2);
-  bottom: calc(6px + (var(--seek-track-h) / 2) - 3px);
-  height: 6px;
+  inset: 0;
   pointer-events: none;
-  z-index: 1;
 }
 
 .seek-dot {
   position: absolute;
   left: calc((var(--i) / var(--n)) * 100%);
   top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-left: -3px;
-  margin-top: -3px;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
-  opacity: 0.95;
+  background: color-mix(in srgb, var(--text) 35%, transparent);
+  opacity: 0.55;
+}
+
+.seek-dot.is-passed {
+  background: #fff;
+  opacity: 0.85;
 }
 
 .seek-dot.is-current {
@@ -4180,25 +4167,30 @@ button.pay-dest-number:active,
 .seek-range {
   -webkit-appearance: none;
   appearance: none;
-  width: 100%;
-  height: var(--seek-track-h);
-  border-radius: 999px;
-  background: linear-gradient(
-    to right,
-    var(--seek-fill) 0%,
-    var(--seek-fill) calc(var(--seek-pct) * 1%),
-    var(--seek-rest) calc(var(--seek-pct) * 1%),
-    var(--seek-rest) 100%
-  );
-  outline: none;
-  cursor: pointer;
-  margin: 0;
   position: relative;
   z-index: 2;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
 }
 
 .seek-range:disabled {
   cursor: not-allowed;
+}
+
+.seek-range:focus-visible {
+  outline: 2px solid var(--seek-fill);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.seek-range::-webkit-slider-runnable-track {
+  height: 32px;
+  background: transparent;
+  border: none;
 }
 
 .seek-range::-webkit-slider-thumb {
@@ -4206,19 +4198,25 @@ button.pay-dest-number:active,
   appearance: none;
   width: var(--seek-thumb);
   height: var(--seek-thumb);
+  margin-top: calc((32px - var(--seek-thumb)) / 2);
   border-radius: 50%;
   background: var(--seek-fill);
-  border: 4px solid #ffffff;
+  border: 3px solid #fff;
   box-shadow:
-    0 2px 10px rgba(37, 99, 235, 0.45),
-    0 0 0 1px rgba(37, 99, 235, 0.25);
+    0 1px 4px rgba(0, 0, 0, 0.28),
+    0 0 0 1px color-mix(in srgb, var(--seek-fill) 35%, transparent);
   cursor: grab;
 }
 
-.seek-range::-webkit-slider-runnable-track {
-  height: var(--seek-track-h);
-  border-radius: 999px;
+.seek-range:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.06);
+}
+
+.seek-range::-moz-range-track {
+  height: 32px;
   background: transparent;
+  border: none;
 }
 
 .seek-range::-moz-range-thumb {
@@ -4226,41 +4224,11 @@ button.pay-dest-number:active,
   height: var(--seek-thumb);
   border-radius: 50%;
   background: var(--seek-fill);
-  border: 4px solid #ffffff;
+  border: 3px solid #fff;
   box-shadow:
-    0 2px 10px rgba(37, 99, 235, 0.45),
-    0 0 0 1px rgba(37, 99, 235, 0.25);
+    0 1px 4px rgba(0, 0, 0, 0.28),
+    0 0 0 1px color-mix(in srgb, var(--seek-fill) 35%, transparent);
   cursor: grab;
-}
-
-.seek-range::-moz-range-track {
-  height: var(--seek-track-h);
-  border-radius: 999px;
-  background: transparent;
-}
-
-.seek-marks {
-  position: relative;
-  height: 18px;
-  margin-top: 6px;
-  margin-inline: calc(var(--seek-thumb, 28px) / 2);
-  direction: ltr;
-}
-
-.seek-mark {
-  position: absolute;
-  left: calc((var(--i) / var(--n)) * 100%);
-  transform: translateX(-50%);
-  font-size: 0.68rem;
-  color: var(--mute);
-  opacity: 0.75;
-  white-space: nowrap;
-}
-
-.seek-mark.is-on {
-  color: var(--cyan);
-  opacity: 1;
-  font-weight: 700;
 }
 
 .seek-checkout {
