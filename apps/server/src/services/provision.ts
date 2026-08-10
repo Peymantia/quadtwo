@@ -13,7 +13,7 @@ import {
 } from "./panel-servers.js";
 import type { PlanCategory } from "./pricing.js";
 import { getDefaultLimitIp } from "./settings.js";
-import { appendSubId, isValidSubBase, sanitizeSubBase } from "./sub-url.js";
+import { buildSubUrl as buildSubUrlCore, isValidSubBase, sanitizeSubBase } from "./sub-url.js";
 import { isDemoMode } from "./license.js";
 import { stripAccountName } from "../utils/account-name.js";
 
@@ -83,78 +83,17 @@ async function newClientUuid(xui: XuiClient): Promise<string> {
     .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
 }
 
-function panelSubTls(settings?: Record<string, unknown>) {
-  const cert = settings?.subCertFile;
-  const key = settings?.subKeyFile;
-  if (typeof cert === "string" && cert.trim() && typeof key === "string" && key.trim()) return true;
-  if (settings?.subTLS === true) return true;
-  return false;
-}
-
-function hostnameFromPanelUrl(panelBaseUrl?: string | null): string {
-  const candidates = [panelBaseUrl, env.XUI_BASE_URL];
-  for (const c of candidates) {
-    if (!c?.trim()) continue;
-    try {
-      const host = new URL(c).hostname;
-      if (host && host !== "127.0.0.1" && host !== "localhost") return host;
-      if (host) return host;
-    } catch {
-      /* ignore */
-    }
-  }
-  return "";
-}
-
-/** Rebuild like 3x-ui BuildSubURIBase + subPath. */
-function reconstructSubBase(
-  settings?: Record<string, unknown>,
-  panelBaseUrl?: string | null,
-): string | null {
-  const subPathRaw =
-    typeof settings?.subPath === "string" && settings.subPath.trim()
-      ? settings.subPath.trim()
-      : "/sub/";
-  const subPath = subPathRaw.startsWith("/") ? subPathRaw : `/${subPathRaw}`;
-  const pathNorm = subPath.endsWith("/") ? subPath : `${subPath}/`;
-
-  const subDomain =
-    (typeof settings?.subDomain === "string" && settings.subDomain.trim()) ||
-    hostnameFromPanelUrl(panelBaseUrl);
-  if (!subDomain) return null;
-
-  const subPort = Number(settings?.subPort ?? 2096);
-  const subTls = panelSubTls(settings);
-  const scheme = subTls ? "https" : "http";
-  const hidePort = (subPort === 443 && subTls) || (subPort === 80 && !subTls);
-  const host = hidePort ? subDomain : `${subDomain}:${subPort}`;
-  return `${scheme}://${host}${pathNorm}`;
-}
-
-/**
- * Build subscription page URL the same way 3x-ui panel does.
- * Never falls back to PUBLIC_DOMAIN / Mini App host.
- */
+/** Re-export / wrap so callers keep using provision.buildSubUrl with env wired in. */
 export function buildSubUrl(
   subId: string,
   settings?: Record<string, unknown>,
   subBaseOverride?: string | null,
   panelBaseUrl?: string | null,
 ): string {
-  const override = sanitizeSubBase(subBaseOverride);
-  if (override) return appendSubId(override, subId);
-
-  const fromEnv = sanitizeSubBase(env.XUI_SUB_BASE);
-  if (fromEnv) return appendSubId(fromEnv, subId);
-
-  const subURI = typeof settings?.subURI === "string" ? settings.subURI.trim() : "";
-  const fromPanel = sanitizeSubBase(subURI);
-  if (fromPanel) return appendSubId(fromPanel, subId);
-
-  const rebuilt = reconstructSubBase(settings, panelBaseUrl);
-  if (rebuilt) return appendSubId(rebuilt, subId);
-
-  return `sub://${subId}`;
+  return buildSubUrlCore(subId, settings, subBaseOverride, panelBaseUrl, {
+    subBase: env.XUI_SUB_BASE,
+    panelBaseUrl: env.XUI_BASE_URL,
+  });
 }
 
 async function panelSettings(xui: XuiClient) {
@@ -205,13 +144,27 @@ export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise
     const subBase = sanitizeSubBase(resolved.subBase);
     const subUrl = await resolveSubUrl(panelSubId, resolved.xui, subBase);
 
-    // Heal bad PanelServer.subBase so next reads don't keep using Mini App host
-    if (resolved.panel && resolved.subBase && !isValidSubBase(resolved.subBase)) {
+    // Heal stale PanelServer.subBase (Mini App host, or outdated …/info/ docs example
+    // that diverges from the live Sanaei subURI/subPath).
+    if (resolved.panel && resolved.subBase) {
       try {
-        await prisma.panelServer.update({
-          where: { id: resolved.panel.id },
-          data: { subBase: null },
-        });
+        const settings = await panelSettings(resolved.xui);
+        const panelUri =
+          typeof settings.subURI === "string" ? sanitizeSubBase(settings.subURI) : null;
+        const stored = sanitizeSubBase(resolved.subBase);
+        const stale =
+          !isValidSubBase(resolved.subBase) ||
+          (panelUri &&
+            stored &&
+            !panelUri.includes("127.0.0.1") &&
+            !panelUri.includes("localhost") &&
+            stored.replace(/\/+$/, "") !== panelUri.replace(/\/+$/, ""));
+        if (stale) {
+          await prisma.panelServer.update({
+            where: { id: resolved.panel.id },
+            data: { subBase: null },
+          });
+        }
       } catch {
         /* ignore */
       }

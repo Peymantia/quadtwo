@@ -2377,7 +2377,7 @@ export function registerControlCenter(bot: Bot) {
       url: "آدرس پنل را بفرستید (با / آخر، مثلاً http://IP:PORT/path/):",
       token: "API Token جدید را بفرستید:",
       inbounds: "Inbound IDs را بفرستید (مثلاً 1,2,3 یا 1-10):",
-      subBase: "Subscription base URL را بفرستید (خالی = پاک کردن، مثال https://domain:port/info/):",
+      subBase: "Subscription base را بفرستید (خالی = از تنظیمات پنل سنایی).\nمثال درست: https://domain:1405/zdug…/  یا خالی بگذارید.",
       weight: "وزن تقسیم بار را بفرستید (۱ تا ۱۰۰۰):",
     };
     await ctx.reply(`${prompts[field]}\nلغو: /cancel`);

@@ -185,7 +185,7 @@ export async function updatePanelServer(
       const clean = sanitizeSubBase(raw);
       if (!clean) {
         throw new Error(
-          "Sub base نامعتبر است. باید با http(s) و مسیر باشد، مثلاً:\nhttps://claude.anthropics.ir:65535/info/\n(دامنه Mini App مثل app.piing.ir قبول نمی‌شود)",
+          "Sub base نامعتبر است. باید با http(s) و مسیر ساب پنل باشد، مثلاً:\nhttps://sub.example.com:1405/abcd1234/\n(ترجیحاً خالی بگذارید تا از subURI پنل سنایی خوانده شود — دامنه Mini App مثل app.piing.ir قبول نمی‌شود)",
         );
       }
       data.subBase = clean;
