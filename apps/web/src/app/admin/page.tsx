@@ -1401,11 +1401,10 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         setCells(r.cells);
         if (r.modes) {
           setModes({
-            user: "matrix",
-            partner: "matrix",
-            reseller: "matrix",
-            wholesale: "matrix",
-            ...r.modes,
+            user: r.modes.user ?? "matrix",
+            partner: r.modes.partner ?? "matrix",
+            reseller: r.modes.reseller ?? "matrix",
+            wholesale: r.modes.wholesale ?? "matrix",
           });
         }
         if (r.rates) setRates({ ...r.rates, categories: r.rates.categories ?? {} });
