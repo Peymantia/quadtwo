@@ -4326,6 +4326,13 @@ button.pay-dest-number:active,
   max-width: 320px;
 }
 
+/* سفارش نماینده / عمده‌فروش — هم‌عرض فیلدهای دیگر (کد تخفیف و …) */
+.rate-stepper.rate-stepper--full,
+.seek-shop .rate-shop-qty .rate-stepper {
+  max-width: none;
+  width: 100%;
+}
+
 .rate-step-btn {
   height: 48px;
   border-radius: 14px;

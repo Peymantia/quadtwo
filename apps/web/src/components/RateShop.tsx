@@ -671,9 +671,9 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       )}
 
       {showQty && (
-        <div className="field">
+        <div className="field rate-shop-qty">
           <label>تعداد اکانت</label>
-          <div className="rate-stepper">
+          <div className="rate-stepper rate-stepper--full">
             <button
               type="button"
               className="rate-step-btn"
