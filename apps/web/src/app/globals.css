@@ -819,9 +819,20 @@ h3 {
 }
 
 .quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qa-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.qa-row:has(> .quick-action-btn--full:only-child),
+.qa-row:has(> .quick-action-btn:only-child) {
+  grid-template-columns: 1fr;
 }
 
 .quick-action-btn {
@@ -830,23 +841,55 @@ h3 {
   justify-content: center;
   gap: 8px;
   width: 100%;
+  min-height: 44px;
+  border: 1px solid transparent;
+  font-weight: 650;
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+  transition: filter 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+
+.quick-action-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.quick-action-btn:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.97);
 }
 
 .quick-action-btn svg {
   flex-shrink: 0;
-  opacity: 0.92;
+  opacity: 0.95;
 }
 
 .quick-action-btn--full {
   grid-column: 1 / -1;
 }
 
-.quick-actions > .btn.sm {
-  flex-direction: column;
-  gap: 4px;
-  padding-block: 10px;
-  font-size: 0.78rem;
-  font-weight: 650;
+/* Row spectrum — teal → cyan → blue → indigo → slate → soft graphite */
+.qa-row--1 .quick-action-btn {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+}
+.qa-row--2 .quick-action-btn {
+  background: linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%);
+}
+.qa-row--3 .quick-action-btn {
+  background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+}
+.qa-row--4 .quick-action-btn {
+  background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+}
+.qa-row--5 .quick-action-btn {
+  background: linear-gradient(135deg, #334155 0%, #64748b 100%);
+}
+.qa-row--6 .quick-action-btn {
+  background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
+}
+
+html[data-theme="light"] .quick-action-btn {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .note-row {

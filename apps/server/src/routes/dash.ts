@@ -19,6 +19,7 @@ import {
   finishPasskeyAuthentication,
   finishPasskeyRegistration,
   listUserPasskeys,
+  originFromRequestHeaders,
   userPasskeyCount,
 } from "../services/webauthn.js";
 import {
@@ -261,8 +262,12 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
   /** Passkey / WebAuthn authentication (Face ID, fingerprint, Windows Hello). */
   api.post("/auth/passkey/options", async (c) => {
     const body = await c.req.json<{ login?: string }>().catch(() => ({ login: undefined as string | undefined }));
+    const reqOrigin = originFromRequestHeaders({
+      origin: c.req.header("origin"),
+      referer: c.req.header("referer"),
+    });
     try {
-      const { options, challengeId } = await beginPasskeyAuthentication(body.login);
+      const { options, challengeId } = await beginPasskeyAuthentication(body.login, reqOrigin);
       return c.json({ options, challengeId });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
@@ -272,10 +277,15 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
   api.post("/auth/passkey/verify", async (c) => {
     const body = await c.req.json<{ response?: unknown; challengeId?: string }>();
     if (!body.response) return c.json({ error: "response لازم است" }, 400);
+    const reqOrigin = originFromRequestHeaders({
+      origin: c.req.header("origin"),
+      referer: c.req.header("referer"),
+    });
     try {
       const { userId } = await finishPasskeyAuthentication(
         body.response as Parameters<typeof finishPasskeyAuthentication>[0],
         body.challengeId,
+        reqOrigin,
       );
       return c.json(await sessionForUser(userId));
     } catch (err) {
@@ -351,8 +361,12 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.post("/me/passkeys/register/options", async (c) => {
+    const reqOrigin = originFromRequestHeaders({
+      origin: c.req.header("origin"),
+      referer: c.req.header("referer"),
+    });
     try {
-      const options = await beginPasskeyRegistration(c.get("userId"));
+      const options = await beginPasskeyRegistration(c.get("userId"), reqOrigin);
       return c.json({ options });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
@@ -362,11 +376,16 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   api.post("/me/passkeys/register/verify", async (c) => {
     const body = await c.req.json<{ response?: unknown; label?: string }>();
     if (!body.response) return c.json({ error: "response لازم است" }, 400);
+    const reqOrigin = originFromRequestHeaders({
+      origin: c.req.header("origin"),
+      referer: c.req.header("referer"),
+    });
     try {
       await finishPasskeyRegistration(
         c.get("userId"),
         body.response as Parameters<typeof finishPasskeyRegistration>[1],
         body.label,
+        reqOrigin,
       );
       return c.json({ ok: true });
     } catch (err) {

@@ -9,6 +9,7 @@ import { upsertUserFromTelegram } from "../services/users.js";
 import { friendlyBotError } from "../panel/xui-errors.js";
 import { myServicesListKeyboard, subscriptionDetailKeyboard, BTN } from "./keyboards.js";
 import { isControlAdmin } from "./admin-center.js";
+import { markTriggerEphemeral, replyEphemeral } from "./ephemeral.js";
 
 const PAGE_SIZE = 20;
 const NOTE_MAX = 500;
@@ -267,7 +268,8 @@ export async function handleServiceNoteText(ctx: Context, text: string): Promise
     data: { note },
   });
 
-  await ctx.reply(note ? "یادداشت ذخیره شد ✅" : "یادداشت پاک شد ✅");
+  await replyEphemeral(ctx, note ? "یادداشت ذخیره شد ✅" : "یادداشت پاک شد ✅");
+  markTriggerEphemeral(ctx);
   await showSubscriptionDetail(ctx, sub.id, false);
   return true;
 }

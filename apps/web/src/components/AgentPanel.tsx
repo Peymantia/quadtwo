@@ -558,26 +558,36 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
           <div className="panel">
             <h2>دسترسی سریع</h2>
             <div className="quick-actions">
-              <button type="button" className="btn primary wide" onClick={() => setTab("create")}>
-                ساخت کانفیگ جدید
-              </button>
-              <button type="button" className="btn light wide" onClick={() => setTab("configs")}>
-                مشاهده کانفیگ‌ها
-              </button>
-              <button type="button" className="btn ghost wide" onClick={() => setTab("wallet")}>
-                شارژ کیف پول
-              </button>
-              <button type="button" className="btn light wide" onClick={() => setTab("reports")}>
-                گزارش فروش
-              </button>
-              {discountAllowed && (
-                <button type="button" className="btn ghost wide" onClick={() => setTab("discounts")}>
-                  کد تخفیف
+              <div className="qa-row qa-row--1">
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("create")}>
+                  ساخت کانفیگ جدید
                 </button>
-              )}
-              <button type="button" className="btn light wide" onClick={() => setTab("settings")}>
-                تنظیمات
-              </button>
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("configs")}>
+                  مشاهده کانفیگ‌ها
+                </button>
+              </div>
+              <div className="qa-row qa-row--2">
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("wallet")}>
+                  شارژ کیف پول
+                </button>
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("reports")}>
+                  گزارش فروش
+                </button>
+              </div>
+              <div className="qa-row qa-row--3">
+                {discountAllowed && (
+                  <button type="button" className="btn quick-action-btn" onClick={() => setTab("discounts")}>
+                    کد تخفیف
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`btn quick-action-btn${!discountAllowed ? " quick-action-btn--full" : ""}`}
+                  onClick={() => setTab("settings")}
+                >
+                  تنظیمات
+                </button>
+              </div>
             </div>
           </div>
         </>

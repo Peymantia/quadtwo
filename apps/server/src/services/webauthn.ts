@@ -9,7 +9,7 @@ import {
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import { prisma } from "../db.js";
-import { dashBaseUrl } from "../config/env.js";
+import { corsOrigins, dashBaseUrl } from "../config/env.js";
 import { auditLog } from "./audit.js";
 
 type ChallengeKind = "reg" | "auth";
@@ -36,16 +36,78 @@ function takeChallenge(kind: ChallengeKind, id: string): string | null {
   return row.challenge;
 }
 
-function rpFromDash() {
-  const origin = dashBaseUrl();
-  let hostname = "localhost";
+function isLoopbackHttp(origin: string): boolean {
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+}
+
+function hostnameOf(originOrUrl: string): string | null {
   try {
-    hostname = new URL(origin).hostname;
+    return new URL(originOrUrl).hostname;
   } catch {
-    /* keep localhost */
+    return null;
   }
-  // WebAuthn rpID must not include port; localhost is fine for local HTTPS/HTTP in some browsers
-  return { rpID: hostname, origin, rpName: "داشبورد پیـنگ" };
+}
+
+/** Accept browser Origin when it matches configured dash / public / CORS hosts (incl. tenant subdomains). */
+function isAllowedWebAuthnOrigin(origin: string): boolean {
+  if (!origin) return false;
+  if (!/^https:\/\//i.test(origin) && !isLoopbackHttp(origin)) return false;
+  const allowed = corsOrigins();
+  if (allowed.includes(origin)) return true;
+  const host = hostnameOf(origin);
+  if (!host) return false;
+  const seeds = [dashBaseUrl(), ...allowed]
+    .map((o) => hostnameOf(o))
+    .filter((h): h is string => !!h);
+  for (const seed of seeds) {
+    if (host === seed || host.endsWith(`.${seed}`)) return true;
+  }
+  return false;
+}
+
+/**
+ * WebAuthn RP must match the page the user is actually on.
+ * Prefer request Origin (HTTPS dash / mini-app host); fall back to DASH_DOMAIN.
+ */
+export function resolveWebAuthnRp(requestOrigin?: string | null) {
+  const fallback = dashBaseUrl();
+  const raw = (requestOrigin ?? "").trim().replace(/\/$/, "");
+  const origin = raw && isAllowedWebAuthnOrigin(raw) ? raw : fallback;
+  const hostname = hostnameOf(origin) || hostnameOf(fallback) || "localhost";
+
+  const expectedOrigins = [
+    ...new Set(
+      [origin, fallback, ...corsOrigins()].filter((o) => {
+        const h = hostnameOf(o);
+        return (
+          h === hostname ||
+          (h != null && (hostname.endsWith(`.${h}`) || h.endsWith(`.${hostname}`)))
+        );
+      }),
+    ),
+  ];
+
+  return {
+    rpID: hostname,
+    origin,
+    expectedOrigins: expectedOrigins.length ? expectedOrigins : [origin],
+    rpName: "داشبورد پیـنگ",
+  };
+}
+
+export function originFromRequestHeaders(headers: {
+  origin?: string | null;
+  referer?: string | null;
+}): string | null {
+  const o = headers.origin?.trim();
+  if (o) return o.replace(/\/$/, "");
+  const ref = headers.referer?.trim();
+  if (!ref) return null;
+  try {
+    return new URL(ref).origin;
+  } catch {
+    return null;
+  }
 }
 
 function parseTransports(raw: string | null | undefined): AuthenticatorTransportFuture[] | undefined {
@@ -86,9 +148,9 @@ export async function deleteUserPasskey(userId: string, credentialRowId: string)
   await prisma.webAuthnCredential.delete({ where: { id: row.id } });
 }
 
-export async function beginPasskeyRegistration(userId: string) {
+export async function beginPasskeyRegistration(userId: string, requestOrigin?: string | null) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const { rpID, rpName } = rpFromDash();
+  const { rpID, rpName } = resolveWebAuthnRp(requestOrigin);
   const existing = await prisma.webAuthnCredential.findMany({ where: { userId } });
 
   const options = await generateRegistrationOptions({
@@ -117,15 +179,16 @@ export async function finishPasskeyRegistration(
   userId: string,
   response: RegistrationResponseJSON,
   label?: string,
+  requestOrigin?: string | null,
 ) {
   const expectedChallenge = takeChallenge("reg", userId);
   if (!expectedChallenge) throw new Error("چالش منقضی شده؛ دوباره تلاش کنید");
 
-  const { rpID, origin } = rpFromDash();
+  const { rpID, expectedOrigins } = resolveWebAuthnRp(requestOrigin);
   const verification = await verifyRegistrationResponse({
     response,
     expectedChallenge,
-    expectedOrigin: origin,
+    expectedOrigin: expectedOrigins,
     expectedRPID: rpID,
   });
 
@@ -161,8 +224,11 @@ export async function finishPasskeyRegistration(
 }
 
 /** Discoverable / usernameless authentication options. */
-export async function beginPasskeyAuthentication(loginHint?: string) {
-  const { rpID } = rpFromDash();
+export async function beginPasskeyAuthentication(
+  loginHint?: string,
+  requestOrigin?: string | null,
+) {
+  const { rpID } = resolveWebAuthnRp(requestOrigin);
   let allowCredentials:
     | Array<{ id: string; transports?: AuthenticatorTransportFuture[] }>
     | undefined;
@@ -198,13 +264,13 @@ export async function beginPasskeyAuthentication(loginHint?: string) {
   });
 
   putChallenge("auth", challengeOwner, options.challenge);
-  // Return challengeOwner so client can send it back (needed for anonymous flow)
   return { options, challengeId: challengeOwner };
 }
 
 export async function finishPasskeyAuthentication(
   response: AuthenticationResponseJSON,
   challengeId?: string,
+  requestOrigin?: string | null,
 ): Promise<{ userId: string }> {
   const credentialId = response.id;
   const cred = await prisma.webAuthnCredential.findUnique({
@@ -220,11 +286,11 @@ export async function finishPasskeyAuthentication(
   }
   if (!expectedChallenge) throw new Error("چالش منقضی شده؛ دوباره تلاش کنید");
 
-  const { rpID, origin } = rpFromDash();
+  const { rpID, expectedOrigins } = resolveWebAuthnRp(requestOrigin);
   const verification = await verifyAuthenticationResponse({
     response,
     expectedChallenge,
-    expectedOrigin: origin,
+    expectedOrigin: expectedOrigins,
     expectedRPID: rpID,
     credential: {
       id: cred.credentialId,

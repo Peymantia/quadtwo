@@ -78,6 +78,7 @@ import {
 import { registerDiscountBotHandlers, handleDiscountCreateText, clearDiscountBotWaits } from "./discount-bot.js";
 import { registerMySalesBotHandlers } from "./my-sales.js";
 import { registerAdminConfigs, showConfigGroups } from "./admin-configs.js";
+import { markEphemeral, markTriggerEphemeral, replyEphemeral } from "./ephemeral.js";
 import {
   adjustDraftMonths,
   adjustDraftQty,
@@ -244,7 +245,8 @@ async function replyMainMenu(ctx: Context, preface?: string) {
   if (demo) {
     lines.push("", `🎭 نسخه نمایشی — نقش فعلی: ${demoRoleLabel(role)}`);
   }
-  await ctx.reply(lines.join("\n"), {
+  // Reply keyboard stays; toast text + user's /update|منو trigger auto-clear
+  await replyEphemeral(ctx, lines.join("\n"), {
     reply_markup: mainMenuReply({
       isAdmin: role === "admin",
       isPartner: role === "partner",
@@ -255,6 +257,7 @@ async function replyMainMenu(ctx: Context, preface?: string) {
       hidePartner: serverless,
     }),
   });
+  markTriggerEphemeral(ctx);
 }
 
 /**
@@ -271,9 +274,10 @@ async function pinMiniAppBanner(ctx: Context) {
 
 /** Temporarily hide sticky reply keyboard for a fuller chat surface. */
 async function hideMainKeyboard(ctx: Context) {
-  await ctx.reply("⬇️ کیبورد مخفی شد — صفحهٔ چت بازتر است.", {
+  await replyEphemeral(ctx, "⬇️ کیبورد مخفی شد — صفحهٔ چت بازتر است.", {
     reply_markup: removeReplyKeyboard(),
   });
+  markTriggerEphemeral(ctx);
   await ctx.reply("هر وقت خواستید منو برگردد:", {
     reply_markup: showMenuInlineKeyboard(),
   });
@@ -1474,8 +1478,9 @@ export function createBot(
     await ctx.answerCallbackQuery({ text: "لغو شد" });
     try {
       await ctx.editMessageText("🔍 مشاهده سریع لغو شد.");
+      markEphemeral(ctx, ctx.callbackQuery?.message ?? null);
     } catch {
-      await ctx.reply("لغو شد.");
+      await replyEphemeral(ctx, "لغو شد.");
     }
   });
   bot.callbackQuery("m:partner", async (ctx) => {
@@ -1892,6 +1897,7 @@ export function createBot(
       data: { status: OrderStatus.cancelled },
     });
     await ctx.editMessageText("سفارش لغو شد.");
+    markEphemeral(ctx, ctx.callbackQuery?.message ?? null);
     await replyMainMenu(ctx, "به منوی اصلی برگشتید.");
   });
 
@@ -2044,7 +2050,8 @@ export function createBot(
 
     if (text === "انصراف" || text.toLowerCase() === "cancel") {
       clearWaits(tid);
-      await ctx.reply("لغو شد.");
+      await replyEphemeral(ctx, "لغو شد.");
+      markTriggerEphemeral(ctx);
       return;
     }
 

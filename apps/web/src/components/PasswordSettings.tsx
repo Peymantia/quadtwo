@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { canUsePasskey, passkeyErrorMessage, registerPasskey } from "../lib/passkey";
+import { canUsePasskey, passkeyErrorMessage, passkeyUnavailableHint, registerPasskey } from "../lib/passkey";
 
 type Props = {
   hasPassword: boolean;
@@ -97,7 +97,7 @@ export function PasswordSettings({ hasPassword, onSaved, onFlash }: Props) {
         </p>
         {!passkeyOk && (
           <p className="hint" style={{ marginTop: 0 }}>
-            این مرورگر یا دستگاه از WebAuthn پشتیبانی نمی‌کند، یا روی HTTP معمولی هستید.
+            {passkeyUnavailableHint()}
           </p>
         )}
         <div className="list" style={{ marginBottom: 12 }}>

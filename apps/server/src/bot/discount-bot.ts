@@ -2,6 +2,7 @@ import { InlineKeyboard, type Bot, type Context } from "grammy";
 import { upsertUserFromTelegram } from "../services/users.js";
 import { isControlAdmin } from "./admin-center.js";
 import { effectiveRole } from "../services/demo-role.js";
+import { markTriggerEphemeral, replyEphemeral } from "./ephemeral.js";
 import {
   canUserManageDiscountCodes,
   createDiscountCode,
@@ -117,7 +118,8 @@ export async function handleDiscountCreateText(ctx: Context, text: string): Prom
   if (!wait) return false;
   if (text === "/cancel" || text === "انصراف") {
     waitingCreate.delete(tid);
-    await ctx.reply("لغو شد.");
+    await replyEphemeral(ctx, "لغو شد.");
+    markTriggerEphemeral(ctx);
     return true;
   }
   const access = await assertDiscountAccess(ctx);
