@@ -429,7 +429,6 @@ export function DashShell(props: {
           <span>{props.brand}</span>
         </div>
         <div className="topbar-side">
-          <ThemeToggleBtn />
           {isAdmin ? (
             <AdminPanelSwitcher />
           ) : (
@@ -445,6 +444,7 @@ export function DashShell(props: {
               <span aria-hidden="true">⚙️</span>
             </button>
           )}
+          <ThemeToggleBtn />
           {hasMore && (
             <button
               type="button"
@@ -496,9 +496,6 @@ export function DashShell(props: {
               {props.userLabel && <p className="sub">{props.userLabel}</p>}
             </div>
             <div className="topbar-side">
-              <span className="hide-mobile">
-                <ThemeToggleBtn />
-              </span>
               {isAdmin && (
                 <span className="hide-mobile">
                   <AdminPanelSwitcher />
@@ -507,6 +504,9 @@ export function DashShell(props: {
               {!isAdmin && props.walletLabel && (
                 <span className="money-pill num hide-mobile">{props.walletLabel}</span>
               )}
+              <span className="hide-mobile">
+                <ThemeToggleBtn />
+              </span>
               {hasSettings && (
                 <button
                   type="button"
