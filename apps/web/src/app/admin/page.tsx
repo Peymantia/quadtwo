@@ -1358,7 +1358,12 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [bulkMode, setBulkMode] = useState<"percent" | "amount">("percent");
   const [bulkValue, setBulkValue] = useState("");
-  const [modes, setModes] = useState({ user: "matrix", partner: "matrix", wholesale: "matrix" });
+  const [modes, setModes] = useState({
+    user: "matrix",
+    partner: "matrix",
+    reseller: "matrix",
+    wholesale: "matrix",
+  });
   const [rates, setRates] = useState({
     user: { perGb: 15000, perMonth: 30000, unlimitedPerMonth: 1500000 },
     partner: { perGb: 12000, perMonth: 25000, unlimitedPerMonth: 1200000 },
@@ -1394,7 +1399,15 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         rates?: typeof rates;
       }>("/admin/prices").then((r) => {
         setCells(r.cells);
-        if (r.modes) setModes(r.modes);
+        if (r.modes) {
+          setModes({
+            user: "matrix",
+            partner: "matrix",
+            reseller: "matrix",
+            wholesale: "matrix",
+            ...r.modes,
+          });
+        }
         if (r.rates) setRates({ ...r.rates, categories: r.rates.categories ?? {} });
       }),
     [],
@@ -1680,7 +1693,8 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             [
               ["user", "کاربر عادی"],
               ["partner", "همکار"],
-              ["wholesale", "همکار ویژه"],
+              ["reseller", "همکار ویژه"],
+              ["wholesale", "عمده‌فروش"],
             ] as const
           ).map(([key, label]) => (
             <div key={key} className="pricing-mode-card">
@@ -4175,7 +4189,7 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             />
           </div>
           <div className="field">
-            <label>Sub base</label>
+            <label>Sub base (خالی = از 3x-ui؛ فقط پایه مثل …/info/ نه لینک کامل)</label>
             <input dir="ltr" value={editForm.subBase} onChange={(e) => setEditForm((s) => ({ ...s, subBase: e.target.value }))} />
           </div>
           <div className="field">

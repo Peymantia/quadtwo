@@ -81,6 +81,18 @@ h3 {
   unicode-bidi: isolate;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------- Login ---------- */
 
 .login-page {
@@ -2930,32 +2942,33 @@ button.stat.stat-link:active {
 }
 
 .toast.ok {
-  background: rgba(10, 35, 28, 0.92);
-  border-color: rgba(52, 211, 153, 0.5);
-  color: #86efac;
+  background: color-mix(in srgb, var(--green, #34d399) 14%, var(--card-solid, var(--card)));
+  border-color: color-mix(in srgb, var(--green, #34d399) 45%, transparent);
+  color: color-mix(in srgb, var(--green, #34d399) 55%, var(--text));
 }
 
 .toast.err {
-  background: rgba(43, 12, 20, 0.92);
-  border-color: rgba(251, 113, 133, 0.55);
-  color: #fda4af;
+  background: color-mix(in srgb, var(--pink, #fb7185) 12%, var(--card-solid, var(--card)));
+  border-color: color-mix(in srgb, var(--pink, #fb7185) 45%, transparent);
+  color: color-mix(in srgb, var(--pink, #fb7185) 40%, var(--text));
   white-space: pre-wrap;
   text-align: right;
 }
 
 .toast-wrap-modal {
   pointer-events: auto;
-  background: rgba(4, 6, 20, 0.55);
+  background: color-mix(in srgb, #000 45%, transparent);
   z-index: 1200;
 }
 
 .toast.confirm {
   cursor: default;
-  background: rgba(12, 16, 40, 0.96);
-  border-color: rgba(125, 211, 252, 0.45);
+  background: var(--card-solid, var(--card));
+  border-color: var(--line-strong);
   color: var(--text);
   padding: 20px 22px;
   max-width: min(440px, 92vw);
+  box-shadow: 0 22px 60px color-mix(in srgb, #000 28%, transparent);
 }
 
 .toast-confirm-msg {
@@ -2963,6 +2976,7 @@ button.stat.stat-link:active {
   font-weight: 700;
   line-height: 1.55;
   white-space: pre-wrap;
+  color: var(--text);
 }
 
 /* ---------- Sticky save bar ---------- */
@@ -3775,7 +3789,7 @@ button.pay-dest-number:active,
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--elev);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3808,7 +3822,7 @@ button.pay-dest-number:active,
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(16, 20, 47, 0.55);
+  background: var(--card-solid, var(--card));
 }
 
 @media (min-width: 640px) {
@@ -4030,14 +4044,14 @@ button.pay-dest-number:active,
 .traffic-progress-track {
   height: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--mute) 28%, transparent);
   overflow: hidden;
 }
 
 .traffic-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: #3d9cf0;
+  background: var(--cyan, #3d9cf0);
   transition: width 0.25s ease;
 }
 
@@ -4062,8 +4076,14 @@ button.pay-dest-number:active,
 
 .pricing-mode-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+@media (min-width: 900px) {
+  .pricing-mode-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .prices-page {
@@ -4323,7 +4343,9 @@ button.pay-dest-number:active,
   grid-template-columns: 52px minmax(0, 1fr) 52px;
   gap: 10px;
   align-items: center;
-  max-width: 320px;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
 }
 
 .rate-step-btn {
@@ -4449,7 +4471,8 @@ button.pay-dest-number:active,
 }
 
 .renew-shop .rate-stepper {
-  max-width: 280px;
+  max-width: none;
+  width: 100%;
 }
 
 @media (max-width: 420px) {
@@ -4749,7 +4772,7 @@ button.pay-dest-number:active,
   padding: 12px 14px;
   border-radius: 14px;
   border: 1px solid var(--line);
-  background: rgba(15, 18, 40, 0.55);
+  background: var(--elev);
 }
 
 .acct-created-row {
@@ -4769,6 +4792,7 @@ button.pay-dest-number:active,
   margin: 0;
   font-weight: 650;
   word-break: break-word;
+  color: var(--text);
 }
 
 .acct-created-link {
@@ -4782,7 +4806,8 @@ button.pay-dest-number:active,
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--elev);
+  color: var(--text);
   max-height: 4.5em;
   overflow: auto;
 }

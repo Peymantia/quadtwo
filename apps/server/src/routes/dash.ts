@@ -1923,11 +1923,13 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   api.put("/admin/pricing-modes", async (c) => {
     const body = await c.req.json<Partial<RolePricingModes>>();
     const current = await getPricingModes();
+    const pick = (k: keyof RolePricingModes) =>
+      body[k] === "rate" || body[k] === "matrix" ? body[k]! : current[k];
     const modes: RolePricingModes = {
-      user: body.user === "rate" || body.user === "matrix" ? body.user : current.user,
-      partner: body.partner === "rate" || body.partner === "matrix" ? body.partner : current.partner,
-      wholesale:
-        body.wholesale === "rate" || body.wholesale === "matrix" ? body.wholesale : current.wholesale,
+      user: pick("user"),
+      partner: pick("partner"),
+      reseller: pick("reseller"),
+      wholesale: pick("wholesale"),
     };
     await savePricingModes(modes);
     await auditLog({
@@ -3268,10 +3270,23 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       if (k === "pricing_modes_json") {
         try {
           const parsed = JSON.parse(String(v)) as Partial<RolePricingModes>;
+          const current = await getPricingModes();
           await savePricingModes({
-            user: parsed.user === "rate" ? "rate" : "matrix",
-            partner: parsed.partner === "rate" ? "rate" : "matrix",
-            wholesale: parsed.wholesale === "rate" ? "rate" : "matrix",
+            user: parsed.user === "rate" || parsed.user === "matrix" ? parsed.user : current.user,
+            partner:
+              parsed.partner === "rate" || parsed.partner === "matrix" ? parsed.partner : current.partner,
+            reseller:
+              parsed.reseller === "rate" || parsed.reseller === "matrix"
+                ? parsed.reseller
+                : parsed.wholesale === "rate" || parsed.wholesale === "matrix"
+                  ? parsed.wholesale
+                  : current.reseller,
+            wholesale:
+              parsed.reseller != null
+                ? parsed.wholesale === "rate" || parsed.wholesale === "matrix"
+                  ? parsed.wholesale
+                  : current.wholesale
+                : current.wholesale,
           });
         } catch {
           /* ignore bad json */
@@ -3282,6 +3297,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         await savePricingModes({
           user: v === "rate" ? "rate" : "matrix",
           partner: v === "rate" ? "rate" : "matrix",
+          reseller: v === "rate" ? "rate" : "matrix",
           wholesale: v === "rate" ? "rate" : "matrix",
         });
         continue;

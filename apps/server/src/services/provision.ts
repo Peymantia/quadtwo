@@ -13,7 +13,13 @@ import {
 } from "./panel-servers.js";
 import type { PlanCategory } from "./pricing.js";
 import { getDefaultLimitIp } from "./settings.js";
-import { appendSubId, isValidSubBase, sanitizeSubBase } from "./sub-url.js";
+import {
+  appendSubId,
+  isValidSubBase,
+  normalizeSubBase,
+  sanitizeSubBase,
+  wasContaminatedSubBase,
+} from "./sub-url.js";
 import { isDemoMode } from "./license.js";
 import { stripAccountName } from "../utils/account-name.js";
 
@@ -132,7 +138,10 @@ function reconstructSubBase(
 }
 
 /**
- * Build subscription page URL the same way 3x-ui panel does.
+ * Build subscription page URL the same way 3x-ui panel UI does:
+ *   subURI + subId  (from panel defaultSettings)
+ * Override / XUI_SUB_BASE only when the panel does not expose a usable subURI
+ * (e.g. reverse-proxy when subURI is empty in panel settings).
  * Never falls back to PUBLIC_DOMAIN / Mini App host.
  */
 export function buildSubUrl(
@@ -141,18 +150,18 @@ export function buildSubUrl(
   subBaseOverride?: string | null,
   panelBaseUrl?: string | null,
 ): string {
+  const subURI = typeof settings?.subURI === "string" ? settings.subURI.trim() : "";
+  const fromPanel = sanitizeSubBase(subURI);
+  if (fromPanel) return appendSubId(fromPanel, subId);
+
   const override = sanitizeSubBase(subBaseOverride);
   if (override) return appendSubId(override, subId);
 
   const fromEnv = sanitizeSubBase(env.XUI_SUB_BASE);
   if (fromEnv) return appendSubId(fromEnv, subId);
 
-  const subURI = typeof settings?.subURI === "string" ? settings.subURI.trim() : "";
-  const fromPanel = sanitizeSubBase(subURI);
-  if (fromPanel) return appendSubId(fromPanel, subId);
-
   const rebuilt = reconstructSubBase(settings, panelBaseUrl);
-  if (rebuilt) return appendSubId(rebuilt, subId);
+  if (rebuilt) return appendSubId(sanitizeSubBase(rebuilt) ?? rebuilt, subId);
 
   return `sub://${subId}`;
 }
@@ -186,6 +195,30 @@ export async function resolveSubUrl(
   return buildSubUrl(subId, settings, subBaseOverride, xui.panelBaseUrl);
 }
 
+/** Clear Mini App hosts / pasted full-client URLs stored as PanelServer.subBase. */
+async function healPanelSubBase(panelId: string | undefined, rawSubBase: string | null | undefined) {
+  if (!panelId || !rawSubBase?.trim()) return;
+  const raw = rawSubBase.trim();
+  try {
+    if (!isValidSubBase(raw) || wasContaminatedSubBase(raw)) {
+      await prisma.panelServer.update({
+        where: { id: panelId },
+        data: { subBase: null },
+      });
+      return;
+    }
+    const cleaned = sanitizeSubBase(raw);
+    if (cleaned && cleaned !== normalizeSubBase(raw)) {
+      await prisma.panelServer.update({
+        where: { id: panelId },
+        data: { subBase: cleaned },
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise<string | null> {
   const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
   if (!sub) return null;
@@ -202,20 +235,11 @@ export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise
     }
     if (!panelSubId) return sub.subUrl;
 
-    const subBase = sanitizeSubBase(resolved.subBase);
-    const subUrl = await resolveSubUrl(panelSubId, resolved.xui, subBase);
+    const settings = await panelSettings(resolved.xui);
+    await healPanelSubBase(resolved.panel?.id, resolved.subBase);
 
-    // Heal bad PanelServer.subBase so next reads don't keep using Mini App host
-    if (resolved.panel && resolved.subBase && !isValidSubBase(resolved.subBase)) {
-      try {
-        await prisma.panelServer.update({
-          where: { id: resolved.panel.id },
-          data: { subBase: null },
-        });
-      } catch {
-        /* ignore */
-      }
-    }
+    // Same as 3x-ui Client Info: subURI + subId (override only if panel has no subURI)
+    const subUrl = buildSubUrl(panelSubId, settings, resolved.subBase, resolved.xui.panelBaseUrl);
 
     const data: { subUrl: string; panelSubId: string; panelServerId?: string } = {
       subUrl,

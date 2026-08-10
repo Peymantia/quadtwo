@@ -239,7 +239,7 @@ export function DiscountCodesPanel({
               </div>
             </div>
             <input
-              className="num"
+              className="num settings-input"
               inputMode="numeric"
               disabled={settingsBusy}
               value={maxPercentDraft}
@@ -249,14 +249,7 @@ export function DiscountCodesPanel({
                 setMaxPercentDraft(String(n));
                 if (n !== partnerCap) void saveAdminDiscountSettings({ maxPercent: n });
               }}
-              style={{
-                width: 72,
-                border: "1px solid var(--line)",
-                background: "rgba(10,13,35,.6)",
-                color: "var(--text)",
-                borderRadius: 10,
-                padding: "8px 12px",
-              }}
+              style={{ width: 72 }}
             />
           </div>
         </div>

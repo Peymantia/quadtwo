@@ -108,6 +108,7 @@ const defaults: Record<string, string> = {
   pricing_modes_json: JSON.stringify({
     user: "matrix",
     partner: "matrix",
+    reseller: "matrix",
     wholesale: "matrix",
   }),
   price_rates_json: JSON.stringify({
@@ -353,7 +354,8 @@ export async function resolvePurchaseLimitIp(
 
 export type PricingMode = "matrix" | "rate";
 
-export type RolePricingKey = "user" | "partner" | "wholesale";
+/** Pricing-mode keys: reseller = همکار ویژه, wholesale = عمده‌فروش */
+export type RolePricingKey = "user" | "partner" | "reseller" | "wholesale";
 
 export type RolePricingModes = Record<RolePricingKey, PricingMode>;
 
@@ -369,7 +371,10 @@ export type CategoryUnitRates = {
   perMonth: number;
 };
 
-export type CategoryRoleRates = Partial<Record<RolePricingKey, Partial<CategoryUnitRates>>>;
+/** Rate buckets stay user|partner|wholesale (wholesale bucket = همکار ویژه historically). */
+export type RateRoleKey = "user" | "partner" | "wholesale";
+
+export type CategoryRoleRates = Partial<Record<RateRoleKey, Partial<CategoryUnitRates>>>;
 
 export type PriceRates = {
   user: RoleRates;
@@ -384,7 +389,7 @@ function asMode(v: unknown): PricingMode {
 }
 
 export function defaultPricingModes(): RolePricingModes {
-  return { user: "matrix", partner: "matrix", wholesale: "matrix" };
+  return { user: "matrix", partner: "matrix", reseller: "matrix", wholesale: "matrix" };
 }
 
 export function defaultPriceRates(): PriceRates {
@@ -416,40 +421,45 @@ export async function getPricingMode(): Promise<PricingMode> {
 export async function getPricingModes(): Promise<RolePricingModes> {
   const base = defaultPricingModes();
   try {
-    const raw = JSON.parse(await getSetting("pricing_modes_json")) as Partial<RolePricingModes>;
+    const raw = JSON.parse(await getSetting("pricing_modes_json")) as Partial<RolePricingModes> & {
+      /** Legacy: before reseller split, `wholesale` meant همکار ویژه */
+      wholesale?: PricingMode;
+    };
     if (raw && typeof raw === "object") {
+      const hasReseller = raw.reseller === "rate" || raw.reseller === "matrix";
       return {
         user: asMode(raw.user ?? base.user),
         partner: asMode(raw.partner ?? base.partner),
-        wholesale: asMode(raw.wholesale ?? base.wholesale),
+        // Old installs stored همکار ویژه under `wholesale`
+        reseller: asMode(hasReseller ? raw.reseller : (raw.wholesale ?? base.reseller)),
+        wholesale: asMode(hasReseller ? (raw.wholesale ?? base.wholesale) : base.wholesale),
       };
     }
   } catch {
     /* fall through to legacy */
   }
   const legacy = asMode(await getSetting("pricing_mode"));
-  return { user: legacy, partner: legacy, wholesale: legacy };
+  return { user: legacy, partner: legacy, reseller: legacy, wholesale: base.wholesale };
 }
 
 export async function getPricingModeForRole(role: string): Promise<PricingMode> {
-  // عمده‌فروش (wholesale): فقط پلن ثابت ماتریکس
-  if (role === "wholesale") return "matrix";
   const modes = await getPricingModes();
-  // همکار ویژه (reseller) + admin → نرخ/ماتریکس عمدهٔ سابق
-  if (role === "reseller" || role === "admin") return modes.wholesale;
+  if (role === "wholesale") return modes.wholesale;
+  if (role === "reseller" || role === "admin") return modes.reseller;
   if (role === "partner") return modes.partner;
   return modes.user;
 }
 
 /** Set the same mode for every role (legacy / bulk). */
 export async function setPricingMode(mode: PricingMode) {
-  await savePricingModes({ user: mode, partner: mode, wholesale: mode });
+  await savePricingModes({ user: mode, partner: mode, reseller: mode, wholesale: mode });
 }
 
 export async function savePricingModes(modes: RolePricingModes) {
   const next: RolePricingModes = {
     user: asMode(modes.user),
     partner: asMode(modes.partner),
+    reseller: asMode(modes.reseller),
     wholesale: asMode(modes.wholesale),
   };
   await setSetting("pricing_modes_json", JSON.stringify(next));
@@ -501,8 +511,8 @@ export function ratesForRoleCategory(
   category: string,
   rates: PriceRates,
 ): RoleRates {
-  const roleKey: RolePricingKey =
-    role === "reseller" || role === "admin"
+  const roleKey: RateRoleKey =
+    role === "reseller" || role === "admin" || role === "wholesale"
       ? "wholesale"
       : role === "partner"
         ? "partner"

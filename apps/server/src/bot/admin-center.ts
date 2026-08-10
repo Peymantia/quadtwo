@@ -38,6 +38,7 @@ import {
   type ChannelConfig,
   type NotifConfig,
   type PriceRates,
+  type RateRoleKey,
   type RolePricingKey,
   type RolePricingModes,
   type SalesCategories,
@@ -138,7 +139,7 @@ export const ccWait = new Map<
   | { kind: "minipin_text" }
   | {
       kind: "rate_ask";
-      role: RolePricingKey;
+      role: RateRoleKey;
       field: "perGb" | "perMonth" | "unlimitedPerMonth";
       category: string | null;
       partial: PriceRates;
@@ -415,7 +416,8 @@ async function showPricingHome(ctx: Context) {
     "📐 حالت هر نقش:",
     modeLine("👤 مشتری", modes.user),
     modeLine("🤝 همکار", modes.partner),
-    modeLine("⭐ همکار ویژه", modes.wholesale),
+    modeLine("⭐ همکار ویژه", modes.reseller),
+    modeLine("📦 عمده‌فروش", modes.wholesale),
     "",
     "فرمول نرخی: (گیگ × نرخ گیگ) + (ماه × نرخ ماه)",
     `نمونه مشتری data ۵۰گیگ ۲ماه: ${formatToman(50 * dataGb + 2 * dataMo)}`,
@@ -427,7 +429,8 @@ async function showPricingHome(ctx: Context) {
   for (const [role, label] of [
     ["user", "مشتری"],
     ["partner", "همکار"],
-    ["wholesale", "همکار ویژه"],
+    ["reseller", "همکار ویژه"],
+    ["wholesale", "عمده‌فروش"],
   ] as const) {
     rows
       .text(
@@ -474,7 +477,7 @@ async function showPriceRates(ctx: Context) {
   const text = [
     "✏️ نرخ محاسبه قیمت (گیگ + ماه)",
     "",
-    `حالت‌ها: مشتری ${modes.user === "rate" ? "نرخی" : "ماتریکس"} · همکار ${modes.partner === "rate" ? "نرخی" : "ماتریکس"} · همکار ویژه ${modes.wholesale === "rate" ? "نرخی" : "ماتریکس"}`,
+    `حالت‌ها: مشتری ${modes.user === "rate" ? "نرخی" : "ماتریکس"} · همکار ${modes.partner === "rate" ? "نرخی" : "ماتریکس"} · همکار ویژه ${modes.reseller === "rate" ? "نرخی" : "ماتریکس"} · عمده ${modes.wholesale === "rate" ? "نرخی" : "ماتریکس"}`,
     "",
     lineCat("data", "VIP / data"),
     "",
@@ -504,7 +507,7 @@ async function showPriceRates(ctx: Context) {
 async function askRateStep(
   ctx: Context,
   opts: {
-    role: RolePricingKey;
+    role: RateRoleKey;
     field: "perGb" | "perMonth" | "unlimitedPerMonth";
     category: string | null;
     partial: PriceRates;
@@ -1235,7 +1238,7 @@ export function registerControlCenter(bot: Bot) {
     await showPricingHome(ctx);
   });
 
-  bot.callbackQuery(/^cc:pricing:mode:(user|partner|wholesale):(matrix|rate)$/, async (ctx) => {
+  bot.callbackQuery(/^cc:pricing:mode:(user|partner|reseller|wholesale):(matrix|rate)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     const role = ctx.match![1] as RolePricingKey;
     const mode = ctx.match![2] as "matrix" | "rate";
@@ -1252,7 +1255,7 @@ export function registerControlCenter(bot: Bot) {
   bot.callbackQuery(/^cc:pricing:mode:(matrix|rate)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     const mode = ctx.match![1] as "matrix" | "rate";
-    await savePricingModes({ user: mode, partner: mode, wholesale: mode });
+    await savePricingModes({ user: mode, partner: mode, reseller: mode, wholesale: mode });
     await ctx.answerCallbackQuery({
       text: mode === "rate" ? "همه نقش‌ها نرخی" : "همه نقش‌ها ماتریکس",
     });
@@ -1271,7 +1274,7 @@ export function registerControlCenter(bot: Bot) {
       if (!(await isControlAdmin(ctx.from?.id))) return;
       await ctx.answerCallbackQuery();
       const category = ctx.match![1];
-      const role = ctx.match![2] as RolePricingKey;
+      const role = ctx.match![2] as RateRoleKey;
       const partial = await getPriceRates();
       if (category === "unlimited") {
         await askRateStep(ctx, { role, field: "unlimitedPerMonth", category: null, partial });
@@ -1285,7 +1288,7 @@ export function registerControlCenter(bot: Bot) {
   bot.callbackQuery(/^cc:pricing:rates:edit:(user|partner|wholesale)$/, async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
-    const role = ctx.match![1] as RolePricingKey;
+    const role = ctx.match![1] as RateRoleKey;
     const partial = await getPriceRates();
     await askRateStep(ctx, { role, field: "perGb", category: "data", partial });
   });
@@ -2377,7 +2380,7 @@ export function registerControlCenter(bot: Bot) {
       url: "آدرس پنل را بفرستید (با / آخر، مثلاً http://IP:PORT/path/):",
       token: "API Token جدید را بفرستید:",
       inbounds: "Inbound IDs را بفرستید (مثلاً 1,2,3 یا 1-10):",
-      subBase: "Subscription base URL را بفرستید (خالی = پاک کردن، مثال https://domain:port/info/):",
+      subBase: "Sub base را بفرستید (خالی = از 3x-ui؛ فقط پایه مثل https://domain:port/info/ — نه لینک کامل اکانت):",
       weight: "وزن تقسیم بار را بفرستید (۱ تا ۱۰۰۰):",
     };
     await ctx.reply(`${prompts[field]}\nلغو: /cancel`);

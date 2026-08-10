@@ -9,8 +9,7 @@ import { canUsePasskey, loginWithPasskey, passkeyErrorMessage } from "../../lib/
 import { isTelegramMiniApp, loginWithTelegramWebApp } from "../../lib/telegram";
 import {
   applyAppearance,
-  parseColorMode,
-  parseUiSkin,
+  getUserColorOverride,
   readCachedAppearance,
   resolveTheme,
   toggleStudioTheme,
@@ -164,6 +163,11 @@ export default function LoginPage() {
     }
 
     void boot();
+
+    // Login page defaults to dark; respect only an explicit light/dark toggle override.
+    const loginTheme = getUserColorOverride() === "light" ? "light" : "dark";
+    applyAppearance("studio", loginTheme);
+
     api<{ brand: string; logoUrl?: string | null; uiSkin?: string; uiColorMode?: string }>("/auth/meta", {
       token: null,
     })
@@ -171,7 +175,8 @@ export default function LoginPage() {
         if (!cancelled) {
           setBrand(r.brand);
           setLogoUrl(r.logoUrl ?? null);
-          applyAppearance(parseUiSkin(r.uiSkin), parseColorMode(r.uiColorMode));
+          const theme = getUserColorOverride() === "light" ? "light" : "dark";
+          applyAppearance("studio", theme);
         }
       })
       .catch(() => undefined);
@@ -332,21 +337,15 @@ export default function LoginPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logoUrl || "/logo.png"} alt={brand} />
         </div>
-        <p className="brand-word">{brand}</p>
-        <h1 className="login-title">
-          ورود به <em>حساب</em>
-        </h1>
-        <p className="login-sub">
-          {isTelegramMiniApp()
-            ? "ورود خودکار از تلگرام ناموفق بود — از روش‌های زیر استفاده کنید"
-            : "برای ورود یکی از روش‌های زیر را انتخاب کنید"}
-        </p>
+        <h1 className="login-title">ورود به پنل کاربری</h1>
 
         <div className={`login-card${authSuccess ? " auth-success" : ""}`}>
           <AuthSuccessOverlay show={authSuccess} />
           <form onSubmit={verifyOtp}>
             <div className="field">
-              <label htmlFor="login-id">آی‌دی عددی تلگرام یا یوزرنیم</label>
+              <label htmlFor="login-id" className="sr-only">
+                یوزرنیم تلگرام یا آی‌دی عددی
+              </label>
               <input
                 id="login-id"
                 dir="ltr"
@@ -361,7 +360,6 @@ export default function LoginPage() {
             </div>
 
             <div className="field otp-field">
-              <label>کد یکبار مصرف (۴ رقمی)</label>
               <div className="otp-grid" dir="ltr" role="group" aria-label="ارقام کد تایید">
                 {digits.map((digit, index) => (
                   <div
@@ -394,7 +392,6 @@ export default function LoginPage() {
                   </div>
                 ))}
               </div>
-              <p className="otp-hint">کد را از ربات کپی کنید — هر ۴ رقم یکجا پیست می‌شود</p>
             </div>
 
             <button
@@ -430,15 +427,6 @@ export default function LoginPage() {
                   </span>
                   ورود با Face ID / اثرانگشت
                 </button>
-                <p className="hint passkey-hint">
-                  اگر Passkey ثبت کرده‌اید، بدون OTP وارد شوید
-                  {!login.trim() && (
-                    <>
-                      <br />
-                      یا شناسه را خالی بگذارید.
-                    </>
-                  )}
-                </p>
               </div>
             )}
           </form>
