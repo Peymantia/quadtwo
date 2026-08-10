@@ -5955,13 +5955,13 @@ function ReportsTab() {
             const label = AUDIT_LABELS[a.action] || a.action;
             const canDetail = Boolean(a.target) || /archive=/i.test(a.detail || "");
             return (
-              <div key={a.id} className="row-card" style={{ alignItems: "flex-start", gap: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
+              <div key={a.id} className="audit-log-item">
+                <div className="audit-log-item__main">
                   <strong>
                     {label}
                     {a.target ? `: ${a.target}` : ""}
                   </strong>
-                  {a.detail && <div className="muted">{a.detail}</div>}
+                  {a.detail && <div className="audit-log-item__detail">{a.detail}</div>}
                   {canDetail && (
                     <button
                       type="button"
@@ -5973,7 +5973,7 @@ function ReportsTab() {
                     </button>
                   )}
                 </div>
-                <span className="muted">{new Date(a.createdAt).toLocaleString("fa-IR")}</span>
+                <span className="audit-log-item__time">{new Date(a.createdAt).toLocaleString("fa-IR")}</span>
               </div>
             );
           })}

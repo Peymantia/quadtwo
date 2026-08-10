@@ -613,6 +613,50 @@ h3 {
   padding: 4px 2px 8px;
 }
 
+.audit-log-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--elev);
+  color: var(--text);
+  line-height: 1.55;
+  overflow: visible;
+}
+
+.audit-log-item__main {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.audit-log-item__main strong {
+  display: block;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.audit-log-item__detail {
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.audit-log-item__time {
+  flex: 0 0 auto;
+  color: var(--mute);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 /* ---------- Fields & buttons ---------- */
 
 .field {
@@ -2578,7 +2622,7 @@ button.stat.stat-link:active {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 9px 11px;
-  background: rgba(24, 29, 63, 0.42);
+  background: var(--elev);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -2664,8 +2708,8 @@ button.stat.stat-link:active {
 .cat-card__key {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.7rem;
-  color: #93c5fd;
-  opacity: 0.9;
+  color: var(--cyan, #0284c7);
+  opacity: 0.95;
 }
 
 .cat-card__tag {
@@ -2673,10 +2717,10 @@ button.stat.stat-link:active {
   align-items: center;
   padding: 1px 7px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 255, 0.22);
-  background: rgba(148, 163, 255, 0.08);
+  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--violet, #2563eb) 10%, transparent);
   font-size: 0.66rem;
-  color: #c7d2fe;
+  color: var(--mute);
 }
 
 .cat-card__input {
@@ -2720,8 +2764,8 @@ button.stat.stat-link:active {
 }
 
 .cat-card__del {
-  color: #fda4af !important;
-  border-color: rgba(251, 113, 133, 0.28) !important;
+  color: var(--pink, #e11d48) !important;
+  border-color: color-mix(in srgb, var(--pink, #e11d48) 28%, transparent) !important;
 }
 
 .cat-card__del:not(:disabled):hover {
