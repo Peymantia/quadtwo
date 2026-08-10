@@ -319,7 +319,7 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
       <div className="panel">
         <h2>دسترسی سریع</h2>
         <div className="quick-actions">
-          <button type="button" className="btn success quick-action-btn" onClick={() => onGo("create")}>
+          <button type="button" className="btn primary quick-action-btn" onClick={() => onGo("create")}>
             <Icon name="shop" size={18} />
             ساخت اکانت
           </button>
@@ -327,11 +327,11 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
             <Icon name="orders" size={18} />
             بررسی سفارش‌ها
           </button>
-          <button type="button" className="btn light quick-action-btn" onClick={() => onGo("users")}>
+          <button type="button" className="btn primary quick-action-btn" onClick={() => onGo("users")}>
             <Icon name="users" size={18} />
             مدیریت کاربران
           </button>
-          <button type="button" className="btn ghost quick-action-btn" onClick={() => onGo("prices")}>
+          <button type="button" className="btn primary quick-action-btn" onClick={() => onGo("prices")}>
             <Icon name="tag" size={18} />
             قیمت‌گذاری
           </button>
