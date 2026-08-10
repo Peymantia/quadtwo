@@ -1105,13 +1105,15 @@ html[data-skin="studio"].tg-webapp .mobile-top {
   padding-top: max(10px, env(safe-area-inset-top, 0px));
 }
 
-/* Quick-action row spectrum — keep white label on gradient fills */
-html[data-skin="studio"] .qa-row .quick-action-btn {
+/* Quick-action / account-card row spectrum — keep white label on gradient fills */
+html[data-skin="studio"] .qa-row .quick-action-btn,
+html[data-skin="studio"] .qa-row > .btn {
   border: 0;
   color: #fff;
 }
 
-html[data-skin="studio"][data-theme="light"] .qa-row .quick-action-btn {
+html[data-skin="studio"][data-theme="light"] .qa-row .quick-action-btn,
+html[data-skin="studio"][data-theme="light"] .qa-row > .btn {
   color: #fff;
   box-shadow: 0 8px 20px -10px rgba(15, 23, 42, 0.35);
 }

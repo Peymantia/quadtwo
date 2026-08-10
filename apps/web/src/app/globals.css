@@ -868,26 +868,73 @@ h3 {
   grid-column: 1 / -1;
 }
 
-/* Row spectrum — teal → cyan → blue → indigo → slate → soft graphite */
+/* Row spectrum — teal → cyan → blue → indigo → slate → soft graphite
+   Applies to dashboard quick actions AND account card / created-account action grids. */
+.qa-row--1 > .btn,
 .qa-row--1 .quick-action-btn {
   background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
 }
+.qa-row--2 > .btn,
 .qa-row--2 .quick-action-btn {
   background: linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
 }
+.qa-row--3 > .btn,
 .qa-row--3 .quick-action-btn {
   background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
 }
+.qa-row--4 > .btn,
 .qa-row--4 .quick-action-btn {
   background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
 }
+.qa-row--5 > .btn,
 .qa-row--5 .quick-action-btn {
   background: linear-gradient(135deg, #334155 0%, #64748b 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
 }
+.qa-row--6 > .btn,
 .qa-row--6 .quick-action-btn {
   background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
 }
 
+/* Destructive stays red inside spectrum rows */
+.qa-row > .btn.danger {
+  background: linear-gradient(135deg, #b91c1c 0%, #ef4444 100%);
+  color: #fff;
+  border-color: transparent;
+}
+
+.qa-row.qa-row--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.qa-row > .btn {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+}
+
+.qa-row > .btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+html[data-theme="light"] .qa-row > .btn,
 html[data-theme="light"] .quick-action-btn {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
@@ -5118,17 +5165,10 @@ button.pay-dest-number:active,
   background: rgba(16, 20, 47, 1);
 }
 .svc-actions-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   width: 100%;
-}
-
-.svc-actions-grid > .btn {
-  width: 100%;
-  min-width: 0;
-  justify-content: center;
-  box-sizing: border-box;
 }
 
 .svc-actions-spacer {

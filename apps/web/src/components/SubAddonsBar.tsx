@@ -172,125 +172,134 @@ export function SubAddonsBar({
   const gbPrice = (info?.addGb.perGb ?? 0) * gb;
 
   const backOrRenew = showBack ? (
-    <button type="button" className="btn ghost sm" disabled={busy} onClick={() => onBack?.()}>
+    <button type="button" className="btn sm" disabled={busy} onClick={() => onBack?.()}>
       بازگشت
     </button>
   ) : showRenew && onRenew ? (
-    <button type="button" className="btn success sm" disabled={busy || !!isTest} onClick={() => onRenew()}>
+    <button type="button" className="btn sm" disabled={busy || !!isTest} onClick={() => onRenew()}>
       تمدید
     </button>
-  ) : (
-    <span className="svc-actions-spacer" aria-hidden />
-  );
+  ) : null;
 
   return (
     <>
       <div className="svc-actions-grid">
-        <button
-          type="button"
-          className="btn primary sm"
-          disabled={busy || !subUrl}
-          onClick={() => {
-            if (subUrl) void copyText(subUrl, "لینک اشتراک کپی شد");
-          }}
-        >
-          لینک اشتراک
-        </button>
-        <button
-          type="button"
-          className="btn ghost sm"
-          disabled={busy}
-          onClick={() => {
-            setB64(null);
-            setMode("b64");
-            onBusy(true);
-            void api<{ base64: string }>(`/me/subscriptions/${subId}/secure-base64`)
-              .then((r) => setB64(r.base64))
-              .catch((e) => onError(String(e instanceof Error ? e.message : e)))
-              .finally(() => onBusy(false));
-          }}
-        >
-          لینک Base64 کانفیگ
-        </button>
-
-        <button type="button" className="btn ghost sm" disabled={busy || !canDays} onClick={() => setMode("days")}>
-          افزایش روز
-        </button>
-        <button type="button" className="btn ghost sm" disabled={busy || !canGb} onClick={() => setMode("gb")}>
-          افزایش حجم
-        </button>
-
-        {isAdmin && (
-          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void refreshFromPanel()}>
-            بروزرسانی
-          </button>
-        )}
-        <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setMode("rotsub")}>
-          تغییر لینک ساب
-        </button>
-        {!isAdmin && (
+        <div className="qa-row qa-row--1">
           <button
             type="button"
-            className="btn ghost sm"
-            disabled={busy}
+            className="btn sm"
+            disabled={busy || !subUrl}
             onClick={() => {
-              setRename(email);
-              setMode("rename");
+              if (subUrl) void copyText(subUrl, "لینک اشتراک کپی شد");
             }}
           >
-            تغییر نام دلخواه
+            لینک اشتراک
           </button>
-        )}
+          <button
+            type="button"
+            className="btn sm"
+            disabled={busy}
+            onClick={() => {
+              setB64(null);
+              setMode("b64");
+              onBusy(true);
+              void api<{ base64: string }>(`/me/subscriptions/${subId}/secure-base64`)
+                .then((r) => setB64(r.base64))
+                .catch((e) => onError(String(e instanceof Error ? e.message : e)))
+                .finally(() => onBusy(false));
+            }}
+          >
+            لینک Base64 کانفیگ
+          </button>
+        </div>
 
-        {isAdmin && (
-          <button
-            type="button"
-            className="btn ghost sm"
-            disabled={busy}
-            onClick={() => {
-              setRename(email);
-              setMode("rename");
-            }}
-          >
-            تغییر نام دلخواه
+        <div className="qa-row qa-row--2">
+          <button type="button" className="btn sm" disabled={busy || !canDays} onClick={() => setMode("days")}>
+            افزایش روز
           </button>
-        )}
-        <button
-          type="button"
-          className="btn ghost sm"
-          disabled={busy || !subUrl}
-          onClick={() => setQrOpen(true)}
-        >
-          نمایش QR Code
-        </button>
-        {!isAdmin && (
-          <button
-            type="button"
-            className="btn ghost sm"
-            disabled={busy}
-            onClick={() => {
-              setNoteDraft(note ?? "");
-              setMode("note");
-            }}
-          >
-            یادداشت
+          <button type="button" className="btn sm" disabled={busy || !canGb} onClick={() => setMode("gb")}>
+            افزایش حجم
           </button>
-        )}
+        </div>
 
-        {isAdmin && (
+        <div className="qa-row qa-row--3">
+          {isAdmin ? (
+            <button type="button" className="btn sm" disabled={busy} onClick={() => void refreshFromPanel()}>
+              بروزرسانی
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn sm"
+              disabled={busy}
+              onClick={() => {
+                setRename(email);
+                setMode("rename");
+              }}
+            >
+              تغییر نام دلخواه
+            </button>
+          )}
+          <button type="button" className="btn sm" disabled={busy} onClick={() => setMode("rotsub")}>
+            تغییر لینک ساب
+          </button>
+        </div>
+
+        <div className="qa-row qa-row--4">
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn sm"
+              disabled={busy}
+              onClick={() => {
+                setRename(email);
+                setMode("rename");
+              }}
+            >
+              تغییر نام دلخواه
+            </button>
+          )}
           <button
             type="button"
-            className="btn ghost sm"
-            disabled={busy}
-            onClick={() => {
-              setNoteDraft(note ?? "");
-              setMode("note");
-            }}
+            className="btn sm"
+            disabled={busy || !subUrl}
+            onClick={() => setQrOpen(true)}
           >
-            یادداشت
+            نمایش QR Code
           </button>
+          {!isAdmin && (
+            <button
+              type="button"
+              className="btn sm"
+              disabled={busy}
+              onClick={() => {
+                setNoteDraft(note ?? "");
+                setMode("note");
+              }}
+            >
+              یادداشت
+            </button>
+          )}
+        </div>
+
+        {(isAdmin || backOrRenew) && (
+          <div className="qa-row qa-row--5">
+            {isAdmin && (
+              <button
+                type="button"
+                className="btn sm"
+                disabled={busy}
+                onClick={() => {
+                  setNoteDraft(note ?? "");
+                  setMode("note");
+                }}
+              >
+                یادداشت
+              </button>
+            )}
+            {backOrRenew}
+          </div>
         )}
-        {backOrRenew}
       </div>
 
       <Modal open={mode === "days"} title="افزایش روز" onClose={() => setMode(null)}>
@@ -314,10 +323,10 @@ export function SubAddonsBar({
         <p>
           مبلغ: <strong className="num">{formatToman(daysPrice)}</strong>
         </p>
-        <div className="config-card-actions-row">
+        <div className="qa-row qa-row--1">
           <button
             type="button"
-            className="btn success sm"
+            className="btn sm"
             disabled={busy || walletBalance < daysPrice}
             onClick={() => void checkout(`/me/subscriptions/${subId}/add-days`, { days }, "wallet")}
           >
@@ -325,7 +334,7 @@ export function SubAddonsBar({
           </button>
           <button
             type="button"
-            className="btn primary sm"
+            className="btn sm"
             disabled={busy}
             onClick={() => void checkout(`/me/subscriptions/${subId}/add-days`, { days }, "card_to_card")}
           >
@@ -355,10 +364,10 @@ export function SubAddonsBar({
         <p>
           مبلغ: <strong className="num">{formatToman(gbPrice)}</strong>
         </p>
-        <div className="config-card-actions-row">
+        <div className="qa-row qa-row--1">
           <button
             type="button"
-            className="btn success sm"
+            className="btn sm"
             disabled={busy || !info?.addGb.allowed || walletBalance < gbPrice}
             onClick={() => void checkout(`/me/subscriptions/${subId}/add-gb`, { gb }, "wallet")}
           >
@@ -366,7 +375,7 @@ export function SubAddonsBar({
           </button>
           <button
             type="button"
-            className="btn primary sm"
+            className="btn sm"
             disabled={busy || !info?.addGb.allowed}
             onClick={() => void checkout(`/me/subscriptions/${subId}/add-gb`, { gb }, "card_to_card")}
           >
@@ -464,11 +473,11 @@ export function SubAddonsBar({
         <p className="muted" style={{ marginTop: 0 }}>
           با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟
         </p>
-        <div className="config-card-actions-row">
+        <div className="qa-row qa-row--2">
           <button type="button" className="btn danger sm" disabled={busy} onClick={() => void rotateSub()}>
             تأیید تغییر
           </button>
-          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setMode(null)}>
+          <button type="button" className="btn sm" disabled={busy} onClick={() => setMode(null)}>
             انصراف
           </button>
         </div>

@@ -3559,26 +3559,28 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                 </div>
                 <div className="config-card-actions">
-                  <div className="config-card-actions-row">
+                  <div className="qa-row qa-row--1">
                     {!c.inDb && (
-                      <button type="button" className="btn success sm" disabled={importBusy} onClick={() => void doImport([c.email])}>
+                      <button type="button" className="btn sm" disabled={importBusy} onClick={() => void doImport([c.email])}>
                         وارد کردن
                       </button>
                     )}
                     {c.inDb && c.subId && (
-                      <button type="button" className="btn success sm" disabled={editBusy} onClick={() => void openRenew(c.subId)}>
+                      <button type="button" className="btn sm" disabled={editBusy} onClick={() => void openRenew(c.subId)}>
                         تمدید
                       </button>
                     )}
                     <button
                       type="button"
-                      className={`btn sm ${c.status === "active" && !expired ? "ghost" : "success"}`}
+                      className="btn sm"
                       disabled={editBusy || expired}
                       onClick={() => void toggleEnable(c.email, c.subId, c.status === "active")}
                     >
                       {c.status === "active" && !expired ? "غیرفعال" : "فعال"}
                     </button>
-                    <button type="button" className="btn primary sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
+                  </div>
+                  <div className="qa-row qa-row--2">
+                    <button type="button" className="btn sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
                       ویرایش
                     </button>
                     <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
@@ -3586,19 +3588,19 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                     </button>
                   </div>
                   {c.inDb && c.subId && (
-                    <div className="config-card-actions-row sub-links">
-                      <button type="button" className="btn primary sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
+                    <div className="qa-row qa-row--3 qa-row--triple">
+                      <button type="button" className="btn sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
                         کپی لینک
                       </button>
                       <button
                         type="button"
-                        className="btn ghost sm"
+                        className="btn sm"
                         disabled={editBusy}
                         onClick={() => void refreshFromPanel(c.email, c.subId)}
                       >
                         بروزرسانی
                       </button>
-                      <button type="button" className="btn ghost sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
+                      <button type="button" className="btn sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
                         لینک جدید
                       </button>
                     </div>

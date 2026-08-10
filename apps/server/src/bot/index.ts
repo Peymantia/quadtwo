@@ -78,7 +78,7 @@ import {
 import { registerDiscountBotHandlers, handleDiscountCreateText, clearDiscountBotWaits } from "./discount-bot.js";
 import { registerMySalesBotHandlers } from "./my-sales.js";
 import { registerAdminConfigs, showConfigGroups } from "./admin-configs.js";
-import { markEphemeral, markTriggerEphemeral, replyEphemeral } from "./ephemeral.js";
+import { markEphemeral, markTriggerEphemeral, replyEphemeral, replyShortEphemeral } from "./ephemeral.js";
 import {
   adjustDraftMonths,
   adjustDraftQty,
@@ -241,23 +241,50 @@ async function replyMainMenu(ctx: Context, preface?: string) {
   const demo = isDemoMode();
   const miniAppUrl = await resolveMiniAppUrl();
   const serverless = await isServerlessEnabled();
-  const lines = [preface?.trim() || "منوی اصلی"];
-  if (demo) {
-    lines.push("", `🎭 نسخه نمایشی — نقش فعلی: ${demoRoleLabel(role)}`);
-  }
-  // Reply keyboard stays; toast text + user's /update|منو trigger auto-clear
-  await replyEphemeral(ctx, lines.join("\n"), {
-    reply_markup: mainMenuReply({
-      isAdmin: role === "admin",
-      isPartner: role === "partner",
-      isReseller: role === "reseller",
-      isWholesale: role === "wholesale",
-      demoMode: demo,
-      miniAppUrl,
-      hidePartner: serverless,
-    }),
+  const kb = mainMenuReply({
+    isAdmin: role === "admin",
+    isPartner: role === "partner",
+    isReseller: role === "reseller",
+    isWholesale: role === "wholesale",
+    demoMode: demo,
+    miniAppUrl,
+    hidePartner: serverless,
   });
+
+  const sticky = demo
+    ? `منوی اصلی\n\n🎭 نسخه نمایشی — نقش فعلی: ${demoRoleLabel(role)}`
+    : "منوی اصلی";
+  const toast = preface?.trim();
+  const hasToast = !!toast && toast !== "منوی اصلی";
+
+  // Toast without ReplyKeyboard — deleting a keyboard-bearing message removes the sticky keyboard
+  if (hasToast) {
+    await replyEphemeral(ctx, toast);
+  }
+
+  if (shouldEnsureMainKeyboard(ctx)) {
+    // Persistent keyboard carrier (never auto-deleted)
+    await ctx.reply(sticky, { reply_markup: kb });
+  } else if (!hasToast) {
+    await replyEphemeral(ctx, sticky);
+  }
+
   markTriggerEphemeral(ctx);
+}
+
+/** Re-attach reply keyboard only when it may be missing / labels changed. */
+function shouldEnsureMainKeyboard(ctx: Context): boolean {
+  const data = ctx.callbackQuery?.data ?? "";
+  if (
+    data === "menu:show" ||
+    data === "menu:home" ||
+    data === "check:channel" ||
+    data.startsWith("demo:role:")
+  ) {
+    return true;
+  }
+  const text = ctx.message?.text?.trim() ?? "";
+  return /^\/(update|menu|setminiapp)\b/i.test(text);
 }
 
 /**
@@ -274,7 +301,8 @@ async function pinMiniAppBanner(ctx: Context) {
 
 /** Temporarily hide sticky reply keyboard for a fuller chat surface. */
 async function hideMainKeyboard(ctx: Context) {
-  await replyEphemeral(ctx, "⬇️ کیبورد مخفی شد — صفحهٔ چت بازتر است.", {
+  // Keep this message — ReplyKeyboardRemove must not be on an ephemeral carrier
+  await ctx.reply("⬇️ کیبورد مخفی شد — صفحهٔ چت بازتر است.", {
     reply_markup: removeReplyKeyboard(),
   });
   markTriggerEphemeral(ctx);
@@ -295,7 +323,8 @@ async function showBuyCategoryPicker(ctx: Context, edit = false) {
   if (!isWholesaleFixedRole(role) && !keys.includes("national")) keys.push("national");
 
   if (!keys.length) {
-    await ctx.reply(
+    await replyShortEphemeral(
+      ctx,
       isWholesaleFixedRole(role)
         ? "فعلاً پلنی برای عمده‌فروش تعریف نشده. با ادمین تماس بگیرید."
         : "فعلاً هیچ دسته‌ای برای فروش فعال نیست. با پشتیبانی تماس بگیرید.",
@@ -390,7 +419,7 @@ async function showRenewWizard(
   const user = await upsertUserFromTelegram(ctx.from!);
   const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
   if (!sub) {
-    await ctx.reply("سرویس پیدا نشد.");
+      await replyShortEphemeral(ctx, "سرویس پیدا نشد.");
     return;
   }
 
@@ -1129,6 +1158,8 @@ export function createBot(
         if (cleaned !== msg.text) {
           Object.assign(msg, { text: cleaned });
         }
+        // Auto-clear reply-keyboard taps («خرید سرویس جدید», …) and short slash cmds
+        markTriggerEphemeral(ctx);
       }
       await next();
     };
@@ -1169,7 +1200,7 @@ export function createBot(
           trafficGb: plan.trafficGb,
           months: plan.months,
         });
-        await ctx.reply("⭐ پیشنهاد ویژه انتخاب شد — ادامه خرید:");
+        await replyShortEphemeral(ctx, "⭐ پیشنهاد ویژه انتخاب شد — ادامه خرید:");
         await showBuyWizard(ctx, false);
         return;
       }

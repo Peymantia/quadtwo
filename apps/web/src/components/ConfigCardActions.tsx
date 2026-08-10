@@ -15,6 +15,7 @@ export type ConfigActionItem = {
 
 /**
  * Admin-style subscription action rows used across admin / partner / user panels.
+ * Row colors follow the same spectrum as dashboard quick actions.
  */
 export function ConfigCardActions({
   item,
@@ -54,26 +55,23 @@ export function ConfigCardActions({
   return (
     <>
       <div className="config-card-actions">
-        <div className="config-card-actions-row">
-          <button
-            type="button"
-            className="btn success sm"
-            disabled={busy || !item.subId}
-            onClick={() => void onRenew?.()}
-          >
+        <div className="qa-row qa-row--1">
+          <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRenew?.()}>
             تمدید
           </button>
           <button
             type="button"
-            className={`btn sm ${active ? "ghost" : "success"}`}
+            className="btn sm"
             disabled={busy || expired || !item.subId}
             onClick={() => void onToggleEnable(!active)}
           >
             {active ? "غیرفعال" : "فعال"}
           </button>
+        </div>
+        <div className="qa-row qa-row--2">
           <button
             type="button"
-            className="btn primary sm"
+            className="btn sm"
             disabled={busy || !item.subId}
             onClick={() => {
               setTitle(item.title ?? "");
@@ -87,14 +85,14 @@ export function ConfigCardActions({
             حذف
           </button>
         </div>
-        <div className="config-card-actions-row sub-links">
-          <button type="button" className="btn primary sm" disabled={busy || !item.subUrl} onClick={() => void onCopy()}>
+        <div className="qa-row qa-row--3 qa-row--triple">
+          <button type="button" className="btn sm" disabled={busy || !item.subUrl} onClick={() => void onCopy()}>
             کپی لینک
           </button>
-          <button type="button" className="btn ghost sm" disabled={busy || !item.subId} onClick={() => void onRefresh()}>
+          <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRefresh()}>
             بروزرسانی
           </button>
-          <button type="button" className="btn ghost sm" disabled={busy || !item.subId} onClick={() => void onRotate()}>
+          <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRotate()}>
             لینک جدید
           </button>
         </div>
@@ -109,10 +107,10 @@ export function ConfigCardActions({
           <label>یادداشت</label>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="یادداشت…" />
         </div>
-        <div className="config-card-actions-row">
+        <div className="qa-row qa-row--1">
           <button
             type="button"
-            className="btn primary sm"
+            className="btn sm"
             disabled={busy}
             onClick={() => {
               onBusy?.(true);
@@ -135,7 +133,7 @@ export function ConfigCardActions({
           >
             ذخیره
           </button>
-          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setEditOpen(false)}>
+          <button type="button" className="btn sm" disabled={busy} onClick={() => setEditOpen(false)}>
             انصراف
           </button>
         </div>
