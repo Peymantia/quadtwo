@@ -2965,7 +2965,7 @@ function BulkAdjustPanel({ flash, askConfirm }: { flash: Flash; askConfirm: AskC
               </select>
             </div>
           </div>
-          <button type="button" className="btn danger bulk-scope-run" disabled={busy} onClick={openApply}>
+          <button type="button" className="btn success bulk-scope-run" disabled={busy} onClick={openApply}>
             {busy ? "در حال اعمال…" : "اجرای تغییر دسته‌جمعی"}
           </button>
         </div>
@@ -3099,7 +3099,7 @@ function BulkAdjustPanel({ flash, askConfirm }: { flash: Flash; askConfirm: AskC
           <button type="button" className="btn ghost" onClick={() => setApplyOpen(false)}>
             انصراف
           </button>
-          <button type="button" className="btn danger" onClick={() => void confirmApply()}>
+          <button type="button" className="btn success" onClick={() => void confirmApply()}>
             تأیید و اجرا
           </button>
         </div>
@@ -3594,7 +3594,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       </button>
                       <button
                         type="button"
-                        className="btn primary sm"
+                        className="btn muted sm"
                         disabled={editBusy}
                         onClick={() => void refreshFromPanel(c.email, c.subId)}
                       >
