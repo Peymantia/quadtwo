@@ -255,6 +255,10 @@ export default function AdminPage() {
           askConfirm={askConfirm}
           hasPassword={Boolean(home.user.hasPassword)}
           onPasswordSaved={() => void reload()}
+          onCancel={() => {
+            flash(null, null);
+            setTab("home");
+          }}
         />
       )}
       {tab === "reports" && <ReportsTab />}
@@ -3525,11 +3529,11 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                         type="button"
                         className="btn sm config-qr-btn"
                         disabled={editBusy}
-                        title="نمایش QR"
-                        aria-label="نمایش QR"
+                        title="نمایش QR Code"
+                        aria-label="نمایش QR Code"
                         onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
                       >
-                        QR
+                        QR Code
                       </button>
                     )}
                   </div>
@@ -4458,11 +4462,13 @@ function SettingsTab({
   askConfirm,
   hasPassword,
   onPasswordSaved,
+  onCancel,
 }: {
   flash: Flash;
   askConfirm: AskConfirm;
   hasPassword: boolean;
   onPasswordSaved: () => void;
+  onCancel: () => void;
 }) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
@@ -4599,7 +4605,7 @@ function SettingsTab({
   function revertDraft() {
     setSettings({ ...baselineSettings });
     setPayMethods(clonePayMethods(baselinePayMethods));
-    flash("تغییرات لغو شد");
+    onCancel();
   }
 
   function applyDefaultsDraft() {

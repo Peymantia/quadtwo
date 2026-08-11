@@ -654,11 +654,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                           type="button"
                           className="btn sm config-qr-btn"
                           disabled={busy}
-                          title="نمایش QR"
-                          aria-label="نمایش QR"
+                          title="نمایش QR Code"
+                          aria-label="نمایش QR Code"
                           onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
                         >
-                          QR
+                          QR Code
                         </button>
                       )}
                     </div>
