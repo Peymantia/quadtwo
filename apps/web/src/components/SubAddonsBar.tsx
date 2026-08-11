@@ -224,7 +224,7 @@ export function SubAddonsBar({
 
         <div className="qa-row qa-row--3">
           {isAdmin ? (
-            <button type="button" className="btn sm" disabled={busy} onClick={() => void refreshFromPanel()}>
+            <button type="button" className="btn primary sm" disabled={busy} onClick={() => void refreshFromPanel()}>
               بروزرسانی
             </button>
           ) : (

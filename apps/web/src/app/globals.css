@@ -920,6 +920,22 @@ h3 {
   border-color: transparent;
 }
 
+/* Enable = green, disable = red (override row spectrum) */
+.qa-row > .btn.success {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+}
+
+/* Refresh keeps classic primary blue (pre-spectrum look) */
+.qa-row > .btn.primary {
+  background: linear-gradient(135deg, #5b9dff 0%, #3b82f6 55%, #2563eb 100%);
+  color: #f8fbff;
+  border-color: transparent;
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.32);
+}
+
 .qa-row.qa-row--triple {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -2640,6 +2656,35 @@ button.stat.stat-link:active {
   color: #7dd3fc;
 }
 
+/* Light theme: stronger status chip contrast next to service names */
+html[data-theme="light"] .badge.ok {
+  background: rgba(16, 185, 129, 0.2);
+  color: #047857;
+  border: 1px solid rgba(5, 150, 105, 0.35);
+  font-weight: 700;
+}
+
+html[data-theme="light"] .badge.warn {
+  background: rgba(245, 158, 11, 0.22);
+  color: #b45309;
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  font-weight: 700;
+}
+
+html[data-theme="light"] .badge.bad {
+  background: rgba(244, 63, 94, 0.16);
+  color: #be123c;
+  border: 1px solid rgba(225, 29, 72, 0.35);
+  font-weight: 700;
+}
+
+html[data-theme="light"] .badge.info {
+  background: rgba(14, 165, 233, 0.16);
+  color: #0369a1;
+  border: 1px solid rgba(2, 132, 199, 0.3);
+  font-weight: 700;
+}
+
 /* Toggle switch */
 .switch {
   position: relative;
@@ -3456,6 +3501,14 @@ button.pay-dest-number:active,
   letter-spacing: 0.03em;
   border-radius: 8px;
   line-height: 1;
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 55%, #c026d3 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35);
+}
+
+.config-qr-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
 .config-card-actions {

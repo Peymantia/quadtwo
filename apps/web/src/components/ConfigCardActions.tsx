@@ -61,7 +61,7 @@ export function ConfigCardActions({
           </button>
           <button
             type="button"
-            className="btn sm"
+            className={`btn sm ${active ? "danger" : "success"}`}
             disabled={busy || expired || !item.subId}
             onClick={() => void onToggleEnable(!active)}
           >
@@ -89,7 +89,7 @@ export function ConfigCardActions({
           <button type="button" className="btn sm" disabled={busy || !item.subUrl} onClick={() => void onCopy()}>
             کپی لینک
           </button>
-          <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRefresh()}>
+          <button type="button" className="btn primary sm" disabled={busy || !item.subId} onClick={() => void onRefresh()}>
             بروزرسانی
           </button>
           <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRotate()}>

@@ -7,6 +7,18 @@ import { THEME_BOOT_SCRIPT } from "../lib/theme";
 export const metadata: Metadata = {
   title: "داشبورد پیـنگ",
   description: "داشبورد مدیریت پیـنگ",
+  applicationName: "پیـنگ",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/brand-logo.png", type: "image/png", sizes: "600x600" }],
+    apple: [{ url: "/brand-logo.png", type: "image/png", sizes: "180x180" }],
+    shortcut: ["/brand-logo.png"],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "پیـنگ",
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {

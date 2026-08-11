@@ -3517,13 +3517,13 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       {!c.inDb && <span className="badge warn">فقط پنل</span>}
                       {c.status === "active" && !expired && <span className="badge ok">فعال</span>}
                       {(c.status === "disabled" || expired) && (
-                        <span className="badge warn">{expired ? "منقضی" : "غیرفعال"}</span>
+                        <span className={`badge ${expired ? "warn" : "bad"}`}>{expired ? "منقضی" : "غیرفعال"}</span>
                       )}
                     </div>
                     {c.inDb && c.subUrl && (
                       <button
                         type="button"
-                        className="btn ghost sm config-qr-btn"
+                        className="btn sm config-qr-btn"
                         disabled={editBusy}
                         title="نمایش QR"
                         aria-label="نمایش QR"
@@ -3572,7 +3572,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                     )}
                     <button
                       type="button"
-                      className="btn sm"
+                      className={`btn sm ${c.status === "active" && !expired ? "danger" : "success"}`}
                       disabled={editBusy || expired}
                       onClick={() => void toggleEnable(c.email, c.subId, c.status === "active")}
                     >
@@ -3594,7 +3594,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       </button>
                       <button
                         type="button"
-                        className="btn sm"
+                        className="btn primary sm"
                         disabled={editBusy}
                         onClick={() => void refreshFromPanel(c.email, c.subId)}
                       >

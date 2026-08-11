@@ -1,5 +1,7 @@
 import { api, setToken, type SessionUser } from "./api";
 
+export type HomeScreenStatus = "unsupported" | "unknown" | "added" | "missed";
+
 export type TelegramWebApp = {
   initData: string;
   ready: () => void;
@@ -14,6 +16,10 @@ export type TelegramWebApp = {
   colorScheme?: "light" | "dark";
   onEvent?: (eventType: string, callback: () => void) => void;
   offEvent?: (eventType: string, callback: () => void) => void;
+  /** Bot API 8.0+ — prompt to add Mini App shortcut to the device home screen. */
+  addToHomeScreen?: () => void;
+  /** Bot API 8.0+ — check whether home-screen shortcut is supported / already added. */
+  checkHomeScreenStatus?: (callback?: (status: HomeScreenStatus) => void) => void;
 };
 
 declare global {
@@ -131,6 +137,40 @@ export function prepareTelegramUi(wa: TelegramWebApp) {
       /* ignore */
     }
   }
+}
+
+/**
+ * Prompt Telegram to add this Mini App to the device home screen (no-op if unsupported).
+ */
+export function promptAddToHomeScreen(): boolean {
+  const wa = getTelegramWebApp();
+  if (!wa?.addToHomeScreen) return false;
+  try {
+    wa.addToHomeScreen();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve home-screen shortcut status when Telegram exposes the API. */
+export function checkHomeScreenStatus(): Promise<HomeScreenStatus | null> {
+  const wa = getTelegramWebApp();
+  if (!wa?.checkHomeScreenStatus) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      let settled = false;
+      const done = (status: HomeScreenStatus | null) => {
+        if (settled) return;
+        settled = true;
+        resolve(status);
+      };
+      window.setTimeout(() => done(null), 1500);
+      wa.checkHomeScreenStatus?.((status) => done(status));
+    } catch {
+      resolve(null);
+    }
+  });
 }
 
 /**

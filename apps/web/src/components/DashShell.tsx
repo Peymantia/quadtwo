@@ -11,6 +11,7 @@ import {
   toggleStudioTheme,
   type ColorMode,
 } from "../lib/theme";
+import { isTelegramMiniApp, promptAddToHomeScreen } from "../lib/telegram";
 import { DemoModeBar } from "./DemoModeBar";
 
 const PREVIEW_PANELS = [
@@ -109,7 +110,8 @@ export type IconName =
   | "close"
   | "sync"
   | "sun"
-  | "moon";
+  | "moon"
+  | "install";
 
 export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
   const p = {
@@ -281,6 +283,15 @@ export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
           <path d="M21 14.5A8.5 8.5 0 1 1 9.5 3a7 7 0 0 0 11.5 11.5Z" />
         </svg>
       );
+    case "install":
+      return (
+        <svg {...p}>
+          <rect x="6" y="2.5" width="12" height="19" rx="2.5" />
+          <path d="M12 8v7" />
+          <path d="m9 12.5 3 3 3-3" />
+          <path d="M9.5 18.5h5" />
+        </svg>
+      );
   }
 }
 
@@ -320,6 +331,7 @@ export function DashShell(props: {
   const router = useRouter();
   const pathname = usePathname() || "";
   const [moreOpen, setMoreOpen] = useState(false);
+  const [showAddHome, setShowAddHome] = useState(false);
   const isAdmin = props.role === "admin";
   /** Only the real /admin shell uses top gear + overflow “more”; preview of user/partner keeps bottom settings */
   const isAdminPanel = pathname.startsWith("/admin");
@@ -385,10 +397,14 @@ export function DashShell(props: {
     };
   }, [navTabs]);
 
-  const hasMore = more.length > 0;
+  const hasMore = more.length > 0 || showAddHome;
   const moreActive = more.some((t) => t.key === props.active);
   const settingsActive = props.active === "settings";
   const bubbleActive = Boolean(bubble && props.active === bubble.key);
+
+  useEffect(() => {
+    setShowAddHome(isTelegramMiniApp() && typeof window.Telegram?.WebApp?.addToHomeScreen === "function");
+  }, []);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -617,6 +633,19 @@ export function DashShell(props: {
                   <span>{t.label}</span>
                 </button>
               ))}
+              {showAddHome && (
+                <button
+                  type="button"
+                  className="more-sheet-item"
+                  onClick={() => {
+                    promptAddToHomeScreen();
+                    setMoreOpen(false);
+                  }}
+                >
+                  <Icon name="install" size={22} />
+                  <span>افزودن به صفحه اصلی</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="more-sheet-item more-sheet-item--logout"

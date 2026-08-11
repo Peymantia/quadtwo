@@ -1,0 +1,25 @@
+{
+  "name": "داشبورد پیـنگ",
+  "short_name": "پیـنگ",
+  "description": "داشبورد مدیریت پیـنگ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0F14",
+  "theme_color": "#0B0F14",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    {
+      "src": "/brand-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

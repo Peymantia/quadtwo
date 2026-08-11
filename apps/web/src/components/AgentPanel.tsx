@@ -652,7 +652,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                       {c.subUrl && (
                         <button
                           type="button"
-                          className="btn ghost sm config-qr-btn"
+                          className="btn sm config-qr-btn"
                           disabled={busy}
                           title="نمایش QR"
                           aria-label="نمایش QR"
