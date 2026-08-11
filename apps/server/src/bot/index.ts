@@ -263,16 +263,19 @@ async function replyMainMenu(ctx: Context, preface?: string) {
   }
 
   if (shouldEnsureMainKeyboard(ctx)) {
-    // Attach keyboard, then fade the carrier text so chat stays clean (keyboard remains sticky)
-    const msg = await ctx.reply(sticky, { reply_markup: kb });
-    const chatId = ctx.chat?.id ?? msg.chat.id;
-    const messageId = msg.message_id;
-    const timer = setTimeout(() => {
-      void ctx.api
-        .editMessageText(chatId, messageId, "‎")
-        .catch(() => ctx.api.deleteMessage(chatId, messageId).catch(() => undefined));
-    }, EPHEMERAL_TTL_MS);
-    timer.unref?.();
+    // ReplyKeyboard must live on a message that is NEVER deleted.
+    // If we already sent a toast, use a tiny permanent carrier; otherwise show sticky then fade text only.
+    const carrierText = hasToast ? "⌨️" : sticky;
+    const msg = await ctx.reply(carrierText, { reply_markup: kb });
+    if (!hasToast) {
+      const chatId = ctx.chat?.id ?? msg.chat.id;
+      const messageId = msg.message_id;
+      const timer = setTimeout(() => {
+        // Edit only — never deleteMessage (that drops the bottom reply keyboard)
+        void ctx.api.editMessageText(chatId, messageId, "⌨️").catch(() => undefined);
+      }, EPHEMERAL_TTL_MS);
+      timer.unref?.();
+    }
   } else if (!hasToast) {
     await replyEphemeral(ctx, sticky);
   }
