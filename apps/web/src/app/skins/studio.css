@@ -757,6 +757,29 @@ html[data-skin="studio"] .bulk-stepper input {
   background-image: none;
   color: var(--text);
   border-radius: 14px;
+  color-scheme: inherit;
+}
+
+/* Opaque dark selects — transparent login-input-bg makes Windows paint white */
+html[data-skin="studio"][data-theme="dark"] select.settings-input,
+html[data-skin="studio"][data-theme="dark"] .pricing-mode-card select,
+html[data-skin="studio"][data-theme="dark"] .table select,
+html[data-skin="studio"][data-theme="dark"] .bulk-price-row select {
+  background-color: var(--card-solid, #161c26);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b9bb0' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 10px center;
+  background-size: 12px 12px;
+  color: var(--text);
+  color-scheme: dark;
+}
+
+html[data-skin="studio"][data-theme="dark"] select.settings-input option,
+html[data-skin="studio"][data-theme="dark"] .pricing-mode-card select option,
+html[data-skin="studio"][data-theme="dark"] .table select option,
+html[data-skin="studio"][data-theme="dark"] .bulk-price-row select option {
+  background: var(--card-solid, #161c26);
+  color: var(--text);
 }
 
 html[data-skin="studio"][data-theme="light"] .sort-bar select,
@@ -778,6 +801,14 @@ html[data-skin="studio"][data-theme="light"] .table select,
 html[data-skin="studio"][data-theme="light"] .bulk-stepper input {
   background-color: rgba(255, 255, 255, 0.95);
   color: var(--text);
+}
+
+html[data-skin="studio"][data-theme="light"] select.settings-input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 10px center;
+  background-size: 12px 12px;
+  color-scheme: light;
 }
 
 html[data-skin="studio"][data-theme="light"] .panel-route-row .combo-select {
