@@ -101,7 +101,13 @@ telegram_get_me() {
 }
 
 do_update() {
-  bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install.sh) --update
+  local args=(--update)
+  for a in "$@"; do
+    case "$a" in
+      --full|-f|full) args+=(--full) ;;
+    esac
+  done
+  bash <(curl -Ls https://raw.githubusercontent.com/Peymantia/quadtwo/main/install.sh) "${args[@]}"
 }
 
 do_env() {
@@ -894,7 +900,8 @@ Usage:
   q2 start           Start services
   q2 stop            Stop services
   q2 restart         Restart services
-  q2 update          Pull & rebuild from GitHub
+  q2 update          Smart pull & rebuild (only what changed)
+  q2 update --full   Clean full rebuild (slow, like before)
   q2 status          Service status
   q2 logs            Follow journal logs
   q2 env             Edit .env
@@ -918,7 +925,7 @@ run_cmd() {
     start) svc_start ;;
     stop) svc_stop ;;
     restart) svc_restart ;;
-    update) do_update ;;
+    update) do_update "$@" ;;
     status) svc_status ;;
     logs) svc_logs ;;
     env) do_env ;;
@@ -956,7 +963,8 @@ ${DIM}dir: ${DIR}${NC}
   ${GREEN}1${NC}) start
   ${GREEN}2${NC}) stop
   ${GREEN}3${NC}) restart
-  ${GREEN}4${NC}) update
+  ${GREEN}4${NC}) update ${DIM}(smart)${NC}
+  ${GREEN}f${NC}) update --full ${DIM}(clean rebuild)${NC}
   ${GREEN}5${NC}) status
   ${GREEN}6${NC}) logs
   ${GREEN}7${NC}) env
@@ -970,12 +978,13 @@ ${DIM}dir: ${DIR}${NC}
   ${YELLOW}0${NC}) exit
 
 EOF
-  read -r -p "Select [0-9/a/l/d/i/u]: " choice || true
+  read -r -p "Select [0-9/a/f/l/d/i/u]: " choice || true
   case "${choice:-}" in
     1) run_cmd start; pause ;;
     2) run_cmd stop; pause ;;
     3) run_cmd restart; pause ;;
     4) run_cmd update; pause ;;
+    f|F) run_cmd update --full; pause ;;
     5) run_cmd status; pause ;;
     6)
       echo -e "${DIM}Ctrl+C to stop following logs${NC}"

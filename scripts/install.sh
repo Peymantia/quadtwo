@@ -93,6 +93,11 @@ prompt() {
 
 write_env() {
   local env_file="${INSTALL_DIR}/.env"
+  # Allow "1,2,3" in the inbound prompt — store list + primary id
+  local inbound_ids="${XUI_INBOUND_ID}"
+  local inbound_primary
+  inbound_primary="$(echo "${inbound_ids}" | tr ',' ' ' | awk '{print $1}')"
+  [[ -z "${inbound_primary}" ]] && inbound_primary="1"
   cat > "${env_file}" <<EOF
 NODE_ENV=production
 PORT=${PORT}
@@ -106,7 +111,8 @@ ADMIN_TELEGRAM_IDS=${ADMIN_TELEGRAM_IDS}
 
 XUI_BASE_URL=${XUI_BASE_URL}
 XUI_API_TOKEN=${XUI_API_TOKEN}
-XUI_INBOUND_ID=${XUI_INBOUND_ID}
+XUI_INBOUND_ID=${inbound_primary}
+XUI_INBOUND_IDS=${inbound_ids}
 XUI_SUB_BASE=${XUI_SUB_BASE}
 
 PUBLIC_DOMAIN=${PUBLIC_DOMAIN}
@@ -120,9 +126,12 @@ EOF
 }
 
 clone_or_update() {
+  QUADTWO_PREV_SHA=""
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
+    QUADTWO_PREV_SHA="$(git -C "${INSTALL_DIR}" rev-parse HEAD 2>/dev/null || true)"
     log "Updating repo in ${INSTALL_DIR}..."
-    git -C "${INSTALL_DIR}" fetch --depth 1 origin "${REPO_BRANCH}"
+    # Deeper fetch so we can diff previous → new for smart builds
+    git -C "${INSTALL_DIR}" fetch --depth 30 origin "${REPO_BRANCH}"
     git -C "${INSTALL_DIR}" reset --hard "origin/${REPO_BRANCH}"
   else
     log "Cloning repo into ${INSTALL_DIR}..."
@@ -130,14 +139,10 @@ clone_or_update() {
     git clone --depth 1 --branch "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
   fi
   mkdir -p "${INSTALL_DIR}/data"
+  QUADTWO_NEW_SHA="$(git -C "${INSTALL_DIR}" rev-parse HEAD 2>/dev/null || true)"
 }
 
-build_app() {
-  cd "${INSTALL_DIR}"
-  log "Installing npm dependencies..."
-  npm install
-
-  # Load domains from .env when updating (prompts already set vars on fresh install)
+load_dotenv() {
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
     # shellcheck disable=SC1091
     set -a
@@ -145,16 +150,182 @@ build_app() {
     source "${INSTALL_DIR}/.env"
     set +a
   fi
+}
 
+build_app_full() {
+  cd "${INSTALL_DIR}"
+  load_dotenv
+  log "Full build: npm install + all packages + clean Next.js build"
+  npm install
   log "Building packages..."
   npm run build -w @quadtwo/shared
   npm run db:generate -w @quadtwo/server
   DATABASE_URL="file:${INSTALL_DIR}/data/quadtwo.db" npm run db:push -w @quadtwo/server
+  if [[ -f "${INSTALL_DIR}/data/demo.db" ]]; then
+    log "Updating demo database schema (data/demo.db)..."
+    DATABASE_URL="file:${INSTALL_DIR}/data/demo.db" npm run db:push -w @quadtwo/server \
+      || warn "demo db:push failed — check prisma"
+  fi
   npm run build -w @quadtwo/server
   log "Building web dashboard..."
-  # Clean stale chunks so HTML never references deleted hashed files
   rm -rf "${INSTALL_DIR}/apps/web/.next"
   NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN:-dash.anthropics.ir}" npm run build -w @quadtwo/web
+}
+
+# Fresh install always uses full build
+build_app() {
+  build_app_full
+}
+
+changed_match() {
+  local pattern="$1"
+  echo "${CHANGED_FILES}" | grep -E "${pattern}" >/dev/null 2>&1
+}
+
+build_app_smart() {
+  cd "${INSTALL_DIR}"
+  load_dotenv
+
+  local old="${QUADTWO_PREV_SHA:-}"
+  local new="${QUADTWO_NEW_SHA:-}"
+  CHANGED_FILES=""
+
+  if [[ -z "${old}" || -z "${new}" ]]; then
+    warn "No previous commit — running full build."
+    build_app_full
+    return
+  fi
+
+  if [[ "${old}" == "${new}" ]]; then
+    log "Already up to date (${new:0:7})."
+    if [[ ! -f "${INSTALL_DIR}/apps/server/dist/index.js" || ! -d "${INSTALL_DIR}/apps/web/.next" ]]; then
+      warn "Build artifacts missing — running full build."
+      build_app_full
+    else
+      log "Skipping rebuild (use: q2 update --full to force)."
+    fi
+    return
+  fi
+
+  if ! git -C "${INSTALL_DIR}" cat-file -e "${old}^{commit}" 2>/dev/null; then
+    warn "Previous commit not in local history — running full build."
+    build_app_full
+    return
+  fi
+
+  CHANGED_FILES="$(git -C "${INSTALL_DIR}" diff --name-only "${old}" "${new}" 2>/dev/null || true)"
+  if [[ -z "${CHANGED_FILES}" ]]; then
+    warn "Empty diff — running full build to be safe."
+    build_app_full
+    return
+  fi
+
+  log "Smart update ${old:0:7} → ${new:0:7}"
+  local count
+  count="$(echo "${CHANGED_FILES}" | grep -c . || true)"
+  log "Changed paths: ${count}"
+  echo "${CHANGED_FILES}" | head -n 25
+  if [[ "${count}" -gt 25 ]]; then
+    log "… and $((count - 25)) more"
+  fi
+
+  local need_npm=0 need_prisma=0 need_shared=0 need_server=0 need_web=0
+
+  if changed_match '^(package-lock\.json|package\.json|npm-shrinkwrap\.json|apps/[^/]+/package\.json|packages/[^/]+/package\.json)$'; then
+    need_npm=1
+  fi
+  if changed_match '^apps/server/prisma/'; then
+    need_prisma=1
+  fi
+  if changed_match '^packages/shared/'; then
+    need_shared=1
+  fi
+  if changed_match '^apps/server/'; then
+    need_server=1
+  fi
+  if changed_match '^apps/web/'; then
+    need_web=1
+  fi
+
+  # Cascades
+  if [[ "${need_npm}" -eq 1 ]]; then
+    need_shared=1
+    need_server=1
+    need_web=1
+    need_prisma=1
+  fi
+  if [[ "${need_shared}" -eq 1 ]]; then
+    need_server=1
+    need_web=1
+  fi
+  if [[ "${need_prisma}" -eq 1 ]]; then
+    need_server=1
+  fi
+
+  if [[ "${need_npm}" -eq 0 && "${need_prisma}" -eq 0 && "${need_shared}" -eq 0 && "${need_server}" -eq 0 && "${need_web}" -eq 0 ]]; then
+    log "No app code/deps changed — skip compile (CLI/docs only)."
+    return
+  fi
+
+  if [[ "${need_npm}" -eq 1 ]]; then
+    log "Installing npm dependencies…"
+    npm install
+  else
+    log "Skip npm install (lockfile unchanged)."
+  fi
+
+  if [[ "${need_shared}" -eq 1 ]]; then
+    log "Building @quadtwo/shared…"
+    npm run build -w @quadtwo/shared
+  fi
+
+  if [[ "${need_prisma}" -eq 1 ]]; then
+    log "Prisma generate + db push…"
+    npm run db:generate -w @quadtwo/server
+    DATABASE_URL="file:${INSTALL_DIR}/data/quadtwo.db" npm run db:push -w @quadtwo/server
+    if [[ -f "${INSTALL_DIR}/data/demo.db" ]]; then
+      DATABASE_URL="file:${INSTALL_DIR}/data/demo.db" npm run db:push -w @quadtwo/server \
+        || warn "demo db:push failed"
+    fi
+  elif [[ "${need_server}" -eq 1 ]]; then
+    # Keep client in sync when server rebuilds
+    npm run db:generate -w @quadtwo/server
+  fi
+
+  if [[ "${need_server}" -eq 1 ]]; then
+    log "Building @quadtwo/server…"
+    npm run build -w @quadtwo/server
+  fi
+
+  if [[ "${need_web}" -eq 1 ]]; then
+    log "Building web dashboard (incremental Next.js)…"
+    # Keep .next cache for speed; use --full to wipe if chunks go stale
+    NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN:-dash.anthropics.ir}" npm run build -w @quadtwo/web
+  fi
+
+  log "Smart build done."
+}
+
+do_update() {
+  need_root
+  detect_os
+  [[ -d "${INSTALL_DIR}/.git" ]] || { err "No existing install found at ${INSTALL_DIR}."; exit 1; }
+  install_node
+  clone_or_update
+  if [[ "${UPDATE_FULL:-0}" -eq 1 ]]; then
+    log "Mode: full rebuild"
+    build_app_full
+  else
+    log "Mode: smart update (pass --full to force clean rebuild)"
+    build_app_smart
+  fi
+  write_systemd
+  write_helper
+  if systemctl list-unit-files quadtwo-demo.service &>/dev/null; then
+    systemctl restart quadtwo-demo quadtwo-demo-web 2>/dev/null || true
+    log "Restarted demo showcase services (quadtwo-demo)."
+  fi
+  log "Update complete."
 }
 
 write_systemd() {
@@ -233,7 +404,7 @@ do_install() {
   prompt ADMIN_TELEGRAM_IDS "Admin Telegram numeric ID"
   prompt XUI_BASE_URL "3x-ui base URL (trailing slash required)" "http://127.0.0.1:2053/"
   prompt XUI_API_TOKEN "3x-ui API token"
-  prompt XUI_INBOUND_ID "Inbound ID" "1"
+  prompt XUI_INBOUND_ID "Inbound ID(s), comma-separated" "1"
   prompt XUI_SUB_BASE "Subscription base URL (optional)" ""
   prompt PUBLIC_DOMAIN "Public domain for Mini App / API" "app.anthropics.ir"
   prompt DASH_DOMAIN "Web dashboard domain" "dash.anthropics.ir"
@@ -252,28 +423,14 @@ do_install() {
   echo "  Config:   q2 env"
   echo "  New bot:  q2 set-token   # after BotFather token change / rebrand"
   echo "  New admin: q2 set-admin  # replace ADMIN_TELEGRAM_IDS + demote old admins"
+  echo "  Demo:     q2 demo        # DEMO_MODE on/off / status (showcase bot)"
+  echo "  License:  q2 activate | q2 license"
+  echo "  Update:   q2 update      # smart |  q2 update --full"
   echo "  Dashboard: https://${DASH_DOMAIN:-dash.anthropics.ir}"
   echo "  Nginx sample: deploy/nginx-dash.anthropics.ir.conf"
   echo "  In bot:  /setcard CARD_NUMBER|CARD_HOLDER_NAME"
   echo "  Then open Telegram and send /start to the bot."
   systemctl --no-pager --full status "${SERVICE_NAME}" || true
-}
-
-do_update() {
-  need_root
-  detect_os
-  [[ -d "${INSTALL_DIR}/.git" ]] || { err "No existing install found at ${INSTALL_DIR}."; exit 1; }
-  install_node
-  clone_or_update
-  build_app
-  write_systemd
-  write_helper
-  # Keep isolated demo stack on updated code if previously set up
-  if systemctl list-unit-files quadtwo-demo.service &>/dev/null; then
-    systemctl restart quadtwo-demo quadtwo-demo-web 2>/dev/null || true
-    log "Restarted demo showcase services (quadtwo-demo)."
-  fi
-  log "Update complete."
 }
 
 do_uninstall() {
@@ -293,11 +450,22 @@ do_uninstall() {
   log "Uninstall complete."
 }
 
+UPDATE_FULL=0
 case "${1:-}" in
-  --update|-u) do_update ;;
+  --update|-u)
+    shift || true
+    for arg in "$@"; do
+      case "${arg}" in
+        --full|-f|full) UPDATE_FULL=1 ;;
+      esac
+    done
+    do_update
+    ;;
   --uninstall) do_uninstall ;;
   --help|-h)
-    echo "Usage: install.sh [--update|--uninstall]"
+    echo "Usage: install.sh [--update [--full]|--uninstall]"
+    echo "  --update         Smart rebuild (only changed parts)"
+    echo "  --update --full  Clean full rebuild (like fresh install build)"
     ;;
   *) do_install ;;
 esac
