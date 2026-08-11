@@ -645,10 +645,19 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   <div>
                     <div className="config-card-head">
                       <div className="config-card-head__meta">
-                        <strong className="num">{c.email}</strong>{" "}
-                        <span className={`badge ${active ? "ok" : "bad"}`}>
-                          {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
-                        </span>
+                        <div>
+                          <strong className="num">{c.email}</strong>{" "}
+                          <span className={`badge ${active ? "ok" : "bad"}`}>
+                            {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
+                          </span>
+                        </div>
+                        {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
+                        {c.note && <div className="muted config-card-note">نوت: {c.note}</div>}
+                        {c.code && (
+                          <div className="muted config-card-code">
+                            کد: <span className="num">{c.code}</span>
+                          </div>
+                        )}
                       </div>
                       {c.subUrl && (
                         <button
@@ -663,13 +672,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                         </button>
                       )}
                     </div>
-                    {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
-                    {c.note && <div className="muted" style={{ marginTop: 6 }}>نوت: {c.note}</div>}
-                    {c.code && (
-                      <div className="muted num" style={{ marginTop: 4 }}>
-                        کد: {c.code}
-                      </div>
-                    )}
                     <div className="muted" style={{ marginTop: 8 }}>
                       حجم کل:{" "}
                       <strong className="num">

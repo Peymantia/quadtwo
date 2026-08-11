@@ -3517,6 +3517,17 @@ button.pay-dest-number:active,
   line-height: 1.45;
 }
 
+.config-card-head__meta .config-card-note,
+.config-card-head__meta .config-card-code {
+  margin-top: 4px;
+  text-align: start;
+}
+
+.config-card-head__meta .config-card-code .num {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 .config-qr-btn {
   flex: 0 0 auto;
   width: 36px;
