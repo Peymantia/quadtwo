@@ -3519,12 +3519,22 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                 <div>
                   <div className="config-card-head">
                     <div className="config-card-head__meta">
-                      <strong className="num">{c.email}</strong>{" "}
-                      {!c.inDb && <span className="badge warn">فقط پنل</span>}
-                      {c.status === "active" && !expired && <span className="badge ok">فعال</span>}
-                      {(c.status === "disabled" || expired) && (
-                        <span className={`badge ${expired ? "warn" : "bad"}`}>{expired ? "منقضی" : "غیرفعال"}</span>
+                      <div>
+                        <strong className="num">{c.email}</strong>{" "}
+                        {!c.inDb && <span className="badge warn">فقط پنل</span>}
+                        {c.status === "active" && !expired && <span className="badge ok">فعال</span>}
+                        {(c.status === "disabled" || expired) && (
+                          <span className={`badge ${expired ? "warn" : "bad"}`}>{expired ? "منقضی" : "غیرفعال"}</span>
+                        )}
+                      </div>
+                      {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
+                      {c.note && <div className="muted config-card-note">نوت: {c.note}</div>}
+                      {c.code && (
+                        <div className="muted config-card-code">
+                          کد: <span className="num">{c.code}</span>
+                        </div>
                       )}
+                      {c.ownerLabel && <div className="muted">{c.ownerLabel}</div>}
                     </div>
                     {c.inDb && c.subUrl && (
                       <button
@@ -3539,14 +3549,6 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       </button>
                     )}
                   </div>
-                  {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
-                  {c.note && (
-                    <div className="muted" style={{ marginTop: 4 }}>
-                      نوت: {c.note}
-                    </div>
-                  )}
-                  {c.code && <div className="muted num" style={{ marginTop: 4 }}>کد: {c.code}</div>}
-                  <div className="muted">{c.ownerLabel}</div>
                   <div className="muted" style={{ marginTop: 8 }}>
                     حجم کل:{" "}
                     <strong className="num">
