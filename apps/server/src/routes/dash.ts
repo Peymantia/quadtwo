@@ -888,7 +888,14 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           return cats.includes(cell.category);
         })
         .map(async (cell) => {
-          const resolved = await resolvePrice(pricedUser, cell.trafficGb, cell.months, cell.category);
+          // Admin UI shows همکار ویژه prices; checkout remains complimentary (price 0)
+          const resolved = await resolvePrice(
+            pricedUser,
+            cell.trafficGb,
+            cell.months,
+            cell.category,
+            pricedUser.role === "admin" ? "reseller" : undefined,
+          );
           return {
             id: cell.id,
             category:
@@ -905,13 +912,21 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         }),
     );
 
-    if (cats.includes("unlimited") && pricedUser.role !== "wholesale") {
+    // Rate-mode only: fill missing unlimited months. Never invent fake cell ids when matrix unlimited plans exist
+    // (inactive matrix rows must not reappear as selectable rate-unlimited-* stubs).
+    if (cats.includes("unlimited") && pricedUser.role !== "wholesale" && pricingMode === "rate") {
       const haveMonths = new Set(
         priced.filter((p) => p.category === "unlimited" && p.price != null).map((p) => p.months),
       );
       for (let months = 1; months <= maxMonths; months++) {
         if (haveMonths.has(months)) continue;
-        const resolved = await resolvePrice(pricedUser, null, months, "unlimited");
+        const resolved = await resolvePrice(
+          pricedUser,
+          null,
+          months,
+          "unlimited",
+          pricedUser.role === "admin" ? "reseller" : undefined,
+        );
         if (!resolved) continue;
         priced.push({
           id: `rate-unlimited-${months}`,
@@ -941,6 +956,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         unlimited: null,
       },
       cells: priced.filter((cell) => cell.price != null),
+      adminComplimentary: pricedUser.role === "admin",
     });
   });
 
@@ -1013,15 +1029,22 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const priceCellId = body.priceCellId?.trim() || "";
     let resolvedCell: Awaited<ReturnType<typeof prisma.priceCell.findFirst>> = null;
     if (priceCellId) {
-      const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
-      const tenantId = await resolveTenantIdOrPlatform();
-      resolvedCell = await prisma.priceCell.findFirst({
-        where: { id: priceCellId, tenantId, active: true },
-      });
-      if (!resolvedCell) return c.json({ error: "پلن انتخاب‌شده پیدا نشد" }, 400);
-      trafficGb = resolvedCell.trafficGb;
-      months = resolvedCell.months;
-      category = resolvedCell.category;
+      const rateUnlimited = /^rate-unlimited-(\d+)$/.exec(priceCellId);
+      if (rateUnlimited) {
+        months = Math.max(1, Number(rateUnlimited[1]) || 1);
+        trafficGb = null;
+        category = "unlimited";
+      } else {
+        const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+        const tenantId = await resolveTenantIdOrPlatform();
+        resolvedCell = await prisma.priceCell.findFirst({
+          where: { id: priceCellId, tenantId, active: true },
+        });
+        if (!resolvedCell) return c.json({ error: "پلن انتخاب‌شده پیدا نشد" }, 400);
+        trafficGb = resolvedCell.trafficGb;
+        months = resolvedCell.months;
+        category = resolvedCell.category;
+      }
     }
 
     const offerLocked = isOfferCategory(category);
@@ -1036,6 +1059,19 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       if (priced.price <= 0 && pricedUser.role !== "admin") priced = null;
     }
     if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
+
+    // Admin: show همکار ویژه service amount while payable stays 0
+    let servicePrice = priced.price;
+    if (pricedUser.role === "admin") {
+      if (resolvedCell) {
+        const { priceFromCell } = await import("../services/pricing.js");
+        servicePrice = priceFromCell("reseller", resolvedCell);
+      } else {
+        const shown = await resolvePrice(pricedUser, trafficGb, months, category, "reseller");
+        servicePrice = shown?.price ?? 0;
+      }
+    }
+
     const priceBefore = priced.price * (fixedSingle ? 1 : qty);
     let discountAmount = 0;
     let price = priceBefore;
@@ -1065,6 +1101,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     }
     return c.json({
       price,
+      servicePrice: pricedUser.role === "admin" ? servicePrice * (fixedSingle ? 1 : qty) : price,
       priceBefore,
       discountAmount,
       discountCode,

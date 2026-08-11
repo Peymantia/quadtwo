@@ -13,6 +13,8 @@ export type RateShopCatalog = {
   defaultLimitIp?: number;
   canEditLimitIp?: boolean;
   discountsEnabled?: boolean;
+  /** Admin checkout is free; catalog still shows reseller-tier service amounts */
+  adminComplimentary?: boolean;
   volumeRules?: {
     data: { min: number; max: number; step: number };
     national: { min: number; max: number; step: number };
@@ -213,6 +215,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const [customName, setCustomName] = useState("");
   const [note, setNote] = useState("");
   const [price, setPrice] = useState<number | null>(null);
+  const [servicePrice, setServicePrice] = useState<number | null>(null);
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -373,6 +376,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     const t = window.setTimeout(() => {
       if (isFixedSingle && !selectedFixed) {
         setPrice(null);
+        setServicePrice(null);
         setPriceBefore(null);
         setDiscountAmount(0);
         setDiscountErr(null);
@@ -388,6 +392,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       setQuoteErr(null);
       void api<{
         price: number;
+        servicePrice?: number;
         priceBefore?: number;
         discountAmount?: number;
         discountError?: string | null;
@@ -407,6 +412,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         .then((r) => {
           if (cancelled) return;
           setPrice(r.price);
+          setServicePrice(r.servicePrice ?? r.price);
           setPriceBefore(r.priceBefore ?? r.price);
           setDiscountAmount(r.discountAmount ?? 0);
           // Keep check-button errors; only clear when verified discount applies cleanly
@@ -415,6 +421,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         .catch((e) => {
           if (cancelled) return;
           setPrice(null);
+          setServicePrice(null);
           setPriceBefore(null);
           setDiscountAmount(0);
           setDiscountErr(null);
@@ -532,6 +539,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
     (!isFixedSingle || Boolean(selectedFixed)) &&
     (nameMode === "random" || isValidAccountName(customName));
   const catLabel = catalog.categoryLabels[category] || category;
+  const displayService =
+    variant === "admin"
+      ? servicePrice ?? selectedFixed?.price ?? price
+      : price;
   const confirmLines = [
     `اکانت «${pendingName}»`,
     `نوع: ${catLabel}`,
@@ -544,7 +555,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       ? `قبل از تخفیف: ${formatToman(priceBefore)}`
       : "",
     discountAmount > 0 ? `تخفیف: −${formatToman(discountAmount)}` : "",
-    `مبلغ: ${price != null ? formatToman(price) : "—"}`,
+    variant === "admin"
+      ? `مبلغ سرویس: ${displayService != null ? formatToman(displayService) : "—"}`
+      : `مبلغ: ${price != null ? formatToman(price) : "—"}`,
+    variant === "admin" ? "مبلغ قابل پرداخت: صفر" : "",
   ].filter(Boolean);
   if (note.trim()) confirmLines.push(`توضیحات: ${note.trim()}`);
 
@@ -711,11 +725,22 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       )}
 
       <div className="seek-price seek-price-live">
-        <span className="muted">مبلغ</span>
+        <span className="muted">{variant === "admin" ? "مبلغ سرویس" : "مبلغ"}</span>
         <strong className="num">
-          {quoting ? "…" : price != null ? formatToman(price) : quoteErr ? "—" : "…"}
+          {quoting
+            ? "…"
+            : displayService != null
+              ? formatToman(displayService)
+              : quoteErr
+                ? "—"
+                : "…"}
         </strong>
       </div>
+      {variant === "admin" && displayService != null && (
+        <p className="muted" style={{ margin: "0 0 8px" }}>
+          مبلغ قابل پرداخت: صفر
+        </p>
+      )}
       {discountAmount > 0 && priceBefore != null && priceBefore !== price && (
         <p className="muted" style={{ margin: "0 0 8px" }}>
           قبل از تخفیف: {formatToman(priceBefore)} · تخفیف −{formatToman(discountAmount)}
@@ -869,7 +894,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
         <p className="order-confirm-summary">{confirmLines.join("\n")}</p>
         {variant === "admin" && (
           <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
-            ساخت رایگان توسط ادمین — بدون کسر از کیف پول.
+            ساخت توسط ادمین — مبلغ قابل پرداخت صفر است و از کیف پول کسر نمی‌شود.
           </p>
         )}
         <div className="actions order-confirm-actions">

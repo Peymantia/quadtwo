@@ -78,7 +78,7 @@ import {
 import { registerDiscountBotHandlers, handleDiscountCreateText, clearDiscountBotWaits } from "./discount-bot.js";
 import { registerMySalesBotHandlers } from "./my-sales.js";
 import { registerAdminConfigs, showConfigGroups } from "./admin-configs.js";
-import { markEphemeral, markTriggerEphemeral, replyEphemeral, replyShortEphemeral } from "./ephemeral.js";
+import { markEphemeral, markTriggerEphemeral, replyEphemeral, replyShortEphemeral, EPHEMERAL_TTL_MS } from "./ephemeral.js";
 import {
   adjustDraftMonths,
   adjustDraftQty,
@@ -263,8 +263,16 @@ async function replyMainMenu(ctx: Context, preface?: string) {
   }
 
   if (shouldEnsureMainKeyboard(ctx)) {
-    // Persistent keyboard carrier (never auto-deleted)
-    await ctx.reply(sticky, { reply_markup: kb });
+    // Attach keyboard, then fade the carrier text so chat stays clean (keyboard remains sticky)
+    const msg = await ctx.reply(sticky, { reply_markup: kb });
+    const chatId = ctx.chat?.id ?? msg.chat.id;
+    const messageId = msg.message_id;
+    const timer = setTimeout(() => {
+      void ctx.api
+        .editMessageText(chatId, messageId, "‎")
+        .catch(() => ctx.api.deleteMessage(chatId, messageId).catch(() => undefined));
+    }, EPHEMERAL_TTL_MS);
+    timer.unref?.();
   } else if (!hasToast) {
     await replyEphemeral(ctx, sticky);
   }

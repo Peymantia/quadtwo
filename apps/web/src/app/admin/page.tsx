@@ -19,6 +19,7 @@ import { DiscountCodesPanel } from "../../components/DiscountCodesPanel";
 import { AgentsLeaderboardPanel, SalesReportPanel, AccountDetailModal } from "../../components/SalesReportPanel";
 import { SettingsAccordion } from "../../components/SettingsAccordion";
 import { SuperadminTenantsPanel } from "../../components/SuperadminTenantsPanel";
+import { QrCodeIcon } from "../../components/QrCodeIcon";
 import { broadcastAppearance } from "../../components/ThemeBoot";
 import { parseColorMode, parseUiSkin, setUserColorOverride, type ColorMode } from "../../lib/theme";
 
@@ -588,11 +589,12 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
               `نوع: ${catLabels[selected.category] || selected.category}`,
               `حجم: ${selected.trafficGb == null ? "∞" : `${selected.trafficGb.toLocaleString("fa-IR")} گیگابایت`}`,
               `مدت: ${selected.months.toLocaleString("fa-IR")} ماه`,
-              `مبلغ: ${formatToman(selected.price)}`,
+              `مبلغ سرویس: ${formatToman(selected.price)}`,
+              "مبلغ قابل پرداخت: صفر",
             ].join("\n")}
           </p>
           <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
-            ساخت رایگان توسط ادمین — بدون کسر از کیف پول.
+            ساخت توسط ادمین — مبلغ قابل پرداخت صفر است و از کیف پول کسر نمی‌شود.
           </p>
           <div className="actions order-confirm-actions">
             <button type="button" className="btn success" disabled={busy} onClick={() => void create()}>
@@ -3529,11 +3531,11 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                         type="button"
                         className="btn sm config-qr-btn"
                         disabled={editBusy}
-                        title="نمایش QR Code"
-                        aria-label="نمایش QR Code"
+                        title="QR Code"
+                        aria-label="QR Code"
                         onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
                       >
-                        QR Code
+                        <QrCodeIcon />
                       </button>
                     )}
                   </div>
@@ -3543,7 +3545,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       نوت: {c.note}
                     </div>
                   )}
-                  {c.code && <div className="muted num">کد: {c.code}</div>}
+                  {c.code && <div className="muted num" style={{ marginTop: 4 }}>کد: {c.code}</div>}
                   <div className="muted">{c.ownerLabel}</div>
                   <div className="muted" style={{ marginTop: 8 }}>
                     حجم کل:{" "}

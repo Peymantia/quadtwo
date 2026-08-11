@@ -4,10 +4,22 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Modal } from "./Modal";
 
-/** Dark-themed QR modal for a subscription URL. */
+function qrColors() {
+  if (typeof document === "undefined") {
+    return { dark: "#0f172a", light: "#ffffff" };
+  }
+  const theme = document.documentElement.dataset.theme;
+  const isLight = theme === "light";
+  // Light theme: dark modules on white. Dark theme: light modules on deep panel.
+  return isLight
+    ? { dark: "#0f172a", light: "#ffffff" }
+    : { dark: "#e2e8f0", light: "#12162e" };
+}
+
+/** QR modal for a subscription URL — follows light/dark theme. */
 export function SubQrModal({
   open,
-  title = "QR اشتراک",
+  title = "QR Code",
   subUrl,
   onClose,
 }: {
@@ -27,10 +39,11 @@ export function SubQrModal({
     }
     let cancelled = false;
     setErr(null);
+    const colors = qrColors();
     void QRCode.toDataURL(subUrl, {
       width: 280,
       margin: 2,
-      color: { dark: "#e2e8f0", light: "#12162e" },
+      color: colors,
       errorCorrectionLevel: "M",
     })
       .then((url) => {
@@ -51,7 +64,7 @@ export function SubQrModal({
         {!err && !src && <p className="muted">در حال ساخت QR…</p>}
         {src && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img className="sub-qr-img" src={src} alt="QR کد اشتراک" width={280} height={280} />
+          <img className="sub-qr-img" src={src} alt="QR Code اشتراک" width={280} height={280} />
         )}
         <p className="muted sub-qr-hint">با اپ کلاینت اسکن کنید</p>
         <button type="button" className="btn ghost wide" onClick={onClose}>

@@ -2304,9 +2304,27 @@ button.stat.stat-link:active {
 }
 
 .plan-card.on {
-  border-color: rgba(52, 211, 153, 0.65);
-  background: rgba(52, 211, 153, 0.1);
-  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.25);
+  border-color: rgba(6, 182, 212, 0.85);
+  background: rgba(6, 182, 212, 0.12);
+  box-shadow:
+    0 0 0 2px rgba(6, 182, 212, 0.45),
+    0 10px 28px rgba(6, 182, 212, 0.18);
+}
+
+html[data-theme="light"] .plan-card.on {
+  border-color: #0891b2;
+  background: rgba(8, 145, 178, 0.1);
+  box-shadow:
+    0 0 0 2px rgba(8, 145, 178, 0.35),
+    0 8px 22px rgba(8, 145, 178, 0.16);
+}
+
+html[data-theme="dark"] .plan-card.on {
+  border-color: rgba(34, 211, 238, 0.9);
+  background: rgba(34, 211, 238, 0.12);
+  box-shadow:
+    0 0 0 2px rgba(34, 211, 238, 0.4),
+    0 10px 28px rgba(6, 182, 212, 0.22);
 }
 
 .plan-card .plan-name {
@@ -3501,19 +3519,14 @@ button.pay-dest-number:active,
 
 .config-qr-btn {
   flex: 0 0 auto;
-  width: auto;
-  min-width: 0;
-  height: 32px;
-  padding: 0 10px !important;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 !important;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
   line-height: 1;
-  white-space: nowrap;
   background: linear-gradient(135deg, #0e7490 0%, #06b6d4 55%, #22d3ee 100%) !important;
   color: #041018 !important;
   border: none !important;
@@ -3522,6 +3535,28 @@ button.pay-dest-number:active,
 
 .config-qr-btn:hover:not(:disabled) {
   filter: brightness(1.06);
+}
+
+.config-qr-btn svg {
+  display: block;
+}
+
+.sub-qr-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.sub-qr-img {
+  border-radius: 14px;
+  background: #fff;
+  padding: 10px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+html[data-theme="dark"] .sub-qr-img {
+  background: #12162e;
 }
 
 .config-card-actions {

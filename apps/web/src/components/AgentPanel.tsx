@@ -18,6 +18,7 @@ import { DiscountCodesPanel } from "./DiscountCodesPanel";
 import { SalesReportPanel } from "./SalesReportPanel";
 import { ConfigCardActions } from "./ConfigCardActions";
 import { RenewModal, type RenewInfo } from "./RenewModal";
+import { QrCodeIcon } from "./QrCodeIcon";
 
 type PayCard = { number: string; holder: string };
 type PayModalState =
@@ -654,15 +655,16 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                           type="button"
                           className="btn sm config-qr-btn"
                           disabled={busy}
-                          title="نمایش QR Code"
-                          aria-label="نمایش QR Code"
+                          title="QR Code"
+                          aria-label="QR Code"
                           onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
                         >
-                          QR Code
+                          <QrCodeIcon />
                         </button>
                       )}
                     </div>
                     {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
+                    {c.note && <div className="muted" style={{ marginTop: 6 }}>نوت: {c.note}</div>}
                     {c.code && (
                       <div className="muted num" style={{ marginTop: 4 }}>
                         کد: {c.code}
@@ -693,7 +695,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                       </strong>
                     </div>
                   </div>
-                  {c.note && <div className="muted" style={{ marginTop: 6 }}>نوت: {c.note}</div>}
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                   <ConfigCardActions
                     item={c}

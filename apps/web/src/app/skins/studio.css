@@ -690,6 +690,21 @@ html[data-skin="studio"] .panel {
   border-radius: var(--radius);
 }
 
+html[data-skin="studio"] .plan-card.on {
+  border-color: rgba(6, 182, 212, 0.9) !important;
+  box-shadow:
+    0 0 0 2px rgba(6, 182, 212, 0.4),
+    0 12px 28px rgba(6, 182, 212, 0.18) !important;
+}
+
+html[data-skin="studio"][data-theme="light"] .plan-card.on {
+  border-color: #0891b2 !important;
+  background: rgba(8, 145, 178, 0.12) !important;
+  box-shadow:
+    0 0 0 2px rgba(8, 145, 178, 0.32),
+    0 10px 24px rgba(8, 145, 178, 0.14) !important;
+}
+
 html[data-skin="studio"][data-theme="light"] .panel,
 html[data-skin="studio"][data-theme="light"] .row-card,
 html[data-skin="studio"][data-theme="light"] .plan-card,
