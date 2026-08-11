@@ -195,11 +195,12 @@ export async function resolveSubUrl(
   return buildSubUrl(subId, settings, subBaseOverride, xui.panelBaseUrl);
 }
 
-/** Clear Mini App hosts / pasted full-client URLs stored as PanelServer.subBase. */
+/** Persist cleaned PanelServer.subBase (clear pasted …/info/<clientId>, drop Mini App hosts). */
 async function healPanelSubBase(panelId: string | undefined, rawSubBase: string | null | undefined) {
-  if (!panelId || !rawSubBase?.trim()) return;
+  if (!panelId || rawSubBase == null) return;
   const raw = rawSubBase.trim();
   try {
+    if (!raw) return;
     if (!isValidSubBase(raw) || wasContaminatedSubBase(raw)) {
       await prisma.panelServer.update({
         where: { id: panelId },
@@ -208,12 +209,11 @@ async function healPanelSubBase(panelId: string | undefined, rawSubBase: string 
       return;
     }
     const cleaned = sanitizeSubBase(raw);
-    if (cleaned && cleaned !== normalizeSubBase(raw)) {
-      await prisma.panelServer.update({
-        where: { id: panelId },
-        data: { subBase: cleaned },
-      });
-    }
+    if (!cleaned || cleaned === normalizeSubBase(raw)) return;
+    await prisma.panelServer.update({
+      where: { id: panelId },
+      data: { subBase: cleaned },
+    });
   } catch {
     /* ignore */
   }
@@ -236,7 +236,8 @@ export async function refreshSubscriptionSubUrl(subscriptionId: string): Promise
     if (!panelSubId) return sub.subUrl;
 
     const settings = await panelSettings(resolved.xui);
-    await healPanelSubBase(resolved.panel?.id, resolved.subBase);
+    // Heal from raw DB value (resolved.subBase is already sanitized)
+    await healPanelSubBase(resolved.panel?.id, resolved.panel?.subBase ?? null);
 
     // Same as 3x-ui Client Info: subURI + subId (override only if panel has no subURI)
     const subUrl = buildSubUrl(panelSubId, settings, resolved.subBase, resolved.xui.panelBaseUrl);

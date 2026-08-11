@@ -5,7 +5,7 @@ import { XuiClient, createXuiFromEnv } from "../panel/xui-client.js";
 import { formatXuiError } from "../panel/xui-errors.js";
 import { parseInboundIds } from "./inbounds.js";
 import type { PlanCategory } from "./pricing.js";
-import { sanitizeSubBase } from "./sub-url.js";
+import { isValidSubBase, normalizeSubBase, sanitizeSubBase, wasContaminatedSubBase } from "./sub-url.js";
 import { isDemoMode } from "./license.js";
 
 function assertNotDemoPanel() {
@@ -55,21 +55,59 @@ export function envPanelSnapshot(): {
   baseUrl: string;
   apiToken: string;
   inboundIds: string;
+  /** Sanitized base only (never a full client subscription URL). */
   subBase: string | null;
+  /** True when XUI_SUB_BASE looked like a pasted full client link and was stripped. */
+  subBaseWasContaminated: boolean;
   categories: string;
 } | null {
   if (!env.XUI_BASE_URL?.trim() || !env.XUI_API_TOKEN?.trim()) return null;
   const inboundIds =
     env.XUI_INBOUND_IDS?.trim() ||
     (env.XUI_INBOUND_ID ? String(env.XUI_INBOUND_ID) : "1");
+  const rawSub = env.XUI_SUB_BASE?.trim() || null;
+  const contaminated = wasContaminatedSubBase(rawSub);
   return {
-    name: "سرور پیش‌فرض (.env)",
+    name: "سرور اصلی",
     baseUrl: env.XUI_BASE_URL.trim(),
     apiToken: env.XUI_API_TOKEN.trim(),
     inboundIds,
-    subBase: env.XUI_SUB_BASE?.trim() || null,
+    // Full client URLs in XUI_SUB_BASE break every new sub — leave empty and use 3x-ui subURI
+    subBase: contaminated ? null : sanitizeSubBase(rawSub),
+    subBaseWasContaminated: contaminated,
     categories: stringifyPanelCategories(["data", "national", "unlimited"]),
   };
+}
+
+/**
+ * Strip pasted full-client sub URLs from PanelServer.subBase.
+ * Contaminated values (…/info/<clientId>) are cleared so 3x-ui subURI is used.
+ */
+export async function repairPanelSubBases(): Promise<{ fixed: number }> {
+  const panels = await prisma.panelServer.findMany({
+    select: { id: true, subBase: true },
+  });
+  let fixed = 0;
+  for (const p of panels) {
+    const raw = p.subBase?.trim() || "";
+    if (!raw) continue;
+    if (wasContaminatedSubBase(raw) || !isValidSubBase(raw)) {
+      await prisma.panelServer.update({
+        where: { id: p.id },
+        data: { subBase: null },
+      });
+      fixed += 1;
+      continue;
+    }
+    const cleaned = sanitizeSubBase(raw);
+    if (!cleaned || cleaned === normalizeSubBase(raw)) continue;
+    await prisma.panelServer.update({
+      where: { id: p.id },
+      data: { subBase: cleaned },
+    });
+    fixed += 1;
+  }
+  return { fixed };
 }
 
 export async function listPanelServers() {
@@ -91,19 +129,34 @@ export async function importPanelFromEnv() {
   const snap = envPanelSnapshot();
   if (!snap) throw new Error("در .env مقدار XUI_BASE_URL و XUI_API_TOKEN یافت نشد");
 
+  // Always heal any contaminated sub bases first
+  await repairPanelSubBases();
+
+  const normalizedBase = snap.baseUrl.replace(/\/+$/, "");
   const existing = await prisma.panelServer.findFirst({
-    where: { tenantId, baseUrl: snap.baseUrl },
+    where: {
+      tenantId,
+      OR: [{ baseUrl: snap.baseUrl }, { baseUrl: `${normalizedBase}/` }, { baseUrl: normalizedBase }],
+    },
   });
   if (existing) {
+    const data: {
+      apiToken: string;
+      inboundIds: string;
+      active: boolean;
+      sellEnabled: boolean;
+      subBase?: string | null;
+    } = {
+      apiToken: snap.apiToken,
+      inboundIds: snap.inboundIds,
+      active: true,
+      sellEnabled: true,
+    };
+    if (snap.subBase != null) data.subBase = snap.subBase;
+    else if (snap.subBaseWasContaminated) data.subBase = null;
     return prisma.panelServer.update({
       where: { id: existing.id },
-      data: {
-        apiToken: snap.apiToken,
-        inboundIds: snap.inboundIds,
-        subBase: sanitizeSubBase(snap.subBase),
-        active: true,
-        sellEnabled: true,
-      },
+      data,
     });
   }
 
@@ -111,10 +164,10 @@ export async function importPanelFromEnv() {
     data: {
       tenantId,
       name: snap.name,
-      baseUrl: snap.baseUrl,
+      baseUrl: snap.baseUrl.replace(/\/?$/, "/"),
       apiToken: snap.apiToken,
       inboundIds: snap.inboundIds,
-      subBase: sanitizeSubBase(snap.subBase),
+      subBase: snap.subBase,
       categories: snap.categories,
       active: true,
       sellEnabled: true,

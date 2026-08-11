@@ -3788,7 +3788,12 @@ type EnvPanelSnap = {
   hasToken: boolean;
   inboundIds: string;
   subBase?: string | null;
+  subBaseWasContaminated?: boolean;
 };
+
+function samePanelBaseUrl(a: string, b: string) {
+  return a.replace(/\/+$/, "").toLowerCase() === b.replace(/\/+$/, "").toLowerCase();
+}
 
 function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
   const [panels, setPanels] = useState<PanelRow[]>([]);
@@ -3796,6 +3801,8 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [form, setForm] = useState({ name: "", baseUrl: "", apiToken: "", inboundIds: "1" });
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const [envModalOpen, setEnvModalOpen] = useState(false);
+  const [envDismissed, setEnvDismissed] = useState(false);
   const [importingEnv, setImportingEnv] = useState(false);
   const [routingBusy, setRoutingBusy] = useState(false);
   const [routeMap, setRouteMap] = useState<Record<string, string>>({});
@@ -3826,6 +3833,18 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
   useEffect(() => {
     void load();
   }, [load]);
+
+  const envAlreadyImported = Boolean(
+    envPanel && panels.some((p) => samePanelBaseUrl(p.baseUrl, envPanel.baseUrl)),
+  );
+  const offerEnvImport = Boolean(envPanel && !envAlreadyImported);
+
+  useEffect(() => {
+    // One-time prompt only when there is no DB panel yet
+    if (offerEnvImport && panels.length === 0 && !envDismissed) {
+      setEnvModalOpen(true);
+    }
+  }, [offerEnvImport, panels.length, envDismissed]);
 
   useEffect(() => {
     void api<{ categories: CategoryRow[] }>("/admin/categories")
@@ -3939,12 +3958,19 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
     try {
       const r = await api<{ id: string; name: string }>("/admin/panels/import-env", { body: {} });
       flash(`سرور «${r.name}» از .env وارد شد`);
+      setEnvModalOpen(false);
+      setEnvDismissed(true);
       await load();
     } catch (e) {
       flash(null, errText(e));
     } finally {
       setImportingEnv(false);
     }
+  }
+
+  function dismissEnvModal() {
+    setEnvModalOpen(false);
+    setEnvDismissed(true);
   }
 
   function toggleCat(key: string) {
@@ -4008,9 +4034,9 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>سرورها</h2>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {envPanel && (
-              <button type="button" className="btn light sm" disabled={importingEnv} onClick={() => void importFromEnv()}>
-                {importingEnv ? "…" : "وارد کردن از .env"}
+            {offerEnvImport && (
+              <button type="button" className="btn light sm" disabled={importingEnv} onClick={() => setEnvModalOpen(true)}>
+                ورود از .env
               </button>
             )}
             <button type="button" className="btn success sm" onClick={() => setShowAddPanel(true)}>
@@ -4018,36 +4044,6 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             </button>
           </div>
         </div>
-
-        {envPanel && (
-          <div className="env-server-card">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <strong>{envPanel.name}</strong>
-                <div className="muted num url-break" style={{ marginTop: 4 }}>
-                  {envPanel.baseUrl}
-                </div>
-                <div className="muted" style={{ marginTop: 4, fontSize: "0.82rem" }}>
-                  اینباند: <span className="num">{envPanel.inboundIds}</span> · توکن {envPanel.hasToken ? "✓" : "✗"}
-                  {envPanel.subBase ? (
-                    <>
-                      {" "}
-                      · ساب: <span className="num url-break">{envPanel.subBase}</span>
-                    </>
-                  ) : null}
-                </div>
-                <p className="muted" style={{ margin: "8px 0 0", fontSize: "0.8rem" }}>
-                  {panels.length
-                    ? "این مقادیر از فایل .env خوانده شده‌اند. می‌توانید آن‌ها را به‌عنوان سرور دیتابیس وارد کنید."
-                    : "فعلاً سروری در دیتابیس نیست — سیستم از همین سرور .env استفاده می‌کند."}
-                </p>
-              </div>
-              <button type="button" className="btn primary sm" disabled={importingEnv} onClick={() => void importFromEnv()}>
-                {importingEnv ? "…" : panels.length ? "همگام‌سازی با .env" : "ثبت در دیتابیس"}
-              </button>
-            </div>
-          </div>
-        )}
 
         {!!panels.length && !!categories.length && (
           <div className="panel-route-card">
@@ -4168,10 +4164,56 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             );
           })}
           {!panels.length && (
-            <p className="muted">{envPanel ? "هنوز سروری در دیتابیس ثبت نشده." : "سروری ثبت نشده و در .env هم یافت نشد."}</p>
+            <p className="muted">
+              {offerEnvImport
+                ? "هنوز سروری در دیتابیس ثبت نشده — از دکمه «ورود از .env» استفاده کنید."
+                : envPanel
+                  ? "هنوز سروری در دیتابیس ثبت نشده."
+                  : "سروری ثبت نشده و در .env هم یافت نشد."}
+            </p>
           )}
         </div>
       </div>
+
+      {envPanel && offerEnvImport && (
+        <Modal open={envModalOpen} title="ورود سرور از .env" onClose={dismissEnvModal}>
+          <p className="muted" style={{ marginTop: 0 }}>
+            این مقادیر یک‌بار از فایل <span className="num">.env</span> خوانده می‌شوند و به‌عنوان سرور دیتابیس ذخیره
+            می‌شوند. بعد از ثبت، این پنجره دیگر نشان داده نمی‌شود.
+          </p>
+          <div className="env-server-card" style={{ marginTop: 0 }}>
+            <strong>{envPanel.name}</strong>
+            <div className="muted num url-break" style={{ marginTop: 4 }}>
+              {envPanel.baseUrl}
+            </div>
+            <div className="muted" style={{ marginTop: 4, fontSize: "0.82rem" }}>
+              اینباند: <span className="num">{envPanel.inboundIds}</span> · توکن {envPanel.hasToken ? "✓" : "✗"}
+              {envPanel.subBase ? (
+                <>
+                  {" "}
+                  · ساب پایه: <span className="num url-break">{envPanel.subBase}</span>
+                </>
+              ) : (
+                <> · ساب: از تنظیمات پنل 3x-ui</>
+              )}
+            </div>
+            {envPanel.subBaseWasContaminated ? (
+              <p className="muted" style={{ margin: "8px 0 0", fontSize: "0.8rem", color: "var(--warn, #f59e0b)" }}>
+                لینک ساب در .env شبیه لینک کامل یک اکانت بود و ذخیره نمی‌شود؛ آدرس ساب از تنظیمات خود پنل 3x-ui گرفته
+                می‌شود.
+              </p>
+            ) : null}
+          </div>
+          <div className="actions" style={{ marginTop: 14 }}>
+            <button type="button" className="btn ghost" disabled={importingEnv} onClick={dismissEnvModal}>
+              فعلاً نه
+            </button>
+            <button type="button" className="btn primary" disabled={importingEnv} onClick={() => void importFromEnv()}>
+              {importingEnv ? "…" : panels.length ? "همگام‌سازی با .env" : "ثبت در دیتابیس"}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {editing && (
         <Modal open title={`ویرایش سرور — ${editing.name}`} onClose={() => setEditing(null)} wide>

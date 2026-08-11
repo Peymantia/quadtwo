@@ -21,6 +21,16 @@ const { runWithTenantAsync } = await import("./services/tenant-context.js");
 await ensurePlatformTenant();
 await seedIfNeeded();
 
+try {
+  const { repairPanelSubBases } = await import("./services/panel-servers.js");
+  const repaired = await repairPanelSubBases();
+  if (repaired.fixed > 0) {
+    console.log(`repaired ${repaired.fixed} panel subBase value(s) (stripped pasted client sub URLs)`);
+  }
+} catch (err) {
+  console.warn("panel subBase repair skipped", err);
+}
+
 const { assertLicenseAtStartup } = await import("./services/license.js");
 assertLicenseAtStartup();
 

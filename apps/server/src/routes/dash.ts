@@ -108,6 +108,7 @@ import {
   createPanelServer,
   deletePanelServer,
   envPanelSnapshot,
+  repairPanelSubBases,
   getPanelServer,
   importPanelFromEnv,
   listPanelServers,
@@ -115,6 +116,7 @@ import {
   testPanelConnection,
   updatePanelServer,
 } from "../services/panel-servers.js";
+import { sanitizeSubBase } from "../services/sub-url.js";
 import { listRecentAudit, auditLog } from "../services/audit.js";
 import {
   listAccountArchives,
@@ -2643,6 +2645,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.get("/admin/panels", async (c) => {
+    const repaired = await repairPanelSubBases();
     const panels = await listPanelServers();
     const envSnap = envPanelSnapshot();
     return c.json({
@@ -2652,7 +2655,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         baseUrl: p.baseUrl,
         hasToken: Boolean(p.apiToken),
         inboundIds: p.inboundIds,
-        subBase: p.subBase,
+        subBase: sanitizeSubBase(p.subBase),
         categories: parsePanelCategories(p.categories),
         weight: p.weight,
         active: p.active,
@@ -2665,8 +2668,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
             hasToken: Boolean(envSnap.apiToken),
             inboundIds: envSnap.inboundIds,
             subBase: envSnap.subBase,
+            subBaseWasContaminated: envSnap.subBaseWasContaminated,
           }
         : null,
+      subBaseRepaired: repaired.fixed,
     });
   });
 
