@@ -272,7 +272,10 @@ export function SalesReportPanel({
       )}
       {stats?.recent?.length ? (
         <div className="list" style={{ marginTop: 12 }}>
-          <p style={{ margin: "0 0 8px", fontWeight: 650 }}>آخرین سفارش‌ها</p>
+          <p style={{ margin: "0 0 8px", fontWeight: 650, display: "flex", alignItems: "center", gap: 8 }}>
+            <Icon name="orders" size={16} />
+            آخرین سفارش‌ها
+          </p>
           {stats.recent.map((o) => {
             const acct = o.email || o.accountName;
             const canDetail = allowDetail && Boolean(o.email || o.botSubId);
@@ -299,6 +302,7 @@ export function SalesReportPanel({
                       style={{ marginTop: 8, padding: "4px 10px", fontSize: "0.82rem" }}
                       onClick={() => openDetail(o)}
                     >
+                      <Icon name="file" size={14} />
                       مشاهده جزئیات
                     </button>
                   )}

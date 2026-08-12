@@ -3512,17 +3512,21 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           </div>
           <div className="actions" style={{ marginTop: 12 }}>
             <button type="button" className="btn primary" disabled={!editForm.name || !editForm.baseUrl} onClick={() => void saveEdit()}>
+              <Icon name="check" size={15} />
               ذخیره پنل
             </button>
             <button type="button" className="btn ghost" onClick={() => void test(editing.id)}>
+              <Icon name="sync" size={15} />
               تست اتصال
             </button>
             {canDelete ? (
               <button type="button" className="btn danger" onClick={() => void removePanel(editing)}>
+                <Icon name="trash" size={15} />
                 حذف سرور
               </button>
             ) : null}
             <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
+              <Icon name="close" size={15} />
               لغو
             </button>
           </div>
@@ -3549,9 +3553,11 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
           </div>
           <div className="actions">
             <button type="button" className="btn success" disabled={!form.name || !form.baseUrl || !form.apiToken} onClick={() => void add()}>
+              <Icon name="plus" size={15} />
               افزودن سرور
             </button>
             <button type="button" className="btn ghost" onClick={() => setShowAddPanel(false)}>
+              <Icon name="close" size={15} />
               لغو
             </button>
           </div>
