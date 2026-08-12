@@ -771,6 +771,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                 setVerifiedDiscount(null);
               }}
               placeholder="مثلاً SALE20"
+              aria-label="کد تخفیف"
               disabled={busy || checkingDiscount}
             />
             <button
@@ -835,6 +836,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
               value={note}
               onChange={(e) => setNote(e.target.value.slice(0, 500))}
               placeholder="یادداشت برای این کانفیگ"
+              aria-label="توضیحات کانفیگ"
               rows={2}
               disabled={busy}
             />

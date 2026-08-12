@@ -675,6 +675,7 @@ export default function UserAppPage() {
                 value={chargeAmount}
                 onChange={(e) => setChargeAmount(e.target.value)}
                 placeholder="مثلاً 100000"
+                aria-label="مبلغ شارژ به تومان"
               />
             </div>
             <div className="field">

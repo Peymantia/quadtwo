@@ -93,6 +93,25 @@ h3 {
   border: 0;
 }
 
+.skip-link {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10000;
+  padding: 10px 16px;
+  background: var(--cyan);
+  color: #041018;
+  font-weight: 700;
+  border-radius: 0 0 0 12px;
+  transform: translateY(-120%);
+  transition: transform 0.15s ease;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 /* ---------- Login ---------- */
 
 .login-page {
@@ -198,13 +217,15 @@ h3 {
 }
 
 .brand-word {
-  font-family: var(--font-display);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.45em;
-  text-transform: uppercase;
-  color: var(--cyan);
-  margin: 0 0 18px;
+  font-family: var(--font), Vazirmatn, sans-serif;
+  font-size: clamp(1.75rem, 5vw, 2.15rem);
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  margin: 0 0 6px;
+  text-align: center;
+  line-height: 1.25;
 }
 
 .login-title {
@@ -221,8 +242,8 @@ h3 {
 
 .login-sub {
   margin: 0 0 26px;
-  color: var(--mute);
-  font-size: 0.92rem;
+  color: color-mix(in srgb, var(--mute) 40%, var(--text));
+  font-size: 0.95rem;
   text-align: center;
 }
 
@@ -774,10 +795,13 @@ h3 {
   width: 100%;
 }
 
+/* a11y-audit:btn-sm */
 .btn.sm {
   padding: 8px 13px;
   font-size: 0.85rem;
   border-radius: 11px;
+  min-height: 40px;
+  min-width: 40px;
 }
 
 .btn:disabled {
@@ -1541,13 +1565,23 @@ html[data-theme="light"] .quick-action-btn {
     align-items: center;
     justify-content: center;
     gap: 4px;
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
     padding: 6px 2px;
   }
 
   .bottom-nav button.active {
+    color: var(--cyan);
+    font-weight: 700;
+  }
+
+  /* a11y-audit:bottom-nav */
+  .bottom-nav button:not(.nav-wallet-bubble) {
+    color: color-mix(in srgb, var(--mute) 55%, var(--text));
+  }
+
+  .bottom-nav button.active:not(.nav-wallet-bubble) {
     color: var(--cyan);
   }
 
@@ -1594,25 +1628,19 @@ html[data-theme="light"] .quick-action-btn {
   }
 
   .settings-gear {
-    font-size: 1.25rem;
     line-height: 1;
   }
 
-  .settings-gear span {
-    display: block;
-    filter: grayscale(0.15);
-  }
-
-  .settings-gear.on span {
-    filter: none;
+  .settings-gear.on {
+    color: var(--cyan);
   }
 
   .icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border: 1px solid var(--line);
     border-radius: 12px;
     background: rgba(148, 163, 255, 0.08);
@@ -1806,13 +1834,13 @@ html[data-theme="light"] .quick-action-btn {
   flex-direction: column;
   gap: 4px;
   font-size: 0.9rem;
-  color: var(--muted);
+  color: var(--mute);
   text-align: left;
   direction: ltr;
 }
 
 .users-mlabel {
-  color: var(--muted);
+  color: var(--mute);
   font-weight: 600;
 }
 
@@ -2685,6 +2713,36 @@ html[data-theme="dark"] .plan-card.on {
   color: #7dd3fc;
 }
 
+/* a11y-audit:dark-badges — stronger contrast on classic/dark */
+:root .badge.ok,
+html[data-skin="classic"] .badge.ok,
+html[data-theme="dark"] .badge.ok {
+  background: rgba(16, 185, 129, 0.22);
+  color: #a7f3d0;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+:root .badge.warn,
+html[data-skin="classic"] .badge.warn,
+html[data-theme="dark"] .badge.warn {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+:root .badge.bad,
+html[data-skin="classic"] .badge.bad,
+html[data-theme="dark"] .badge.bad {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fecdd3;
+  border: 1px solid rgba(251, 113, 133, 0.4);
+}
+:root .badge.info,
+html[data-skin="classic"] .badge.info,
+html[data-theme="dark"] .badge.info {
+  background: rgba(14, 165, 233, 0.2);
+  color: #bae6fd;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
 /* Light theme: stronger status chip contrast next to service names */
 html[data-theme="light"] .badge.ok {
   background: rgba(16, 185, 129, 0.2);
@@ -3214,19 +3272,39 @@ select.settings-input option {
 @media (prefers-reduced-motion: reduce) {
   .logo-orb::before,
   .logo-orb::after,
-  .toast {
-    animation: none;
+  .toast,
+  .login-success-overlay,
+  .more-sheet {
+    animation: none !important;
   }
   .spinner {
     animation-duration: 2s;
   }
-  * {
+  *,
+  *::before,
+  *::after {
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
 :focus-visible {
   outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* a11y-audit:focus-visible — beat component outline:none on keyboard focus */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="tab"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--cyan) !important;
   outline-offset: 2px;
 }
 
@@ -3284,8 +3362,8 @@ select.settings-input option {
 
 .modal-x {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);

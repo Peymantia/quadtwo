@@ -31,7 +31,7 @@ const TABS: ShellTab[] = [
   { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true, pinOrder: 4 },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
   { key: "discounts", label: "کد تخفیف", icon: "tag" },
-  { key: "users", label: "کاربران", icon: "users", pin: true, pinOrder: 5 },
+  { key: "users", label: "کاربران", icon: "users" },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server", gapAfter: true },
   { key: "sync", label: "همگام‌سازی", icon: "sync" },

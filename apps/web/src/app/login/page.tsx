@@ -10,9 +10,12 @@ import { isTelegramMiniApp, loginWithTelegramWebApp } from "../../lib/telegram";
 import {
   applyAppearance,
   getUserColorOverride,
+  parseColorMode,
+  parseUiSkin,
   readCachedAppearance,
   resolveTheme,
   toggleStudioTheme,
+  type UiSkin,
 } from "../../lib/theme";
 
 const OTP_LEN = 4;
@@ -28,10 +31,11 @@ function digitsOnly(value: string): string {
   return toEnglishDigits(value).replace(/\D/g, "");
 }
 
-function LoginThemeToggle() {
+function LoginThemeToggle({ skin }: { skin: UiSkin }) {
   const [resolved, setResolved] = useState<"light" | "dark">("dark");
 
   useEffect(() => {
+    if (skin !== "studio") return;
     const sync = () => {
       const cached = readCachedAppearance();
       setResolved(resolveTheme(cached.colorMode));
@@ -41,7 +45,9 @@ function LoginThemeToggle() {
     sync();
     window.addEventListener("piing:appearance", sync);
     return () => window.removeEventListener("piing:appearance", sync);
-  }, []);
+  }, [skin]);
+
+  if (skin !== "studio") return null;
 
   return (
     <button
@@ -93,6 +99,9 @@ export default function LoginPage() {
   const [authSuccess, setAuthSuccess] = useState(false);
   const [brand, setBrand] = useState("پیـنگ");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [uiSkin, setUiSkin] = useState<UiSkin>(() =>
+    typeof window !== "undefined" ? readCachedAppearance().skin : "classic",
+  );
   const [passkeyOk, setPasskeyOk] = useState(false);
   const [tgBooting, setTgBooting] = useState(true);
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
@@ -164,9 +173,11 @@ export default function LoginPage() {
 
     void boot();
 
-    // Login page defaults to dark; respect only an explicit light/dark toggle override.
-    const loginTheme = getUserColorOverride() === "light" ? "light" : "dark";
-    applyAppearance("studio", loginTheme);
+    // Prefer cached tenant skin; /auth/meta may refine it below.
+    const cached = readCachedAppearance();
+    const loginTheme = getUserColorOverride() ?? resolveTheme(cached.colorMode);
+    applyAppearance(cached.skin, cached.skin === "studio" ? loginTheme : cached.colorMode);
+    setUiSkin(cached.skin);
 
     api<{ brand: string; logoUrl?: string | null; uiSkin?: string; uiColorMode?: string }>("/auth/meta", {
       token: null,
@@ -175,8 +186,11 @@ export default function LoginPage() {
         if (!cancelled) {
           setBrand(r.brand);
           setLogoUrl(r.logoUrl ?? null);
-          const theme = getUserColorOverride() === "light" ? "light" : "dark";
-          applyAppearance("studio", theme);
+          const skin = parseUiSkin(r.uiSkin ?? cached.skin);
+          const colorMode = parseColorMode(r.uiColorMode ?? cached.colorMode);
+          const theme = getUserColorOverride() ?? resolveTheme(colorMode);
+          applyAppearance(skin, skin === "studio" ? theme : colorMode);
+          setUiSkin(skin);
         }
       })
       .catch(() => undefined);
@@ -328,16 +342,17 @@ export default function LoginPage() {
         <div className="login-orb login-orb-b" />
       </div>
 
-      <LoginThemeToggle />
+      <LoginThemeToggle skin={uiSkin} />
 
       <Toast msg={hint} err={error} onClear={clearFlash} />
 
       <div className="login-inner">
         <div className="logo-orb">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logoUrl || "/logo.png"} alt={brand} />
+          <img src={logoUrl || "/logo.png"} alt="" />
         </div>
-        <h1 className="login-title">ورود به پنل کاربری</h1>
+        <h1 className="brand-word">{brand}</h1>
+        <p className="login-sub">ورود به پنل کاربری</p>
 
         <div className={`login-card${authSuccess ? " auth-success" : ""}`}>
           <AuthSuccessOverlay show={authSuccess} />
@@ -359,57 +374,72 @@ export default function LoginPage() {
               />
             </div>
 
-            <div className="field otp-field">
-              <div className="otp-grid" dir="ltr" role="group" aria-label="ارقام کد تایید">
-                {digits.map((digit, index) => (
-                  <div
-                    key={index}
-                    className={`otp-cell${digit ? " filled" : ""}`}
-                    style={{ ["--cell-acc" as string]: `var(--otp-acc-${index + 1})` }}
-                  >
-                    <div className="otp-puff" aria-hidden />
-                    <input
-                      ref={(el) => {
-                        otpRefs.current[index] = el;
-                      }}
-                      className="otp-input"
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      autoComplete={index === 0 ? "one-time-code" : "off"}
-                      maxLength={OTP_LEN}
-                      value={digit}
-                      disabled={busy}
-                      aria-label={`رقم ${index + 1}`}
-                      onChange={(e) => onOtpInput(index, e.target.value)}
-                      onKeyDown={(e) => onOtpKeyDown(index, e)}
-                      onPaste={(e) => onOtpPaste(index, e)}
-                      onFocus={(e) => e.target.select()}
-                    />
-                    <div className="otp-bar-track" aria-hidden>
-                      <div className="otp-bar-fill" />
+            {otpSent && (
+              <div className="field otp-field">
+                <div className="otp-grid" dir="ltr" role="group" aria-label="ارقام کد تایید">
+                  {digits.map((digit, index) => (
+                    <div
+                      key={index}
+                      className={`otp-cell${digit ? " filled" : ""}`}
+                      style={{ ["--cell-acc" as string]: `var(--otp-acc-${index + 1})` }}
+                    >
+                      <div className="otp-puff" aria-hidden />
+                      <input
+                        ref={(el) => {
+                          otpRefs.current[index] = el;
+                        }}
+                        className="otp-input"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        autoComplete={index === 0 ? "one-time-code" : "off"}
+                        maxLength={OTP_LEN}
+                        value={digit}
+                        disabled={busy}
+                        aria-label={`رقم ${index + 1}`}
+                        onChange={(e) => onOtpInput(index, e.target.value)}
+                        onKeyDown={(e) => onOtpKeyDown(index, e)}
+                        onPaste={(e) => onOtpPaste(index, e)}
+                        onFocus={(e) => e.target.select()}
+                      />
+                      <div className="otp-bar-track" aria-hidden>
+                        <div className="otp-bar-fill" />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <button
-              className="btn primary wide login-submit"
-              disabled={busy || !login.trim() || code.length < OTP_LEN}
-              type="submit"
-            >
-              ورود
-            </button>
+            {!otpSent ? (
+              <button
+                className="btn success wide login-request-otp"
+                type="button"
+                disabled={busy || !login.trim()}
+                onClick={requestOtp}
+              >
+                دریافت کد ورود از ربات
+              </button>
+            ) : (
+              <button
+                className="btn primary wide login-submit"
+                disabled={busy || !login.trim() || code.length < OTP_LEN}
+                type="submit"
+              >
+                ورود
+              </button>
+            )}
 
-            <button
-              className="btn success wide login-request-otp"
-              type="button"
-              disabled={busy || !login.trim()}
-              onClick={requestOtp}
-            >
-              دریافت کد ورود از ربات
-            </button>
+            {otpSent && (
+              <button
+                className="btn ghost wide login-request-otp"
+                type="button"
+                disabled={busy || !login.trim()}
+                onClick={requestOtp}
+              >
+                ارسال مجدد کد
+              </button>
+            )}
 
             {passkeyOk && (
               <div className="passkey-block">
@@ -433,8 +463,14 @@ export default function LoginPage() {
 
           <div className="or-divider">یا</div>
 
-          <button type="button" className="collapse-toggle" onClick={() => setShowPassword((v) => !v)}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <button
+            type="button"
+            className="collapse-toggle"
+            aria-expanded={showPassword}
+            aria-controls="password-form"
+            onClick={() => setShowPassword((v) => !v)}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
               <rect x="5" y="10" width="14" height="10" rx="2.5" />
               <path d="M8 10V7.5a4 4 0 0 1 8 0V10" />
             </svg>
@@ -447,13 +483,14 @@ export default function LoginPage() {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              aria-hidden
             >
               <path d="m6 9 6 6 6-6" />
             </svg>
           </button>
 
           {showPassword && (
-            <form onSubmit={onPassword} className="password-form">
+            <form id="password-form" onSubmit={onPassword} className="password-form">
               <div className="field">
                 <label htmlFor="login-password">رمز عبور</label>
                 <input

@@ -1,9 +1,10 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, roleLabel, type Role } from "../lib/api";
 import { lockBodyScroll, unlockBodyScroll } from "../lib/body-scroll-lock";
+import { getFocusable, rememberFocus, trapFocus } from "../lib/focus-trap";
 import {
   parseColorMode,
   readCachedAppearance,
@@ -397,10 +398,12 @@ export function DashShell(props: {
     };
   }, [navTabs]);
 
-  const hasMore = more.length > 0 || showAddHome;
+  const hasMore = more.length > 0 || showAddHome || hasSettings;
   const moreActive = more.some((t) => t.key === props.active);
   const settingsActive = props.active === "settings";
   const bubbleActive = Boolean(bubble && props.active === bubble.key);
+  const moreSheetRef = useRef<HTMLDivElement>(null);
+  const moreTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setShowAddHome(isTelegramMiniApp() && typeof window.Telegram?.WebApp?.addToHomeScreen === "function");
@@ -408,14 +411,21 @@ export function DashShell(props: {
 
   useEffect(() => {
     if (!moreOpen) return;
+    const restore = rememberFocus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMoreOpen(false);
+      if (moreSheetRef.current) trapFocus(moreSheetRef.current, e);
     };
     lockBodyScroll();
     window.addEventListener("keydown", onKey);
+    queueMicrotask(() => {
+      const first = moreSheetRef.current ? getFocusable(moreSheetRef.current)[0] : null;
+      first?.focus();
+    });
     return () => {
       unlockBodyScroll();
       window.removeEventListener("keydown", onKey);
+      restore();
     };
   }, [moreOpen]);
 
@@ -437,6 +447,9 @@ export function DashShell(props: {
 
   return (
     <div>
+      <a className="skip-link" href="#main-content">
+        پرش به محتوای اصلی
+      </a>
       {props.demoMode && <DemoModeBar activeRole={props.role} />}
       <div className="mobile-top">
         <div className="brand">
@@ -457,12 +470,13 @@ export function DashShell(props: {
               aria-label="تنظیمات"
               onClick={openSettings}
             >
-              <span aria-hidden="true">⚙️</span>
+              <Icon name="gear" size={18} />
             </button>
           )}
           <ThemeToggleBtn />
           {hasMore && (
             <button
+              ref={moreTriggerRef}
               type="button"
               className={`icon-btn${moreOpen || moreActive ? " on" : ""}`}
               aria-label="منوی بیشتر"
@@ -505,7 +519,7 @@ export function DashShell(props: {
           </button>
         </aside>
 
-        <main className="main">
+        <main id="main-content" className="main" tabIndex={-1}>
           <div className="topbar">
             <div>
               <h1>{props.title}</h1>
@@ -616,12 +630,30 @@ export function DashShell(props: {
       </nav>
 
       {hasMore && moreOpen && (
-        <div className="more-sheet-root" role="dialog" aria-modal="true" aria-label="منوی بیشتر">
+        <div className="more-sheet-root" role="presentation">
           <button type="button" className="more-sheet-backdrop" aria-label="بستن" onClick={() => setMoreOpen(false)} />
-          <div className="more-sheet">
+          <div
+            ref={moreSheetRef}
+            className="more-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="منوی بیشتر"
+          >
             <div className="more-sheet-handle" />
             <div className="more-sheet-title">منوی بیشتر</div>
             <div className="more-sheet-grid">
+              {hasSettings && (
+                <button
+                  type="button"
+                  className={`more-sheet-item${settingsActive ? " active" : ""}`}
+                  onClick={() => {
+                    openSettings();
+                  }}
+                >
+                  <Icon name="gear" size={22} />
+                  <span>تنظیمات</span>
+                </button>
+              )}
               {more.map((t) => (
                 <button
                   key={t.key}
