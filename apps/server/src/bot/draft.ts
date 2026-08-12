@@ -4,6 +4,7 @@ import {
   nextNationalVolume,
   nextVolume,
   resolvePrice,
+  priceForMatrixCell,
   isOfferCategory,
   isFixedSingleServiceCategory,
   listFixedPlans,
@@ -281,6 +282,54 @@ export async function draftPrice(
   const gb = draft.unlimited || draft.category === "unlimited" ? null : draft.trafficGb;
   const category = (draft.category as PlanCategory) || (gb === null ? "unlimited" : "data");
   return resolvePrice(pricedUser, gb, draft.months, category);
+}
+
+/**
+ * Catalog/service amount for UI. Admin sees همکار ویژه price (payable stays 0 via draftPrice).
+ * Matches web RateShop / dash quote behavior.
+ */
+export async function draftDisplayPrice(
+  user: User,
+  draft: {
+    trafficGb: number | null;
+    months: number;
+    unlimited: boolean;
+    category?: string;
+    priceCellId?: string | null;
+  },
+  telegramId?: string | number | bigint,
+) {
+  const pricedUser = withEffectiveRole(user, telegramId ?? user.telegramId);
+  if (pricedUser.role !== "admin") {
+    return draftPrice(user, draft, telegramId);
+  }
+
+  if (draft.priceCellId) {
+    const cell = await prisma.priceCell.findFirst({
+      where: { id: draft.priceCellId, active: true },
+    });
+    if (cell) {
+      const price = await priceForMatrixCell(pricedUser, cell, "reseller");
+      if (price != null) return { cell, price, mode: "matrix" as const };
+    }
+  }
+
+  if (isServerlessCategory(draft.category) || (await isServerlessEnabled())) {
+    const { calcServerlessPrice, getServerlessPricingConfig, listServerlessDurations } =
+      await import("../services/serverless.js");
+    if (draft.trafficGb == null || draft.trafficGb <= 0) return null;
+    const cfg = await getServerlessPricingConfig();
+    const months = draft.months <= 0 ? 0 : draft.months;
+    const ok = listServerlessDurations(cfg).some((d) => d.months === months);
+    if (!ok) return null;
+    const price = calcServerlessPrice(draft.trafficGb, months, cfg);
+    if (price < 0) return null;
+    return { cell: null, price, mode: "rate" as const };
+  }
+
+  const gb = draft.unlimited || draft.category === "unlimited" ? null : draft.trafficGb;
+  const category = (draft.category as PlanCategory) || (gb === null ? "unlimited" : "data");
+  return resolvePrice(pricedUser, gb, draft.months, category, "reseller");
 }
 
 export { resolvePurchaseLimitIp };

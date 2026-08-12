@@ -838,6 +838,8 @@ export function buyDraftText(opts: {
   discountCode?: string | null;
   discountAmount?: number | null;
   priceAfterDiscount?: number | null;
+  /** Admin only: show catalog price but payable is complimentary (like web panel). */
+  adminComplimentary?: boolean;
 }) {
   const qty = Math.max(1, opts.quantity ?? 1);
   const vol =
@@ -863,17 +865,23 @@ export function buyDraftText(opts: {
       : "رندوم (بعد از تأیید)";
 
   const discountLine =
-    opts.discountCode && opts.discountAmount && opts.discountAmount > 0
-      ? `🎟 تخفیف ${opts.discountCode}: −${formatToman(opts.discountAmount)}`
-      : opts.discountCode
-        ? `🎟 کد: ${opts.discountCode}`
-        : "";
+    opts.adminComplimentary
+      ? ""
+      : opts.discountCode && opts.discountAmount && opts.discountAmount > 0
+        ? `🎟 تخفیف ${opts.discountCode}: −${formatToman(opts.discountAmount)}`
+        : opts.discountCode
+          ? `🎟 کد: ${opts.discountCode}`
+          : "";
+
+  const priceLines = opts.adminComplimentary
+    ? [`💰 مبلغ سرویس: ${priceLabel}`, "💳 مبلغ قابل پرداخت: صفر"]
+    : [`💰 قیمت: ${priceLabel}`];
 
   return [
     qty > 1 ? "🛒 خرید عمده:" : "🛒 خرید سرویس:",
     `💎 ${vol} ⏳ ${dur}`,
     `📱 محدودیت: ${formatLimitIp(opts.limitIp)}`,
-    `💰 قیمت: ${priceLabel}`,
+    ...priceLines,
     discountLine,
     qty > 1 ? `📦 تعداد: ${qty} عدد` : "",
     `👤 نام اکانت: ${name}`,

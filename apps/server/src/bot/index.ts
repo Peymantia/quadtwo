@@ -84,6 +84,7 @@ import {
   adjustDraftQty,
   adjustDraftLimitIp,
   adjustDraftVolume,
+  draftDisplayPrice,
   draftPrice,
   getOrCreateDraft,
   setDraftCategory,
@@ -571,13 +572,14 @@ async function showFixedPlanPicker(ctx: Context, category: string, edit = false)
   const styles = shuffledButtonStyles(plans.length);
   for (let i = 0; i < plans.length; i++) {
     const p = plans[i]!;
-    const priced = await draftPrice(
+    const priced = await draftDisplayPrice(
       user,
       {
         trafficGb: p.trafficGb,
         months: p.months,
         unlimited: cat === "unlimited" || p.trafficGb == null,
         category: cat,
+        priceCellId: p.id,
       },
       ctx.from!.id,
     );
@@ -628,6 +630,35 @@ async function showOfferPlanPicker(ctx: Context, edit = false) {
   return showFixedPlanPicker(ctx, "offer", edit);
 }
 
+/** True when −/+ hit a floor/ceiling and the visible draft did not change. */
+function buyDraftUnchanged(
+  a: {
+    trafficGb: number | null;
+    months: number;
+    unlimited: boolean;
+    quantity: number;
+    limitIp: number;
+    category: string;
+  },
+  b: {
+    trafficGb: number | null;
+    months: number;
+    unlimited: boolean;
+    quantity: number;
+    limitIp: number;
+    category: string;
+  },
+) {
+  return (
+    a.trafficGb === b.trafficGb &&
+    a.months === b.months &&
+    a.unlimited === b.unlimited &&
+    a.quantity === b.quantity &&
+    a.limitIp === b.limitIp &&
+    a.category === b.category
+  );
+}
+
 async function showBuyWizard(ctx: Context, edit = false) {
   const user = await upsertUserFromTelegram(ctx.from!);
   let draft = await getOrCreateDraft(BigInt(ctx.from!.id));
@@ -651,16 +682,20 @@ async function showBuyWizard(ctx: Context, edit = false) {
 
   const limitIp = await resolvePurchaseLimitIp(draft, roleUser.role);
   const priced = await draftPrice(user, draft, ctx.from!.id);
+  const displayPriced = await draftDisplayPrice(user, draft, ctx.from!.id);
+  const adminComplimentary = roleUser.role === "admin";
+  const displayUnit = displayPriced?.price ?? null;
   const fixedSingle = isFixedSingleServiceCategory(draft.category);
   const qty = fixedSingle ? 1 : Math.max(1, draft.quantity);
+  // Payable total (0 for admin); discounts only apply to payable path for non-admin
   const baseTotal = priced ? priced.price * qty : null;
   let discountAmount: number | null = null;
   let priceAfterDiscount: number | null = null;
   const offer = isOfferCategory(draft.category);
   const wholesaleBuy = isWholesaleFixedCategory(draft.category) || isWholesaleFixedRole(roleUser.role);
   const discountsOn =
-    !offer && !wholesaleBuy && (await isDiscountCodesEnabled());
-  if ((offer || wholesaleBuy) && draft.discountCode) {
+    !adminComplimentary && !offer && !wholesaleBuy && (await isDiscountCodesEnabled());
+  if ((offer || wholesaleBuy || adminComplimentary) && draft.discountCode) {
     await setDraftDiscountCode(BigInt(ctx.from!.id), null);
     draft.discountCode = null;
   }
@@ -697,7 +732,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
   let text = buyDraftText({
     trafficGb: draft.unlimited || draft.trafficGb == null ? null : draft.trafficGb,
     months: draft.months,
-    price: priced?.price ?? null,
+    price: displayUnit,
     quantity: draft.quantity,
     limitIp,
     accountMode: draft.accountMode,
@@ -705,7 +740,8 @@ async function showBuyWizard(ctx: Context, edit = false) {
     category: draft.category,
     discountCode: draft.discountCode,
     discountAmount,
-    priceAfterDiscount,
+    priceAfterDiscount: adminComplimentary ? null : priceAfterDiscount,
+    adminComplimentary,
   });
   if (offer) {
     text = [
@@ -728,7 +764,7 @@ async function showBuyWizard(ctx: Context, edit = false) {
     unlimited: draft.unlimited || draft.trafficGb == null,
     quantity: draft.quantity,
     limitIp,
-    price: priced?.price ?? null,
+    price: displayUnit,
     category: draft.category,
     maxMonths,
     canEditAgentOptions: isAgent,
@@ -742,6 +778,8 @@ async function showBuyWizard(ctx: Context, edit = false) {
       await ctx.editMessageText(text, { reply_markup: kb });
       return;
     } catch (err) {
+      // At min/max, −/+ leaves content unchanged → Telegram rejects edit; do not spawn a duplicate message
+      if (err instanceof GrammyError && /message is not modified/i.test(err.description)) return;
       console.warn("showBuyWizard edit failed", err);
     }
   }
@@ -1623,22 +1661,34 @@ export function createBot(
 
   bot.callbackQuery("wiz:vol:+", async (ctx) => {
     await ctx.answerCallbackQuery();
-    await adjustDraftVolume(BigInt(ctx.from!.id), 1);
+    const tid = BigInt(ctx.from!.id);
+    const before = await getOrCreateDraft(tid);
+    const after = await adjustDraftVolume(tid, 1);
+    if (buyDraftUnchanged(before, after)) return;
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:vol:-", async (ctx) => {
     await ctx.answerCallbackQuery();
-    await adjustDraftVolume(BigInt(ctx.from!.id), -1);
+    const tid = BigInt(ctx.from!.id);
+    const before = await getOrCreateDraft(tid);
+    const after = await adjustDraftVolume(tid, -1);
+    if (buyDraftUnchanged(before, after)) return;
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:mon:+", async (ctx) => {
     await ctx.answerCallbackQuery();
-    await adjustDraftMonths(BigInt(ctx.from!.id), 1);
+    const tid = BigInt(ctx.from!.id);
+    const before = await getOrCreateDraft(tid);
+    const after = await adjustDraftMonths(tid, 1);
+    if (buyDraftUnchanged(before, after)) return;
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:mon:-", async (ctx) => {
     await ctx.answerCallbackQuery();
-    await adjustDraftMonths(BigInt(ctx.from!.id), -1);
+    const tid = BigInt(ctx.from!.id);
+    const before = await getOrCreateDraft(tid);
+    const after = await adjustDraftMonths(tid, -1);
+    if (buyDraftUnchanged(before, after)) return;
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:qty:+", async (ctx) => {
@@ -1648,7 +1698,10 @@ export function createBot(
       return;
     }
     await ctx.answerCallbackQuery();
-    await adjustDraftQty(BigInt(ctx.from!.id), 1);
+    const tid = BigInt(ctx.from!.id);
+    const before = await getOrCreateDraft(tid);
+    const after = await adjustDraftQty(tid, 1);
+    if (buyDraftUnchanged(before, after)) return;
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:qty:-", async (ctx) => {
@@ -1658,7 +1711,10 @@ export function createBot(
       return;
     }
     await ctx.answerCallbackQuery();
-    await adjustDraftQty(BigInt(ctx.from!.id), -1);
+    const tid = BigInt(ctx.from!.id);
+    const before = await getOrCreateDraft(tid);
+    const after = await adjustDraftQty(tid, -1);
+    if (buyDraftUnchanged(before, after)) return;
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:ip:+", async (ctx) => {
@@ -1673,7 +1729,10 @@ export function createBot(
       return;
     }
     await ctx.answerCallbackQuery();
-    await adjustDraftLimitIp(BigInt(ctx.from!.id), 1);
+    const tid = BigInt(ctx.from!.id);
+    const before = await getOrCreateDraft(tid);
+    const after = await adjustDraftLimitIp(tid, 1);
+    if (buyDraftUnchanged(before, after)) return;
     await showBuyWizard(ctx, true);
   });
   bot.callbackQuery("wiz:ip:-", async (ctx) => {
@@ -1688,7 +1747,10 @@ export function createBot(
       return;
     }
     await ctx.answerCallbackQuery();
-    await adjustDraftLimitIp(BigInt(ctx.from!.id), -1);
+    const tid = BigInt(ctx.from!.id);
+    const before = await getOrCreateDraft(tid);
+    const after = await adjustDraftLimitIp(tid, -1);
+    if (buyDraftUnchanged(before, after)) return;
     await showBuyWizard(ctx, true);
   });
 
