@@ -446,7 +446,6 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
 
   const modeLabel = (m: string) => (m === "rate" ? "نرخی" : "ماتریکس");
   const scopedEditCount = Object.keys(edits).filter((id) => shownScoped.some((c) => c.id === id)).length;
-  const stickyDirty = sub === "rates" ? ratesDirty : scopedEditCount > 0;
 
   return (
     <div className="prices-page">
