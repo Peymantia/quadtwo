@@ -374,72 +374,57 @@ export default function LoginPage() {
               />
             </div>
 
-            {otpSent && (
-              <div className="field otp-field">
-                <div className="otp-grid" dir="ltr" role="group" aria-label="ارقام کد تایید">
-                  {digits.map((digit, index) => (
-                    <div
-                      key={index}
-                      className={`otp-cell${digit ? " filled" : ""}`}
-                      style={{ ["--cell-acc" as string]: `var(--otp-acc-${index + 1})` }}
-                    >
-                      <div className="otp-puff" aria-hidden />
-                      <input
-                        ref={(el) => {
-                          otpRefs.current[index] = el;
-                        }}
-                        className="otp-input"
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        autoComplete={index === 0 ? "one-time-code" : "off"}
-                        maxLength={OTP_LEN}
-                        value={digit}
-                        disabled={busy}
-                        aria-label={`رقم ${index + 1}`}
-                        onChange={(e) => onOtpInput(index, e.target.value)}
-                        onKeyDown={(e) => onOtpKeyDown(index, e)}
-                        onPaste={(e) => onOtpPaste(index, e)}
-                        onFocus={(e) => e.target.select()}
-                      />
-                      <div className="otp-bar-track" aria-hidden>
-                        <div className="otp-bar-fill" />
-                      </div>
+            <div className="field otp-field">
+              <div className="otp-grid" dir="ltr" role="group" aria-label="ارقام کد تایید">
+                {digits.map((digit, index) => (
+                  <div
+                    key={index}
+                    className={`otp-cell${digit ? " filled" : ""}`}
+                    style={{ ["--cell-acc" as string]: `var(--otp-acc-${index + 1})` }}
+                  >
+                    <div className="otp-puff" aria-hidden />
+                    <input
+                      ref={(el) => {
+                        otpRefs.current[index] = el;
+                      }}
+                      className="otp-input"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete={index === 0 ? "one-time-code" : "off"}
+                      maxLength={OTP_LEN}
+                      value={digit}
+                      disabled={busy}
+                      aria-label={`رقم ${index + 1}`}
+                      onChange={(e) => onOtpInput(index, e.target.value)}
+                      onKeyDown={(e) => onOtpKeyDown(index, e)}
+                      onPaste={(e) => onOtpPaste(index, e)}
+                      onFocus={(e) => e.target.select()}
+                    />
+                    <div className="otp-bar-track" aria-hidden>
+                      <div className="otp-bar-fill" />
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
 
-            {!otpSent ? (
-              <button
-                className="btn success wide login-request-otp"
-                type="button"
-                disabled={busy || !login.trim()}
-                onClick={requestOtp}
-              >
-                دریافت کد ورود از ربات
-              </button>
-            ) : (
-              <button
-                className="btn primary wide login-submit"
-                disabled={busy || !login.trim() || code.length < OTP_LEN}
-                type="submit"
-              >
-                ورود
-              </button>
-            )}
+            <button
+              className="btn primary wide login-submit"
+              disabled={busy || !login.trim() || code.length < OTP_LEN}
+              type="submit"
+            >
+              ورود
+            </button>
 
-            {otpSent && (
-              <button
-                className="btn ghost wide login-request-otp"
-                type="button"
-                disabled={busy || !login.trim()}
-                onClick={requestOtp}
-              >
-                ارسال مجدد کد
-              </button>
-            )}
+            <button
+              className="btn success wide login-request-otp"
+              type="button"
+              disabled={busy || !login.trim()}
+              onClick={requestOtp}
+            >
+              دریافت کد ورود از ربات
+            </button>
 
             {passkeyOk && (
               <div className="passkey-block">

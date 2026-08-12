@@ -1518,17 +1518,29 @@ html[data-theme="light"] .quick-action-btn {
     flex-shrink: 0;
     gap: 6px;
     max-width: 62%;
+    align-items: center;
+  }
+
+  .mobile-top .panel-switcher {
+    height: 44px;
+    align-items: stretch;
   }
 
   .mobile-top .panel-switcher-select {
     max-width: 84px;
-    padding: 5px 22px 5px 6px;
+    height: 44px;
+    box-sizing: border-box;
+    padding: 0 26px 0 8px;
     font-size: 0.72rem;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
   }
 
-  .mobile-top .theme-toggle {
-    width: 36px;
-    height: 36px;
+  .mobile-top .theme-toggle,
+  .mobile-top .icon-btn {
+    width: 44px;
+    height: 44px;
   }
 
   .bottom-nav {
@@ -2140,15 +2152,22 @@ button.stat.stat-link:active {
   gap: 10px;
 }
 
+@media (min-width: 720px) {
+  .configs-list {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+  }
+}
+
 @media (min-width: 900px) {
   .configs-filters {
     grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
     align-items: end;
   }
+}
 
-  .configs-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.configs-list > .row-card {
+  width: 100%;
+  min-width: 0;
 }
 
 .row-card {

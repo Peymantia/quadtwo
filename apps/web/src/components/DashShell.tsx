@@ -304,6 +304,8 @@ export type ShellTab = {
   icon: IconName;
   /** Keep in mobile bottom bar; remaining tabs go to top overflow menu */
   pin?: boolean;
+  /** Also list in the overflow “more” sheet even when pinned (e.g. fill grid) */
+  alsoInMore?: boolean;
   /** Order among pinned bottom-nav items (independent of sidebar order) */
   pinOrder?: number;
   /** Raised center bubble in bottom nav (e.g. wallet / فروش) */
@@ -353,13 +355,13 @@ export function DashShell(props: {
     const rest = navTabs.filter((t) => t.key !== bubbleTab?.key);
     const byPinOrder = (a: ShellTab, b: ShellTab) => (a.pinOrder ?? 50) - (b.pinOrder ?? 50);
     const pinned = rest.filter((t) => t.pin).sort(byPinOrder);
-    const unpinned = rest.filter((t) => !t.pin);
 
     let primaryRest: ShellTab[];
     let moreTabs: ShellTab[];
     if (pinned.length) {
       primaryRest = pinned;
-      moreTabs = unpinned;
+      // Keep sidebar/tab declaration order in the more sheet
+      moreTabs = rest.filter((t) => !t.pin || t.alsoInMore);
     } else if (rest.length <= 4) {
       primaryRest = rest;
       moreTabs = [];
@@ -463,17 +465,6 @@ export function DashShell(props: {
           ) : (
             props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>
           )}
-          {hasSettings && (
-            <button
-              type="button"
-              className={`icon-btn settings-gear${settingsActive ? " on" : ""}`}
-              aria-label="تنظیمات"
-              onClick={openSettings}
-            >
-              <Icon name="gear" size={18} />
-            </button>
-          )}
-          <ThemeToggleBtn />
           {hasMore && (
             <button
               ref={moreTriggerRef}
@@ -486,6 +477,17 @@ export function DashShell(props: {
               <Icon name={moreOpen ? "close" : "menu"} size={22} />
             </button>
           )}
+          {hasSettings && (
+            <button
+              type="button"
+              className={`icon-btn settings-gear${settingsActive ? " on" : ""}`}
+              aria-label="تنظیمات"
+              onClick={openSettings}
+            >
+              <Icon name="gear" size={18} />
+            </button>
+          )}
+          <ThemeToggleBtn />
         </div>
       </div>
 

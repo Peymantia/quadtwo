@@ -28,10 +28,10 @@ const TABS: ShellTab[] = [
   { key: "home", label: "داشبورد", icon: "home", pin: true, pinOrder: 3, bubble: true },
   { key: "create", label: "ساخت اکانت", shortLabel: "فروش", icon: "shop", pin: true, pinOrder: 1 },
   { key: "configs", label: "اکانت‌ها", icon: "wifi", pin: true, pinOrder: 2 },
-  { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true, pinOrder: 4 },
+  { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true, pinOrder: 4, alsoInMore: true },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
   { key: "discounts", label: "کد تخفیف", icon: "tag" },
-  { key: "users", label: "کاربران", icon: "users" },
+  { key: "users", label: "کاربران", icon: "users", pin: true, pinOrder: 5 },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server", gapAfter: true },
   { key: "sync", label: "همگام‌سازی", icon: "sync" },
@@ -3115,7 +3115,7 @@ function BulkAdjustPanel({ flash, askConfirm }: { flash: Flash; askConfirm: AskC
 }
 
 function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }) {
-  const [bulkOpen, setBulkOpen] = useState<string | null>(null);
+  const [configsAcc, setConfigsAcc] = useState<string | null>(null);
   const [groups, setGroups] = useState<Array<{ key: string; label: string }>>([]);
   const [groupKey, setGroupKey] = useState("all");
   const [items, setItems] = useState<
@@ -3455,14 +3455,19 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
         id="bulk"
         title="تغییر دسته‌جمعی"
         icon="layers"
-        openId={bulkOpen}
-        onToggle={(id) => setBulkOpen((cur) => (cur === id ? null : id))}
+        openId={configsAcc}
+        onToggle={(id) => setConfigsAcc((cur) => (cur === id ? null : id))}
       >
         <BulkAdjustPanel flash={flash} askConfirm={askConfirm} />
       </SettingsAccordion>
 
-      <div className="panel">
-        <h2>اکانت‌ها</h2>
+      <SettingsAccordion
+        id="filters"
+        title="جستجو و فیلتر اکانت‌ها"
+        icon="wifi"
+        openId={configsAcc}
+        onToggle={(id) => setConfigsAcc((cur) => (cur === id ? null : id))}
+      >
         <p className="muted" style={{ marginTop: 0 }}>
           اکانت‌های دیتابیس ربات به‌همراه کلاینت‌های زنده‌ی 3x-ui. اگر فقط روی پنل ساخته شده باشند با برچسب «فقط پنل» دیده می‌شوند.
         </p>
@@ -3510,8 +3515,10 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             </select>
           </div>
         </div>
-        {loading && <p className="muted">در حال دریافت…</p>}
-        <div className="list configs-list">
+      </SettingsAccordion>
+
+      {loading && <p className="muted">در حال دریافت…</p>}
+      <div className="list configs-list">
           {items.map((c) => {
             const expired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
             return (
@@ -3656,7 +3663,6 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             </div>
           </div>
         )}
-      </div>
 
       {editing && (
         <Modal open title={`ویرایش اکانت — ${editing.email}`} onClose={() => setEditing(null)} wide>
