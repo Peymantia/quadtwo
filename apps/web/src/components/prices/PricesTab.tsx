@@ -208,6 +208,10 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
   }
 
   async function saveRates() {
+    if (!ratesDirty) {
+      flash("تغییری برای ذخیره نیست");
+      return;
+    }
     setRatesBusy(true);
     try {
       await api("/admin/price-rates", { method: "PUT", body: rates });
@@ -222,6 +226,10 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
   }
 
   async function discardRatesEdits() {
+    if (!ratesDirty) {
+      flash("تغییری برای لغو نیست");
+      return;
+    }
     await load();
     setRatesDirty(false);
     flash("تغییرات نرخ لغو شد");
@@ -271,7 +279,10 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
 
   async function saveAllScoped() {
     const ids = Object.keys(edits).filter((id) => shownScoped.some((c) => c.id === id));
-    if (!ids.length) return;
+    if (!ids.length) {
+      flash("تغییری برای ذخیره نیست");
+      return;
+    }
     try {
       let n = 0;
       for (const id of ids) {
@@ -295,6 +306,11 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
 
   function discardScopedEdits() {
     const ids = new Set(shownScoped.map((c) => c.id));
+    const had = Object.keys(edits).some((id) => ids.has(id));
+    if (!had) {
+      flash("تغییری برای لغو نیست");
+      return;
+    }
     setEdits((m) => {
       const next = { ...m };
       for (const id of Object.keys(next)) {
@@ -516,7 +532,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
             <div className="prices-section-head">
               <h2>نمای کلی قیمت‌گذاری</h2>
               <p className="muted">
-                از تب‌های بالا نوع محصول را انتخاب کنید. کارت‌ها وضعیت هر نقش را نشان می‌دهند.
+                از تب‌های بالا نوع محصول را انتخاب کنید. روی کارت نقش بزنید تا به نرخ‌ها / پلن‌های مربوط بروید.
               </p>
             </div>
             <div className="prices-overview-grid">
@@ -532,10 +548,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                   key={key}
                   type="button"
                   className="prices-overview-card"
-                  onClick={() => {
-                    if (key === "wholesale") setSub("wholesale");
-                    else setRolesModeAcc("roles-mode");
-                  }}
+                  onClick={() => setSub(key === "wholesale" ? "wholesale" : "rates")}
                 >
                   <strong>{label}</strong>
                   <span className="muted">{modeLabel(mode)}</span>
@@ -710,7 +723,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
               <button
                 type="button"
                 className="settings-sticky-bar__btn settings-sticky-bar__btn--cancel"
-                disabled={!ratesDirty || ratesBusy}
+                disabled={ratesBusy}
                 onClick={() => void discardRatesEdits()}
               >
                 <Icon name="close" size={15} />
@@ -719,7 +732,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
               <button
                 type="button"
                 className="settings-sticky-bar__btn settings-sticky-bar__btn--save"
-                disabled={!ratesDirty || ratesBusy}
+                disabled={ratesBusy}
                 onClick={() => void saveRates()}
               >
                 <Icon name="check" size={15} />
@@ -1208,7 +1221,6 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
               <button
                 type="button"
                 className="settings-sticky-bar__btn settings-sticky-bar__btn--cancel"
-                disabled={!stickyDirty}
                 onClick={discardScopedEdits}
               >
                 <Icon name="close" size={15} />
@@ -1217,7 +1229,6 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
               <button
                 type="button"
                 className="settings-sticky-bar__btn settings-sticky-bar__btn--save"
-                disabled={!stickyDirty}
                 onClick={() => void saveAllScoped()}
               >
                 <Icon name="check" size={15} />
