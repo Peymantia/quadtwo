@@ -72,9 +72,10 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
     categories: {},
   });
   const [ratesBusy, setRatesBusy] = useState(false);
+  const [ratesDirty, setRatesDirty] = useState(false);
   const [newCell, setNewCell] = useState(emptyNew("data"));
   const [dataCat, setDataCat] = useState("data");
-  const [modeAccOpen, setModeAccOpen] = useState<string | null>(null);
+  const [rolesModeAcc, setRolesModeAcc] = useState<string | null>(null);
   const [toolsAccOpen, setToolsAccOpen] = useState<string | null>(null);
 
   const load = useCallback(
@@ -105,6 +106,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                 unlimitedPerMonth: 900000,
               },
           });
+          setRatesDirty(false);
         }
       }),
     [],
@@ -177,6 +179,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
   }
 
   function setCatUnit(cat: string, role: "user" | "partner" | "wholesale", field: "perGb" | "perMonth", value: number) {
+    setRatesDirty(true);
     setRates((s) => ({
       ...s,
       categories: {
@@ -209,12 +212,19 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
     try {
       await api("/admin/price-rates", { method: "PUT", body: rates });
       flash("نرخ‌های گیگ/ماه ذخیره شد");
+      setRatesDirty(false);
       await load();
     } catch (e) {
       flash(null, errText(e));
     } finally {
       setRatesBusy(false);
     }
+  }
+
+  async function discardRatesEdits() {
+    await load();
+    setRatesDirty(false);
+    flash("تغییرات نرخ لغو شد");
   }
 
   async function putCell(c: PriceRow, e: Partial<PriceRow>) {
@@ -419,136 +429,131 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
   }
 
   const modeLabel = (m: string) => (m === "rate" ? "نرخی" : "ماتریکس");
-
-  function openRoleMode(roleKey: "user" | "partner" | "reseller" | "wholesale") {
-    if (roleKey === "wholesale") {
-      setSub("wholesale");
-      return;
-    }
-    setSub("rates");
-    setModeAccOpen(`mode-${roleKey}`);
-  }
+  const scopedEditCount = Object.keys(edits).filter((id) => shownScoped.some((c) => c.id === id)).length;
+  const stickyDirty = sub === "rates" ? ratesDirty : scopedEditCount > 0;
 
   return (
     <div className="prices-page">
       <div className="prices-nav">
-        <div className="prices-subtabs" role="tablist" aria-label="بخش‌های قیمت‌ها">
-          {SUBTABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={sub === t.key}
-              className={`prices-subtab${sub === t.key ? " on" : ""}`}
-              onClick={() => setSub(t.key)}
-            >
-              <Icon name={t.icon} size={15} />
-              {t.label}
+        <div className="prices-nav__row">
+          <div className="prices-subtabs" role="tablist" aria-label="بخش‌های قیمت‌ها">
+            {SUBTABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={sub === t.key}
+                className={`prices-subtab${sub === t.key ? " on" : ""}`}
+                onClick={() => setSub(t.key)}
+              >
+                <Icon name={t.icon} size={15} />
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {sub !== "overview" && (
+            <button type="button" className="btn primary sm prices-back prices-back--desktop" onClick={() => setSub("overview")}>
+              <Icon name="home" size={14} />
+              بازگشت به نمای کلی
             </button>
-          ))}
+          )}
         </div>
         {sub !== "overview" && (
-          <button type="button" className="btn ghost sm prices-back" onClick={() => setSub("overview")}>
-            <Icon name="home" size={14} />
+          <button type="button" className="btn primary prices-back prices-back--mobile" onClick={() => setSub("overview")}>
+            <Icon name="home" size={15} />
             بازگشت به نمای کلی
           </button>
         )}
       </div>
 
       {sub === "overview" && (
-        <section className="panel prices-section">
-          <div className="prices-section-head">
-            <h2>نمای کلی قیمت‌گذاری</h2>
-            <p className="muted">
-              از تب‌های بالا نوع محصول را انتخاب کنید. کارت هر نقش فقط وضعیت همان نقش را نشان می‌دهد — برای تغییر حالت، روی
-              همان کارت بزنید.
-            </p>
+        <>
+          <div className="prices-roles-mode">
+            <SettingsAccordion
+              id="roles-mode"
+              title="حالت قیمت‌گذاری هر نقش"
+              icon="gear"
+              openId={rolesModeAcc}
+              onToggle={(id) => setRolesModeAcc((cur) => (cur === id ? null : id))}
+            >
+              <p className="muted prices-acc-hint">ماتریکس = پلن ثابت · نرخی = (گیگ × نرخ) + (ماه × نرخ)</p>
+              <div className="prices-role-mode-grid">
+                {(
+                  [
+                    ["user", "کاربر عادی"],
+                    ["partner", "همکار"],
+                    ["reseller", "همکار ویژه"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} className="prices-role-mode-row">
+                    <span className="prices-role-mode-label">نقش:</span>
+                    <strong className="prices-role-mode-name">{label}</strong>
+                    <select
+                      value={modes[key]}
+                      aria-label={`حالت ${label}`}
+                      onChange={(e) => void saveModes({ ...modes, [key]: e.target.value as "matrix" | "rate" })}
+                    >
+                      <option value="matrix">ماتریکس</option>
+                      <option value="rate">نرخی</option>
+                    </select>
+                  </div>
+                ))}
+                <div className="prices-role-mode-row prices-role-mode-row--locked">
+                  <span className="prices-role-mode-label">نقش:</span>
+                  <strong className="prices-role-mode-name">عمده‌فروش</strong>
+                  <select value="matrix" disabled aria-label="حالت عمده‌فروش">
+                    <option value="matrix">ماتریکس</option>
+                  </select>
+                </div>
+              </div>
+              <p className="hint" style={{ margin: "10px 0 0" }}>
+                عمده‌فروش همیشه ماتریکس است (پلن ثابت تب عمده).
+              </p>
+            </SettingsAccordion>
           </div>
-          <div className="prices-overview-grid">
-            {(
-              [
-                ["user", "کاربر عادی", modes.user],
-                ["partner", "همکار", modes.partner],
-                ["reseller", "همکار ویژه", modes.reseller],
-                ["wholesale", "عمده‌فروش", "matrix"],
-              ] as const
-            ).map(([key, label, mode]) => (
-              <button
-                key={key}
-                type="button"
-                className="prices-overview-card"
-                onClick={() => openRoleMode(key)}
-              >
-                <strong>{label}</strong>
-                <span className="muted">{modeLabel(mode)}</span>
-                {key === "wholesale" && <small className="hint">همیشه پلن ثابت عمده</small>}
-              </button>
-            ))}
-          </div>
-          <div className="prices-legend">
-            <p className="hint" style={{ margin: 0 }}>
-              <strong>همکار ویژه</strong> ≠ <strong>عمده‌فروش</strong> — قیمت همکار ویژه ستون جداست؛ عمده‌فروش فقط پلن‌های
-              تب «عمده‌فروش» را می‌بیند و می‌خرد.
-            </p>
-          </div>
-        </section>
+
+          <section className="panel prices-section">
+            <div className="prices-section-head">
+              <h2>نمای کلی قیمت‌گذاری</h2>
+              <p className="muted">
+                از تب‌های بالا نوع محصول را انتخاب کنید. کارت‌ها وضعیت هر نقش را نشان می‌دهند.
+              </p>
+            </div>
+            <div className="prices-overview-grid">
+              {(
+                [
+                  ["user", "کاربر عادی", modes.user],
+                  ["partner", "همکار", modes.partner],
+                  ["reseller", "همکار ویژه", modes.reseller],
+                  ["wholesale", "عمده‌فروش", "matrix"],
+                ] as const
+              ).map(([key, label, mode]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="prices-overview-card"
+                  onClick={() => {
+                    if (key === "wholesale") setSub("wholesale");
+                    else setRolesModeAcc("roles-mode");
+                  }}
+                >
+                  <strong>{label}</strong>
+                  <span className="muted">{modeLabel(mode)}</span>
+                </button>
+              ))}
+            </div>
+            <div className="prices-legend">
+              <p className="hint" style={{ margin: 0 }}>
+                <strong>همکار ویژه</strong> ≠ <strong>عمده‌فروش</strong> — قیمت همکار ویژه ستون جداست؛ عمده‌فروش فقط پلن‌های
+                تب «عمده‌فروش» را می‌بیند و می‌خرد.
+              </p>
+            </div>
+          </section>
+        </>
       )}
 
       {sub === "rates" && (
         <>
-          <div className="prices-section-head" style={{ marginBottom: 8 }}>
-            <h2 style={{ margin: 0 }}>حالت قیمت‌گذاری هر نقش</h2>
-            <p className="muted" style={{ margin: "6px 0 0" }}>
-              هر نقش آکاردئون جدا دارد. ماتریکس = پلن ثابت · نرخی = (گیگ × نرخ) + (ماه × نرخ)
-            </p>
-          </div>
-          <div className="prices-mode-accs">
-            {(
-              [
-                ["user", "کاربر عادی", "users"],
-                ["partner", "همکار", "users"],
-                ["reseller", "همکار ویژه", "shield"],
-              ] as const
-            ).map(([key, label, icon]) => (
-              <SettingsAccordion
-                key={key}
-                id={`mode-${key}`}
-                title={`${label} — ${modeLabel(modes[key])}`}
-                icon={icon}
-                openId={modeAccOpen}
-                onToggle={(id) => setModeAccOpen((cur) => (cur === id ? null : id))}
-              >
-                <div className="pricing-mode-card pricing-mode-card--in-acc">
-                  <label>حالت قیمت‌گذاری</label>
-                  <select
-                    value={modes[key]}
-                    onChange={(e) => void saveModes({ ...modes, [key]: e.target.value as "matrix" | "rate" })}
-                  >
-                    <option value="matrix">ماتریکس (پلن ثابت)</option>
-                    <option value="rate">نرخی (گیگ + ماه)</option>
-                  </select>
-                </div>
-              </SettingsAccordion>
-            ))}
-            <SettingsAccordion
-              id="mode-wholesale"
-              title={`عمده‌فروش — ${modeLabel("matrix")}`}
-              icon="shop"
-              openId={modeAccOpen}
-              onToggle={(id) => setModeAccOpen((cur) => (cur === id ? null : id))}
-            >
-              <div className="pricing-mode-card pricing-mode-card--locked pricing-mode-card--in-acc">
-                <label>حالت قیمت‌گذاری</label>
-                <select value="matrix" disabled>
-                  <option value="matrix">ماتریکس (پلن ثابت)</option>
-                </select>
-                <p className="hint" style={{ margin: "6px 0 0" }}>
-                  پلن‌های ثابت عمده همیشه ماتریکس‌اند؛ سوئیچ نرخی روی خرید عمده اعمال نمی‌شود.
-                </p>
-              </div>
-            </SettingsAccordion>
-          </div>
-
           <section className="panel prices-section">
             <div className="prices-section-head">
               <h2>نرخ هر گیگ / هر ماه</h2>
@@ -613,12 +618,13 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                         inputMode="numeric"
                         dir="ltr"
                         value={formatPriceInput(rates[role].unlimitedPerMonth)}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          setRatesDirty(true);
                           setRates((s) => ({
                             ...s,
                             [role]: { ...s[role], unlimitedPerMonth: parsePriceInput(e.target.value) },
-                          }))
-                        }
+                          }));
+                        }}
                       />
                     </div>
                   ))}
@@ -638,7 +644,8 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                       inputMode="numeric"
                       dir="ltr"
                       value={formatPriceInput(rates.wholesaleRole?.perGb ?? 0)}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setRatesDirty(true);
                         setRates((s) => ({
                           ...s,
                           wholesaleRole: {
@@ -646,8 +653,8 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                             perMonth: s.wholesaleRole?.perMonth ?? 0,
                             unlimitedPerMonth: s.wholesaleRole?.unlimitedPerMonth ?? 0,
                           },
-                        }))
-                      }
+                        }));
+                      }}
                     />
                   </div>
                   <div className="field">
@@ -657,7 +664,8 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                       inputMode="numeric"
                       dir="ltr"
                       value={formatPriceInput(rates.wholesaleRole?.perMonth ?? 0)}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setRatesDirty(true);
                         setRates((s) => ({
                           ...s,
                           wholesaleRole: {
@@ -665,8 +673,8 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                             perMonth: parsePriceInput(e.target.value),
                             unlimitedPerMonth: s.wholesaleRole?.unlimitedPerMonth ?? 0,
                           },
-                        }))
-                      }
+                        }));
+                      }}
                     />
                   </div>
                   <div className="field">
@@ -676,7 +684,8 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                       inputMode="numeric"
                       dir="ltr"
                       value={formatPriceInput(rates.wholesaleRole?.unlimitedPerMonth ?? 0)}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setRatesDirty(true);
                         setRates((s) => ({
                           ...s,
                           wholesaleRole: {
@@ -684,26 +693,40 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                             perMonth: s.wholesaleRole?.perMonth ?? 0,
                             unlimitedPerMonth: parsePriceInput(e.target.value),
                           },
-                        }))
-                      }
+                        }));
+                      }}
                     />
                   </div>
                 </div>
               </div>
             </div>
-            <p className="hint" style={{ margin: "12px 0 10px" }}>
+            <p className="hint" style={{ margin: "12px 0 0" }}>
               مثال حجمی: ۵۰ گیگ ۲ ماهه = (۵۰ × هر گیگ) + (۲ × هر ماه)
             </p>
-            <button
-              type="button"
-              className="btn success prices-save-rates-btn"
-              disabled={ratesBusy}
-              onClick={() => void saveRates()}
-            >
-              <Icon name="check" size={15} />
-              {ratesBusy ? "…" : "ذخیره نرخ‌ها"}
-            </button>
           </section>
+
+          <div className="settings-sticky-bar prices-sticky-bar" role="toolbar" aria-label="ذخیره نرخ‌ها">
+            <div className="settings-sticky-bar__inner prices-sticky-bar__inner">
+              <button
+                type="button"
+                className="settings-sticky-bar__btn settings-sticky-bar__btn--cancel"
+                disabled={!ratesDirty || ratesBusy}
+                onClick={() => void discardRatesEdits()}
+              >
+                <Icon name="close" size={15} />
+                انصراف
+              </button>
+              <button
+                type="button"
+                className="settings-sticky-bar__btn settings-sticky-bar__btn--save"
+                disabled={!ratesDirty || ratesBusy}
+                onClick={() => void saveRates()}
+              >
+                <Icon name="check" size={15} />
+                {ratesBusy ? "…" : "ذخیره"}
+              </button>
+            </div>
+          </div>
         </>
       )}
 
@@ -1185,7 +1208,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
               <button
                 type="button"
                 className="settings-sticky-bar__btn settings-sticky-bar__btn--cancel"
-                disabled={!Object.keys(edits).some((id) => shownScoped.some((c) => c.id === id))}
+                disabled={!stickyDirty}
                 onClick={discardScopedEdits}
               >
                 <Icon name="close" size={15} />
@@ -1194,14 +1217,12 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
               <button
                 type="button"
                 className="settings-sticky-bar__btn settings-sticky-bar__btn--save"
-                disabled={!Object.keys(edits).some((id) => shownScoped.some((c) => c.id === id))}
+                disabled={!stickyDirty}
                 onClick={() => void saveAllScoped()}
               >
                 <Icon name="check" size={15} />
                 ذخیره
-                {Object.keys(edits).filter((id) => shownScoped.some((c) => c.id === id)).length
-                  ? ` (${Object.keys(edits).filter((id) => shownScoped.some((c) => c.id === id)).length})`
-                  : ""}
+                {scopedEditCount ? ` (${scopedEditCount})` : ""}
               </button>
             </div>
           </div>

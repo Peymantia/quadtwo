@@ -4488,6 +4488,12 @@ html[data-theme="dark"] .sub-qr-img {
   gap: 8px;
 }
 
+.prices-nav__row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .prices-subtabs {
   display: flex;
   flex-wrap: wrap;
@@ -4497,6 +4503,103 @@ html[data-theme="dark"] .sub-qr-img {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.prices-back--desktop {
+  display: none;
+}
+
+.prices-back--mobile {
+  display: inline-flex;
+  width: 100%;
+  justify-content: center;
+}
+
+@media (min-width: 900px) {
+  .prices-nav__row {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .prices-back--desktop {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-self: center;
+    white-space: nowrap;
+    min-height: 42px;
+  }
+
+  .prices-back--mobile {
+    display: none;
+  }
+}
+
+.prices-roles-mode {
+  margin-bottom: 2px;
+}
+
+.prices-roles-mode .settings-acc {
+  margin: 0;
+}
+
+.prices-role-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 720px) {
+  .prices-role-mode-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.prices-role-mode-row {
+  display: grid;
+  grid-template-columns: auto 1fr minmax(110px, 0.9fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.prices-role-mode-row--locked {
+  opacity: 0.92;
+  border-style: dashed;
+}
+
+.prices-role-mode-label {
+  font-size: 0.8rem;
+  color: var(--mute);
+  font-weight: 650;
+}
+
+.prices-role-mode-name {
+  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.prices-role-mode-row select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  background: var(--elev);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  outline: none;
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.prices-role-mode-row select:disabled {
+  opacity: 0.85;
+  cursor: not-allowed;
 }
 
 .prices-subtab {
