@@ -3660,16 +3660,58 @@ button.pay-dest-number:active,
   font-size: 0.9rem;
 }
 
+.price-plan-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.price-plan-footer__title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.price-plan-footer__title input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
 .price-plan-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: auto;
 }
 
 .price-plan-actions .btn {
   width: 100%;
   justify-content: center;
+}
+
+@media (min-width: 720px) {
+  .price-plan-footer {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 10px;
+  }
+
+  .price-plan-footer__title {
+    flex: 1 1 auto;
+  }
+
+  .price-plan-actions {
+    flex: 0 0 auto;
+    grid-template-columns: auto auto;
+    width: auto;
+  }
+
+  .price-plan-actions .btn {
+    width: auto;
+    min-width: 5.5rem;
+    padding-inline: 14px;
+  }
 }
 
 /* Account card actions: even grid, full width, no dead space */

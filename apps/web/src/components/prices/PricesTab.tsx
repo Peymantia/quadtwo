@@ -1108,18 +1108,6 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                               }
                             />
                           </div>
-                          <div className="field price-plan-fields__title">
-                            <label>عنوان</label>
-                            <input
-                              value={String(e.title ?? c.title ?? "")}
-                              onChange={(ev) =>
-                                setEdits((m) => ({
-                                  ...m,
-                                  [c.id]: { ...m[c.id], title: ev.target.value },
-                                }))
-                              }
-                            />
-                          </div>
                         </>
                       ) : (
                         <>
@@ -1183,30 +1171,32 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                               }
                             />
                           </div>
-                          <div className="field">
-                            <label>عنوان</label>
-                            <input
-                              value={String(e.title ?? c.title ?? "")}
-                              onChange={(ev) =>
-                                setEdits((m) => ({
-                                  ...m,
-                                  [c.id]: { ...m[c.id], title: ev.target.value },
-                                }))
-                              }
-                            />
-                          </div>
                         </>
                       )}
                     </div>
-                    <div className="price-plan-actions">
-                      <button type="button" className="btn primary sm" disabled={!edits[c.id]} onClick={() => void saveRow(c)}>
-                        <Icon name="check" size={14} />
-                        ذخیره
-                      </button>
-                      <button type="button" className="btn danger sm" onClick={() => void deleteRow(c)}>
-                        <Icon name="trash" size={14} />
-                        حذف
-                      </button>
+                    <div className="price-plan-footer">
+                      <div className="field price-plan-footer__title">
+                        <label>عنوان</label>
+                        <input
+                          value={String(e.title ?? c.title ?? "")}
+                          onChange={(ev) =>
+                            setEdits((m) => ({
+                              ...m,
+                              [c.id]: { ...m[c.id], title: ev.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="price-plan-actions">
+                        <button type="button" className="btn primary sm" disabled={!edits[c.id]} onClick={() => void saveRow(c)}>
+                          <Icon name="check" size={14} />
+                          ذخیره
+                        </button>
+                        <button type="button" className="btn danger sm" onClick={() => void deleteRow(c)}>
+                          <Icon name="trash" size={14} />
+                          حذف
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
