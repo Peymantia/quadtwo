@@ -2688,18 +2688,22 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                   ) : (
                     <>
                       <div className="qa-row qa-row--1" dir="ltr">
+                        <button type="button" className="btn sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
+                          <Icon name="edit" size={15} />
+                          ویرایش
+                        </button>
                         {c.subId && (
                           <button type="button" className="btn sm" disabled={editBusy} onClick={() => void openRenew(c.subId)}>
                             <Icon name="renew" size={15} />
                             تمدید
                           </button>
                         )}
-                        <button type="button" className="btn sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
-                          <Icon name="edit" size={15} />
-                          ویرایش
-                        </button>
                       </div>
                       <div className="qa-row qa-row--2" dir="ltr">
+                        <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
+                          <Icon name="trash" size={15} />
+                          حذف
+                        </button>
                         {c.subId && (
                           <button
                             type="button"
@@ -2711,20 +2715,16 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                             بروزرسانی
                           </button>
                         )}
-                        <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
-                          <Icon name="trash" size={15} />
-                          حذف
-                        </button>
                       </div>
                       {c.subId && (
                         <div className="qa-row qa-row--3" dir="ltr">
-                          <button type="button" className="btn sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
-                            <Icon name="copy" size={15} />
-                            کپی لینک
-                          </button>
                           <button type="button" className="btn sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
                             <Icon name="link" size={15} />
                             لینک جدید
+                          </button>
+                          <button type="button" className="btn sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
+                            <Icon name="copy" size={15} />
+                            کپی لینک
                           </button>
                         </div>
                       )}

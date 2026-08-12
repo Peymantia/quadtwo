@@ -17,7 +17,7 @@ export type ConfigActionItem = {
 /**
  * Admin-style subscription action rows used across admin / partner / user panels.
  * Enable/disable lives as a switch beside the account name (not here).
- * Button order is LTR: renew|edit · refresh|delete · copy|new-link.
+ * Button order is LTR: edit|renew · delete|refresh · new-link|copy.
  */
 export function ConfigCardActions({
   item,
@@ -54,10 +54,6 @@ export function ConfigCardActions({
     <>
       <div className="config-card-actions">
         <div className="qa-row qa-row--1" dir="ltr">
-          <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRenew?.()}>
-            <Icon name="renew" size={15} />
-            تمدید
-          </button>
           <button
             type="button"
             className="btn sm"
@@ -71,25 +67,29 @@ export function ConfigCardActions({
             <Icon name="edit" size={15} />
             ویرایش
           </button>
+          <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRenew?.()}>
+            <Icon name="renew" size={15} />
+            تمدید
+          </button>
         </div>
         <div className="qa-row qa-row--2" dir="ltr">
-          <button type="button" className="btn muted sm" disabled={busy || !item.subId} onClick={() => void onRefresh()}>
-            <Icon name="sync" size={15} />
-            بروزرسانی
-          </button>
           <button type="button" className="btn danger sm" disabled={busy} onClick={() => void onDelete()}>
             <Icon name="trash" size={15} />
             حذف
           </button>
+          <button type="button" className="btn muted sm" disabled={busy || !item.subId} onClick={() => void onRefresh()}>
+            <Icon name="sync" size={15} />
+            بروزرسانی
+          </button>
         </div>
         <div className="qa-row qa-row--3" dir="ltr">
-          <button type="button" className="btn sm" disabled={busy || !item.subUrl} onClick={() => void onCopy()}>
-            <Icon name="copy" size={15} />
-            کپی لینک
-          </button>
           <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRotate()}>
             <Icon name="link" size={15} />
             لینک جدید
+          </button>
+          <button type="button" className="btn sm" disabled={busy || !item.subUrl} onClick={() => void onCopy()}>
+            <Icon name="copy" size={15} />
+            کپی لینک
           </button>
         </div>
       </div>
