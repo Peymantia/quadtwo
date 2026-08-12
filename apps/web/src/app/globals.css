@@ -1519,6 +1519,9 @@ html[data-theme="light"] .quick-action-btn {
     gap: 6px;
     max-width: 62%;
     align-items: center;
+    /* Lock control order LTR so RTL page dir cannot reverse it:
+       MENU → SETTINGS → THEME → COMBO */
+    direction: ltr;
   }
 
   .mobile-top .panel-switcher {
@@ -3631,6 +3634,17 @@ button.pay-dest-number:active,
   min-width: 0;
   flex: 1;
   line-height: 1.45;
+}
+
+.config-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.config-card-title-row .switch {
+  margin-inline-start: 2px;
 }
 
 .config-card-head__meta .config-card-note,

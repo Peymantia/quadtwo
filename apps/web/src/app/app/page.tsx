@@ -572,19 +572,28 @@ export default function UserAppPage() {
               return (
                 <div key={s.id} className="row-card row-card--stack">
                   <div style={{ width: "100%" }}>
-                    <strong className="num">{s.email}</strong>{" "}
-                    <span className={`badge ${expired || s.status !== "active" ? "bad" : "ok"}`}>
-                      {expired
-                        ? "منقضی"
-                        : s.status === "active"
-                          ? "فعال"
-                          : s.status === "disabled"
-                            ? "غیرفعال"
-                            : s.status === "expired"
-                              ? "منقضی"
-                              : s.status}
-                    </span>
-                    {s.isTest && <span className="badge info">تست</span>}
+                    <div className="config-card-title-row" dir="ltr">
+                      <strong className="num">{s.email}</strong>
+                      {!expired && (
+                        <label
+                          className="switch switch-sm"
+                          title={s.status === "active" ? "فعال" : "غیرفعال"}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={s.status === "active"}
+                            disabled={busy}
+                            aria-label={s.status === "active" ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
+                            onChange={() =>
+                              setConfirmToggle({ sub: s, enable: s.status !== "active" })
+                            }
+                          />
+                          <span className="track" />
+                        </label>
+                      )}
+                      {expired && <span className="badge warn">منقضی</span>}
+                      {s.isTest && <span className="badge info">تست</span>}
+                    </div>
                     {s.code && (
                       <div className="muted num" style={{ marginTop: 4 }}>
                         کد: {s.code}
@@ -630,7 +639,6 @@ export default function UserAppPage() {
                       onCopy={() => void copySubLink(s)}
                       onRotate={() => setConfirmRotate(s)}
                       onRefresh={() => void refreshSub(s)}
-                      onToggleEnable={(enable) => setConfirmToggle({ sub: s, enable })}
                       onDelete={() => setConfirmDelete(s)}
                       onSaveEdit={(patch) => saveSubEdit(s, patch)}
                     />

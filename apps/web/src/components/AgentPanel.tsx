@@ -645,11 +645,24 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   <div>
                     <div className="config-card-head">
                       <div className="config-card-head__meta">
-                        <div>
-                          <strong className="num">{c.email}</strong>{" "}
-                          <span className={`badge ${active ? "ok" : "bad"}`}>
-                            {expired ? "منقضی" : c.status === "active" ? "فعال" : c.status === "disabled" ? "غیرفعال" : c.status || "—"}
-                          </span>
+                        <div className="config-card-title-row" dir="ltr">
+                          <strong className="num">{c.email}</strong>
+                          {!expired && (
+                            <label
+                              className="switch switch-sm"
+                              title={active ? "فعال" : "غیرفعال"}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={active}
+                                disabled={busy || !c.subId}
+                                aria-label={active ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
+                                onChange={() => setConfirmToggle({ item: c, enable: !active })}
+                              />
+                              <span className="track" />
+                            </label>
+                          )}
+                          {expired && <span className="badge warn">منقضی</span>}
                         </div>
                         {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
                         {c.note && <div className="muted config-card-note">نوت: {c.note}</div>}
@@ -709,7 +722,6 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                     onCopy={() => void copySubLink(c)}
                     onRotate={() => setConfirmRotate(c)}
                     onRefresh={() => void refreshConfig(c)}
-                    onToggleEnable={(enable) => setConfirmToggle({ item: c, enable })}
                     onDelete={() => setConfirmDelete(c)}
                     onSaveEdit={(patch) => saveEdit(c, patch)}
                   />

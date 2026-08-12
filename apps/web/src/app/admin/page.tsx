@@ -31,7 +31,7 @@ const TABS: ShellTab[] = [
   { key: "orders", label: "سفارش‌ها", icon: "orders", pin: true, pinOrder: 4, alsoInMore: true },
   { key: "prices", label: "قیمت‌ها", icon: "tag" },
   { key: "discounts", label: "کد تخفیف", icon: "tag" },
-  { key: "users", label: "کاربران", icon: "users", pin: true, pinOrder: 5 },
+  { key: "users", label: "کاربران", icon: "users", pin: true, pinOrder: 5, alsoInMore: true },
   { key: "categories", label: "دسته‌ها", icon: "layers" },
   { key: "panels", label: "سرورها", icon: "server", gapAfter: true },
   { key: "sync", label: "همگام‌سازی", icon: "sync" },
@@ -3526,13 +3526,25 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                 <div>
                   <div className="config-card-head">
                     <div className="config-card-head__meta">
-                      <div>
-                        <strong className="num">{c.email}</strong>{" "}
-                        {!c.inDb && <span className="badge warn">فقط پنل</span>}
-                        {c.status === "active" && !expired && <span className="badge ok">فعال</span>}
-                        {(c.status === "disabled" || expired) && (
-                          <span className={`badge ${expired ? "warn" : "bad"}`}>{expired ? "منقضی" : "غیرفعال"}</span>
+                      <div className="config-card-title-row" dir="ltr">
+                        <strong className="num">{c.email}</strong>
+                        {c.inDb && !expired && (
+                          <label
+                            className="switch switch-sm"
+                            title={c.status === "active" ? "فعال" : "غیرفعال"}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={c.status === "active"}
+                              disabled={editBusy}
+                              aria-label={c.status === "active" ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
+                              onChange={() => void toggleEnable(c.email, c.subId, c.status === "active")}
+                            />
+                            <span className="track" />
+                          </label>
                         )}
+                        {!c.inDb && <span className="badge warn">فقط پنل</span>}
+                        {expired && <span className="badge warn">منقضی</span>}
                       </div>
                       {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
                       {c.note && <div className="muted config-card-note">نوت: {c.note}</div>}
@@ -3574,51 +3586,50 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                   <TrafficProgress usedBytes={c.usedTrafficBytes ?? 0} totalGb={c.trafficGb ?? null} />
                 </div>
                 <div className="config-card-actions">
-                  <div className="qa-row qa-row--1">
-                    {!c.inDb && (
+                  {!c.inDb ? (
+                    <div className="qa-row qa-row--1" dir="ltr">
                       <button type="button" className="btn sm" disabled={importBusy} onClick={() => void doImport([c.email])}>
                         وارد کردن
                       </button>
-                    )}
-                    {c.inDb && c.subId && (
-                      <button type="button" className="btn sm" disabled={editBusy} onClick={() => void openRenew(c.subId)}>
-                        تمدید
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className={`btn sm ${c.status === "active" && !expired ? "danger" : "success"}`}
-                      disabled={editBusy || expired}
-                      onClick={() => void toggleEnable(c.email, c.subId, c.status === "active")}
-                    >
-                      {c.status === "active" && !expired ? "غیرفعال" : "فعال"}
-                    </button>
-                  </div>
-                  <div className="qa-row qa-row--2">
-                    <button type="button" className="btn sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
-                      ویرایش
-                    </button>
-                    <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
-                      حذف
-                    </button>
-                  </div>
-                  {c.inDb && c.subId && (
-                    <div className="qa-row qa-row--3 qa-row--triple">
-                      <button type="button" className="btn sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
-                        کپی لینک
-                      </button>
-                      <button
-                        type="button"
-                        className="btn muted sm"
-                        disabled={editBusy}
-                        onClick={() => void refreshFromPanel(c.email, c.subId)}
-                      >
-                        بروزرسانی
-                      </button>
-                      <button type="button" className="btn sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
-                        لینک جدید
-                      </button>
                     </div>
+                  ) : (
+                    <>
+                      <div className="qa-row qa-row--1" dir="ltr">
+                        {c.subId && (
+                          <button type="button" className="btn sm" disabled={editBusy} onClick={() => void openRenew(c.subId)}>
+                            تمدید
+                          </button>
+                        )}
+                        <button type="button" className="btn sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
+                          ویرایش
+                        </button>
+                      </div>
+                      <div className="qa-row qa-row--2" dir="ltr">
+                        {c.subId && (
+                          <button
+                            type="button"
+                            className="btn muted sm"
+                            disabled={editBusy}
+                            onClick={() => void refreshFromPanel(c.email, c.subId)}
+                          >
+                            بروزرسانی
+                          </button>
+                        )}
+                        <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
+                          حذف
+                        </button>
+                      </div>
+                      {c.subId && (
+                        <div className="qa-row qa-row--3" dir="ltr">
+                          <button type="button" className="btn sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
+                            کپی لینک
+                          </button>
+                          <button type="button" className="btn sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
+                            لینک جدید
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

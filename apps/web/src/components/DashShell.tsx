@@ -12,7 +12,6 @@ import {
   toggleStudioTheme,
   type ColorMode,
 } from "../lib/theme";
-import { isTelegramMiniApp, promptAddToHomeScreen } from "../lib/telegram";
 import { DemoModeBar } from "./DemoModeBar";
 
 const PREVIEW_PANELS = [
@@ -334,7 +333,6 @@ export function DashShell(props: {
   const router = useRouter();
   const pathname = usePathname() || "";
   const [moreOpen, setMoreOpen] = useState(false);
-  const [showAddHome, setShowAddHome] = useState(false);
   const isAdmin = props.role === "admin";
   /** Only the real /admin shell uses top gear + overflow “more”; preview of user/partner keeps bottom settings */
   const isAdminPanel = pathname.startsWith("/admin");
@@ -400,16 +398,12 @@ export function DashShell(props: {
     };
   }, [navTabs]);
 
-  const hasMore = more.length > 0 || showAddHome || hasSettings;
+  const hasMore = more.length > 0 || hasSettings;
   const moreActive = more.some((t) => t.key === props.active);
   const settingsActive = props.active === "settings";
   const bubbleActive = Boolean(bubble && props.active === bubble.key);
   const moreSheetRef = useRef<HTMLDivElement>(null);
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    setShowAddHome(isTelegramMiniApp() && typeof window.Telegram?.WebApp?.addToHomeScreen === "function");
-  }, []);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -459,12 +453,7 @@ export function DashShell(props: {
           <img src={props.logoUrl || "/logo.png"} alt={props.brand} />
           <span>{props.brand}</span>
         </div>
-        <div className="topbar-side">
-          {isAdmin ? (
-            <AdminPanelSwitcher />
-          ) : (
-            props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>
-          )}
+        <div className="topbar-side" dir="ltr">
           {hasMore && (
             <button
               ref={moreTriggerRef}
@@ -488,6 +477,11 @@ export function DashShell(props: {
             </button>
           )}
           <ThemeToggleBtn />
+          {isAdmin ? (
+            <AdminPanelSwitcher />
+          ) : (
+            props.walletLabel && <span className="money-pill num">{props.walletLabel}</span>
+          )}
         </div>
       </div>
 
@@ -667,19 +661,6 @@ export function DashShell(props: {
                   <span>{t.label}</span>
                 </button>
               ))}
-              {showAddHome && (
-                <button
-                  type="button"
-                  className="more-sheet-item"
-                  onClick={() => {
-                    promptAddToHomeScreen();
-                    setMoreOpen(false);
-                  }}
-                >
-                  <Icon name="install" size={22} />
-                  <span>افزودن به صفحه اصلی</span>
-                </button>
-              )}
               <button
                 type="button"
                 className="more-sheet-item more-sheet-item--logout"
