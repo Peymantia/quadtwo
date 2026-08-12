@@ -769,6 +769,7 @@ function OrdersTab({ flash }: { flash: Flash }) {
                 </div>
               ) : (
                 <button type="button" className="btn success sm" disabled={busy === o.id} onClick={() => act(o.id, "approve")}>
+                  <Icon name="check" size={14} />
                   تأیید و ساخت
                 </button>
               )}
@@ -781,6 +782,7 @@ function OrdersTab({ flash }: { flash: Flash }) {
                 />
               </div>
               <button type="button" className="btn danger sm" disabled={busy === o.id} onClick={() => act(o.id, "reject")}>
+                <Icon name="close" size={14} />
                 رد
               </button>
             </div>
@@ -2164,9 +2166,11 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                 </div>
                 <div className="price-plan-actions">
                   <button type="button" className="btn primary sm" disabled={!edits[c.id]} onClick={() => saveRow(c)}>
+                    <Icon name="check" size={14} />
                     ذخیره
                   </button>
                   <button type="button" className="btn danger sm" onClick={() => void deleteRow(c)}>
+                    <Icon name="trash" size={14} />
                     حذف
                   </button>
                 </div>
@@ -2323,10 +2327,12 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
                 <div className="cat-card__toolbar">
                   {dirty ? (
                     <button type="button" className="btn primary sm" onClick={() => save(c, { label: draft })}>
+                      <Icon name="check" size={14} />
                       ذخیره
                     </button>
                   ) : null}
                   <button type="button" className="btn ghost sm cat-card__del" onClick={() => void remove(c)}>
+                    <Icon name="trash" size={14} />
                     حذف
                   </button>
                 </div>
@@ -2349,6 +2355,7 @@ function CategoriesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskCon
           </div>
         </div>
         <button type="button" className="btn success sm cat-add__btn" disabled={!newKey.trim()} onClick={() => void addCategory()}>
+          <Icon name="plus" size={14} />
           افزودن دسته
         </button>
       </div>
@@ -2578,12 +2585,15 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
 
         <div className="sync-actions">
           <button type="button" className="btn primary" disabled={busy} onClick={() => void runDiff()}>
+            <Icon name="sync" size={15} />
             {busy ? "…" : "مقایسه وضعیت"}
           </button>
           <button type="button" className="btn success" disabled={busy} onClick={openApplyModal}>
+            <Icon name="check" size={15} />
             اعمال تغییرات
           </button>
           <button type="button" className="btn ghost" disabled={busy || !undoAvailable} onClick={() => void runUndo()}>
+            <Icon name="arrowRight" size={15} />
             Undo
           </button>
         </div>
@@ -3593,6 +3603,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                   {!c.inDb ? (
                     <div className="qa-row qa-row--1" dir="ltr">
                       <button type="button" className="btn sm" disabled={importBusy} onClick={() => void doImport([c.email])}>
+                        <Icon name="download" size={15} />
                         وارد کردن
                       </button>
                     </div>
@@ -3601,10 +3612,12 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       <div className="qa-row qa-row--1" dir="ltr">
                         {c.subId && (
                           <button type="button" className="btn sm" disabled={editBusy} onClick={() => void openRenew(c.subId)}>
+                            <Icon name="renew" size={15} />
                             تمدید
                           </button>
                         )}
                         <button type="button" className="btn sm" disabled={editBusy} onClick={() => void startEdit(c.email, c.subId)}>
+                          <Icon name="edit" size={15} />
                           ویرایش
                         </button>
                       </div>
@@ -3616,19 +3629,23 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                             disabled={editBusy}
                             onClick={() => void refreshFromPanel(c.email, c.subId)}
                           >
+                            <Icon name="sync" size={15} />
                             بروزرسانی
                           </button>
                         )}
                         <button type="button" className="btn danger sm" onClick={() => void remove(c.email, c.subId)}>
+                          <Icon name="trash" size={15} />
                           حذف
                         </button>
                       </div>
                       {c.subId && (
                         <div className="qa-row qa-row--3" dir="ltr">
                           <button type="button" className="btn sm" disabled={editBusy || !c.subUrl} onClick={() => void copySubLink(c)}>
+                            <Icon name="copy" size={15} />
                             کپی لینک
                           </button>
                           <button type="button" className="btn sm" disabled={editBusy} onClick={() => void rotateSubLink(c.email, c.subId)}>
+                            <Icon name="link" size={15} />
                             لینک جدید
                           </button>
                         </div>
@@ -3645,6 +3662,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
           <div className="config-pager">
             <div className="actions config-pager-nav">
               <button type="button" className="btn ghost sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                <Icon name="arrowRight" size={15} />
                 قبلی
               </button>
               <span className="muted" style={{ alignSelf: "center" }}>
@@ -3657,6 +3675,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                 onClick={() => setPage((p) => p + 1)}
               >
                 بعدی
+                <Icon name="arrowLeft" size={15} />
               </button>
             </div>
             <div className="sort-bar config-page-size">
@@ -4069,6 +4088,7 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
               </button>
             )}
             <button type="button" className="btn success sm" onClick={() => setShowAddPanel(true)}>
+              <Icon name="plus" size={15} />
               افزودن سرور جدید
             </button>
           </div>
@@ -4177,13 +4197,16 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                       </span>
                     </label>
                     <button type="button" className="btn ghost sm" onClick={() => openEdit(p)}>
+                      <Icon name="edit" size={14} />
                       ویرایش
                     </button>
                     <button type="button" className="btn ghost sm" onClick={() => void test(p.id)}>
+                      <Icon name="sync" size={14} />
                       تست
                     </button>
                     {canDelete ? (
                       <button type="button" className="btn danger sm" onClick={() => void removePanel(p)}>
+                        <Icon name="trash" size={14} />
                         حذف
                       </button>
                     ) : null}

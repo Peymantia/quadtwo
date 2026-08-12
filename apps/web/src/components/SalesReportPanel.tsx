@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, formatToman } from "../lib/api";
 import { formatTrafficGbFa } from "../lib/format-ui";
 import { Modal } from "./Modal";
+import { Icon } from "./DashShell";
 
 export type SalesPeriod = "today" | "week" | "month" | "jalali_month" | "all";
 
@@ -153,6 +154,7 @@ export function AccountDetailModal({
           <pre className="acct-detail-pre">{data?.text}</pre>
           {data?.source === "archive" && data.archiveId && !data.restoredAt && (
             <button type="button" className="btn success" disabled={restoring} onClick={() => void restore()}>
+              <Icon name="renew" size={15} />
               {restoring ? "در حال بازگردانی…" : "بازگردانی به دیتابیس / پنل"}
             </button>
           )}

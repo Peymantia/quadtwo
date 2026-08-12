@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
 import { SubQrModal } from "./SubQrModal";
+import { Icon } from "./DashShell";
 import { api, formatToman } from "../lib/api";
 import { ACCOUNT_NAME_HINT, filterAccountNameInput, isValidAccountName } from "../lib/account-name";
 import type { CryptoPayInfo } from "./CryptoPayModal";
@@ -173,10 +174,12 @@ export function SubAddonsBar({
 
   const backOrRenew = showBack ? (
     <button type="button" className="btn sm" disabled={busy} onClick={() => onBack?.()}>
+      <Icon name="arrowRight" size={15} />
       بازگشت
     </button>
   ) : showRenew && onRenew ? (
     <button type="button" className="btn sm" disabled={busy || !!isTest} onClick={() => onRenew()}>
+      <Icon name="renew" size={15} />
       تمدید
     </button>
   ) : null;
@@ -193,6 +196,7 @@ export function SubAddonsBar({
               if (subUrl) void copyText(subUrl, "لینک اشتراک کپی شد");
             }}
           >
+            <Icon name="copy" size={15} />
             لینک اشتراک
           </button>
           <button
@@ -209,15 +213,18 @@ export function SubAddonsBar({
                 .finally(() => onBusy(false));
             }}
           >
+            <Icon name="link" size={15} />
             لینک Base64 کانفیگ
           </button>
         </div>
 
         <div className="qa-row qa-row--2">
           <button type="button" className="btn sm" disabled={busy || !canDays} onClick={() => setMode("days")}>
+            <Icon name="calendar" size={15} />
             افزایش روز
           </button>
           <button type="button" className="btn sm" disabled={busy || !canGb} onClick={() => setMode("gb")}>
+            <Icon name="plus" size={15} />
             افزایش حجم
           </button>
         </div>
@@ -225,6 +232,7 @@ export function SubAddonsBar({
         <div className="qa-row qa-row--3">
           {isAdmin ? (
             <button type="button" className="btn muted sm" disabled={busy} onClick={() => void refreshFromPanel()}>
+              <Icon name="sync" size={15} />
               بروزرسانی
             </button>
           ) : (
@@ -237,10 +245,12 @@ export function SubAddonsBar({
                 setMode("rename");
               }}
             >
+              <Icon name="edit" size={15} />
               تغییر نام دلخواه
             </button>
           )}
           <button type="button" className="btn sm" disabled={busy} onClick={() => setMode("rotsub")}>
+            <Icon name="link" size={15} />
             تغییر لینک ساب
           </button>
         </div>
@@ -256,6 +266,7 @@ export function SubAddonsBar({
                 setMode("rename");
               }}
             >
+              <Icon name="edit" size={15} />
               تغییر نام دلخواه
             </button>
           )}
@@ -265,6 +276,7 @@ export function SubAddonsBar({
             disabled={busy || !subUrl}
             onClick={() => setQrOpen(true)}
           >
+            <Icon name="wifi" size={15} />
             نمایش QR Code
           </button>
           {!isAdmin && (
@@ -277,6 +289,7 @@ export function SubAddonsBar({
                 setMode("note");
               }}
             >
+              <Icon name="file" size={15} />
               یادداشت
             </button>
           )}
@@ -294,6 +307,7 @@ export function SubAddonsBar({
                   setMode("note");
                 }}
               >
+                <Icon name="file" size={15} />
                 یادداشت
               </button>
             )}
@@ -330,6 +344,7 @@ export function SubAddonsBar({
             disabled={busy || walletBalance < daysPrice}
             onClick={() => void checkout(`/me/subscriptions/${subId}/add-days`, { days }, "wallet")}
           >
+            <Icon name="wallet" size={15} />
             کیف پول
           </button>
           <button
@@ -338,6 +353,7 @@ export function SubAddonsBar({
             disabled={busy}
             onClick={() => void checkout(`/me/subscriptions/${subId}/add-days`, { days }, "card_to_card")}
           >
+            <Icon name="check" size={15} />
             کارت‌به‌کارت
           </button>
         </div>
@@ -371,6 +387,7 @@ export function SubAddonsBar({
             disabled={busy || !info?.addGb.allowed || walletBalance < gbPrice}
             onClick={() => void checkout(`/me/subscriptions/${subId}/add-gb`, { gb }, "wallet")}
           >
+            <Icon name="wallet" size={15} />
             کیف پول
           </button>
           <button
@@ -379,6 +396,7 @@ export function SubAddonsBar({
             disabled={busy || !info?.addGb.allowed}
             onClick={() => void checkout(`/me/subscriptions/${subId}/add-gb`, { gb }, "card_to_card")}
           >
+            <Icon name="check" size={15} />
             کارت‌به‌کارت
           </button>
         </div>
@@ -416,6 +434,7 @@ export function SubAddonsBar({
             }
           }}
         >
+          <Icon name="check" size={15} />
           ذخیره نام
         </button>
       </Modal>
@@ -446,6 +465,7 @@ export function SubAddonsBar({
             }
           }}
         >
+          <Icon name="check" size={15} />
           ذخیره
         </button>
       </Modal>
@@ -475,9 +495,11 @@ export function SubAddonsBar({
         </p>
         <div className="qa-row qa-row--2">
           <button type="button" className="btn danger sm" disabled={busy} onClick={() => void rotateSub()}>
+            <Icon name="check" size={15} />
             تأیید تغییر
           </button>
           <button type="button" className="btn sm" disabled={busy} onClick={() => setMode(null)}>
+            <Icon name="close" size={15} />
             انصراف
           </button>
         </div>

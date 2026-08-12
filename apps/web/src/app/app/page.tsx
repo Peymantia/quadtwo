@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DashShell, LoadingScreen, type ShellTab } from "../../components/DashShell";
+import { DashShell, LoadingScreen, Icon, type ShellTab } from "../../components/DashShell";
 import { Toast, ConfirmToast } from "../../components/Toast";
 import { PasswordSettings } from "../../components/PasswordSettings";
 import { CardPayModal } from "../../components/CardPayModal";
@@ -516,6 +516,7 @@ export default function UserAppPage() {
                 قبل از خرید، سرویس را امتحان کنید. رایگان است و از سقف جداگانه‌ای کم می‌شود.
               </p>
               <button type="button" className="btn light wide" disabled={busy} onClick={claimTest}>
+                <Icon name="wifi" size={16} />
                 دریافت اکانت تست
               </button>
             </div>
@@ -699,6 +700,7 @@ export default function UserAppPage() {
               <input value={chargeNote} onChange={(e) => setChargeNote(e.target.value)} />
             </div>
             <button type="button" className="btn success wide" disabled={busy} onClick={requestCharge}>
+              <Icon name="wallet" size={16} />
               ارسال درخواست شارژ
             </button>
           </div>

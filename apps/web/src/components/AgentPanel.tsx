@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DashShell, LoadingScreen, type ShellTab } from "./DashShell";
+import { DashShell, LoadingScreen, Icon, type ShellTab } from "./DashShell";
 import { Toast, ConfirmToast } from "./Toast";
 import { PasswordSettings } from "./PasswordSettings";
 import { PaymentCardBlock, TrafficProgress } from "./PaymentCard";
@@ -561,23 +561,28 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             <div className="quick-actions">
               <div className="qa-row qa-row--1">
                 <button type="button" className="btn quick-action-btn" onClick={() => setTab("create")}>
+                  <Icon name="shop" size={18} />
                   ساخت کانفیگ جدید
                 </button>
                 <button type="button" className="btn quick-action-btn" onClick={() => setTab("configs")}>
+                  <Icon name="wifi" size={18} />
                   مشاهده کانفیگ‌ها
                 </button>
               </div>
               <div className="qa-row qa-row--2">
                 <button type="button" className="btn quick-action-btn" onClick={() => setTab("wallet")}>
+                  <Icon name="wallet" size={18} />
                   شارژ کیف پول
                 </button>
                 <button type="button" className="btn quick-action-btn" onClick={() => setTab("reports")}>
+                  <Icon name="chart" size={18} />
                   گزارش فروش
                 </button>
               </div>
               <div className="qa-row qa-row--3">
                 {discountAllowed && (
                   <button type="button" className="btn quick-action-btn" onClick={() => setTab("discounts")}>
+                    <Icon name="tag" size={15} />
                     کد تخفیف
                   </button>
                 )}
@@ -586,6 +591,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   className={`btn quick-action-btn${!discountAllowed ? " quick-action-btn--full" : ""}`}
                   onClick={() => setTab("settings")}
                 >
+                  <Icon name="gear" size={15} />
                   تنظیمات
                 </button>
               </div>
@@ -743,6 +749,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   disabled={configPage === 0}
                   onClick={() => setConfigPage((p) => p - 1)}
                 >
+                  <Icon name="arrowRight" size={15} />
                   قبلی
                 </button>
                 <span className="muted" style={{ alignSelf: "center" }}>
@@ -755,6 +762,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   onClick={() => setConfigPage((p) => p + 1)}
                 >
                   بعدی
+                  <Icon name="arrowLeft" size={15} />
                 </button>
               </div>
               <div className="sort-bar config-page-size">
@@ -804,6 +812,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               />
             </div>
             <button type="button" className="btn success wide" disabled={busy} onClick={requestCharge}>
+              <Icon name="wallet" size={16} />
               ثبت درخواست شارژ
             </button>
           </div>

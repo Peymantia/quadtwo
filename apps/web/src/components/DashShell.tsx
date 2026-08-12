@@ -111,7 +111,18 @@ export type IconName =
   | "sync"
   | "sun"
   | "moon"
-  | "install";
+  | "install"
+  | "renew"
+  | "edit"
+  | "trash"
+  | "copy"
+  | "link"
+  | "check"
+  | "plus"
+  | "download"
+  | "calendar"
+  | "arrowLeft"
+  | "arrowRight";
 
 export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
   const p = {
@@ -123,6 +134,7 @@ export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
     strokeWidth: 1.8,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
   };
   switch (name) {
     case "home":
@@ -290,6 +302,86 @@ export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
           <path d="M12 8v7" />
           <path d="m9 12.5 3 3 3-3" />
           <path d="M9.5 18.5h5" />
+        </svg>
+      );
+    case "renew":
+      return (
+        <svg {...p}>
+          <path d="M4 12a8 8 0 0 1 13.7-5.7" />
+          <path d="M18 4v4h-4" />
+          <path d="M20 12a8 8 0 0 1-13.7 5.7" />
+          <path d="M6 20v-4h4" />
+        </svg>
+      );
+    case "edit":
+      return (
+        <svg {...p}>
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z" />
+        </svg>
+      );
+    case "trash":
+      return (
+        <svg {...p}>
+          <path d="M4 7h16" />
+          <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          <path d="M7 7l1 12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-12" />
+          <path d="M10 11v6M14 11v6" />
+        </svg>
+      );
+    case "copy":
+      return (
+        <svg {...p}>
+          <rect x="8" y="8" width="12" height="12" rx="2" />
+          <path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      );
+    case "link":
+      return (
+        <svg {...p}>
+          <path d="M9.5 14.5 14.5 9.5" />
+          <path d="M11 17.5 9 19.5a4 4 0 0 1-5.7-5.7L5.5 11.5" />
+          <path d="M13 6.5 15 4.5a4 4 0 0 1 5.7 5.7L18.5 12.5" />
+        </svg>
+      );
+    case "check":
+      return (
+        <svg {...p}>
+          <path d="m5 12 5 5L20 7" />
+        </svg>
+      );
+    case "plus":
+      return (
+        <svg {...p}>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      );
+    case "download":
+      return (
+        <svg {...p}>
+          <path d="M12 4v11" />
+          <path d="m7.5 11.5 4.5 4.5 4.5-4.5" />
+          <path d="M5 19h14" />
+        </svg>
+      );
+    case "calendar":
+      return (
+        <svg {...p}>
+          <rect x="3.5" y="5" width="17" height="15" rx="2" />
+          <path d="M3.5 10h17" />
+          <path d="M8 3.5v3M16 3.5v3" />
+        </svg>
+      );
+    case "arrowLeft":
+      return (
+        <svg {...p}>
+          <path d="M15 6 9 12l6 6" />
+        </svg>
+      );
+    case "arrowRight":
+      return (
+        <svg {...p}>
+          <path d="m9 6 6 6-6 6" />
         </svg>
       );
   }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { Icon } from "./DashShell";
 
 type DiscountItem = {
   id: string;
@@ -349,6 +350,7 @@ export function DiscountCodesPanel({
       </div>
       <div className="actions" style={{ marginBottom: 16 }}>
         <button type="button" className="btn primary" disabled={busy || !code.trim()} onClick={() => void create()}>
+          <Icon name="plus" size={15} />
           ساخت کد
         </button>
       </div>
@@ -374,6 +376,7 @@ export function DiscountCodesPanel({
                 </div>
                 <div className="disc-item-actions">
                   <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void toggle(item)}>
+                    <Icon name={item.active ? "close" : "check"} size={14} />
                     {item.active ? "غیرفعال" : "فعال"}
                   </button>
                   <button
@@ -398,9 +401,11 @@ export function DiscountCodesPanel({
                       })()
                     }
                   >
+                    <Icon name="users" size={14} />
                     {item.shareable ? "فقط خودم" : "اشتراک"}
                   </button>
                   <button type="button" className="btn danger sm" disabled={busy} onClick={() => void remove(item)}>
+                    <Icon name="trash" size={14} />
                     حذف
                   </button>
                 </div>

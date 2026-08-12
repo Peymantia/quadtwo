@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, formatToman } from "../lib/api";
 import { ACCOUNT_NAME_HINT, filterAccountNameInput, isValidAccountName } from "../lib/account-name";
 import { Modal } from "./Modal";
+import { Icon } from "./DashShell";
 
 export type RateShopCatalog = {
   categories: string[];
@@ -889,6 +890,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       <div className="seek-checkout">
         <div className="seek-pay-row">
           <button type="button" className="btn seek-pay-card wide" disabled={!canSubmit} onClick={openConfirm}>
+            <Icon name={variant === "admin" ? "plus" : "wallet"} size={16} />
             {variant === "admin" ? "ساخت کانفیگ" : "بررسی و پرداخت"}
           </button>
         </div>
@@ -911,6 +913,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                   disabled={busy}
                   onClick={() => void confirmPay("wallet")}
                 >
+                  <Icon name="wallet" size={15} />
                   تأیید و پرداخت از کیف پول
                 </button>
               )}
@@ -921,6 +924,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                   disabled={busy}
                   onClick={() => void confirmPay("card_to_card")}
                 >
+                  <Icon name="check" size={15} />
                   تأیید و پرداخت کارت به کارت
                 </button>
               )}
@@ -931,6 +935,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
                   disabled={busy || !payMethods.crypto.configured}
                   onClick={() => void confirmPay("crypto")}
                 >
+                  <Icon name="layers" size={15} />
                   تأیید و پرداخت کریپتو
                   {!payMethods.crypto.configured ? " (آدرس تنظیم نشده)" : ""}
                 </button>
@@ -944,10 +949,12 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
           )}
           {variant === "admin" && (
             <button type="button" className="btn success" disabled={busy} onClick={() => void confirmPay("wallet")}>
+              <Icon name="check" size={15} />
               تأیید و ساخت
             </button>
           )}
           <button type="button" className="btn ghost" disabled={busy} onClick={() => setConfirmOpen(false)}>
+            <Icon name="close" size={15} />
             انصراف
           </button>
         </div>

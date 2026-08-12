@@ -749,6 +749,10 @@ h3 {
   position: relative;
 }
 
+.btn > svg {
+  flex-shrink: 0;
+}
+
 .btn:active {
   transform: translateY(1px) scale(0.985);
 }
@@ -3735,6 +3739,7 @@ html[data-theme="dark"] .sub-qr-img {
   padding-inline: 6px;
   font-size: 0.82rem;
   white-space: nowrap;
+  gap: 5px;
 }
 
 .config-card-actions-row > .btn {

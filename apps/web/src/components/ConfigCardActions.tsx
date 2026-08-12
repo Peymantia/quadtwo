@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Modal } from "./Modal";
+import { Icon } from "./DashShell";
 
 export type ConfigActionItem = {
   email: string;
@@ -54,6 +55,7 @@ export function ConfigCardActions({
       <div className="config-card-actions">
         <div className="qa-row qa-row--1" dir="ltr">
           <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRenew?.()}>
+            <Icon name="renew" size={15} />
             تمدید
           </button>
           <button
@@ -66,22 +68,27 @@ export function ConfigCardActions({
               setEditOpen(true);
             }}
           >
+            <Icon name="edit" size={15} />
             ویرایش
           </button>
         </div>
         <div className="qa-row qa-row--2" dir="ltr">
           <button type="button" className="btn muted sm" disabled={busy || !item.subId} onClick={() => void onRefresh()}>
+            <Icon name="sync" size={15} />
             بروزرسانی
           </button>
           <button type="button" className="btn danger sm" disabled={busy} onClick={() => void onDelete()}>
+            <Icon name="trash" size={15} />
             حذف
           </button>
         </div>
         <div className="qa-row qa-row--3" dir="ltr">
           <button type="button" className="btn sm" disabled={busy || !item.subUrl} onClick={() => void onCopy()}>
+            <Icon name="copy" size={15} />
             کپی لینک
           </button>
           <button type="button" className="btn sm" disabled={busy || !item.subId} onClick={() => void onRotate()}>
+            <Icon name="link" size={15} />
             لینک جدید
           </button>
         </div>
@@ -120,9 +127,11 @@ export function ConfigCardActions({
               })();
             }}
           >
+            <Icon name="check" size={15} />
             ذخیره
           </button>
           <button type="button" className="btn sm" disabled={busy} onClick={() => setEditOpen(false)}>
+            <Icon name="close" size={15} />
             انصراف
           </button>
         </div>
