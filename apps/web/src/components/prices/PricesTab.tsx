@@ -75,6 +75,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
   const [newCell, setNewCell] = useState(emptyNew("data"));
   const [dataCat, setDataCat] = useState("data");
   const [modeAccOpen, setModeAccOpen] = useState<string | null>(null);
+  const [toolsAccOpen, setToolsAccOpen] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -124,6 +125,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
   }, []);
 
   useEffect(() => {
+    setToolsAccOpen(null);
     if (sub === "data") {
       const vols = volumeCats(categories);
       const next = vols.some((c) => c.key === dataCat) ? dataCat : vols[0]?.key || "data";
@@ -279,6 +281,18 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
     } catch (er) {
       flash(null, errText(er));
     }
+  }
+
+  function discardScopedEdits() {
+    const ids = new Set(shownScoped.map((c) => c.id));
+    setEdits((m) => {
+      const next = { ...m };
+      for (const id of Object.keys(next)) {
+        if (ids.has(id)) delete next[id];
+      }
+      return next;
+    });
+    flash("تغییرات این بخش لغو شد");
   }
 
   async function deleteRow(c: PriceRow) {
@@ -716,183 +730,190 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
             </p>
           )}
 
-          <section className="panel prices-section">
-            <div className="prices-section-head">
-              <h2>
-                {sub === "wholesale"
+          <div className="prices-tools-accs">
+            <SettingsAccordion
+              id="add-plan"
+              title={
+                sub === "wholesale"
                   ? "افزودن پلن عمده‌فروش"
                   : sub === "offer"
                     ? "افزودن پیشنهاد ویژه"
                     : sub === "unlimited"
-                      ? "افزودن پلن نامحدود (ماتریکس)"
+                      ? "افزودن پلن نامحدود"
                       : sub === "national"
                         ? "افزودن پلن اینترنت ملی"
-                        : "افزودن پلن حجمی"}
-              </h2>
-              <p className="muted">
+                        : "افزودن پلن حجمی"
+              }
+              icon="plus"
+              openId={toolsAccOpen}
+              onToggle={(id) => setToolsAccOpen((cur) => (cur === id ? null : id))}
+            >
+              <p className="muted prices-acc-hint">
                 {sub === "wholesale"
                   ? "قیمت و تعداد کاربر (IP) برای عمده‌فروش."
                   : "چهار ستون قیمت: کاربر، همکار، همکار ویژه، عمده‌فروش."}
               </p>
-            </div>
-            <div className="prices-add-grid">
-              {sub === "data" && (
+              <div className="prices-add-grid">
+                {sub === "data" && (
+                  <div className="field">
+                    <label>دسته حجمی</label>
+                    <select
+                      value={dataCat}
+                      onChange={(e) => {
+                        setDataCat(e.target.value);
+                        setNewCell(emptyNew(e.target.value));
+                      }}
+                    >
+                      {volumeCats(categories).map((c) => (
+                        <option key={c.key} value={c.key}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="field">
-                  <label>دسته حجمی</label>
-                  <select
-                    value={dataCat}
-                    onChange={(e) => {
-                      setDataCat(e.target.value);
-                      setNewCell(emptyNew(e.target.value));
-                    }}
-                  >
-                    {volumeCats(categories).map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
+                  <label>
+                    {sub === "unlimited"
+                      ? "حجم (نامحدود)"
+                      : sub === "offer"
+                        ? "حجم GB (خالی = نامحدود)"
+                        : "حجم GB"}
+                  </label>
+                  <input
+                    className="num"
+                    inputMode="numeric"
+                    disabled={sub === "unlimited"}
+                    placeholder={sub === "unlimited" ? "∞" : sub === "offer" ? "مثلاً 50 یا خالی" : "مثلاً 100"}
+                    value={sub === "unlimited" ? "" : newCell.trafficGb}
+                    onChange={(e) => setNewCell((s) => ({ ...s, trafficGb: e.target.value }))}
+                  />
                 </div>
-              )}
-              <div className="field">
-                <label>
-                  {sub === "unlimited"
-                    ? "حجم (نامحدود)"
-                    : sub === "offer"
-                      ? "حجم GB (خالی = نامحدود)"
-                      : "حجم GB"}
-                </label>
-                <input
-                  className="num"
-                  inputMode="numeric"
-                  disabled={sub === "unlimited"}
-                  placeholder={sub === "unlimited" ? "∞" : sub === "offer" ? "مثلاً 50 یا خالی" : "مثلاً 100"}
-                  value={sub === "unlimited" ? "" : newCell.trafficGb}
-                  onChange={(e) => setNewCell((s) => ({ ...s, trafficGb: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label>مدت (ماه)</label>
-                <input
-                  className="num"
-                  inputMode="numeric"
-                  value={newCell.months}
-                  onChange={(e) => setNewCell((s) => ({ ...s, months: e.target.value }))}
-                />
-              </div>
-              {sub === "wholesale" ? (
-                <>
-                  <div className="field">
-                    <label>قیمت عمده‌فروش</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(newCell.priceReseller)}
-                      onChange={(e) =>
-                        setNewCell((s) => ({
-                          ...s,
-                          priceReseller: formatPriceInput(parsePriceInput(e.target.value) || ""),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>تعداد کاربر (IP)</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={newCell.limitIp}
-                      onChange={(e) => setNewCell((s) => ({ ...s, limitIp: e.target.value.replace(/[^\d]/g, "") }))}
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="field">
-                    <label>قیمت کاربر</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(newCell.priceUser)}
-                      onChange={(e) =>
-                        setNewCell((s) => ({
-                          ...s,
-                          priceUser: formatPriceInput(parsePriceInput(e.target.value) || ""),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>قیمت همکار</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(newCell.pricePartner)}
-                      onChange={(e) =>
-                        setNewCell((s) => ({
-                          ...s,
-                          pricePartner: formatPriceInput(parsePriceInput(e.target.value) || ""),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>قیمت همکار ویژه</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(newCell.priceWholesale)}
-                      onChange={(e) =>
-                        setNewCell((s) => ({
-                          ...s,
-                          priceWholesale: formatPriceInput(parsePriceInput(e.target.value) || ""),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>قیمت عمده‌فروش</label>
-                    <input
-                      className="num"
-                      inputMode="numeric"
-                      dir="ltr"
-                      value={formatPriceInput(newCell.priceReseller)}
-                      onChange={(e) =>
-                        setNewCell((s) => ({
-                          ...s,
-                          priceReseller: formatPriceInput(parsePriceInput(e.target.value) || ""),
-                        }))
-                      }
-                    />
-                  </div>
-                </>
-              )}
-              <div className="field">
-                <label>عنوان (اختیاری)</label>
-                <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
+                <div className="field">
+                  <label>مدت (ماه)</label>
+                  <input
+                    className="num"
+                    inputMode="numeric"
+                    value={newCell.months}
+                    onChange={(e) => setNewCell((s) => ({ ...s, months: e.target.value }))}
+                  />
+                </div>
+                {sub === "wholesale" ? (
+                  <>
+                    <div className="field">
+                      <label>قیمت عمده‌فروش</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={formatPriceInput(newCell.priceReseller)}
+                        onChange={(e) =>
+                          setNewCell((s) => ({
+                            ...s,
+                            priceReseller: formatPriceInput(parsePriceInput(e.target.value) || ""),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label>تعداد کاربر (IP)</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={newCell.limitIp}
+                        onChange={(e) => setNewCell((s) => ({ ...s, limitIp: e.target.value.replace(/[^\d]/g, "") }))}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="field">
+                      <label>قیمت کاربر</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={formatPriceInput(newCell.priceUser)}
+                        onChange={(e) =>
+                          setNewCell((s) => ({
+                            ...s,
+                            priceUser: formatPriceInput(parsePriceInput(e.target.value) || ""),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label>قیمت همکار</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={formatPriceInput(newCell.pricePartner)}
+                        onChange={(e) =>
+                          setNewCell((s) => ({
+                            ...s,
+                            pricePartner: formatPriceInput(parsePriceInput(e.target.value) || ""),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label>قیمت همکار ویژه</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={formatPriceInput(newCell.priceWholesale)}
+                        onChange={(e) =>
+                          setNewCell((s) => ({
+                            ...s,
+                            priceWholesale: formatPriceInput(parsePriceInput(e.target.value) || ""),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label>قیمت عمده‌فروش</label>
+                      <input
+                        className="num"
+                        inputMode="numeric"
+                        dir="ltr"
+                        value={formatPriceInput(newCell.priceReseller)}
+                        onChange={(e) =>
+                          setNewCell((s) => ({
+                            ...s,
+                            priceReseller: formatPriceInput(parsePriceInput(e.target.value) || ""),
+                          }))
+                        }
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="field prices-add-title">
+                  <label>عنوان (اختیاری)</label>
+                  <input value={newCell.title} onChange={(e) => setNewCell((s) => ({ ...s, title: e.target.value }))} />
+                </div>
               </div>
               {sub !== "wholesale" && sub !== "offer" && (
-                <div className="field prices-add-gold">
-                  <label className="price-plan-gold">
+                <div className="setting-row prices-add-gold-row">
+                  <div>
+                    <div className="t">اولویت روی نرخ</div>
+                    <div className="d">اگر روشن باشد، قیمت ثابت این پلن به‌جای فرمول نرخ استفاده می‌شود.</div>
+                  </div>
+                  <label className="switch">
                     <input
                       type="checkbox"
                       checked={newCell.isGolden}
                       onChange={(e) => setNewCell((s) => ({ ...s, isGolden: e.target.checked }))}
                     />
-                    <span>اولویت روی نرخ</span>
+                    <span className="track" />
                   </label>
                 </div>
               )}
-            </div>
-            <div className="prices-section-actions">
               <button
                 type="button"
-                className="btn success"
+                className="btn success prices-add-submit"
                 disabled={
                   !newCell.months ||
                   (sub === "wholesale"
@@ -905,51 +926,56 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                 <Icon name="plus" size={15} />
                 افزودن پلن
               </button>
-            </div>
-          </section>
+            </SettingsAccordion>
 
-          <section className="panel prices-section">
-            <div className="prices-section-head">
-              <h2>ویرایش گروهی این بخش</h2>
-              <p className="muted">
+            <SettingsAccordion
+              id="bulk-edit"
+              title="ویرایش گروهی این بخش"
+              icon="layers"
+              openId={toolsAccOpen}
+              onToggle={(id) => setToolsAccOpen((cur) => (cur === id ? null : id))}
+            >
+              <p className="muted prices-acc-hint">
                 فقط روی پلن‌های همین تب
-                {scopedCategory ? ` («${catLabel(scopedCategory, categories)}»)` : ""} اعمال می‌شود. مقدار منفی =
-                کاهش. روی هر چهار ستون قیمت اعمال می‌شود.
+                {scopedCategory ? ` («${catLabel(scopedCategory, categories)}»)` : ""} · مقدار منفی = کاهش · روی هر چهار
+                ستون قیمت
               </p>
-            </div>
-            {sub === "data" && (
-              <div className="prices-bulk-cats" style={{ marginBottom: 10 }}>
-                {volumeCats(categories).map((c) => (
-                  <button
-                    key={c.key}
-                    type="button"
-                    className={`chip${dataCat === c.key ? " on" : ""}`}
-                    onClick={() => setDataCat(c.key)}
-                  >
-                    {c.label}
-                  </button>
-                ))}
+              {sub === "data" && (
+                <div className="prices-bulk-cats">
+                  {volumeCats(categories).map((c) => (
+                    <button
+                      key={c.key}
+                      type="button"
+                      className={`chip${dataCat === c.key ? " on" : ""}`}
+                      onClick={() => setDataCat(c.key)}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="bulk-price-row bulk-price-row--compact">
+                <select value={bulkMode} onChange={(e) => setBulkMode(e.target.value as "percent" | "amount")}>
+                  <option value="percent">درصدی</option>
+                  <option value="amount">مبلغ ثابت</option>
+                </select>
+                <input
+                  className="num"
+                  inputMode="numeric"
+                  placeholder={bulkMode === "percent" ? "۱۰ یا ‎-۵" : "۵۰۰۰"}
+                  value={bulkValue}
+                  onChange={(e) => setBulkValue(e.target.value)}
+                />
+                <button type="button" className="btn primary sm" onClick={() => void bulk()}>
+                  <Icon name="layers" size={14} />
+                  اعمال
+                </button>
               </div>
-            )}
-            <div className="bulk-price-row">
-              <select value={bulkMode} onChange={(e) => setBulkMode(e.target.value as "percent" | "amount")}>
-                <option value="percent">درصدی</option>
-                <option value="amount">مبلغ ثابت</option>
-              </select>
-              <input
-                className="num"
-                inputMode="numeric"
-                placeholder={bulkMode === "percent" ? "مثلاً 10 یا -5" : "مثلاً 5000"}
-                value={bulkValue}
-                onChange={(e) => setBulkValue(e.target.value)}
-              />
-              <button type="button" className="btn primary sm" onClick={() => void bulk()}>
-                <Icon name="layers" size={14} />
-                اعمال روی این دسته
-              </button>
-            </div>
-            <p className="hint">نتیجه به نزدیک‌ترین ۱٬۰۰۰ تومان گرد می‌شود (کاربر، همکار، همکار ویژه، عمده‌فروش).</p>
-          </section>
+              <p className="hint" style={{ margin: "8px 0 0" }}>
+                نتیجه به نزدیک‌ترین ۱٬۰۰۰ تومان گرد می‌شود.
+              </p>
+            </SettingsAccordion>
+          </div>
 
           <section className="panel prices-section">
             <div className="prices-section-head">
@@ -1152,19 +1178,33 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
               })}
             </div>
             {!shownScoped.length && <p className="muted">پلنی در این بخش نیست.</p>}
-            <div className="save-bar">
+          </section>
+
+          <div className="settings-sticky-bar prices-sticky-bar" role="toolbar" aria-label="ذخیره تغییرات قیمت">
+            <div className="settings-sticky-bar__inner prices-sticky-bar__inner">
               <button
                 type="button"
-                className="btn primary"
+                className="settings-sticky-bar__btn settings-sticky-bar__btn--cancel"
+                disabled={!Object.keys(edits).some((id) => shownScoped.some((c) => c.id === id))}
+                onClick={discardScopedEdits}
+              >
+                <Icon name="close" size={15} />
+                انصراف
+              </button>
+              <button
+                type="button"
+                className="settings-sticky-bar__btn settings-sticky-bar__btn--save"
                 disabled={!Object.keys(edits).some((id) => shownScoped.some((c) => c.id === id))}
                 onClick={() => void saveAllScoped()}
               >
                 <Icon name="check" size={15} />
-                ذخیره همه تغییرات این بخش (
-                {Object.keys(edits).filter((id) => shownScoped.some((c) => c.id === id)).length})
+                ذخیره
+                {Object.keys(edits).filter((id) => shownScoped.some((c) => c.id === id)).length
+                  ? ` (${Object.keys(edits).filter((id) => shownScoped.some((c) => c.id === id)).length})`
+                  : ""}
               </button>
             </div>
-          </section>
+          </div>
         </>
       )}
     </div>

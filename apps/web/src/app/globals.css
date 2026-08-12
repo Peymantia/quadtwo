@@ -4479,6 +4479,7 @@ html[data-theme="dark"] .sub-qr-img {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding-bottom: 88px;
 }
 
 .prices-nav {
@@ -4753,18 +4754,108 @@ html[data-theme="dark"] .sub-qr-img {
 
 .prices-add-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+@media (min-width: 720px) {
+  .prices-add-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .prices-add-grid .field {
   margin: 0;
 }
 
-.prices-add-gold {
+.prices-add-title {
+  grid-column: 1 / -1;
+}
+
+.prices-add-gold-row {
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.prices-add-submit {
+  width: 100%;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.prices-tools-accs {
   display: flex;
-  align-items: flex-end;
-  padding-bottom: 4px;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.prices-tools-accs .settings-acc {
+  margin: 0;
+}
+
+.prices-acc-hint {
+  margin: 0 0 12px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.bulk-price-row--compact {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulk-price-row--compact select {
+  flex: 0 0 auto;
+  min-width: 0;
+  width: auto;
+  padding: 8px 10px;
+  font-size: 0.86rem;
+}
+
+.bulk-price-row--compact input {
+  flex: 0 1 96px;
+  width: 96px;
+  min-width: 72px;
+  max-width: 110px;
+  padding: 8px 10px;
+  font-size: 0.86rem;
+}
+
+.bulk-price-row--compact .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+}
+
+@media (max-width: 520px) {
+  .bulk-price-row--compact {
+    flex-wrap: wrap;
+  }
+
+  .bulk-price-row--compact select,
+  .bulk-price-row--compact input,
+  .bulk-price-row--compact .btn {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+  }
+
+  .bulk-price-row--compact input {
+    flex: 0 1 100px;
+  }
+}
+
+.prices-sticky-bar {
+  margin-top: 18px;
+}
+
+.prices-sticky-bar__inner {
+  max-width: none;
+  width: 100%;
+  border-radius: 18px;
 }
 
 .prices-section-actions {
