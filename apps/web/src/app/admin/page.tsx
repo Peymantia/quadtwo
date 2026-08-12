@@ -23,6 +23,7 @@ import { QrCodeIcon } from "../../components/QrCodeIcon";
 import { broadcastAppearance } from "../../components/ThemeBoot";
 import { parseColorMode, parseUiSkin, setUserColorOverride, type ColorMode } from "../../lib/theme";
 import { PricesTab } from "../../components/prices/PricesTab";
+import { UserCustomPricingPanel } from "../../components/UserCustomPricingPanel";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -67,14 +68,16 @@ type AdminUser = {
   balance: number;
   discountCodesAllowed?: boolean;
   discountMaxPercent?: number;
-  priceOverride?: {
+  useCustomPricing?: boolean;
+  priceOverrides?: Array<{
+    id: string;
     category: string;
     perGb: number | null;
     perMonth: number | null;
     unlimitedPerMonth: number | null;
     partnerPricePercent: number;
     note: string | null;
-  } | null;
+  }>;
 };
 
 type CategoryRow = { key: string; label: string; enabled: boolean; cellCount: number; builtin?: boolean };
@@ -790,14 +793,6 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
   const [partnerBusy, setPartnerBusy] = useState<string | null>(null);
   const [discountPctDraft, setDiscountPctDraft] = useState("30");
   const [discountBusy, setDiscountBusy] = useState(false);
-  const [priceOv, setPriceOv] = useState({
-    perGb: "",
-    perMonth: "",
-    unlimitedPerMonth: "",
-    partnerPricePercent: "100",
-    note: "",
-  });
-  const [priceOvBusy, setPriceOvBusy] = useState(false);
   const [detail, setDetail] = useState<{
     txs: Array<{ id: string; amount: number; type: string; note: string | null; createdAt: string }>;
     subscriptions: Array<{ id: string; code: string; status: string; expiresAt: string }>;
@@ -839,19 +834,12 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               ...s,
               discountCodesAllowed: r.user.discountCodesAllowed ?? true,
               discountMaxPercent: r.user.discountMaxPercent ?? 30,
-              priceOverride: r.user.priceOverride ?? null,
+              useCustomPricing: r.user.useCustomPricing ?? false,
+              priceOverrides: r.user.priceOverrides ?? [],
             }
           : s,
       );
       setDiscountPctDraft(String(r.user.discountMaxPercent ?? 30));
-      const ov = r.user.priceOverride;
-      setPriceOv({
-        perGb: ov?.perGb != null ? String(ov.perGb) : "",
-        perMonth: ov?.perMonth != null ? String(ov.perMonth) : "",
-        unlimitedPerMonth: ov?.unlimitedPerMonth != null ? String(ov.unlimitedPerMonth) : "",
-        partnerPricePercent: String(ov?.partnerPricePercent ?? 100),
-        note: ov?.note ?? "",
-      });
     });
   }, [selected?.id]);
 
@@ -915,28 +903,6 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
     }
   }
 
-  async function removePartner(u: AdminUser) {
-    const label = u.username ? `@${u.username}` : u.agentName || u.telegramId;
-    const kind = u.role === "reseller" ? "همکار ویژه" : u.role === "wholesale" ? "عمده‌فروش" : "همکار";
-    if (
-      !(await askConfirm(
-        `${kind} «${label}» از همکاری حذف شود و به مشتری عادی تبدیل شود؟\nنام نماینده و گروه پنل پاک می‌شود.`,
-      ))
-    ) {
-      return;
-    }
-    try {
-      await api(`/admin/users/${u.id}/demote`, { body: {} });
-      flash(`${kind} حذف شد — الان مشتری عادی است`);
-      await load();
-      if (selected?.id === u.id) {
-        setSelected((s) => (s ? { ...s, role: "user", agentName: null, panelGroup: null } : s));
-      }
-    } catch (e) {
-      flash(null, errText(e));
-    }
-  }
-
   async function saveUserDiscount(patch: { discountCodesAllowed?: boolean; discountMaxPercent?: number }) {
     if (!selected) return;
     setDiscountBusy(true);
@@ -960,35 +926,6 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       flash(null, errText(e));
     } finally {
       setDiscountBusy(false);
-    }
-  }
-
-  async function savePriceOverride(clear = false) {
-    if (!selected) return;
-    setPriceOvBusy(true);
-    try {
-      const r = await api<{ priceOverride: AdminUser["priceOverride"] }>(`/admin/users/${selected.id}/price-override`, {
-        method: "PUT",
-        body: clear
-          ? { clear: true }
-          : {
-              perGb: priceOv.perGb === "" ? null : Number(priceOv.perGb),
-              perMonth: priceOv.perMonth === "" ? null : Number(priceOv.perMonth),
-              unlimitedPerMonth: priceOv.unlimitedPerMonth === "" ? null : Number(priceOv.unlimitedPerMonth),
-              partnerPricePercent: Number(priceOv.partnerPricePercent || "100"),
-              note: priceOv.note || null,
-            },
-      });
-      flash(clear ? "قیمت اختصاصی پاک شد" : "قیمت اختصاصی ذخیره شد");
-      setSelected((s) => (s ? { ...s, priceOverride: r.priceOverride } : s));
-      if (clear) {
-        setPriceOv({ perGb: "", perMonth: "", unlimitedPerMonth: "", partnerPricePercent: "100", note: "" });
-      }
-      await load();
-    } catch (e) {
-      flash(null, errText(e));
-    } finally {
-      setPriceOvBusy(false);
     }
   }
 
@@ -1146,10 +1083,6 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                 </div>
               </div>
               <div className="users-mrow-actions">
-                <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
-                  <Icon name="wallet" size={14} />
-                  جزئیات و شارژ
-                </button>
                 <select
                   className="users-mrole"
                   value={u.role}
@@ -1162,6 +1095,10 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                     </option>
                   ))}
                 </select>
+                <button type="button" className="btn ghost sm users-mdetail-btn" onClick={() => setSelected(u)}>
+                  <Icon name="wallet" size={14} />
+                  جزئیات شارژ و قیمت
+                </button>
               </div>
             </div>
           ))}
@@ -1199,12 +1136,6 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
 
           {(selected.role === "partner" || selected.role === "wholesale" || selected.role === "reseller") && (
             <>
-              <div className="actions" style={{ marginTop: 12 }}>
-                <button type="button" className="btn danger" onClick={() => void removePartner(selected)}>
-                  حذف از همکاری — تبدیل به مشتری عادی
-                </button>
-              </div>
-
               <h2 style={{ marginTop: 16, fontSize: "1rem" }}>کد تخفیف این نماینده</h2>
               <div className="setting-row" style={{ marginBottom: 10 }}>
                 <div>
@@ -1242,45 +1173,32 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                   style={{ width: 72 }}
                 />
               </div>
-
-              <h2 style={{ marginTop: 16, fontSize: "1rem" }}>قیمت اختصاصی این نماینده</h2>
-              <p className="muted" style={{ marginBottom: 10, fontSize: "0.85rem" }}>
-                اگر گیگ/ماه پر شود، همان نرخ برای این کاربر استفاده می‌شود. در غیر این صورت درصد روی قیمت ماتریکس/نرخ اعمال می‌شود.
-              </p>
-              <div className="field">
-                <label>تومان به ازای هر گیگ</label>
-                <input className="num" inputMode="numeric" value={priceOv.perGb} onChange={(e) => setPriceOv((p) => ({ ...p, perGb: e.target.value.replace(/[^\d]/g, "") }))} placeholder="خالی = پیش‌فرض" />
-              </div>
-              <div className="field">
-                <label>تومان به ازای هر ماه</label>
-                <input className="num" inputMode="numeric" value={priceOv.perMonth} onChange={(e) => setPriceOv((p) => ({ ...p, perMonth: e.target.value.replace(/[^\d]/g, "") }))} placeholder="خالی = پیش‌فرض" />
-              </div>
-              <div className="field">
-                <label>تومان ماهانه نامحدود</label>
-                <input className="num" inputMode="numeric" value={priceOv.unlimitedPerMonth} onChange={(e) => setPriceOv((p) => ({ ...p, unlimitedPerMonth: e.target.value.replace(/[^\d]/g, "") }))} />
-              </div>
-              <div className="field">
-                <label>درصد قیمت ماتریکس (۱۰۰ = بدون تغییر)</label>
-                <input className="num" inputMode="numeric" value={priceOv.partnerPricePercent} onChange={(e) => setPriceOv((p) => ({ ...p, partnerPricePercent: e.target.value.replace(/[^\d]/g, "") }))} />
-              </div>
-              <div className="field">
-                <label>یادداشت</label>
-                <input value={priceOv.note} onChange={(e) => setPriceOv((p) => ({ ...p, note: e.target.value }))} />
-              </div>
-              <div className="actions">
-                <button type="button" className="btn primary" disabled={priceOvBusy} onClick={() => void savePriceOverride(false)}>
-                  <Icon name="check" size={15} />
-                  ذخیره قیمت اختصاصی
-                </button>
-                <button type="button" className="btn" disabled={priceOvBusy || !selected.priceOverride} onClick={() => void savePriceOverride(true)}>
-                  <Icon name="trash" size={15} />
-                  پاک کردن
-                </button>
-              </div>
             </>
           )}
 
-          <h2 style={{ marginTop: 4, fontSize: "1rem" }}>تغییر دستی شارژ حساب</h2>
+          {selected.role !== "admin" && (
+            <UserCustomPricingPanel
+              userId={selected.id}
+              useCustomPricing={Boolean(selected.useCustomPricing)}
+              overrides={selected.priceOverrides ?? []}
+              onFlash={flash}
+              askConfirm={askConfirm}
+              onChange={(next) => {
+                setSelected((s) =>
+                  s
+                    ? {
+                        ...s,
+                        useCustomPricing: next.useCustomPricing,
+                        priceOverrides: next.priceOverrides,
+                      }
+                    : s,
+                );
+                void load();
+              }}
+            />
+          )}
+
+          <h2 style={{ marginTop: 16, fontSize: "1rem" }}>تغییر دستی شارژ حساب</h2>
           <div className="field">
             <label>مبلغ (تومان)</label>
             <input

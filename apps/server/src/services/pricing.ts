@@ -9,6 +9,11 @@ import {
   type RoleRates,
 } from "./settings.js";
 import { isWholesaleFixedCategory, isWholesaleFixedRole, WHOLESALE_FIXED_CATEGORY } from "./roles.js";
+import {
+  loadUserPriceOverrides,
+  pickOverrideForCategory,
+  shouldApplyCustomPricing,
+} from "./user-price-overrides.js";
 
 export { isWholesaleFixedCategory, isResellerCategory, WHOLESALE_FIXED_CATEGORY, RESELLER_CATEGORY } from "./roles.js";
 export const DATA_MIN_GB = 10;
@@ -161,6 +166,7 @@ export function priceFromCell(
 export async function priceForMatrixCell(
   user: User,
   cell: {
+    category?: string;
     priceUser: number;
     pricePartner: number;
     priceWholesale: number;
@@ -171,14 +177,12 @@ export async function priceForMatrixCell(
   const role = (roleOverride ?? user.role) as UserRole;
   if (role === "admin") return 0;
   let price = priceFromCell(role, cell);
-  const override = await prisma.agentPriceOverride.findUnique({ where: { userId: user.id } });
-  if (
-    override &&
-    override.partnerPricePercent != null &&
-    override.partnerPricePercent !== 100 &&
-    (role === "partner" || role === "reseller" || role === "wholesale")
-  ) {
-    price = Math.max(0, Math.round((price * override.partnerPricePercent) / 100));
+  if (shouldApplyCustomPricing(user)) {
+    const overrides = await loadUserPriceOverrides(user.id);
+    const override = pickOverrideForCategory(overrides, cell.category || "data");
+    if (override && override.partnerPricePercent != null && override.partnerPricePercent !== 100) {
+      price = Math.max(0, Math.round((price * override.partnerPricePercent) / 100));
+    }
   }
   return price > 0 ? price : null;
 }
@@ -220,12 +224,13 @@ export async function resolvePrice(
     return { cell: null, price: 0, mode: "rate" as const };
   }
 
-  // Per-agent custom rates / matrix percent
-  const override = await prisma.agentPriceOverride.findUnique({ where: { userId: user.id } });
-  if (override && (role === "partner" || role === "reseller" || role === "wholesale")) {
+  // Per-user custom rates / matrix percent (only when useCustomPricing is on)
+  const overrides = shouldApplyCustomPricing(user) ? await loadUserPriceOverrides(user.id) : [];
+  const override = pickOverrideForCategory(overrides, category || "data");
+  if (override) {
     const cat = (category || "").trim().toLowerCase();
-    const scopeOk = !override.category || override.category === cat;
-    if (scopeOk && !(isOfferCategory(cat) || isWholesaleFixedCategory(cat))) {
+    const scopeOk = !(isOfferCategory(cat) || isWholesaleFixedCategory(cat));
+    if (scopeOk) {
       const isUnlimited = trafficGb === null || cat === "unlimited";
       if (isUnlimited && override.unlimitedPerMonth != null && override.unlimitedPerMonth > 0) {
         return {
@@ -247,10 +252,8 @@ export async function resolvePrice(
   }
 
   const applyPartnerPercent = (price: number) => {
-    if (!override || override.partnerPricePercent == null || override.partnerPricePercent === 100) {
-      return price;
-    }
-    if (!(role === "partner" || role === "reseller" || role === "wholesale")) return price;
+    if (!shouldApplyCustomPricing(user) || !override) return price;
+    if (override.partnerPricePercent == null || override.partnerPricePercent === 100) return price;
     return Math.max(0, Math.round((price * override.partnerPricePercent) / 100));
   };
 

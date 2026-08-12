@@ -94,6 +94,7 @@ import {
 import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, inspectBackupBuffer, listBackupFiles, type BackupConfig } from "../services/backup.js";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
+import { mapPriceOverride } from "../services/user-price-overrides.js";
 import { approvePartner, demoteToUser, listPendingPartnerRequests, rejectPartner, submitPartnerRequest } from "../services/users.js";
 import { formatTraffic, formatToman, persianMonthName } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders, buildSalesStats, parseSalesPeriod, agentsSalesLeaderboard } from "../services/admin-reports.js";
@@ -2809,7 +2810,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       where: { tenantId, ...(role ? { role: role as UserRole } : {}) },
       orderBy: { createdAt: "desc" },
       take: 100,
-      include: { wallet: true, priceOverride: true },
+      include: { wallet: true, priceOverrides: { orderBy: { category: "asc" } } },
     });
     return c.json({
       users: users.map((u) => ({
@@ -2824,16 +2825,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         hasPassword: Boolean(u.passwordHash),
         discountCodesAllowed: u.discountCodesAllowed,
         discountMaxPercent: u.discountMaxPercent,
-        priceOverride: u.priceOverride
-          ? {
-              category: u.priceOverride.category,
-              perGb: u.priceOverride.perGb,
-              perMonth: u.priceOverride.perMonth,
-              unlimitedPerMonth: u.priceOverride.unlimitedPerMonth,
-              partnerPricePercent: u.priceOverride.partnerPricePercent,
-              note: u.priceOverride.note,
-            }
-          : null,
+        useCustomPricing: u.useCustomPricing,
+        priceOverrides: u.priceOverrides.map(mapPriceOverride),
       })),
     });
   });
@@ -2847,7 +2840,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         wallet: { include: { txs: { orderBy: { createdAt: "desc" }, take: 20 } } },
         subscriptions: { orderBy: { createdAt: "desc" }, take: 20 },
         orders: { orderBy: { createdAt: "desc" }, take: 20 },
-        priceOverride: true,
+        priceOverrides: { orderBy: { category: "asc" } },
       },
     });
     if (!user) return c.json({ error: "کاربر پیدا نشد" }, 404);
@@ -2863,17 +2856,9 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         balance: user.wallet?.balance ?? 0,
         discountCodesAllowed: user.discountCodesAllowed,
         discountMaxPercent: user.discountMaxPercent,
+        useCustomPricing: user.useCustomPricing,
         createdAt: user.createdAt.toISOString(),
-        priceOverride: user.priceOverride
-          ? {
-              category: user.priceOverride.category,
-              perGb: user.priceOverride.perGb,
-              perMonth: user.priceOverride.perMonth,
-              unlimitedPerMonth: user.priceOverride.unlimitedPerMonth,
-              partnerPricePercent: user.priceOverride.partnerPricePercent,
-              note: user.priceOverride.note,
-            }
-          : null,
+        priceOverrides: user.priceOverrides.map(mapPriceOverride),
       },
       txs: (user.wallet?.txs ?? []).map((t) => ({
         id: t.id,
@@ -2951,93 +2936,160 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     });
   });
 
-  /** Per-agent custom rates / matrix percent override. */
-  api.put("/admin/users/:id/price-override", async (c) => {
+  /** Toggle custom vs panel-default pricing without deleting saved overrides. */
+  api.patch("/admin/users/:id/pricing-mode", async (c) => {
+    const body = await c.req.json<{ useCustomPricing?: boolean }>();
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
+    if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    if (target.role === UserRole.admin) {
+      return c.json({ error: "قیمت اختصاصی برای ادمین معنی ندارد" }, 400);
+    }
+    if (typeof body.useCustomPricing !== "boolean") {
+      return c.json({ error: "useCustomPricing لازم است" }, 400);
+    }
+    const updated = await prisma.user.update({
+      where: { id: target.id },
+      data: { useCustomPricing: body.useCustomPricing },
+    });
+    await auditLog({
+      action: "user_pricing_mode",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: target.id,
+      detail: JSON.stringify({ useCustomPricing: updated.useCustomPricing }),
+    });
+    return c.json({ ok: true, useCustomPricing: updated.useCustomPricing });
+  });
+
+  /** Create or update a per-service custom price card for any non-admin user. */
+  api.put("/admin/users/:id/price-overrides", async (c) => {
     const body = await c.req.json<{
-      category?: string;
+      id?: string;
+      category: string;
       perGb?: number | null;
       perMonth?: number | null;
       unlimitedPerMonth?: number | null;
       partnerPricePercent?: number | null;
       note?: string | null;
-      clear?: boolean;
     }>();
     const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
     const tenantId = await resolveTenantIdOrPlatform();
     const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
     if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
-    const isAgent =
-      target.role === UserRole.partner ||
-      target.role === UserRole.wholesale ||
-      target.role === UserRole.reseller;
-    if (!isAgent) {
-      return c.json({ error: "قیمت اختصاصی فقط برای نمایندگان است" }, 400);
+    if (target.role === UserRole.admin) {
+      return c.json({ error: "قیمت اختصاصی برای ادمین معنی ندارد" }, 400);
     }
 
-    if (body.clear) {
-      await prisma.agentPriceOverride.deleteMany({ where: { userId: target.id } });
-      await auditLog({
-        action: "agent_price_override_clear",
-        actorTelegramId: BigInt(c.get("telegramId")),
-        target: target.id,
-      });
-      return c.json({ ok: true, priceOverride: null });
-    }
+    const category = sanitizeCategoryKey(String(body.category || "").trim()) || "";
+    if (!category) return c.json({ error: "سرویس را انتخاب کنید" }, 400);
 
-    const percent =
-      body.partnerPricePercent == null
-        ? 100
-        : Math.max(1, Math.min(200, Math.floor(Number(body.partnerPricePercent))));
     const numOrNull = (v: unknown) => {
       if (v === null || v === undefined || v === "") return null;
       const n = Math.floor(Number(v));
       return Number.isFinite(n) && n >= 0 ? n : null;
     };
+    const percent =
+      body.partnerPricePercent == null
+        ? 100
+        : Math.max(1, Math.min(200, Math.floor(Number(body.partnerPricePercent))));
 
-    const row = await prisma.agentPriceOverride.upsert({
-      where: { userId: target.id },
-      create: {
-        tenantId,
-        userId: target.id,
-        category: (body.category || "").trim().toLowerCase(),
-        perGb: numOrNull(body.perGb),
-        perMonth: numOrNull(body.perMonth),
-        unlimitedPerMonth: numOrNull(body.unlimitedPerMonth),
-        partnerPricePercent: percent,
-        note: body.note?.trim() || null,
-      },
-      update: {
-        category: body.category !== undefined ? (body.category || "").trim().toLowerCase() : undefined,
-        perGb: body.perGb !== undefined ? numOrNull(body.perGb) : undefined,
-        perMonth: body.perMonth !== undefined ? numOrNull(body.perMonth) : undefined,
-        unlimitedPerMonth:
-          body.unlimitedPerMonth !== undefined ? numOrNull(body.unlimitedPerMonth) : undefined,
-        partnerPricePercent: body.partnerPricePercent !== undefined ? percent : undefined,
-        note: body.note !== undefined ? body.note?.trim() || null : undefined,
-      },
-    });
+    const perGb = numOrNull(body.perGb);
+    const perMonth = numOrNull(body.perMonth);
+    const unlimitedPerMonth = numOrNull(body.unlimitedPerMonth);
+    if (category === "unlimited") {
+      if (unlimitedPerMonth == null || unlimitedPerMonth <= 0) {
+        return c.json({ error: "قیمت ماهانه نامحدود را وارد کنید" }, 400);
+      }
+    } else if ((perGb == null || perGb <= 0) && (perMonth == null || perMonth <= 0)) {
+      return c.json({ error: "حداقل یکی از قیمت هر گیگ یا هر ماه را وارد کنید" }, 400);
+    }
+
+    let row;
+    if (body.id) {
+      const existing = await prisma.agentPriceOverride.findFirst({
+        where: { id: body.id, userId: target.id, tenantId },
+      });
+      if (!existing) return c.json({ error: "قیمت اختصاصی پیدا نشد" }, 404);
+      const clash = await prisma.agentPriceOverride.findFirst({
+        where: { userId: target.id, category, NOT: { id: existing.id } },
+      });
+      if (clash) return c.json({ error: "برای این سرویس قبلاً قیمت اختصاصی ثبت شده" }, 400);
+      row = await prisma.agentPriceOverride.update({
+        where: { id: existing.id },
+        data: {
+          category,
+          perGb,
+          perMonth,
+          unlimitedPerMonth,
+          partnerPricePercent: percent,
+          note: body.note?.trim() || null,
+        },
+      });
+    } else {
+      row = await prisma.agentPriceOverride.upsert({
+        where: { userId_category: { userId: target.id, category } },
+        create: {
+          tenantId,
+          userId: target.id,
+          category,
+          perGb,
+          perMonth,
+          unlimitedPerMonth,
+          partnerPricePercent: percent,
+          note: body.note?.trim() || null,
+        },
+        update: {
+          perGb,
+          perMonth,
+          unlimitedPerMonth,
+          partnerPricePercent: percent,
+          note: body.note?.trim() || null,
+        },
+      });
+    }
+
     await auditLog({
-      action: "agent_price_override",
+      action: "user_price_override",
       actorTelegramId: BigInt(c.get("telegramId")),
       target: target.id,
       detail: JSON.stringify({
-        perGb: row.perGb,
-        perMonth: row.perMonth,
-        unlimitedPerMonth: row.unlimitedPerMonth,
-        partnerPricePercent: row.partnerPricePercent,
-      }),
-    });
-    return c.json({
-      ok: true,
-      priceOverride: {
+        id: row.id,
         category: row.category,
         perGb: row.perGb,
         perMonth: row.perMonth,
         unlimitedPerMonth: row.unlimitedPerMonth,
-        partnerPricePercent: row.partnerPricePercent,
-        note: row.note,
-      },
+      }),
     });
+
+    const list = await prisma.agentPriceOverride.findMany({
+      where: { userId: target.id },
+      orderBy: { category: "asc" },
+    });
+    return c.json({ ok: true, priceOverride: mapPriceOverride(row), priceOverrides: list.map(mapPriceOverride) });
+  });
+
+  api.delete("/admin/users/:id/price-overrides/:overrideId", async (c) => {
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
+    if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    const existing = await prisma.agentPriceOverride.findFirst({
+      where: { id: c.req.param("overrideId"), userId: target.id, tenantId },
+    });
+    if (!existing) return c.json({ error: "قیمت اختصاصی پیدا نشد" }, 404);
+    await prisma.agentPriceOverride.delete({ where: { id: existing.id } });
+    await auditLog({
+      action: "user_price_override_delete",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: target.id,
+      detail: existing.category,
+    });
+    const list = await prisma.agentPriceOverride.findMany({
+      where: { userId: target.id },
+      orderBy: { category: "asc" },
+    });
+    return c.json({ ok: true, priceOverrides: list.map(mapPriceOverride) });
   });
 
   api.post("/admin/users/:id/role", async (c) => {

@@ -2113,9 +2113,14 @@ export function createBot(
 
     if (!partnerFlow.brand) {
       waitingPartner.set(tid, { step: "brand", personName: partnerFlow.personName });
-      await ctx.reply(["درخواست نمایندگی (مرحله دوم)", "نام برند را بفرستید..."].join("\n"), {
-        reply_markup: { remove_keyboard: true },
-      });
+      await ctx.reply(
+        ["درخواست نمایندگی (مرحله دوم)", "نام برند خود را بفرستید...", "", "حداقل سه حرف (انگلیسی)", "مثال: AliShop"].join(
+          "\n",
+        ),
+        {
+          reply_markup: { remove_keyboard: true },
+        },
+      );
       return;
     }
 
@@ -2385,13 +2390,17 @@ export function createBot(
           text.toLowerCase() === "skip";
         const personName = skip ? undefined : text.slice(0, 80);
         waitingPartner.set(tid, { step: "brand", personName });
-        await ctx.reply(["درخواست نمایندگی (مرحله دوم)", "نام برند را بفرستید..."].join("\n"));
+        await ctx.reply(
+          ["درخواست نمایندگی (مرحله دوم)", "نام برند خود را بفرستید...", "", "حداقل سه حرف (انگلیسی)", "مثال: AliShop"].join(
+            "\n",
+          ),
+        );
         return;
       }
       if (partnerFlow.step === "brand") {
         const latinAlnum = text.replace(/[^a-zA-Z0-9]/g, "");
         if (latinAlnum.length < 3 || !sanitizePanelGroupSlug(text)) {
-          await ctx.reply(["حداقل سه حرف یا عدد انگلیسی لازم است.", "مثال: AliShop"].join("\n"));
+          await ctx.reply(["حداقل سه حرف (انگلیسی)", "مثال: AliShop"].join("\n"));
           return;
         }
         waitingPartner.set(tid, {

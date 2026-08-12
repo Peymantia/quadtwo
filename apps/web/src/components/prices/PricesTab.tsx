@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, formatToman } from "../../lib/api";
-import { Icon } from "../DashShell";
+import { Icon, type IconName } from "../DashShell";
 import {
   FALLBACK_CATEGORIES,
   catLabel,
@@ -27,14 +27,14 @@ type PricesSubTab =
   | "wholesale"
   | "rates";
 
-const SUBTABS: Array<{ key: PricesSubTab; label: string }> = [
-  { key: "overview", label: "نمای کلی" },
-  { key: "data", label: "بسته‌های حجمی" },
-  { key: "national", label: "اینترنت ملی" },
-  { key: "unlimited", label: "نامحدود" },
-  { key: "offer", label: "پیشنهاد ویژه" },
-  { key: "wholesale", label: "عمده‌فروش" },
-  { key: "rates", label: "نرخ‌ها و حالت‌ها" },
+const SUBTABS: Array<{ key: PricesSubTab; label: string; icon: IconName }> = [
+  { key: "overview", label: "نمای کلی", icon: "home" },
+  { key: "data", label: "بسته‌های حجمی", icon: "wifi" },
+  { key: "national", label: "اینترنت ملی", icon: "layers" },
+  { key: "unlimited", label: "نامحدود", icon: "renew" },
+  { key: "offer", label: "پیشنهاد ویژه", icon: "tag" },
+  { key: "wholesale", label: "عمده‌فروش", icon: "shop" },
+  { key: "rates", label: "نرخ‌ها و حالت‌ها", icon: "gear" },
 ];
 
 const emptyNew = (category: string) => ({
@@ -406,19 +406,28 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
 
   return (
     <div className="prices-page">
-      <div className="prices-subtabs" role="tablist" aria-label="بخش‌های قیمت‌ها">
-        {SUBTABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={sub === t.key}
-            className={`prices-subtab${sub === t.key ? " on" : ""}`}
-            onClick={() => setSub(t.key)}
-          >
-            {t.label}
+      <div className="prices-nav">
+        <div className="prices-subtabs" role="tablist" aria-label="بخش‌های قیمت‌ها">
+          {SUBTABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={sub === t.key}
+              className={`prices-subtab${sub === t.key ? " on" : ""}`}
+              onClick={() => setSub(t.key)}
+            >
+              <Icon name={t.icon} size={15} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {sub !== "overview" && (
+          <button type="button" className="btn ghost sm prices-back" onClick={() => setSub("overview")}>
+            <Icon name="home" size={14} />
+            بازگشت به نمای کلی
           </button>
-        ))}
+        )}
       </div>
 
       {sub === "overview" && (
@@ -426,7 +435,8 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
           <div className="prices-section-head">
             <h2>نمای کلی قیمت‌گذاری</h2>
             <p className="muted">
-              هر نقش یا ماتریکس (پلن ثابت) است یا نرخی. عمده‌فروش فقط از پلن‌های ثابت تب «عمده‌فروش» می‌خرد.
+              از تب‌های بالا نوع محصول را انتخاب کنید (حجمی، ملی، نامحدود، …). کارت‌های زیر فقط نشان می‌دهند هر نقش الان
+              ماتریکس است یا نرخی — برای تغییر حالت/نرخ روی کارت بزنید.
             </p>
           </div>
           <div className="prices-overview-grid">
@@ -450,31 +460,10 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
               </button>
             ))}
           </div>
-          <div className="prices-overview-links">
-            <button type="button" className="btn ghost sm" onClick={() => setSub("data")}>
-              بسته‌های حجمی
-            </button>
-            <button type="button" className="btn ghost sm" onClick={() => setSub("national")}>
-              اینترنت ملی
-            </button>
-            <button type="button" className="btn ghost sm" onClick={() => setSub("unlimited")}>
-              نامحدود
-            </button>
-            <button type="button" className="btn ghost sm" onClick={() => setSub("offer")}>
-              پیشنهاد ویژه
-            </button>
-            <button type="button" className="btn ghost sm" onClick={() => setSub("wholesale")}>
-              عمده‌فروش
-            </button>
-            <button type="button" className="btn primary sm" onClick={() => setSub("rates")}>
-              نرخ‌ها و حالت‌ها
-            </button>
-          </div>
           <div className="prices-legend">
             <p className="hint" style={{ margin: 0 }}>
-              <strong>همکار ویژه</strong> ≠ <strong>عمده‌فروش</strong> — ستون «همکار ویژه» همان{" "}
-              <span className="num">priceWholesale</span> است؛ عمده‌فروش از{" "}
-              <span className="num">priceReseller</span> یا پلن‌های دسته عمده می‌خواند.
+              <strong>همکار ویژه</strong> ≠ <strong>عمده‌فروش</strong> — قیمت همکار ویژه ستون جداست؛ عمده‌فروش فقط پلن‌های
+              تب «عمده‌فروش» را می‌بیند و می‌خرد.
             </p>
           </div>
         </section>
@@ -950,14 +939,14 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                 ))}
               </div>
             )}
-            <div className="price-plan-list">
+            <div className={`price-plan-list${sub === "wholesale" ? " price-plan-list--wholesale" : ""}`}>
               {shownScoped.map((c) => {
                 const e = edits[c.id] ?? {};
                 const isWh = isWholesaleCategory(c.category);
                 return (
                   <div
                     key={c.id}
-                    className={`price-plan-card${c.active === false ? " off" : ""}${c.isGolden ? " golden" : ""}`}
+                    className={`price-plan-card${c.active === false ? " off" : ""}${c.isGolden ? " golden" : ""}${isWh ? " price-plan-card--wholesale" : ""}`}
                   >
                     <div className="price-plan-head">
                       <div className="price-plan-title">
@@ -991,7 +980,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                         </label>
                       </div>
                     </div>
-                    <div className="price-plan-fields">
+                    <div className={`price-plan-fields${isWh ? " price-plan-fields--wholesale" : ""}`}>
                       {isWh ? (
                         <>
                           <div className="field">
@@ -1027,7 +1016,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                               }
                             />
                           </div>
-                          <div className="field">
+                          <div className="field price-plan-fields__title">
                             <label>عنوان</label>
                             <input
                               value={String(e.title ?? c.title ?? "")}

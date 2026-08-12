@@ -1905,9 +1905,9 @@ html[data-theme="light"] .quick-action-btn {
 
 .users-mrow-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(96px, 0.85fr) minmax(150px, 1.45fr);
   gap: 8px;
-  align-items: center;
+  align-items: stretch;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
@@ -1917,17 +1917,25 @@ html[data-theme="light"] .quick-action-btn {
 .users-mrole {
   width: 100%;
   min-width: 0;
+  height: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
   border: 1px solid var(--line);
   background: var(--elev);
   color: var(--text);
   border-radius: 9px;
   padding: 8px 10px;
   outline: none;
+  font: inherit;
+  font-size: 0.86rem;
 }
 
-.users-mrow-actions .btn {
+.users-mrow-actions .btn,
+.users-mrow-actions .users-mdetail-btn {
   width: 100%;
+  min-height: 40px;
   justify-content: center;
+  box-sizing: border-box;
 }
 
 @media (max-width: 900px) {
@@ -3612,6 +3620,31 @@ button.pay-dest-number:active,
   }
 }
 
+/* Wholesale cards: 3 fields — don't force a 4-col grid */
+.price-plan-fields--wholesale {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 520px) {
+  .price-plan-fields--wholesale {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .price-plan-fields--wholesale .price-plan-fields__title {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1100px) {
+  .price-plan-list--wholesale {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.price-plan-card--wholesale .price-plan-head {
+  flex-wrap: wrap;
+}
+
 .price-plan-fields .field {
   margin: 0;
 }
@@ -4448,18 +4481,27 @@ html[data-theme="dark"] .sub-qr-img {
   gap: 14px;
 }
 
+.prices-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .prices-subtabs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   padding: 4px;
-  margin: 0 0 2px;
+  margin: 0;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
 }
 
 .prices-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 0;
   background: transparent;
   color: var(--mute);
@@ -4481,6 +4523,10 @@ html[data-theme="dark"] .sub-qr-img {
   color: var(--text);
   background: var(--elev);
   box-shadow: 0 0 0 1px var(--line);
+}
+
+.prices-back {
+  align-self: flex-start;
 }
 
 .prices-overview-grid {
@@ -4520,17 +4566,90 @@ html[data-theme="dark"] .sub-qr-img {
   line-height: 1.35;
 }
 
-.prices-overview-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
 .prices-legend {
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
+}
+
+.user-pricing {
+  margin-top: 16px;
+  padding-top: 4px;
+}
+
+.user-pricing__title {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.user-pricing__switch {
+  margin-bottom: 12px;
+}
+
+.user-pricing__custom {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.user-pricing__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.user-pricing__cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 720px) {
+  .user-pricing__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.user-pricing-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.user-pricing-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.user-pricing-card__head strong {
+  font-size: 0.95rem;
+}
+
+.user-pricing-card__note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--mute);
+  line-height: 1.4;
+}
+
+.user-pricing-card__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.user-pricing-card__actions .btn {
+  width: 100%;
+  justify-content: center;
 }
 
 .prices-banner {

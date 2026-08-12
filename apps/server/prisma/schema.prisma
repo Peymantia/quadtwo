@@ -123,6 +123,8 @@ model User {
   discountCodesAllowed Boolean @default(true)
   /// Max % this agent may put on codes they create (1–100). Admin ignores (always 100). Default 30.
   discountMaxPercent   Int     @default(30)
+  /// When false (default), checkout uses panel default pricing; saved overrides are kept but ignored.
+  useCustomPricing Boolean @default(false)
   /// Platform superadmin (only on platform tenant)
   isSuperAdmin  Boolean   @default(false)
   createdAt     DateTime  @default(now())
@@ -137,24 +139,24 @@ model User {
   loginOtps      LoginOtp[]
   webAuthnCreds  WebAuthnCredential[]
   discountCodes  DiscountCode[]
-  priceOverride  AgentPriceOverride?
+  priceOverrides AgentPriceOverride[]
 
   @@unique([tenantId, telegramId])
   @@index([tenantId])
   @@index([telegramId])
 }
 
-/// Per-agent rate overrides (custom pricing for one partner/reseller)
+/// Per-user/agent rate overrides for one service category (data, national, unlimited, …)
 model AgentPriceOverride {
   id                 String   @id @default(cuid())
   tenantId           String
-  userId             String   @unique
-  /// Optional category scope; empty = all rate-mode categories
-  category           String   @default("")
+  userId             String
+  /// Service category key this override applies to (e.g. data, national, unlimited)
+  category           String   @default("data")
   perGb              Int?
   perMonth           Int?
   unlimitedPerMonth  Int?
-  /// Multiply matrix pricePartner (100 = no change)
+  /// Multiply matrix cell price (100 = no change)
   partnerPricePercent Int     @default(100)
   note               String?
   createdAt          DateTime @default(now())
@@ -162,7 +164,9 @@ model AgentPriceOverride {
   tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, category])
   @@index([tenantId])
+  @@index([userId])
 }
 
 /// WebAuthn / Passkey credentials for dashboard biometric login
