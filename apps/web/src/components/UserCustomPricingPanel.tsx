@@ -194,8 +194,13 @@ export function UserCustomPricingPanel({
             <p className="muted" style={{ margin: 0 }}>
               برای هر سرویس یک نرخ جدا ذخیره کنید.
             </p>
-            <button type="button" className="btn primary sm" disabled={busy || !availableCats.length} onClick={openAdd}>
-              <Icon name="plus" size={14} />
+            <button
+              type="button"
+              className="btn success user-pricing__add-btn"
+              disabled={busy || !availableCats.length}
+              onClick={openAdd}
+            >
+              <Icon name="plus" size={15} />
               افزودن قیمت اختصاصی
             </button>
           </div>

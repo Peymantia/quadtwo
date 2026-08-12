@@ -4572,6 +4572,29 @@ html[data-theme="dark"] .sub-qr-img {
   border-top: 1px solid var(--line);
 }
 
+.prices-mode-accs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.prices-mode-accs .settings-acc {
+  margin: 0;
+}
+
+.pricing-mode-card--in-acc {
+  border: 0;
+  background: transparent;
+  padding: 4px 0 8px;
+  border-radius: 0;
+}
+
+.prices-save-rates-btn {
+  width: 100%;
+  justify-content: center;
+}
+
 .user-pricing {
   margin-top: 16px;
   padding-top: 4px;
@@ -4594,10 +4617,14 @@ html[data-theme="dark"] .sub-qr-img {
 
 .user-pricing__toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
+}
+
+.user-pricing__add-btn {
+  width: 100%;
+  justify-content: center;
 }
 
 .user-pricing__cards {

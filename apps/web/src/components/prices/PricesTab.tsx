@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, formatToman } from "../../lib/api";
 import { Icon, type IconName } from "../DashShell";
+import { SettingsAccordion } from "../SettingsAccordion";
 import {
   FALLBACK_CATEGORIES,
   catLabel,
@@ -73,6 +74,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
   const [ratesBusy, setRatesBusy] = useState(false);
   const [newCell, setNewCell] = useState(emptyNew("data"));
   const [dataCat, setDataCat] = useState("data");
+  const [modeAccOpen, setModeAccOpen] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -404,6 +406,15 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
 
   const modeLabel = (m: string) => (m === "rate" ? "نرخی" : "ماتریکس");
 
+  function openRoleMode(roleKey: "user" | "partner" | "reseller" | "wholesale") {
+    if (roleKey === "wholesale") {
+      setSub("wholesale");
+      return;
+    }
+    setSub("rates");
+    setModeAccOpen(`mode-${roleKey}`);
+  }
+
   return (
     <div className="prices-page">
       <div className="prices-nav">
@@ -435,8 +446,8 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
           <div className="prices-section-head">
             <h2>نمای کلی قیمت‌گذاری</h2>
             <p className="muted">
-              از تب‌های بالا نوع محصول را انتخاب کنید (حجمی، ملی، نامحدود، …). کارت‌های زیر فقط نشان می‌دهند هر نقش الان
-              ماتریکس است یا نرخی — برای تغییر حالت/نرخ روی کارت بزنید.
+              از تب‌های بالا نوع محصول را انتخاب کنید. کارت هر نقش فقط وضعیت همان نقش را نشان می‌دهد — برای تغییر حالت، روی
+              همان کارت بزنید.
             </p>
           </div>
           <div className="prices-overview-grid">
@@ -452,7 +463,7 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                 key={key}
                 type="button"
                 className="prices-overview-card"
-                onClick={() => setSub(key === "wholesale" ? "wholesale" : "rates")}
+                onClick={() => openRoleMode(key)}
               >
                 <strong>{label}</strong>
                 <span className="muted">{modeLabel(mode)}</span>
@@ -471,21 +482,30 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
 
       {sub === "rates" && (
         <>
-          <section className="panel prices-section">
-            <div className="prices-section-head">
-              <h2>حالت قیمت‌گذاری هر نقش</h2>
-              <p className="muted">ماتریکس = پلن‌های ثابت · نرخی = (گیگ × نرخ) + (ماه × نرخ)</p>
-            </div>
-            <div className="pricing-mode-grid">
-              {(
-                [
-                  ["user", "کاربر عادی"],
-                  ["partner", "همکار"],
-                  ["reseller", "همکار ویژه"],
-                ] as const
-              ).map(([key, label]) => (
-                <div key={key} className="pricing-mode-card">
-                  <label>{label}</label>
+          <div className="prices-section-head" style={{ marginBottom: 8 }}>
+            <h2 style={{ margin: 0 }}>حالت قیمت‌گذاری هر نقش</h2>
+            <p className="muted" style={{ margin: "6px 0 0" }}>
+              هر نقش آکاردئون جدا دارد. ماتریکس = پلن ثابت · نرخی = (گیگ × نرخ) + (ماه × نرخ)
+            </p>
+          </div>
+          <div className="prices-mode-accs">
+            {(
+              [
+                ["user", "کاربر عادی", "users"],
+                ["partner", "همکار", "users"],
+                ["reseller", "همکار ویژه", "shield"],
+              ] as const
+            ).map(([key, label, icon]) => (
+              <SettingsAccordion
+                key={key}
+                id={`mode-${key}`}
+                title={`${label} — ${modeLabel(modes[key])}`}
+                icon={icon}
+                openId={modeAccOpen}
+                onToggle={(id) => setModeAccOpen((cur) => (cur === id ? null : id))}
+              >
+                <div className="pricing-mode-card pricing-mode-card--in-acc">
+                  <label>حالت قیمت‌گذاری</label>
                   <select
                     value={modes[key]}
                     onChange={(e) => void saveModes({ ...modes, [key]: e.target.value as "matrix" | "rate" })}
@@ -494,9 +514,17 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                     <option value="rate">نرخی (گیگ + ماه)</option>
                   </select>
                 </div>
-              ))}
-              <div className="pricing-mode-card pricing-mode-card--locked">
-                <label>عمده‌فروش</label>
+              </SettingsAccordion>
+            ))}
+            <SettingsAccordion
+              id="mode-wholesale"
+              title={`عمده‌فروش — ${modeLabel("matrix")}`}
+              icon="shop"
+              openId={modeAccOpen}
+              onToggle={(id) => setModeAccOpen((cur) => (cur === id ? null : id))}
+            >
+              <div className="pricing-mode-card pricing-mode-card--locked pricing-mode-card--in-acc">
+                <label>حالت قیمت‌گذاری</label>
                 <select value="matrix" disabled>
                   <option value="matrix">ماتریکس (پلن ثابت)</option>
                 </select>
@@ -504,8 +532,8 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                   پلن‌های ثابت عمده همیشه ماتریکس‌اند؛ سوئیچ نرخی روی خرید عمده اعمال نمی‌شود.
                 </p>
               </div>
-            </div>
-          </section>
+            </SettingsAccordion>
+          </div>
 
           <section className="panel prices-section">
             <div className="prices-section-head">
@@ -649,15 +677,18 @@ export function PricesTab({ flash, askConfirm }: { flash: PricesFlash; askConfir
                 </div>
               </div>
             </div>
-            <div className="prices-section-actions">
-              <button type="button" className="btn primary" disabled={ratesBusy} onClick={() => void saveRates()}>
-                <Icon name="check" size={15} />
-                ذخیره نرخ‌ها
-              </button>
-              <p className="hint" style={{ margin: 0 }}>
-                مثال حجمی: ۵۰ گیگ ۲ ماهه = (۵۰ × هر گیگ) + (۲ × هر ماه)
-              </p>
-            </div>
+            <p className="hint" style={{ margin: "12px 0 10px" }}>
+              مثال حجمی: ۵۰ گیگ ۲ ماهه = (۵۰ × هر گیگ) + (۲ × هر ماه)
+            </p>
+            <button
+              type="button"
+              className="btn success prices-save-rates-btn"
+              disabled={ratesBusy}
+              onClick={() => void saveRates()}
+            >
+              <Icon name="check" size={15} />
+              {ratesBusy ? "…" : "ذخیره نرخ‌ها"}
+            </button>
           </section>
         </>
       )}
