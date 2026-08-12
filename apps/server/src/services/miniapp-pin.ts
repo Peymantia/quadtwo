@@ -27,10 +27,10 @@ export async function setMiniAppPinText(text: string): Promise<void> {
   await setSetting("miniapp_pin_text", text.trim() || DEFAULT_MINIAPP_PIN_TEXT);
 }
 
-/** Auto-pin on /start and /update when not disabled. */
+/** Auto-pin on /start and /update — opt-in only (admin enables in کنترل سنتر). */
 export async function isMiniAppPinAutoEnabled(): Promise<boolean> {
   const v = (await getSetting("miniapp_pin_auto")).trim().toLowerCase();
-  return v !== "0" && v !== "false" && v !== "off";
+  return v === "1" || v === "true" || v === "on" || v === "yes";
 }
 
 export async function setMiniAppPinAuto(enabled: boolean): Promise<void> {

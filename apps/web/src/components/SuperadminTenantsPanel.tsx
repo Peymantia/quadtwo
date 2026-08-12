@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getToken } from "../lib/api";
 import { Modal } from "./Modal";
+import { Icon } from "./DashShell";
 
 type TenantRow = {
   id: string;
@@ -335,6 +336,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
             disabled={busy}
             onClick={() => createFileRef.current?.click()}
           >
+            <Icon name="file" size={15} />
             {createLogoPreview ? "تغییر لوگو" : "انتخاب لوگو"}
           </button>
           <button
@@ -343,6 +345,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
             disabled={busy}
             onClick={() => void createTenant()}
           >
+            <Icon name="plus" size={15} />
             {busy ? "…" : "ساخت مستأجر + استارت ربات"}
           </button>
         </div>
@@ -395,9 +398,11 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
             </div>
             <div className="tenants-card__actions">
               <button type="button" className="btn ghost sm tenants-card__action" disabled={busy} onClick={() => openEdit(t)}>
+                <Icon name="edit" size={14} />
                 ویرایش
               </button>
               <button type="button" className="btn ghost sm tenants-card__action" disabled={busy} onClick={() => openLogoModal(t)}>
+                <Icon name="layers" size={14} />
                 لوگو
               </button>
               {!t.isPlatform && t.status === "active" && (
@@ -407,6 +412,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
                   disabled={busy}
                   onClick={() => void setStatus(t.id, "suspend")}
                 >
+                  <Icon name="close" size={14} />
                   تعلیق
                 </button>
               )}
@@ -417,6 +423,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
                   disabled={busy}
                   onClick={() => void setStatus(t.id, "activate")}
                 >
+                  <Icon name="check" size={14} />
                   فعال‌سازی
                 </button>
               )}
@@ -442,9 +449,11 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
           </p>
           <div className="actions">
             <button type="button" className="btn primary" onClick={() => setCreateLogoModalOpen(false)}>
+              <Icon name="check" size={15} />
               تأیید
             </button>
             <button type="button" className="btn ghost" onClick={clearCreateLogo}>
+              <Icon name="trash" size={15} />
               حذف لوگو
             </button>
           </div>
@@ -483,9 +492,11 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
             </div>
             <div className="actions">
               <button type="button" className="btn primary" disabled={busy} onClick={() => void saveEdit()}>
+                <Icon name="check" size={15} />
                 ذخیره
               </button>
               <button type="button" className="btn ghost" disabled={busy} onClick={() => setEditId(null)}>
+                <Icon name="close" size={15} />
                 انصراف
               </button>
             </div>
@@ -515,6 +526,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
             </div>
             <div className="actions" style={{ marginBottom: 12 }}>
               <button type="button" className="btn ghost" disabled={busy} onClick={() => editFileRef.current?.click()}>
+                <Icon name="file" size={15} />
                 انتخاب فایل
               </button>
               <input
@@ -527,6 +539,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
             </div>
             <div className="actions">
               <button type="button" className="btn primary" disabled={busy || !logoFile} onClick={() => void saveLogo()}>
+                <Icon name="check" size={15} />
                 ذخیره لوگو
               </button>
               <button
@@ -538,6 +551,7 @@ export function SuperadminTenantsPanel({ flash }: { flash: Flash }) {
                   setLogoFile(null);
                 }}
               >
+                <Icon name="close" size={15} />
                 بستن
               </button>
             </div>

@@ -65,7 +65,7 @@ function LoginThemeToggle({ skin }: { skin: UiSkin }) {
         );
       }}
     >
-      <Icon name={resolved === "light" ? "moon" : "sun"} size={18} />
+      <Icon name={resolved === "light" ? "moon" : "sun"} size={22} />
     </button>
   );
 }

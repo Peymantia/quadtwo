@@ -598,9 +598,11 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
           </p>
           <div className="actions order-confirm-actions">
             <button type="button" className="btn success" disabled={busy} onClick={() => void create()}>
+              <Icon name="check" size={15} />
               تأیید و ساخت
             </button>
             <button type="button" className="btn ghost" disabled={busy} onClick={() => setMatrixConfirmOpen(false)}>
+              <Icon name="close" size={15} />
               انصراف
             </button>
           </div>
@@ -1070,15 +1072,11 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                   <strong>{r.fullName}</strong>{" "}
                   <span className="badge warn">در انتظار</span>
                   <div className="muted">
+                    برند · {r.note?.trim() ? `نام: ${r.note.trim()} · ` : ""}
                     {r.user.username ? `@${r.user.username}` : r.user.firstName || "—"} · TG{" "}
                     <span className="num">{r.user.telegramId}</span>
                     {r.phone ? ` · 📱 ${r.phone}` : ""}
                   </div>
-                  {r.note?.trim() && (
-                    <div className="muted" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>
-                      {r.note.trim()}
-                    </div>
-                  )}
                   <div className="muted" style={{ marginTop: 4 }}>
                     ثبت: {new Date(r.createdAt).toLocaleString("fa-IR")}
                   </div>
@@ -1177,6 +1175,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               </div>
               <div className="users-mrow-actions">
                 <button type="button" className="btn ghost sm" onClick={() => setSelected(u)}>
+                  <Icon name="wallet" size={14} />
                   جزئیات و شارژ
                 </button>
                 <select
@@ -1298,9 +1297,11 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               </div>
               <div className="actions">
                 <button type="button" className="btn primary" disabled={priceOvBusy} onClick={() => void savePriceOverride(false)}>
+                  <Icon name="check" size={15} />
                   ذخیره قیمت اختصاصی
                 </button>
                 <button type="button" className="btn" disabled={priceOvBusy || !selected.priceOverride} onClick={() => void savePriceOverride(true)}>
+                  <Icon name="trash" size={15} />
                   پاک کردن
                 </button>
               </div>
@@ -1324,12 +1325,15 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
           </div>
           <div className="actions">
             <button type="button" className="btn success" onClick={() => adjustWallet(1)}>
+              <Icon name="plus" size={15} />
               افزایش موجودی
             </button>
             <button type="button" className="btn danger" onClick={() => adjustWallet(-1)}>
+              <Icon name="minus" size={15} />
               کسر از موجودی
             </button>
             <button type="button" className="btn ghost" disabled={!selected || selected.balance <= 0} onClick={() => void zeroWallet()}>
+              <Icon name="close" size={15} />
               صفر کردن موجودی
             </button>
           </div>
@@ -1877,6 +1881,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             }
             onClick={addCell}
           >
+            <Icon name="plus" size={15} />
             افزودن پلن
           </button>
         </div>
@@ -1915,6 +1920,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             onChange={(e) => setBulkValue(e.target.value)}
           />
           <button type="button" className="btn primary sm" onClick={() => void bulk()}>
+            <Icon name="layers" size={14} />
             اعمال روی {catFilter ? "این دسته" : "همه"}
           </button>
         </div>
@@ -1997,6 +2003,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         </div>
         <div className="prices-section-actions">
           <button type="button" className="btn primary" disabled={ratesBusy} onClick={() => void saveRates()}>
+            <Icon name="check" size={15} />
             ذخیره نرخ‌ها
           </button>
           <p className="hint" style={{ margin: 0 }}>
@@ -2181,6 +2188,7 @@ function PricesTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
         {!shown.length && <p className="muted">پلنی در این دسته نیست.</p>}
         <div className="save-bar">
           <button type="button" className="btn primary" disabled={!Object.keys(edits).length} onClick={() => void saveAll()}>
+            <Icon name="check" size={15} />
             ذخیره همه تغییرات قیمت‌ها ({Object.keys(edits).length})
           </button>
         </div>
@@ -2734,9 +2742,11 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
         )}
         <div className="actions" style={{ marginTop: 12 }}>
           <button type="button" className="btn ghost" onClick={() => setApplyOpen(false)}>
+            <Icon name="close" size={15} />
             انصراف
           </button>
           <button type="button" className="btn success" onClick={() => void confirmApply()}>
+            <Icon name="check" size={15} />
             تأیید و اعمال
           </button>
         </div>
@@ -3113,9 +3123,11 @@ function BulkAdjustPanel({ flash, askConfirm }: { flash: Flash; askConfirm: AskC
         </p>
         <div className="actions" style={{ marginTop: 12 }}>
           <button type="button" className="btn ghost" onClick={() => setApplyOpen(false)}>
+            <Icon name="close" size={15} />
             انصراف
           </button>
           <button type="button" className="btn success" onClick={() => void confirmApply()}>
+            <Icon name="check" size={15} />
             تأیید و اجرا
           </button>
         </div>
@@ -3674,8 +3686,8 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                 disabled={(page + 1) * pageSize >= total}
                 onClick={() => setPage((p) => p + 1)}
               >
-                بعدی
                 <Icon name="arrowLeft" size={15} />
+                بعدی
               </button>
             </div>
             <div className="sort-bar config-page-size">
@@ -3786,9 +3798,11 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
           </div>
           <div className="actions">
             <button type="button" className="btn primary" disabled={editBusy} onClick={() => void saveEdit()}>
+              <Icon name="check" size={15} />
               ذخیره تغییرات
             </button>
             <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
+              <Icon name="close" size={15} />
               لغو
             </button>
           </div>
@@ -4123,9 +4137,11 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             </div>
             <div className="panel-route-actions">
               <button type="button" className="btn ghost" disabled={!routeDirty || routingBusy} onClick={cancelRoute}>
+                <Icon name="close" size={15} />
                 لغو
               </button>
               <button type="button" className="btn primary" disabled={!routeDirty || routingBusy} onClick={() => void saveRoute()}>
+                <Icon name="check" size={15} />
                 {routingBusy ? "…" : "ذخیره"}
               </button>
             </div>
@@ -5818,9 +5834,11 @@ function SettingsTab({
           </div>
           <div className="actions">
             <button type="button" className="btn primary" onClick={() => void saveGuideEdit()}>
+              <Icon name="check" size={15} />
               ذخیره
             </button>
             <button type="button" className="btn ghost" onClick={() => setGuideEdit(null)}>
+              <Icon name="close" size={15} />
               لغو
             </button>
           </div>
@@ -5932,6 +5950,7 @@ function SettingsTab({
             disabled={saveBusy}
             onClick={() => void persistDraft()}
           >
+            <Icon name="check" size={16} />
             {saveBusy ? "…" : "ذخیره"}
           </button>
           <button
@@ -5940,6 +5959,7 @@ function SettingsTab({
             disabled={saveBusy}
             onClick={revertDraft}
           >
+            <Icon name="close" size={16} />
             انصراف
           </button>
           <button
@@ -5948,6 +5968,7 @@ function SettingsTab({
             disabled={saveBusy}
             onClick={applyDefaultsDraft}
           >
+            <Icon name="renew" size={16} />
             دیفالت
           </button>
         </div>
@@ -6052,6 +6073,7 @@ function ReportsTab() {
                   style={{ marginTop: 8, padding: "4px 10px", fontSize: "0.82rem" }}
                   onClick={() => openArchiveDetail(a)}
                 >
+                  <Icon name="file" size={14} />
                   مشاهده جزئیات
                 </button>
               </div>
@@ -6064,6 +6086,7 @@ function ReportsTab() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>لاگ عملیات</h2>
           <button type="button" className="btn primary sm" onClick={() => setAuditOpen(true)}>
+            <Icon name="file" size={14} />
             مشاهده لاگ عملیات
             {audit.length ? ` (${audit.length})` : ""}
           </button>
@@ -6092,6 +6115,7 @@ function ReportsTab() {
                       style={{ marginTop: 8, padding: "4px 10px", fontSize: "0.82rem" }}
                       onClick={() => openAuditDetail(a)}
                     >
+                      <Icon name="file" size={14} />
                       مشاهده جزئیات
                     </button>
                   )}
@@ -6220,6 +6244,7 @@ function ImportTab({ flash }: { flash: Flash }) {
       </p>
       <div className="actions" style={{ marginBottom: 14 }}>
         <button type="button" className="btn primary" disabled={busy} onClick={() => void downloadCurrentExcel()}>
+          <Icon name="download" size={15} />
           دانلود خروجی اکسل فعلی
         </button>
       </div>
@@ -6258,18 +6283,19 @@ function ImportTab({ flash }: { flash: Flash }) {
               {file.name}
             </span>
             <span className="muted">{formatFileSize(file.size)}</span>
-            <button
-              type="button"
-              className="btn ghost sm"
-              disabled={busy}
-              onClick={() => {
-                setFile(null);
-                setInspect(null);
-                setResultText("");
-              }}
-            >
-              حذف
-            </button>
+              <button
+                type="button"
+                className="btn ghost sm"
+                disabled={busy}
+                onClick={() => {
+                  setFile(null);
+                  setInspect(null);
+                  setResultText("");
+                }}
+              >
+                <Icon name="trash" size={14} />
+                حذف
+              </button>
           </div>
         )}
         {inspect && (
@@ -6287,9 +6313,11 @@ function ImportTab({ flash }: { flash: Flash }) {
         )}
         <div className="actions">
           <button type="button" className="btn ghost" disabled={busy || !file} onClick={() => void inspectFile()}>
+            <Icon name="sync" size={15} />
             بررسی فایل اکسل
           </button>
           <button type="button" className="btn success" disabled={busy || !file || !inspect} onClick={() => void importFile()}>
+            <Icon name="check" size={15} />
             {busy ? "در حال بررسی / ورود…" : "ورود فایل اکسل"}
           </button>
         </div>

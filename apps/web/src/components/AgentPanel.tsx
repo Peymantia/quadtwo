@@ -761,8 +761,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   disabled={(configPage + 1) * configPageSize >= filteredSorted.length}
                   onClick={() => setConfigPage((p) => p + 1)}
                 >
-                  بعدی
                   <Icon name="arrowLeft" size={15} />
+                  بعدی
                 </button>
               </div>
               <div className="sort-bar config-page-size">

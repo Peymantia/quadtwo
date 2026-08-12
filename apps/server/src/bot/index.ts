@@ -154,7 +154,10 @@ import {
 const waitingName = new Set<number>();
 /** Waiting for discount code text: buy wizard or renew */
 const waitingDiscount = new Map<number, "buy" | "renew">();
-const waitingPartner = new Map<number, { step: "compose" | "name" | "phone" | "note"; fullName?: string; phone?: string }>();
+const waitingPartner = new Map<
+  number,
+  { step: "personName" | "brand" | "phone"; personName?: string; brand?: string; phone?: string }
+>();
 const waitingMatrix = new Map<number, string>();
 const waitingWalletAmount = new Set<number>();
 const waitingAgentName = new Set<number>();
@@ -295,7 +298,7 @@ function shouldEnsureMainKeyboard(ctx: Context): boolean {
     return true;
   }
   const text = ctx.message?.text?.trim() ?? "";
-  return /^\/(update|menu|setminiapp)\b/i.test(text);
+  return /^\/(start|update|menu|setminiapp)\b/i.test(text);
 }
 
 /**
@@ -1080,25 +1083,72 @@ async function handlePartnerRequest(ctx: Context) {
     return;
   }
   if (user.role === "partner" || user.role === "wholesale" || user.role === "reseller") {
-    await ctx.reply(
+    await replyMainMenu(
+      ctx,
       `شما قبلاً ${roleLabelFa(user.role)} هستید.\nگروه پنل: ${user.panelGroup ?? "—"}`,
     );
     return;
   }
-  waitingPartner.set(ctx.from!.id, { step: "compose" });
+  waitingPartner.set(ctx.from!.id, { step: "personName" });
   await ctx.reply(
     [
-      "📝 درخواست نمایندگی و همکاری",
+      "🤝 درخواست نمایندگی",
       "",
-      "* نام و نام خانوادگی:",
-      "* شماره موبایل",
-      "* لطفاً در قالب یک پیام، توضیح دهید که قصد همکاری به چه شکلی را دارید.",
-      "آیا کانال/گروه دارید؟ موبایل فروش هستید ؟ یا برای دوستان و آشنایان خرید می‌کنید؟",
-      "میزان فروش حدودی شما چقدر است؟",
+      "فقط ۳ مرحله کوتاه:",
       "",
-      "👇 پیام خود را بفرستید:",
+      "۱) نام و نام خانوادگی (اختیاری)",
+      "اگر نمی‌خواهید بنویسید، همین الان — بفرستید.",
     ].join("\n"),
   );
+}
+
+async function completePartnerRequest(
+  ctx: Context,
+  tid: number,
+  data: { brand: string; personName?: string; phone?: string },
+) {
+  waitingPartner.delete(tid);
+  const user = await upsertUserFromTelegram(ctx.from!);
+  const personName = data.personName?.trim() || undefined;
+  const req = await submitPartnerRequest(user.id, data.brand, data.phone, personName);
+  await auditLog({
+    action: "partner_request",
+    actorTelegramId: tid,
+    target: req.id,
+    detail: data.brand,
+  });
+  const role = effectiveRole(tid, user.role);
+  const kb = mainMenuReply({
+    isAdmin: role === "admin",
+    isPartner: role === "partner",
+    isWholesale: role === "wholesale",
+    isReseller: role === "reseller",
+    demoMode: isDemoMode(),
+    miniAppUrl: await resolveMiniAppUrl(),
+    hidePartner: await isServerlessEnabled(),
+  });
+  await ctx.reply("✅ درخواست نمایندگی ثبت شد.\nمنتظر تأیید ادمین بمانید.", {
+    reply_markup: kb,
+  });
+  const partnerMsgs: Array<{ chatId: number; messageId: number; isPhoto: boolean }> = [];
+  await notifyAllAdmins(ctx.api, async (adminId) => {
+    const msg = await ctx.api.sendMessage(
+      adminId,
+      [
+        "🤝 درخواست نمایندگی",
+        `برند: ${data.brand}`,
+        `نام: ${personName ?? "—"}`,
+        `📱 ${data.phone ?? "—"}`,
+        `@${user.username ?? "—"} · TG: ${user.telegramId}`,
+      ].join("\n"),
+      { reply_markup: partnerRequestKeyboard(req.id) },
+    );
+    partnerMsgs.push({ chatId: adminId, messageId: msg.message_id, isPhoto: false });
+  });
+  if (partnerMsgs.length) {
+    const { saveAdminReviewMessages } = await import("../services/admin-review-sync.js");
+    await saveAdminReviewMessages("partner", req.id, partnerMsgs);
+  }
 }
 
 async function handlePartnerPanel(ctx: Context) {
@@ -2068,14 +2118,18 @@ export function createBot(
       return;
     }
 
-    const phone = contact.phone_number;
-    waitingPartner.set(tid, {
-      step: "note",
-      fullName: partnerFlow.fullName,
-      phone,
-    });
-    await ctx.reply("شماره دریافت شد ✅\nتوضیح کوتاه بفرستید (یا — بزنید):", {
-      reply_markup: { remove_keyboard: true },
+    if (!partnerFlow.brand) {
+      waitingPartner.set(tid, { step: "brand", personName: partnerFlow.personName });
+      await ctx.reply("نام برند را بفرستید (مثال: AliShop):", {
+        reply_markup: { remove_keyboard: true },
+      });
+      return;
+    }
+
+    await completePartnerRequest(ctx, tid, {
+      brand: partnerFlow.brand,
+      personName: partnerFlow.personName,
+      phone: contact.phone_number,
     });
   });
 
@@ -2328,98 +2382,44 @@ export function createBot(
 
     const partnerFlow = waitingPartner.get(tid);
     if (partnerFlow) {
-      if (partnerFlow.step === "compose") {
-        if (text.length < 10) {
-          await ctx.reply("پیام خیلی کوتاه است. لطفاً نام، موبایل و توضیحات همکاری را در یک پیام بفرستید.");
-          return;
-        }
-        waitingPartner.delete(tid);
-        const user = await upsertUserFromTelegram(ctx.from!);
-        const phoneMatch = text.match(/(?:\+98|0098|98|0)?9\d{9}/);
-        const phone = phoneMatch?.[0];
-        const agentLabel =
-          sanitizePanelGroupSlug(user.username ?? "") ||
-          sanitizePanelGroupSlug(text) ||
-          `Partner${String(user.telegramId).slice(-8)}`;
-        const req = await submitPartnerRequest(user.id, agentLabel, phone, text);
-        await auditLog({
-          action: "partner_request",
-          actorTelegramId: tid,
-          target: req.id,
-          detail: agentLabel,
-        });
-        await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.");
-        const partnerMsgs: Array<{ chatId: number; messageId: number; isPhoto: boolean }> = [];
-        await notifyAllAdmins(ctx.api, async (adminId) => {
-          const msg = await ctx.api.sendMessage(
-            adminId,
-            [
-              "🤝 درخواست نمایندگی و همکاری",
-              `@${user.username ?? "—"} · TG: ${user.telegramId}`,
-              phone ? `📱 ${phone}` : "",
-              "",
-              text.slice(0, 3500),
-            ]
-              .filter(Boolean)
-              .join("\n"),
-            { reply_markup: partnerRequestKeyboard(req.id) },
-          );
-          partnerMsgs.push({ chatId: adminId, messageId: msg.message_id, isPhoto: false });
-        });
-        if (partnerMsgs.length) {
-          const { saveAdminReviewMessages } = await import("../services/admin-review-sync.js");
-          await saveAdminReviewMessages("partner", req.id, partnerMsgs);
-        }
+      if (partnerFlow.step === "personName") {
+        const skip =
+          text === "—" ||
+          text === "-" ||
+          text === "–" ||
+          text === "رد" ||
+          text === "رد کردن" ||
+          text.toLowerCase() === "skip";
+        const personName = skip ? undefined : text.slice(0, 80);
+        waitingPartner.set(tid, { step: "brand", personName });
+        await ctx.reply(
+          [
+            "۲) نام برند را بفرستید",
+            "حداقل یک حرف یا عدد انگلیسی لازم است.",
+            "مثال: AliShop",
+          ].join("\n"),
+        );
         return;
       }
-      if (partnerFlow.step === "name") {
+      if (partnerFlow.step === "brand") {
         if (!sanitizePanelGroupSlug(text)) {
           await ctx.reply(
-            "نام نماینده باید حداقل یک حرف یا عدد انگلیسی داشته باشد.\nمثال: AliShop\nدوباره بفرستید یا انصراف.",
+            "نام برند باید حداقل یک حرف یا عدد انگلیسی داشته باشد.\nمثال: AliShop\nدوباره بفرستید یا انصراف.",
           );
           return;
         }
-        waitingPartner.set(tid, { step: "phone", fullName: text });
-        await ctx.reply("شماره موبایل را با دکمه زیر ارسال کنید (همان شماره تلگرام شما):", {
+        waitingPartner.set(tid, {
+          step: "phone",
+          personName: partnerFlow.personName,
+          brand: text.trim().slice(0, 80),
+        });
+        await ctx.reply("۳) شماره موبایل را با دکمه زیر ارسال کنید:", {
           reply_markup: partnerContactKeyboard(),
         });
         return;
       }
       if (partnerFlow.step === "phone") {
         await ctx.reply("لطفاً با دکمه «ارسال شماره موبایل» شماره را بفرستید، نه به‌صورت متن.");
-        return;
-      }
-      if (partnerFlow.step === "note") {
-        waitingPartner.delete(tid);
-        const user = await upsertUserFromTelegram(ctx.from!);
-        const req = await submitPartnerRequest(
-          user.id,
-          partnerFlow.fullName!,
-          partnerFlow.phone,
-          text === "—" ? undefined : text,
-        );
-        await auditLog({
-          action: "partner_request",
-          actorTelegramId: tid,
-          target: req.id,
-          detail: partnerFlow.fullName,
-        });
-        await ctx.reply("درخواست همکاری ثبت شد. منتظر تأیید ادمین بمانید.", {
-          reply_markup: { remove_keyboard: true },
-        });
-        const partnerMsgs: Array<{ chatId: number; messageId: number; isPhoto: boolean }> = [];
-        await notifyAllAdmins(ctx.api, async (adminId) => {
-          const msg = await ctx.api.sendMessage(
-            adminId,
-            `🤝 درخواست همکاری\n${partnerFlow.fullName}\n📱 ${partnerFlow.phone ?? "—"}\n@${user.username ?? "—"}\nTG: ${user.telegramId}`,
-            { reply_markup: partnerRequestKeyboard(req.id) },
-          );
-          partnerMsgs.push({ chatId: adminId, messageId: msg.message_id, isPhoto: false });
-        });
-        if (partnerMsgs.length) {
-          const { saveAdminReviewMessages } = await import("../services/admin-review-sync.js");
-          await saveAdminReviewMessages("partner", req.id, partnerMsgs);
-        }
         return;
       }
     }
@@ -2695,7 +2695,11 @@ export function createBot(
         target: req.id,
         detail: "partner",
       });
-      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ درخواست همکاری شما تأیید شد (همکار).");
+      const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+      void notifyTelegramWithMainMenu(
+        req.user.telegramId,
+        "✅ درخواست همکاری شما تأیید شد (همکار).\nمنوی پایین به‌روز شد.",
+      );
       const status = `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
       const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
       void finalizeAdminReviewMessages("partner", req.id, status);
@@ -2716,7 +2720,11 @@ export function createBot(
         target: req.id,
         detail: "wholesale",
       });
-      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان عمده‌فروش تأیید شدید.");
+      const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+      void notifyTelegramWithMainMenu(
+        req.user.telegramId,
+        "✅ به‌عنوان عمده‌فروش تأیید شدید.\nمنوی پایین به‌روز شد — از «خرید سرویس جدید» پلن‌های عمده را ببینید.",
+      );
       const status = `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`;
       const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
       void finalizeAdminReviewMessages("partner", req.id, status);
@@ -2737,7 +2745,11 @@ export function createBot(
         target: req.id,
         detail: "reseller",
       });
-      await ctx.api.sendMessage(Number(req.user.telegramId), "✅ به‌عنوان همکار ویژه تأیید شدید.");
+      const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+      void notifyTelegramWithMainMenu(
+        req.user.telegramId,
+        "✅ به‌عنوان همکار ویژه تأیید شدید.\nمنوی پایین به‌روز شد.",
+      );
       const status = `همکار ویژه تأیید شد — گروه پنل: ${req.user.panelGroup ?? "reseller_…"}`;
       const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
       void finalizeAdminReviewMessages("partner", req.id, status);
@@ -2756,7 +2768,8 @@ export function createBot(
       actorTelegramId: ctx.from?.id,
       target: req.id,
     });
-    await ctx.api.sendMessage(Number(req.user.telegramId), "❌ درخواست همکاری رد شد.");
+    const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+    void notifyTelegramWithMainMenu(req.user.telegramId, "❌ درخواست همکاری رد شد.");
     const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
     void finalizeAdminReviewMessages("partner", req.id, "درخواست رد شد.");
     await ctx.editMessageText("درخواست رد شد.").catch(() => undefined);

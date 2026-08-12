@@ -204,7 +204,11 @@ function SeekValueLabel({ num, unit }: { num: number | string; unit: string }) {
 }
 
 export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
-  const cats = sortCategories(catalog.categories.length ? catalog.categories : []);
+  const cats = sortCategories(
+    catalog.categories.length
+      ? catalog.categories
+      : [...new Set((catalog.cells ?? []).map((c) => c.category).filter(Boolean))],
+  );
   const allowIpEdit =
     variant === "admin" || variant === "agent" ? true : Boolean(catalog.canEditLimitIp);
 

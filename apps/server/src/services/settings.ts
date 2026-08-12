@@ -38,8 +38,8 @@ const defaults: Record<string, string> = {
   miniapp_url: "",
   /** Pinned Mini App banner body (Premium emoji applied on send) */
   miniapp_pin_text: "",
-  /** Auto-pin banner on /start and /update (1/0) */
-  miniapp_pin_auto: "1",
+  /** Auto-pin banner on /start and /update (1/0) — off unless admin enables */
+  miniapp_pin_auto: "0",
   xui_inbound_ids: "1,2,3,4,5,6,7,8,9,10",
   guide_text: `📖 آموزش اتصال
 
@@ -251,6 +251,21 @@ export async function ensureDefaultSettings() {
     await prisma.setting.update({
       where: { tenantId_key: { tenantId, key: "brand_name" } },
       data: { value: defaults.brand_name },
+    });
+  }
+
+  // One-shot: auto-pin used to default ON; now OFF unless admin enables in کنترل سنتر.
+  const pinMigrated = await prisma.setting.findUnique({
+    where: { tenantId_key: { tenantId, key: "miniapp_pin_default_off_v1" } },
+  });
+  if (!pinMigrated) {
+    await prisma.setting.upsert({
+      where: { tenantId_key: { tenantId, key: "miniapp_pin_auto" } },
+      create: { tenantId, key: "miniapp_pin_auto", value: "0" },
+      update: { value: "0" },
+    });
+    await prisma.setting.create({
+      data: { tenantId, key: "miniapp_pin_default_off_v1", value: "1" },
     });
   }
 }
@@ -700,10 +715,11 @@ export async function listEnabledSalesCategoriesForRole(role: string): Promise<s
   if ((await getSetting("serverless_enabled")) === "true") {
     return ["serverless"];
   }
-  const all = await listEnabledSalesCategories();
+  // عمده‌فروش always sees the fixed wholesale catalog (not gated by the sales-category toggle).
   if (role === "wholesale") {
-    return all.includes("wholesale") ? ["wholesale"] : [];
+    return ["wholesale"];
   }
+  const all = await listEnabledSalesCategories();
   return all.filter((k) => k !== "wholesale" && k !== "reseller");
 }
 

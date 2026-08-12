@@ -146,7 +146,9 @@ export function priceFromCell(
     priceReseller?: number;
   },
 ) {
-  if (isWholesaleFixedRole(role)) return cell.priceReseller ?? 0;
+  if (isWholesaleFixedRole(role)) {
+    return cell.priceReseller || cell.priceWholesale || cell.pricePartner || cell.priceUser || 0;
+  }
   if (role === "reseller" || role === "admin") return cell.priceWholesale || cell.pricePartner;
   if (role === "partner") return cell.pricePartner;
   return cell.priceUser;

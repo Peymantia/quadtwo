@@ -620,16 +620,16 @@ html[data-skin="studio"] .settings-btn.on {
 }
 
 html[data-skin="studio"] .theme-toggle {
-  width: 40px;
-  height: 40px;
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: var(--elev);
+  background: rgba(148, 163, 255, 0.08);
   color: var(--text);
   cursor: pointer;
   flex-shrink: 0;
+  padding: 0;
   transition:
     background 0.18s ease,
     border-color 0.18s ease,
@@ -641,7 +641,7 @@ html[data-skin="studio"] .theme-toggle {
 html[data-skin="studio"] .theme-toggle:hover {
   border-color: color-mix(in srgb, var(--login-primary) 45%, transparent);
   color: var(--login-primary);
-  background: color-mix(in srgb, var(--login-primary) 10%, var(--elev));
+  background: color-mix(in srgb, var(--login-primary) 10%, transparent);
   transform: translateY(-1px);
   box-shadow: 0 8px 18px color-mix(in srgb, var(--login-primary) 18%, transparent);
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Modal } from "./Modal";
+import { Icon } from "./DashShell";
 
 function qrColors() {
   if (typeof document === "undefined") {
@@ -68,6 +69,7 @@ export function SubQrModal({
         )}
         <p className="muted sub-qr-hint">با اپ کلاینت اسکن کنید</p>
         <button type="button" className="btn ghost wide" onClick={onClose}>
+          <Icon name="close" size={15} />
           بستن
         </button>
       </div>

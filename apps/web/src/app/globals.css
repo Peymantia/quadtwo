@@ -738,6 +738,8 @@ h3 {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  /* Icon-first in DOM → visual start in RTL (like dashboard quick actions) */
+  direction: rtl;
   transition:
     transform 0.18s ease,
     box-shadow 0.2s ease,
@@ -1550,7 +1552,8 @@ html[data-theme="light"] .quick-action-btn {
   }
 
   .mobile-top .theme-toggle,
-  .mobile-top .icon-btn {
+  .mobile-top .icon-btn,
+  html[data-skin="studio"] .mobile-top .theme-toggle {
     width: 44px;
     height: 44px;
   }
@@ -5548,11 +5551,20 @@ html[data-theme="dark"] .sub-qr-img {
   line-height: 1.2;
   padding: 12px 10px;
   border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  direction: rtl;
   transition:
     transform 0.12s ease,
     background 0.15s ease,
     opacity 0.15s ease,
     box-shadow 0.15s ease;
+}
+
+.settings-sticky-bar__btn > svg {
+  flex-shrink: 0;
 }
 
 .settings-sticky-bar__btn:disabled {
@@ -5634,20 +5646,29 @@ html[data-skin="studio"][data-theme="light"] .settings-sticky-bar__inner {
 .theme-toggle {
   width: 40px;
   height: 40px;
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: var(--elev, rgba(255, 255, 255, 0.04));
+  background: rgba(148, 163, 255, 0.08);
   color: var(--text);
   cursor: pointer;
   flex-shrink: 0;
   padding: 0;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .theme-toggle:hover {
-  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.35);
   color: var(--cyan);
+  transform: translateY(-1px);
 }
 
 /* —— Tenants (SaaS superadmin) —— */

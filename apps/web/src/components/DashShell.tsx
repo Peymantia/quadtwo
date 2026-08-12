@@ -56,7 +56,7 @@ function ThemeToggleBtn() {
         setResolved(next);
       }}
     >
-      <Icon name={resolved === "light" ? "moon" : "sun"} size={18} />
+      <Icon name={resolved === "light" ? "moon" : "sun"} size={22} />
     </button>
   );
 }
@@ -122,7 +122,8 @@ export type IconName =
   | "download"
   | "calendar"
   | "arrowLeft"
-  | "arrowRight";
+  | "arrowRight"
+  | "minus";
 
 export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
   const p = {
@@ -384,6 +385,12 @@ export function Icon({ name, size = 21 }: { name: IconName; size?: number }) {
           <path d="m9 6 6 6-6 6" />
         </svg>
       );
+    case "minus":
+      return (
+        <svg {...p}>
+          <path d="M5 12h14" />
+        </svg>
+      );
   }
 }
 
@@ -555,7 +562,7 @@ export function DashShell(props: {
               aria-expanded={moreOpen}
               onClick={() => setMoreOpen((v) => !v)}
             >
-              <Icon name={moreOpen ? "close" : "menu"} size={22} />
+              <Icon name={moreOpen ? "close" : "menu"} size={24} />
             </button>
           )}
           {hasSettings && (
@@ -565,7 +572,7 @@ export function DashShell(props: {
               aria-label="تنظیمات"
               onClick={openSettings}
             >
-              <Icon name="gear" size={18} />
+              <Icon name="gear" size={22} />
             </button>
           )}
           <ThemeToggleBtn />
@@ -621,7 +628,7 @@ export function DashShell(props: {
                   aria-label="تنظیمات"
                   onClick={openSettings}
                 >
-                  <Icon name="gear" size={16} />
+                  <Icon name="gear" size={18} />
                   <span>تنظیمات</span>
                 </button>
               )}

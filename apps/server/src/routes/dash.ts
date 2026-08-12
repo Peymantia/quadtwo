@@ -3077,9 +3077,18 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     });
 
     if (body.role === "user" && wasSeller) {
-      await notifyTelegram(
+      const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+      void notifyTelegramWithMainMenu(
         target.telegramId,
         "اطلاع: همکاری شما پایان یافت و حساب به مشتری عادی تبدیل شد.",
+      );
+    } else if (becomingSeller) {
+      const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+      const label =
+        body.role === "wholesale" ? "عمده‌فروش" : body.role === "reseller" ? "همکار ویژه" : "همکار";
+      void notifyTelegramWithMainMenu(
+        target.telegramId,
+        `اطلاع: نقش شما به «${label}» تغییر کرد.\nمنوی پایین به‌روز شد.`,
       );
     }
 
@@ -3096,7 +3105,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         target: updated.id,
         detail: "partner/wholesale -> user",
       });
-      await notifyTelegram(
+      const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+      void notifyTelegramWithMainMenu(
         updated.telegramId,
         "اطلاع: همکاری شما پایان یافت و حساب به مشتری عادی تبدیل شد.",
       );
@@ -3461,13 +3471,14 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         : asRole === "wholesale"
           ? `عمده‌فروش تأیید شد — گروه پنل: ${req.user.panelGroup ?? "wholesale_…"}`
           : `همکار تأیید شد — گروه پنل: ${req.user.panelGroup ?? "partner_…"}`;
-    void notifyTelegram(
+    const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+    void notifyTelegramWithMainMenu(
       req.user.telegramId,
       asRole === "reseller"
-        ? "✅ به‌عنوان همکار ویژه تأیید شدید."
+        ? "✅ به‌عنوان همکار ویژه تأیید شدید.\nمنوی پایین به‌روز شد."
         : asRole === "wholesale"
-          ? "✅ به‌عنوان عمده‌فروش تأیید شدید."
-          : "✅ درخواست همکاری شما تأیید شد (همکار).",
+          ? "✅ به‌عنوان عمده‌فروش تأیید شدید.\nمنوی پایین به‌روز شد — از «خرید سرویس جدید» پلن‌های عمده را ببینید."
+          : "✅ درخواست همکاری شما تأیید شد (همکار).\nمنوی پایین به‌روز شد.",
     );
     const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
     void finalizeAdminReviewMessages("partner", req.id, status);
@@ -3482,7 +3493,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       actorTelegramId: BigInt(c.get("telegramId")),
       target: req.id,
     });
-    void notifyTelegram(req.user.telegramId, "❌ درخواست همکاری رد شد.");
+    const { notifyTelegramWithMainMenu } = await import("../services/push-main-menu.js");
+    void notifyTelegramWithMainMenu(req.user.telegramId, "❌ درخواست همکاری رد شد.");
     const { finalizeAdminReviewMessages } = await import("../services/admin-review-sync.js");
     void finalizeAdminReviewMessages("partner", id, "درخواست رد شد.");
     return c.json({ ok: true });
