@@ -152,6 +152,35 @@ export function priceFromCell(
   return cell.priceUser;
 }
 
+/**
+ * Price a specific matrix plan card for catalog/quote display.
+ * Does not fall back to unlimited rate formulas (those ignore the selected cell and cause UI mismatches).
+ */
+export async function priceForMatrixCell(
+  user: User,
+  cell: {
+    priceUser: number;
+    pricePartner: number;
+    priceWholesale: number;
+    priceReseller?: number;
+  },
+  roleOverride?: UserRole | string | null,
+): Promise<number | null> {
+  const role = (roleOverride ?? user.role) as UserRole;
+  if (role === "admin") return 0;
+  let price = priceFromCell(role, cell);
+  const override = await prisma.agentPriceOverride.findUnique({ where: { userId: user.id } });
+  if (
+    override &&
+    override.partnerPricePercent != null &&
+    override.partnerPricePercent !== 100 &&
+    (role === "partner" || role === "reseller" || role === "wholesale")
+  ) {
+    price = Math.max(0, Math.round((price * override.partnerPricePercent) / 100));
+  }
+  return price > 0 ? price : null;
+}
+
 /** Formula: GB×perGb + months×perMonth (unlimited: months×unlimitedPerMonth) */
 export function calcRatePriceFromRates(
   trafficGb: number | null,

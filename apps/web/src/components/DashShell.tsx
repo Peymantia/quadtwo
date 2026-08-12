@@ -521,18 +521,7 @@ export function DashShell(props: {
               <h1>{props.title}</h1>
               {props.userLabel && <p className="sub">{props.userLabel}</p>}
             </div>
-            <div className="topbar-side">
-              {isAdmin && (
-                <span className="hide-mobile">
-                  <AdminPanelSwitcher />
-                </span>
-              )}
-              {!isAdmin && props.walletLabel && (
-                <span className="money-pill num hide-mobile">{props.walletLabel}</span>
-              )}
-              <span className="hide-mobile">
-                <ThemeToggleBtn />
-              </span>
+            <div className="topbar-side" dir="ltr">
               {hasSettings && (
                 <button
                   type="button"
@@ -544,7 +533,17 @@ export function DashShell(props: {
                   <span>تنظیمات</span>
                 </button>
               )}
-              <span className="role-pill">{roleLabel(props.role)}</span>
+              <span className="hide-mobile">
+                <ThemeToggleBtn />
+              </span>
+              {isAdmin && (
+                <span className="hide-mobile">
+                  <AdminPanelSwitcher />
+                </span>
+              )}
+              {!isAdmin && props.walletLabel && (
+                <span className="money-pill num hide-mobile">{props.walletLabel}</span>
+              )}
             </div>
           </div>
           {isPreviewing && (

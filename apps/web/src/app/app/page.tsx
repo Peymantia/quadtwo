@@ -572,33 +572,41 @@ export default function UserAppPage() {
               return (
                 <div key={s.id} className="row-card row-card--stack">
                   <div style={{ width: "100%" }}>
-                    <div className="config-card-title-row" dir="ltr">
-                      <strong className="num">{s.email}</strong>
-                      {!expired && (
-                        <label
-                          className="switch switch-sm"
-                          title={s.status === "active" ? "فعال" : "غیرفعال"}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={s.status === "active"}
-                            disabled={busy}
-                            aria-label={s.status === "active" ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
-                            onChange={() =>
-                              setConfirmToggle({ sub: s, enable: s.status !== "active" })
-                            }
-                          />
-                          <span className="track" />
-                        </label>
-                      )}
-                      {expired && <span className="badge warn">منقضی</span>}
-                      {s.isTest && <span className="badge info">تست</span>}
-                    </div>
-                    {s.code && (
-                      <div className="muted num" style={{ marginTop: 4 }}>
-                        کد: {s.code}
+                    <div className="config-card-head">
+                      <div className="config-card-head__meta">
+                        <div className="config-card-title-row">
+                          <strong className="num" dir="ltr">
+                            {s.email}
+                          </strong>
+                          {expired && <span className="badge warn">منقضی</span>}
+                          {s.isTest && <span className="badge info">تست</span>}
+                        </div>
+                        {s.code && (
+                          <div className="muted num" style={{ marginTop: 4 }}>
+                            کد: {s.code}
+                          </div>
+                        )}
                       </div>
-                    )}
+                      <div className="config-card-head__tools">
+                        {!expired && (
+                          <label
+                            className="switch switch-sm"
+                            title={s.status === "active" ? "فعال" : "غیرفعال"}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={s.status === "active"}
+                              disabled={busy}
+                              aria-label={s.status === "active" ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
+                              onChange={() =>
+                                setConfirmToggle({ sub: s, enable: s.status !== "active" })
+                              }
+                            />
+                            <span className="track" />
+                          </label>
+                        )}
+                      </div>
+                    </div>
                     <div className="muted" style={{ marginTop: 8 }}>
                       حجم کل:{" "}
                       <strong className="num">

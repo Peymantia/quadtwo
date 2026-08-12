@@ -3526,23 +3526,10 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                 <div>
                   <div className="config-card-head">
                     <div className="config-card-head__meta">
-                      <div className="config-card-title-row" dir="ltr">
-                        <strong className="num">{c.email}</strong>
-                        {c.inDb && !expired && (
-                          <label
-                            className="switch switch-sm"
-                            title={c.status === "active" ? "فعال" : "غیرفعال"}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={c.status === "active"}
-                              disabled={editBusy}
-                              aria-label={c.status === "active" ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
-                              onChange={() => void toggleEnable(c.email, c.subId, c.status === "active")}
-                            />
-                            <span className="track" />
-                          </label>
-                        )}
+                      <div className="config-card-title-row">
+                        <strong className="num" dir="ltr">
+                          {c.email}
+                        </strong>
                         {!c.inDb && <span className="badge warn">فقط پنل</span>}
                         {expired && <span className="badge warn">منقضی</span>}
                       </div>
@@ -3555,18 +3542,35 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
                       )}
                       {c.ownerLabel && <div className="muted">{c.ownerLabel}</div>}
                     </div>
-                    {c.inDb && c.subUrl && (
-                      <button
-                        type="button"
-                        className="btn sm config-qr-btn"
-                        disabled={editBusy}
-                        title="QR Code"
-                        aria-label="QR Code"
-                        onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
-                      >
-                        <QrCodeIcon />
-                      </button>
-                    )}
+                    <div className="config-card-head__tools">
+                      {c.inDb && !expired && (
+                        <label
+                          className="switch switch-sm"
+                          title={c.status === "active" ? "فعال" : "غیرفعال"}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={c.status === "active"}
+                            disabled={editBusy}
+                            aria-label={c.status === "active" ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
+                            onChange={() => void toggleEnable(c.email, c.subId, c.status === "active")}
+                          />
+                          <span className="track" />
+                        </label>
+                      )}
+                      {c.inDb && c.subUrl && (
+                        <button
+                          type="button"
+                          className="btn sm config-qr-btn"
+                          disabled={editBusy}
+                          title="QR Code"
+                          aria-label="QR Code"
+                          onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
+                        >
+                          <QrCodeIcon />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="muted" style={{ marginTop: 8 }}>
                     حجم کل:{" "}

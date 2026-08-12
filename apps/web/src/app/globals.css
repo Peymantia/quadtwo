@@ -1369,6 +1369,7 @@ html[data-theme="light"] .quick-action-btn {
   cursor: pointer;
   flex-shrink: 0;
   min-width: 0;
+  height: 40px;
 }
 
 .panel-switcher-label {
@@ -1377,21 +1378,25 @@ html[data-theme="light"] .quick-action-btn {
 
 .panel-switcher-select {
   appearance: none;
+  box-sizing: border-box;
+  height: 40px;
   background: rgba(251, 191, 36, 0.1);
   border: 1px solid rgba(251, 191, 36, 0.4);
   color: var(--text);
-  border-radius: 10px;
-  padding: 6px 26px 6px 8px;
-  font-size: 0.78rem;
+  border-radius: 12px;
+  padding: 0 28px 0 12px;
+  font-size: 0.86rem;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23fbbf24' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: left 7px center;
-  max-width: 96px;
+  background-position: left 10px center;
+  max-width: 120px;
   width: auto;
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
 }
 
 .panel-switcher-select:hover {
@@ -3624,9 +3629,9 @@ button.pay-dest-number:active,
 /* Account card actions: even grid, full width, no dead space */
 .config-card-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 2px;
 }
 
@@ -3639,12 +3644,17 @@ button.pay-dest-number:active,
 .config-card-title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.config-card-title-row .switch {
-  margin-inline-start: 2px;
+.config-card-head__tools {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  align-self: center;
 }
 
 .config-card-head__meta .config-card-note,

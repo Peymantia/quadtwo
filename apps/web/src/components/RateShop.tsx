@@ -541,8 +541,10 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
   const catLabel = catalog.categoryLabels[category] || category;
   const displayService =
     variant === "admin"
-      ? servicePrice ?? selectedFixed?.price ?? price
-      : price;
+      ? (isFixedSingle ? selectedFixed?.price ?? servicePrice ?? price : servicePrice ?? price)
+      : isFixedSingle
+        ? price ?? selectedFixed?.price ?? null
+        : price;
   const confirmLines = [
     `اکانت «${pendingName}»`,
     `نوع: ${catLabel}`,
@@ -727,7 +729,7 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       <div className="seek-price seek-price-live">
         <span className="muted">{variant === "admin" ? "مبلغ سرویس" : "مبلغ"}</span>
         <strong className="num">
-          {quoting
+          {quoting && displayService == null
             ? "…"
             : displayService != null
               ? formatToman(displayService)

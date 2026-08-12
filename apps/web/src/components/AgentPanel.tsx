@@ -645,23 +645,10 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                   <div>
                     <div className="config-card-head">
                       <div className="config-card-head__meta">
-                        <div className="config-card-title-row" dir="ltr">
-                          <strong className="num">{c.email}</strong>
-                          {!expired && (
-                            <label
-                              className="switch switch-sm"
-                              title={active ? "فعال" : "غیرفعال"}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={active}
-                                disabled={busy || !c.subId}
-                                aria-label={active ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
-                                onChange={() => setConfirmToggle({ item: c, enable: !active })}
-                              />
-                              <span className="track" />
-                            </label>
-                          )}
+                        <div className="config-card-title-row">
+                          <strong className="num" dir="ltr">
+                            {c.email}
+                          </strong>
                           {expired && <span className="badge warn">منقضی</span>}
                         </div>
                         {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
@@ -672,18 +659,35 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                           </div>
                         )}
                       </div>
-                      {c.subUrl && (
-                        <button
-                          type="button"
-                          className="btn sm config-qr-btn"
-                          disabled={busy}
-                          title="QR Code"
-                          aria-label="QR Code"
-                          onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
-                        >
-                          <QrCodeIcon />
-                        </button>
-                      )}
+                      <div className="config-card-head__tools">
+                        {!expired && (
+                          <label
+                            className="switch switch-sm"
+                            title={active ? "فعال" : "غیرفعال"}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={active}
+                              disabled={busy || !c.subId}
+                              aria-label={active ? "غیرفعال کردن اکانت" : "فعال کردن اکانت"}
+                              onChange={() => setConfirmToggle({ item: c, enable: !active })}
+                            />
+                            <span className="track" />
+                          </label>
+                        )}
+                        {c.subUrl && (
+                          <button
+                            type="button"
+                            className="btn sm config-qr-btn"
+                            disabled={busy}
+                            title="QR Code"
+                            aria-label="QR Code"
+                            onClick={() => setQrSub({ url: c.subUrl!, title: c.email })}
+                          >
+                            <QrCodeIcon />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="muted" style={{ marginTop: 8 }}>
                       حجم کل:{" "}

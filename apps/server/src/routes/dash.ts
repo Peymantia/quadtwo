@@ -33,7 +33,7 @@ import {
   rejectOrder,
   setOrderPaymentMethod,
 } from "../services/orders.js";
-import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, type PlanCategory } from "../services/pricing.js";
+import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, priceForMatrixCell, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
 import { fulfillAfterPaid, isServerlessEnabled, isServerlessPending } from "../services/serverless.js";
 import {
@@ -888,14 +888,23 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           return cats.includes(cell.category);
         })
         .map(async (cell) => {
-          // Admin UI shows همکار ویژه prices; checkout remains complimentary (price 0)
-          const resolved = await resolvePrice(
-            pricedUser,
-            cell.trafficGb,
-            cell.months,
-            cell.category,
-            pricedUser.role === "admin" ? "reseller" : undefined,
-          );
+          // Admin UI shows همکار ویژه prices; checkout remains complimentary (price 0).
+          // Fixed plan cards must use THAT cell's matrix price — resolvePrice(unlimited) prefers
+          // rate formulas and can disagree with the selected card (e.g. 2M on card vs 2.8M quote).
+          const displayRole = pricedUser.role === "admin" ? "reseller" : undefined;
+          let price: number | null = null;
+          if (isFixedSingleServiceCategory(cell.category)) {
+            price = await priceForMatrixCell(pricedUser, cell, displayRole);
+          } else {
+            const resolved = await resolvePrice(
+              pricedUser,
+              cell.trafficGb,
+              cell.months,
+              cell.category,
+              displayRole,
+            );
+            price = resolved?.price ?? null;
+          }
           return {
             id: cell.id,
             category:
@@ -906,7 +915,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
             months: cell.months,
             title: cell.title,
             isGolden: cell.isGolden,
-            price: resolved?.price ?? null,
+            price,
             limitIp: cell.limitIp ?? 0,
           };
         }),
@@ -1051,21 +1060,20 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const fixedSingle = isFixedSingleServiceCategory(category);
     let priced = await resolvePrice(pricedUser, trafficGb, months, category);
     if (fixedSingle && resolvedCell) {
-      const { priceFromCell } = await import("../services/pricing.js");
-      priced =
-        pricedUser.role === "admin"
-          ? { cell: resolvedCell, price: 0, mode: "matrix" as const }
-          : { cell: resolvedCell, price: priceFromCell(pricedUser.role, resolvedCell), mode: "matrix" as const };
-      if (priced.price <= 0 && pricedUser.role !== "admin") priced = null;
+      if (pricedUser.role === "admin") {
+        priced = { cell: resolvedCell, price: 0, mode: "matrix" as const };
+      } else {
+        const cellPrice = await priceForMatrixCell(pricedUser, resolvedCell);
+        priced = cellPrice != null ? { cell: resolvedCell, price: cellPrice, mode: "matrix" as const } : null;
+      }
     }
     if (!priced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
 
-    // Admin: show همکار ویژه service amount while payable stays 0
+    // Admin: show همکار ویژه service amount while payable stays 0 — must match catalog card price
     let servicePrice = priced.price;
     if (pricedUser.role === "admin") {
       if (resolvedCell) {
-        const { priceFromCell } = await import("../services/pricing.js");
-        servicePrice = priceFromCell("reseller", resolvedCell);
+        servicePrice = (await priceForMatrixCell(pricedUser, resolvedCell, "reseller")) ?? 0;
       } else {
         const shown = await resolvePrice(pricedUser, trafficGb, months, category, "reseller");
         servicePrice = shown?.price ?? 0;
