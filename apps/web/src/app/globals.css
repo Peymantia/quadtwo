@@ -4629,10 +4629,6 @@ html[data-theme="dark"] .sub-qr-img {
   box-shadow: 0 0 0 1px var(--line);
 }
 
-.prices-back {
-  align-self: flex-start;
-}
-
 .prices-overview-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
