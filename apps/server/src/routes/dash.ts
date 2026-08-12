@@ -1995,7 +1995,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       user: pick("user"),
       partner: pick("partner"),
       reseller: pick("reseller"),
-      wholesale: pick("wholesale"),
+      wholesale: "matrix",
     };
     await savePricingModes(modes);
     await auditLog({
@@ -2015,6 +2015,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       user: { ...current.user, ...(body.user ?? {}) },
       partner: { ...current.partner, ...(body.partner ?? {}) },
       wholesale: { ...current.wholesale, ...(body.wholesale ?? {}) },
+      wholesaleRole: {
+        ...(current.wholesaleRole ?? current.wholesale),
+        ...(body.wholesaleRole ?? {}),
+      },
       categories: body.categories ?? current.categories,
     };
     await savePriceRates(rates);

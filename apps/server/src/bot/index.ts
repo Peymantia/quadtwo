@@ -1091,14 +1091,7 @@ async function handlePartnerRequest(ctx: Context) {
   }
   waitingPartner.set(ctx.from!.id, { step: "personName" });
   await ctx.reply(
-    [
-      "🤝 درخواست نمایندگی",
-      "",
-      "فقط ۳ مرحله کوتاه:",
-      "",
-      "۱) نام و نام خانوادگی (اختیاری)",
-      "اگر نمی‌خواهید بنویسید، همین الان — بفرستید.",
-    ].join("\n"),
+    ["درخواست نمایندگی (مرحله اول)", "لطفا نام کامل یا مستعار خود را ارسال کنید..."].join("\n"),
   );
 }
 
@@ -2120,7 +2113,7 @@ export function createBot(
 
     if (!partnerFlow.brand) {
       waitingPartner.set(tid, { step: "brand", personName: partnerFlow.personName });
-      await ctx.reply("نام برند را بفرستید (مثال: AliShop):", {
+      await ctx.reply(["درخواست نمایندگی (مرحله دوم)", "نام برند را بفرستید..."].join("\n"), {
         reply_markup: { remove_keyboard: true },
       });
       return;
@@ -2392,20 +2385,13 @@ export function createBot(
           text.toLowerCase() === "skip";
         const personName = skip ? undefined : text.slice(0, 80);
         waitingPartner.set(tid, { step: "brand", personName });
-        await ctx.reply(
-          [
-            "۲) نام برند را بفرستید",
-            "حداقل یک حرف یا عدد انگلیسی لازم است.",
-            "مثال: AliShop",
-          ].join("\n"),
-        );
+        await ctx.reply(["درخواست نمایندگی (مرحله دوم)", "نام برند را بفرستید..."].join("\n"));
         return;
       }
       if (partnerFlow.step === "brand") {
-        if (!sanitizePanelGroupSlug(text)) {
-          await ctx.reply(
-            "نام برند باید حداقل یک حرف یا عدد انگلیسی داشته باشد.\nمثال: AliShop\nدوباره بفرستید یا انصراف.",
-          );
+        const latinAlnum = text.replace(/[^a-zA-Z0-9]/g, "");
+        if (latinAlnum.length < 3 || !sanitizePanelGroupSlug(text)) {
+          await ctx.reply(["حداقل سه حرف یا عدد انگلیسی لازم است.", "مثال: AliShop"].join("\n"));
           return;
         }
         waitingPartner.set(tid, {
@@ -2413,9 +2399,10 @@ export function createBot(
           personName: partnerFlow.personName,
           brand: text.trim().slice(0, 80),
         });
-        await ctx.reply("۳) شماره موبایل را با دکمه زیر ارسال کنید:", {
-          reply_markup: partnerContactKeyboard(),
-        });
+        await ctx.reply(
+          ["درخواست نمایندگی (مرحله نهایی)", "شماره موبایل خود را با دکمه زیر ارسال کنید:"].join("\n"),
+          { reply_markup: partnerContactKeyboard() },
+        );
         return;
       }
       if (partnerFlow.step === "phone") {

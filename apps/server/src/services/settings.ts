@@ -394,7 +394,10 @@ export type CategoryRoleRates = Partial<Record<RateRoleKey, Partial<CategoryUnit
 export type PriceRates = {
   user: RoleRates;
   partner: RoleRates;
+  /** Legacy key: rates for همکار ویژه (reseller) — not عمده‌فروش */
   wholesale: RoleRates;
+  /** Rates for role wholesale (عمده‌فروش) when/if rate mode is used */
+  wholesaleRole?: RoleRates;
   /** Per-category overrides: categories.data.user.perGb etc. */
   categories: Record<string, CategoryRoleRates>;
 };
@@ -412,6 +415,7 @@ export function defaultPriceRates(): PriceRates {
     user: { perGb: 15_000, perMonth: 30_000, unlimitedPerMonth: 1_500_000 },
     partner: { perGb: 12_000, perMonth: 25_000, unlimitedPerMonth: 1_200_000 },
     wholesale: { perGb: 10_000, perMonth: 20_000, unlimitedPerMonth: 1_000_000 },
+    wholesaleRole: { perGb: 8_000, perMonth: 15_000, unlimitedPerMonth: 900_000 },
     categories: {
       data: {
         user: { perGb: 15_000, perMonth: 30_000 },
@@ -475,7 +479,8 @@ export async function savePricingModes(modes: RolePricingModes) {
     user: asMode(modes.user),
     partner: asMode(modes.partner),
     reseller: asMode(modes.reseller),
-    wholesale: asMode(modes.wholesale),
+    /** Wholesale role always uses fixed catalog cells; rate switch is a no-op. */
+    wholesale: "matrix",
   };
   await setSetting("pricing_modes_json", JSON.stringify(next));
   await setSetting("pricing_mode", next.user);
@@ -509,6 +514,10 @@ export async function getPriceRates(): Promise<PriceRates> {
       user: mergeRoleRates(base.user, raw.user),
       partner: mergeRoleRates(base.partner, raw.partner),
       wholesale: mergeRoleRates(base.wholesale, raw.wholesale),
+      wholesaleRole: mergeRoleRates(
+        base.wholesaleRole ?? base.wholesale,
+        raw.wholesaleRole ?? undefined,
+      ),
       categories,
     };
   } catch {
@@ -526,12 +535,16 @@ export function ratesForRoleCategory(
   category: string,
   rates: PriceRates,
 ): RoleRates {
+  if (role === "wholesale") {
+    const base = rates.wholesaleRole ?? rates.wholesale;
+    return {
+      perGb: Number(base.perGb) || 0,
+      perMonth: Number(base.perMonth) || 0,
+      unlimitedPerMonth: Number(base.unlimitedPerMonth) || 0,
+    };
+  }
   const roleKey: RateRoleKey =
-    role === "reseller" || role === "admin" || role === "wholesale"
-      ? "wholesale"
-      : role === "partner"
-        ? "partner"
-        : "user";
+    role === "reseller" || role === "admin" ? "wholesale" : role === "partner" ? "partner" : "user";
   const base = rates[roleKey];
   const cat = category === "unlimited" ? undefined : rates.categories?.[category]?.[roleKey];
   return {
