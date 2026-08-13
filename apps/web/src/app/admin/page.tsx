@@ -1034,83 +1034,90 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
 
       <div className="panel">
         <h2>کاربران</h2>
-        <div className="field" style={{ marginBottom: 12, maxWidth: 280 }}>
-          <label>دسته کاربران</label>
-          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-            <option value="">همه</option>
-            {["user", "partner", "wholesale", "reseller", "admin"].map((r) => (
-              <option key={r} value={r}>
-                {ROLE_FA[r]}
-              </option>
-            ))}
-          </select>
+        <div className="users-filters">
+          <div className="field">
+            <label htmlFor="admin-users-role">دسته کاربران</label>
+            <select
+              id="admin-users-role"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            >
+              <option value="">همه</option>
+              {["user", "partner", "wholesale", "reseller", "admin"].map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_FA[r]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="admin-users-search">جستجو (یوزرنیم، آی‌دی، نام)</label>
+            <input id="admin-users-search" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
         </div>
-        <div className="field">
-          <label>جستجو (یوزرنیم، آی‌دی، نام)</label>
-          <input value={q} onChange={(e) => setQ(e.target.value)} />
-        </div>
-        <div className="users-mlist users-mlist--always">
-          {shown.slice(0, 60).map((u) => (
-            <div key={u.id} className="users-mcard">
-              <div className="users-mrow">
-                <div className="users-muser">
-                  <div className="users-muser-title">
-                    <span className="users-mlabel">Username:</span>{" "}
-                    {u.username ? (
-                      <a
-                        className="users-musername"
-                        href={`https://t.me/${u.username}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        @{u.username}
-                      </a>
-                    ) : (
-                      <span>{u.firstName || "—"}</span>
-                    )}
-                  </div>
-                  {u.agentName ? <div className="muted">{u.agentName}</div> : null}
+      </div>
+
+      <div className="users-list">
+        {shown.slice(0, 60).map((u) => (
+          <div key={u.id} className="users-mcard">
+            <div className="users-mrow">
+              <div className="users-muser">
+                <div className="users-muser-title">
+                  <span className="users-mlabel">Username:</span>{" "}
+                  {u.username ? (
+                    <a
+                      className="users-musername"
+                      href={`https://t.me/${u.username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      @{u.username}
+                    </a>
+                  ) : (
+                    <span>{u.firstName || "—"}</span>
+                  )}
                 </div>
-                <div className="users-mwallet num">{formatToman(u.balance)}</div>
+                {u.agentName ? <div className="muted">{u.agentName}</div> : null}
               </div>
-              <div className="users-mmeta">
-                <div>
-                  <span className="users-mlabel">User ID:</span>{" "}
-                  <span className="num">{u.telegramId}</span>
-                </div>
-                <div>
-                  <span className="users-mlabel">Group:</span> {u.panelGroup || "—"}
-                </div>
+              <div className="users-mwallet num">{formatToman(u.balance)}</div>
+            </div>
+            <div className="users-mmeta">
+              <div>
+                <span className="users-mlabel">User ID:</span>{" "}
+                <span className="num">{u.telegramId}</span>
               </div>
-              <div className="users-mrow-actions">
-                <select
-                  className="users-mrole"
-                  value={u.role}
-                  onChange={(e) => changeRole(u, e.target.value)}
-                  aria-label="نقش"
-                >
-                  {Object.entries(ROLE_FA).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-                <button type="button" className="btn ghost sm users-mdetail-btn" onClick={() => setSelected(u)}>
-                  <Icon name="wallet" size={14} />
-                  جزئیات شارژ و قیمت
-                </button>
+              <div>
+                <span className="users-mlabel">Group:</span> {u.panelGroup || "—"}
               </div>
             </div>
-          ))}
-        </div>
-
-        {shown.length > 60 && (
-          <p className="muted" style={{ marginTop: 10 }}>
-            نمایش ۶۰ از {shown.length} کاربر — جستجو یا فیلتر نقش را دقیق‌تر کنید.
-          </p>
-        )}
-        {!shown.length && <p className="muted">کاربری یافت نشد.</p>}
+            <div className="users-mrow-actions">
+              <select
+                className="users-mrole"
+                value={u.role}
+                onChange={(e) => changeRole(u, e.target.value)}
+                aria-label="نقش"
+              >
+                {Object.entries(ROLE_FA).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="btn ghost sm users-mdetail-btn" onClick={() => setSelected(u)}>
+                <Icon name="wallet" size={14} />
+                جزئیات شارژ و قیمت
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
+
+      {shown.length > 60 && (
+        <p className="muted" style={{ marginTop: 10 }}>
+          نمایش ۶۰ از {shown.length} کاربر — جستجو یا فیلتر نقش را دقیق‌تر کنید.
+        </p>
+      )}
+      {!shown.length && <p className="muted">کاربری یافت نشد.</p>}
 
       {selected && (
         <Modal

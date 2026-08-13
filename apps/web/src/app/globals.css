@@ -1821,7 +1821,43 @@ html[data-theme="light"] .quick-action-btn {
   display: none;
 }
 
-/* Admin users — stacked cards */
+/* Admin users — filter card + responsive card grid (like configs) */
+.users-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.35fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.users-filters .field {
+  margin: 0;
+  min-width: 0;
+}
+
+.users-filters .field select,
+.users-filters .field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.users-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 720px) {
+  .users-list {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+  }
+}
+
+.users-list > .users-mcard {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Legacy mobile-only list (unused in admin users tab; keep for safety) */
 .users-mlist {
   display: none;
   flex-direction: column;
@@ -1834,11 +1870,12 @@ html[data-theme="light"] .quick-action-btn {
 
 .users-mcard {
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--elev);
-  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--card);
+  padding: 13px 15px;
   direction: ltr;
   text-align: left;
+  box-sizing: border-box;
 }
 
 .users-mrow {
