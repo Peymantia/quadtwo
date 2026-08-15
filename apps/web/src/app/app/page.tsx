@@ -20,6 +20,8 @@ import {
 import { RenewModal, type RenewInfo } from "../../components/RenewModal";
 import { AccountCreatedModal, type CreatedAccount } from "../../components/AccountCreatedModal";
 import { ConfigCardActions } from "../../components/ConfigCardActions";
+import { TermsViewModal } from "../../components/TermsViewModal";
+import { DEFAULT_TERMS_TEXT } from "../../lib/terms-default";
 
 type Sub = {
   id: string;
@@ -102,6 +104,15 @@ export default function UserAppPage() {
   const [confirmRotate, setConfirmRotate] = useState<Sub | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Sub | null>(null);
   const [confirmToggle, setConfirmToggle] = useState<{ sub: Sub; enable: boolean } | null>(null);
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsText, setTermsText] = useState(DEFAULT_TERMS_TEXT);
+
+  const openTerms = useCallback(() => {
+    setTermsOpen(true);
+    void api<{ text: string }>("/me/terms")
+      .then((r) => setTermsText(r.text?.trim() || DEFAULT_TERMS_TEXT))
+      .catch(() => setTermsText(DEFAULT_TERMS_TEXT));
+  }, []);
 
   const loadSubs = useCallback(
     () => api<{ subscriptions: Sub[] }>("/me/subscriptions").then((r) => setSubs(r.subscriptions)),
@@ -471,8 +482,11 @@ export default function UserAppPage() {
       active={tab}
       onTab={setTab}
       demoMode={Boolean(home.demoMode)}
+      showTerms={home.user.role !== "admin"}
+      onTerms={openTerms}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
+      <TermsViewModal open={termsOpen} text={termsText} onClose={() => setTermsOpen(false)} />
       {confirmRotate && (
         <ConfirmToast
           message="با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟"

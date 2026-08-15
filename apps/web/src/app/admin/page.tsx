@@ -24,6 +24,7 @@ import { broadcastAppearance } from "../../components/ThemeBoot";
 import { parseColorMode, parseUiSkin, setUserColorOverride, type ColorMode } from "../../lib/theme";
 import { PricesTab } from "../../components/prices/PricesTab";
 import { UserCustomPricingPanel } from "../../components/UserCustomPricingPanel";
+import { DEFAULT_TERMS_TEXT } from "../../lib/terms-default";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
 const TABS: ShellTab[] = [
@@ -3821,6 +3822,8 @@ const SETTINGS_DEFAULTS: Record<string, string> = {
   serverless_month1_enabled: "true",
   serverless_month2_enabled: "true",
   test_service_enabled: "true",
+  terms_enabled: "false",
+  terms_text: "",
   discount_codes_enabled: "false",
   discount_max_percent: "30",
   default_limit_ip: "2",
@@ -3852,6 +3855,8 @@ function SettingsTab({
   const [loaded, setLoaded] = useState(false);
   const [guideEdit, setGuideEdit] = useState<(typeof GUIDE_PLATFORMS)[number] | null>(null);
   const [guideDraft, setGuideDraft] = useState({ text: "", url: "" });
+  const [termsEditOpen, setTermsEditOpen] = useState(false);
+  const [termsDraft, setTermsDraft] = useState("");
   const [channels, setChannels] = useState<Array<{ username: string; required: boolean }>>([]);
   const [forceMembership, setForceMembership] = useState(false);
   const [newChannel, setNewChannel] = useState("");
@@ -5026,6 +5031,39 @@ function SettingsTab({
         </div>
         <div className="setting-row">
           <div>
+            <div className="t">قوانین استفاده (ربات)</div>
+            <div className="d">
+              اگر فعال باشد، کاربر بعد از ورود ابتدا قوانین را می‌پذیرد، سپس در صورت نیاز عضو کانال می‌شود.
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={settings.terms_enabled === "true"}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  terms_enabled: e.target.checked ? "true" : "false",
+                }))
+              }
+            />
+            <span className="track" />
+          </label>
+        </div>
+        <div className="actions" style={{ marginTop: 4, marginBottom: 8 }}>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => {
+              setTermsDraft((settings.terms_text || "").trim() || DEFAULT_TERMS_TEXT);
+              setTermsEditOpen(true);
+            }}
+          >
+            ویرایش متن قوانین
+          </button>
+        </div>
+        <div className="setting-row">
+          <div>
             <div className="t">کد تخفیف</div>
             <div className="d">فعال‌سازی ورود کد در خرید (ربات و وب). هر کد فقط برای فروش سازنده‌اش.</div>
           </div>
@@ -5152,6 +5190,42 @@ function SettingsTab({
               ذخیره
             </button>
             <button type="button" className="btn ghost" onClick={() => setGuideEdit(null)}>
+              <Icon name="close" size={15} />
+              لغو
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {termsEditOpen && (
+        <Modal open title="ویرایش متن قوانین" onClose={() => setTermsEditOpen(false)} wide>
+          <div className="field">
+            <label>متن کامل قوانین</label>
+            <textarea
+              rows={16}
+              value={termsDraft}
+              onChange={(e) => setTermsDraft(e.target.value)}
+              style={{ minHeight: 280 }}
+            />
+          </div>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                void (async () => {
+                  const text = termsDraft.trim() || DEFAULT_TERMS_TEXT;
+                  await save({ terms_text: text });
+                  setSettings((s) => ({ ...s, terms_text: text }));
+                  setTermsEditOpen(false);
+                  flash("متن قوانین ذخیره شد");
+                })();
+              }}
+            >
+              <Icon name="check" size={15} />
+              ذخیره
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setTermsEditOpen(false)}>
               <Icon name="close" size={15} />
               لغو
             </button>

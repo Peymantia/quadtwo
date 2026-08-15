@@ -123,6 +123,7 @@ import {
   shuffledButtonStyles,
   guidePlatformPickerKeyboard,
   guideDownloadKeyboard,
+  termsAcceptKeyboard,
   type GuidePlatform,
   mainMenuReply,
   demoRoleInlineKeyboard,
@@ -239,6 +240,29 @@ async function requireChannel(ctx: Context) {
   return false;
 }
 
+/** Terms first, then channel — admins/demo bypass. */
+async function requireTerms(ctx: Context) {
+  if (!ctx.from) return true;
+  if (isDemoMode()) return true;
+  if (await isControlAdmin(ctx.from.id)) return true;
+
+  const { isTermsEnabled, getTermsText, hasAcceptedTerms } = await import("../services/terms.js");
+  if (!(await isTermsEnabled())) return true;
+
+  const user = await upsertUserFromTelegram(ctx.from);
+  if (await hasAcceptedTerms(user.id)) return true;
+
+  const text = await getTermsText();
+  await ctx.reply(text.slice(0, 4090), { reply_markup: termsAcceptKeyboard() });
+  return false;
+}
+
+async function requireAccess(ctx: Context) {
+  if (!(await requireTerms(ctx))) return false;
+  if (!(await requireChannel(ctx))) return false;
+  return true;
+}
+
 async function replyMainMenu(ctx: Context, preface?: string) {
   const user = await upsertUserFromTelegram(ctx.from!);
   const role = effectiveRole(ctx.from!.id, user.role);
@@ -294,6 +318,7 @@ function shouldEnsureMainKeyboard(ctx: Context): boolean {
     data === "menu:show" ||
     data === "menu:home" ||
     data === "check:channel" ||
+    data === "terms:accept" ||
     data.startsWith("demo:role:")
   ) {
     return true;
@@ -410,7 +435,7 @@ async function showServerlessDurationPicker(ctx: Context, edit = false) {
 }
 
 async function startBuyFlow(ctx: Context) {
-  if (!(await requireChannel(ctx))) return;
+  if (!(await requireAccess(ctx))) return;
   if (await isServerlessEnabled()) {
     await showServerlessDurationPicker(ctx);
     return;
@@ -853,10 +878,12 @@ async function buildPayMethodKeyboard(orderId: string, walletBalance: number) {
 }
 
 async function handleMyServices(ctx: Context) {
+  if (!(await requireAccess(ctx))) return;
   await showMyServicesList(ctx);
 }
 
 async function handleRenew(ctx: Context) {
+  if (!(await requireAccess(ctx))) return;
   const user = await upsertUserFromTelegram(ctx.from!);
   const subs = await listRenewableSubscriptions(user.id);
   if (!subs.length) {
@@ -877,6 +904,7 @@ async function handleRenew(ctx: Context) {
 }
 
 async function handleTest(ctx: Context) {
+  if (!(await requireAccess(ctx))) return;
   const rl = limitTestClaim(ctx.from!.id);
   if (!rl.ok) {
     await ctx.reply(`لطفاً ${rl.retryAfterSec} ثانیه صبر کنید و دوباره تلاش کنید.`);
@@ -922,6 +950,7 @@ async function guideIntroText() {
 }
 
 async function handleGuide(ctx: Context) {
+  if (!(await requireAccess(ctx))) return;
   await ctx.reply(await guideIntroText(), {
     reply_markup: guidePlatformPickerKeyboard(),
   });
@@ -969,6 +998,7 @@ async function showGuidePlatform(ctx: Context, platform: GuidePlatform) {
 }
 
 async function handleAccount(ctx: Context) {
+  if (!(await requireAccess(ctx))) return;
   const user = await upsertUserFromTelegram(ctx.from!);
   const role = effectiveRole(ctx.from!.id, user.role);
   const roleLabel = demoRoleLabel(role);
@@ -988,7 +1018,7 @@ async function handleAccount(ctx: Context) {
 }
 
 async function handleConfigLookup(ctx: Context) {
-  if (!(await requireChannel(ctx))) return;
+  if (!(await requireAccess(ctx))) return;
   waitingConfigLookup.add(ctx.from!.id);
   await ctx.reply("🔍 لطفاً لینک کانفیگ یا UUID را ارسال کنید.", {
     reply_markup: new InlineKeyboard().text("❌ انصراف", "cfglookup:cancel").danger(),
@@ -996,6 +1026,7 @@ async function handleConfigLookup(ctx: Context) {
 }
 
 async function handleDashboard(ctx: Context) {
+  if (!(await requireAccess(ctx))) return;
   const { resolveTenantIdOrPlatform, tenantDashUrl, getTenantById } = await import("../services/tenants.js");
   const { dashBaseUrl } = await import("../config/env.js");
   const tenant = await getTenantById(await resolveTenantIdOrPlatform());
@@ -1082,6 +1113,7 @@ async function handleDashOtpCode(ctx: Context) {
 }
 
 async function handleSupport(ctx: Context) {
+  if (!(await requireAccess(ctx))) return;
   const supportUser = (await getSetting("support_username")).trim().replace(/^@/, "");
   const supportId = (await getSetting("support_telegram_id")).trim();
 
@@ -1106,6 +1138,7 @@ async function handleSupport(ctx: Context) {
 }
 
 async function handlePartnerRequest(ctx: Context) {
+  if (!(await requireAccess(ctx))) return;
   if (await isServerlessEnabled()) {
     await ctx.reply("در شرایط فعلی درخواست همکاری فعال نیست.");
     return;
@@ -1277,7 +1310,7 @@ export function createBot(
   registerAdminConfigs(bot);
 
   bot.command("start", async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const payload = String(ctx.match || "").trim();
     if (payload.startsWith("offer_")) {
       const id = payload.slice("offer_".length);
@@ -1327,7 +1360,7 @@ export function createBot(
   /** Reload slash-command menu + reply keyboard after bot updates */
   bot.command("update", async (ctx) => {
     if (ctx.from) clearWaits(ctx.from.id);
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     await syncTelegramMenu(ctx.api).catch(() => undefined);
     await replyMainMenu(
       ctx,
@@ -1343,18 +1376,43 @@ export function createBot(
   });
 
   bot.command("hide", async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     await hideMainKeyboard(ctx);
   });
 
   bot.command("menu", async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     await replyMainMenu(ctx, "📌 منوی اصلی");
+  });
+
+  bot.callbackQuery("terms:accept", async (ctx) => {
+    if (!ctx.from) return;
+    await ctx.answerCallbackQuery({ text: "پذیرفته شد ✅" });
+    const user = await upsertUserFromTelegram(ctx.from);
+    const { markTermsAccepted, getTermsText, termsAcceptedMessage } = await import("../services/terms.js");
+    await markTermsAccepted(user.id);
+    const kept = termsAcceptedMessage(await getTermsText());
+    try {
+      await ctx.editMessageText(kept, { reply_markup: new InlineKeyboard() });
+    } catch {
+      await ctx.reply(kept).catch(() => undefined);
+    }
+    if (!(await requireChannel(ctx))) return;
+    await replyMainMenu(ctx, "قوانین پذیرفته شد ✅ — خوش آمدید");
+    await pinMiniAppBanner(ctx);
+  });
+
+  bot.callbackQuery("terms:decline", async (ctx) => {
+    await ctx.answerCallbackQuery({
+      text: "برای استفاده از ربات باید قوانین را بپذیرید",
+      show_alert: true,
+    });
+    await ctx.reply("انصراف ثبت شد.\nهر زمان قوانین را پذیرفتید، /start را بزنید.").catch(() => undefined);
   });
 
   bot.callbackQuery("check:channel", async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     await replyMainMenu(ctx, "عضویت تأیید شد ✅");
   });
 
@@ -1393,7 +1451,7 @@ export function createBot(
 
   bot.callbackQuery(/^sl:dur:(-?\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     if (!(await isServerlessEnabled())) {
       await ctx.reply("این بخش فعلاً فعال نیست.");
       return;
@@ -1414,7 +1472,7 @@ export function createBot(
 
   bot.callbackQuery(/^buy:cat:(?!cancel$)(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const cat = String(ctx.match![1] || "")
       .trim()
       .toLowerCase();
@@ -1451,7 +1509,7 @@ export function createBot(
 
   bot.callbackQuery(/^buy:offer:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const id = String(ctx.match![1] || "");
     const plan = (await listOfferPlans()).find((p) => p.id === id);
     if (!plan) {
@@ -1468,7 +1526,7 @@ export function createBot(
 
   bot.callbackQuery(/^buy:fixed:(unlimited|national|wholesale|reseller):(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const cat = String(ctx.match![1] || "");
     const id = String(ctx.match![2] || "");
     const roleUser = withEffectiveRole(await upsertUserFromTelegram(ctx.from!), ctx.from!.id);
@@ -1496,12 +1554,12 @@ export function createBot(
   });
 
   bot.command("services", async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     await handleMyServices(ctx);
   });
 
   bot.command("wallet", async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
     const wallet = await getWallet(user.id);
     await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
@@ -1519,7 +1577,7 @@ export function createBot(
   });
   bot.callbackQuery("m:national", async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     if (!(await getSalesCategories()).national) {
       await ctx.reply(NATIONAL_EMERGENCY_MSG);
       return;
@@ -1537,7 +1595,7 @@ export function createBot(
   });
   bot.callbackQuery("m:wallet", async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
     const wallet = await getWallet(user.id);
     await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
@@ -1824,7 +1882,7 @@ export function createBot(
     checkoutLocks.add(tid);
     try {
       await ctx.answerCallbackQuery({ text: "در حال ثبت…" });
-      if (!(await requireChannel(ctx))) return;
+      if (!(await requireAccess(ctx))) return;
       const rl = limitBuy(ctx.from!.id);
       if (!rl.ok) {
         await ctx.reply(`درخواست خرید زیاد است. ${rl.retryAfterSec} ثانیه صبر کنید.`);
@@ -2129,7 +2187,7 @@ export function createBot(
     // Receipts: photo or image document only
     if (!ctx.message.photo && !(ctx.message.document?.mime_type?.startsWith("image/"))) return;
 
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
     const pending = await findPendingPaymentOrder(user.id);
     if (!pending) return;
@@ -2842,7 +2900,7 @@ export function createBot(
   bot.hears(hearsBtn(BTN.renew), async (ctx) => handleRenew(ctx));
   bot.hears(hearsBtn(BTN.account), async (ctx) => handleAccount(ctx));
   bot.hears(hearsBtn(BTN.wallet), async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const user = await upsertUserFromTelegram(ctx.from!);
     const wallet = await getWallet(user.id);
     await ctx.reply(`💳 موجودی: ${formatToman(wallet.balance)}`, { reply_markup: walletMenuKeyboard() });
@@ -2916,7 +2974,7 @@ export function createBot(
     await replyMainMenu(ctx, `🎭 نقش دمو روی «${demoRoleLabel(role)}» تنظیم شد`);
   });
   bot.hears(hearsBtn(BTN.hideKeyboard), async (ctx) => {
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     await hideMainKeyboard(ctx);
   });
   bot.hears(hearsBtn(BTN.configLookup), async (ctx) => handleConfigLookup(ctx));
@@ -3246,7 +3304,7 @@ export function createBot(
 
   bot.callbackQuery(/^renew:checkout:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (!(await requireChannel(ctx))) return;
+    if (!(await requireAccess(ctx))) return;
     const rl = limitBuy(ctx.from!.id);
     if (!rl.ok) {
       await ctx.reply(`درخواست خرید زیاد است. ${rl.retryAfterSec} ثانیه صبر کنید.`);

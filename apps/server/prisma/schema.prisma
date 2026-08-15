@@ -116,6 +116,8 @@ model User {
   panelGroup    String?
   /// When user claimed the free 1-day / 250MB test account
   testClaimedAt DateTime?
+  /// When user accepted bot/web terms of use (قوانین)
+  termsAcceptedAt DateTime?
   /// scrypt hash for web dashboard password login
   passwordHash  String?
   passwordSetAt DateTime?

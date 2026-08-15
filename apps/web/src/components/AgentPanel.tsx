@@ -19,6 +19,8 @@ import { SalesReportPanel } from "./SalesReportPanel";
 import { ConfigCardActions } from "./ConfigCardActions";
 import { RenewModal, type RenewInfo } from "./RenewModal";
 import { QrCodeIcon } from "./QrCodeIcon";
+import { TermsViewModal } from "./TermsViewModal";
+import { DEFAULT_TERMS_TEXT } from "../lib/terms-default";
 
 type PayCard = { number: string; holder: string };
 type PayModalState =
@@ -82,6 +84,15 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   const [renewInfo, setRenewInfo] = useState<RenewInfo | null>(null);
   const [payModal, setPayModal] = useState<PayModalState>(null);
   const [qrSub, setQrSub] = useState<{ url: string; title: string } | null>(null);
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsText, setTermsText] = useState(DEFAULT_TERMS_TEXT);
+
+  const openTerms = useCallback(() => {
+    setTermsOpen(true);
+    void api<{ text: string }>("/me/terms")
+      .then((r) => setTermsText(r.text?.trim() || DEFAULT_TERMS_TEXT))
+      .catch(() => setTermsText(DEFAULT_TERMS_TEXT));
+  }, []);
 
   const loadConfigs = useCallback(
     () => api<{ items: ConfigItem[] }>("/partner/configs").then((r) => setConfigs(r.items ?? [])),
@@ -489,8 +500,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       active={tab}
       onTab={setTab}
       demoMode={Boolean(home.demoMode)}
+      showTerms={home.user.role !== "admin"}
+      onTerms={openTerms}
     >
       <Toast msg={msg} err={err} onClear={clearFlash} />
+      <TermsViewModal open={termsOpen} text={termsText} onClose={() => setTermsOpen(false)} />
       {confirmRotate && (
         <ConfirmToast
           message="با تغییر لینک ساب، اتصال فعلی قطع می‌شود. ادامه می‌دهید؟"

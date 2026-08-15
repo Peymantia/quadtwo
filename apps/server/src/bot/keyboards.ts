@@ -826,6 +826,14 @@ export function guideDownloadKeyboard(downloadUrl?: string) {
   return kb;
 }
 
+/** Terms gate — Universal emoji; Premium transform applies icon_custom_emoji_id. */
+export function termsAcceptKeyboard() {
+  return new InlineKeyboard()
+    .text("✅ تمامی قوانین را می‌پذیرم", "terms:accept")
+    .row()
+    .text("❌ نمی‌پذیرم - انصراف", "terms:decline");
+}
+
 export function buyDraftText(opts: {
   trafficGb: number | null;
   months: number;
@@ -993,7 +1001,9 @@ export function controlCenterKeyboard(opts?: { pendingPartners?: number }) {
     .row()
     .text("📖 آموزش و دانلود اپ", "cc:guide")
     .row()
+    .text("📜 قوانین", "cc:terms")
     .text("🧪 دریافت اکانت تست", "cc:test")
+    .row()
     .text("📱 محدودیت کاربر", "cc:iplimit")
     .row()
     .text("👑 ادمین‌ها", "cc:admins")

@@ -446,6 +446,14 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({ methods: await getPublicPaymentMethods() });
   });
 
+  api.get("/me/terms", async (c) => {
+    const { getTermsText, isTermsEnabled } = await import("../services/terms.js");
+    return c.json({
+      text: await getTermsText(),
+      enabled: await isTermsEnabled(),
+    });
+  });
+
   api.get("/me/subscriptions", async (c) => {
     const { ensureDemoSampleSubscriptions } = await import("../services/demo-samples.js");
     await ensureDemoSampleSubscriptions(c.get("userId"));

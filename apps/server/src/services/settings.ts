@@ -79,6 +79,10 @@ const defaults: Record<string, string> = {
   guide_windows_url: "https://github.com/2dust/v2rayN/releases/latest",
   guide_macos_url: "https://apps.apple.com/app/v2box/id6446814690",
   test_service_enabled: "true",
+  /** Force users to accept قوانین before using the bot */
+  terms_enabled: "false",
+  /** Full terms body; empty → built-in default in terms.ts */
+  terms_text: "",
   /** Promo / discount codes at checkout (admin toggle) */
   discount_codes_enabled: "false",
   /** Max % for partner/wholesale when creating codes (admin always up to 100) */

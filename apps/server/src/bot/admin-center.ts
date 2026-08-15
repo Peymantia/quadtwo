@@ -121,6 +121,7 @@ export const ccWait = new Map<
     }
   | { kind: "notif_thr"; key: "expiryDays" | "traffic" }
   | { kind: "guide_text" }
+  | { kind: "terms_text" }
   | { kind: "guide_url"; platform: "ios" | "android" | "windows" | "macos" | "extra" }
   | { kind: "iplimit" }
   | { kind: "backup_time" }
@@ -1699,6 +1700,83 @@ export function registerControlCenter(bot: Bot) {
     );
   });
 
+  bot.callbackQuery("cc:terms", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    const { isTermsEnabled, getTermsText } = await import("../services/terms.js");
+    const on = await isTermsEnabled();
+    const preview = (await getTermsText()).slice(0, 500);
+    await ctx.editMessageText(
+      [
+        "📜 قوانین استفاده",
+        "",
+        "اگر روشن باشد، کاربر بعد از ورود ابتدا قوانین را می‌پذیرد، سپس در صورت نیاز عضو کانال می‌شود.",
+        "",
+        `وضعیت: ${on ? "🟢 فعال (اجباری)" : "🔴 غیرفعال"}`,
+        "",
+        "پیش‌نمایش متن:",
+        preview + ((await getTermsText()).length > 500 ? "…" : ""),
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text(on ? "🔓 غیرفعال کردن" : "🔒 فعال کردن", "cc:terms:tog")
+          .row()
+          .text("✏️ ویرایش متن قوانین", "cc:terms:edit")
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
+  bot.callbackQuery("cc:terms:tog", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    const { isTermsEnabled, setTermsEnabled } = await import("../services/terms.js");
+    const on = await isTermsEnabled();
+    await setTermsEnabled(!on);
+    await ctx.answerCallbackQuery({ text: on ? "غیرفعال شد" : "فعال شد" });
+    // Re-render
+    const { getTermsText } = await import("../services/terms.js");
+    const preview = (await getTermsText()).slice(0, 500);
+    await ctx.editMessageText(
+      [
+        "📜 قوانین استفاده",
+        "",
+        "اگر روشن باشد، کاربر بعد از ورود ابتدا قوانین را می‌پذیرد، سپس در صورت نیاز عضو کانال می‌شود.",
+        "",
+        `وضعیت: ${!on ? "🟢 فعال (اجباری)" : "🔴 غیرفعال"}`,
+        "",
+        "پیش‌نمایش متن:",
+        preview + ((await getTermsText()).length > 500 ? "…" : ""),
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text(!on ? "🔓 غیرفعال کردن" : "🔒 فعال کردن", "cc:terms:tog")
+          .row()
+          .text("✏️ ویرایش متن قوانین", "cc:terms:edit")
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
+  bot.callbackQuery("cc:terms:edit", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
+    ccWait.set(ctx.from!.id, { kind: "terms_text" });
+    const { getTermsText } = await import("../services/terms.js");
+    await ctx.reply(
+      [
+        "متن کامل قوانین را در یک پیام بفرستید.",
+        "تیتر و بندها را با خط جدید جدا کنید.",
+        "",
+        "متن فعلی:",
+        (await getTermsText()).slice(0, 3500),
+        "",
+        "لغو: /cancel",
+      ].join("\n"),
+    );
+  });
+
   bot.callbackQuery("cc:test:tog", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     const on = (await getSetting("test_service_enabled")) === "true";
@@ -2541,6 +2619,16 @@ export async function handleControlCenterText(ctx: Context, text: string): Promi
     ccWait.delete(tid);
     await ctx.reply("متن خوش‌آمد ذخیره شد ✅", {
       reply_markup: new InlineKeyboard().text("🎛 کنترل سنتر", "cc:home"),
+    });
+    return true;
+  }
+
+  if (wait.kind === "terms_text") {
+    const { setTermsText } = await import("../services/terms.js");
+    await setTermsText(text);
+    ccWait.delete(tid);
+    await ctx.reply("متن قوانین ذخیره شد ✅", {
+      reply_markup: new InlineKeyboard().text("📜 قوانین", "cc:terms").row().text("🎛 کنترل سنتر", "cc:home"),
     });
     return true;
   }

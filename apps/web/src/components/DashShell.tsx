@@ -425,6 +425,9 @@ export function DashShell(props: {
   onTab: (key: string) => void;
   /** Open settings from top gear (settings tab removed from bottom nav) */
   onSettings?: () => void;
+  /** Show قوانین entry (non-admin). Opens via onTerms. */
+  showTerms?: boolean;
+  onTerms?: () => void;
   /** Server DEMO_MODE — show role switcher banner */
   demoMode?: boolean;
   children: ReactNode;
@@ -446,6 +449,9 @@ export function DashShell(props: {
   }, [props.tabs, isAdminPanel]);
   const settingsTab = useMemo(() => props.tabs.find((t) => t.key === "settings"), [props.tabs]);
   const hasSettings = isAdminPanel && Boolean(settingsTab || props.onSettings);
+  /** Non-admin: settings also listed in more sheet (قوانین · تنظیمات · خروج) */
+  const showSettingsInMore = hasSettings || (!isAdminPanel && Boolean(settingsTab || props.onSettings));
+  const showTerms = Boolean(props.showTerms && props.onTerms && !isAdminPanel);
 
   const { left, bubble, right, more } = useMemo(() => {
     const bubbleTab = navTabs.find((t) => t.bubble || t.key === "wallet") ?? null;
@@ -497,7 +503,7 @@ export function DashShell(props: {
     };
   }, [navTabs]);
 
-  const hasMore = more.length > 0 || hasSettings;
+  const hasMore = more.length > 0 || hasSettings || showTerms || showSettingsInMore;
   const moreActive = more.some((t) => t.key === props.active);
   const settingsActive = props.active === "settings";
   const bubbleActive = Boolean(bubble && props.active === bubble.key);
@@ -538,6 +544,11 @@ export function DashShell(props: {
     setMoreOpen(false);
     if (props.onSettings) props.onSettings();
     else props.onTab("settings");
+  }
+
+  function openTerms() {
+    setMoreOpen(false);
+    props.onTerms?.();
   }
 
   return (
@@ -608,6 +619,12 @@ export function DashShell(props: {
             </Fragment>
           ))}
           <div style={{ flex: 1 }} />
+          {showTerms && (
+            <button type="button" className="nav-item" onClick={openTerms}>
+              <Icon name="file" size={19} />
+              قوانین
+            </button>
+          )}
           <button type="button" className="nav-item" onClick={logout}>
             <Icon name="logout" size={19} />
             خروج
@@ -736,7 +753,13 @@ export function DashShell(props: {
             <div className="more-sheet-handle" />
             <div className="more-sheet-title">منوی بیشتر</div>
             <div className="more-sheet-grid">
-              {hasSettings && (
+              {showTerms && (
+                <button type="button" className="more-sheet-item" onClick={openTerms}>
+                  <Icon name="file" size={22} />
+                  <span>قوانین</span>
+                </button>
+              )}
+              {showSettingsInMore && (
                 <button
                   type="button"
                   className={`more-sheet-item${settingsActive ? " active" : ""}`}
