@@ -5,7 +5,7 @@ import { adminIds } from "../config/env.js";
 import { createXuiFromEnv, type XuiClient } from "../panel/xui-client.js";
 import { env } from "../config/env.js";
 import { getExtraAdminIds } from "./settings.js";
-import { partnerPanelGroupName, buildPanelGroupFromAgentName, sanitizePanelGroupSlug } from "./panel-groups.js";
+import { partnerPanelGroupName, buildPanelGroupFromAgentName, sanitizePanelGroupSlug, needsDedicatedPanelGroup } from "./panel-groups.js";
 import { createXuiFromPanel, listPanelServers, resolvePanelForCategory } from "./panel-servers.js";
 import { ensureDemoSampleSubscriptions } from "./demo-samples.js";
 
@@ -333,6 +333,65 @@ export async function demoteToUser(userId: string) {
   return prisma.user.update({
     where: { id: userId },
     data: { role: UserRole.user, panelGroup: null, agentName: null },
+  });
+}
+
+/**
+ * Admin edits display name + panel group (used for Sanaei comment + client grouping).
+ * Name may be Persian; group slug should be Latin/ASCII for 3x-ui.
+ */
+export async function adminUpdateUserIdentity(
+  userId: string,
+  patch: { agentName?: string | null; panelGroup?: string | null },
+): Promise<User> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("کاربر پیدا نشد");
+
+  const data: { agentName?: string | null; panelGroup?: string | null } = {};
+
+  if ("agentName" in patch) {
+    const raw = patch.agentName == null ? "" : String(patch.agentName).trim();
+    if (raw && raw.length < 2) throw new Error("نام خیلی کوتاه است (حداقل ۲ کاراکتر).");
+    data.agentName = raw ? raw.slice(0, 64) : null;
+  }
+
+  if ("panelGroup" in patch) {
+    const raw = patch.panelGroup == null ? "" : String(patch.panelGroup).trim();
+    if (!raw) {
+      data.panelGroup = null;
+    } else {
+      const slug = sanitizePanelGroupSlug(raw);
+      if (!slug) {
+        throw new Error(
+          "نام گروه باید شامل حروف یا عدد انگلیسی باشد.\nمثال: AliShop یا Group01",
+        );
+      }
+      data.panelGroup = slug.slice(0, 32);
+    }
+  }
+
+  if (!Object.keys(data).length) return user;
+
+  const nextGroup = "panelGroup" in data ? data.panelGroup : user.panelGroup;
+  const oldGroup = user.panelGroup?.trim() ?? "";
+  const newGroup = nextGroup?.trim() ?? "";
+
+  if (newGroup && newGroup !== oldGroup) {
+    if (oldGroup && needsDedicatedPanelGroup(user.role)) {
+      await renamePanelGroupEverywhere(oldGroup, newGroup);
+    } else {
+      try {
+        const xui = await xuiForAgentGroups();
+        await xui.createGroup(newGroup);
+      } catch {
+        /* exists or offline */
+      }
+    }
+  }
+
+  return prisma.user.update({
+    where: { id: userId },
+    data,
   });
 }
 

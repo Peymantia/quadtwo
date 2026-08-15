@@ -6,7 +6,7 @@ import { env } from "../config/env.js";
 import { prisma } from "../db.js";
 import type { XuiClient } from "../panel/xui-client.js";
 import { gbToBytes, monthsToMs, firstConnectExpiryMs, randomSubId, shortCode } from "../utils/format.js";
-import { ensureClientsInGroup, resolveClientGroup } from "./panel-groups.js";
+import { ensureClientsInGroup, resolveClientGroup, buildPanelClientComment } from "./panel-groups.js";
 import {
   resolvePanelForCategory,
   resolvePanelForSubscription,
@@ -510,7 +510,7 @@ async function createOnePanelClient(
           limitIp,
           tgId: Number(user.telegramId),
           subId,
-          comment: email,
+          comment: buildPanelClientComment(user),
         },
         inboundIds: opts.inboundIds,
       });

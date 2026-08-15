@@ -54,7 +54,39 @@ type PendingOrder = {
   hasReceiptImage?: boolean;
   createdAt: string;
   provisionError?: string | null;
-  user: { username: string | null; telegramId: string; firstName: string | null };
+  user: {
+    username: string | null;
+    telegramId: string;
+    firstName: string | null;
+    role?: string;
+    roleLabel?: string;
+  };
+};
+
+type OrderFulfilledReport = {
+  orderId: string;
+  title: string;
+  amountLabel: string;
+  price: number;
+  buyer: {
+    username: string | null;
+    firstName: string | null;
+    telegramId: string;
+    role: string;
+    roleLabel: string;
+    agentName: string | null;
+  };
+  receiptText: string | null;
+  hasReceiptImage: boolean;
+  orderSummary: string;
+  orderKind: string;
+  configs: Array<{
+    code: string;
+    email: string;
+    subUrl: string | null;
+    expiresAt: string | null;
+  }>;
+  walletBalance?: number;
 };
 
 type AdminUser = {
@@ -629,6 +661,7 @@ function OrdersTab({ flash }: { flash: Flash }) {
   const [orders, setOrders] = useState<PendingOrder[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState<Record<string, string>>({});
+  const [fulfilled, setFulfilled] = useState<OrderFulfilledReport | null>(null);
 
   const load = useCallback(
     () => api<{ orders: PendingOrder[] }>("/admin/orders/pending").then((r) => setOrders(r.orders)),
@@ -652,17 +685,24 @@ function OrdersTab({ flash }: { flash: Flash }) {
           return n;
         });
       } else {
-        const r = await api<{ code?: string; walletBalance?: number; serverlessPending?: boolean }>(
-          `/admin/orders/${id}/approve`,
-          { body: {} },
-        );
-        flash(
-          r.walletBalance !== undefined
-            ? "کیف پول کاربر شارژ شد ✅"
-            : r.serverlessPending
-              ? "تأیید شد — منتظر ارسال لینک ساب از ربات"
-              : `تأیید شد ✅ ${r.code ?? ""}`,
-        );
+        const r = await api<{
+          code?: string;
+          walletBalance?: number;
+          serverlessPending?: boolean;
+          report?: OrderFulfilledReport | null;
+        }>(`/admin/orders/${id}/approve`, { body: {} });
+        if (r.report) {
+          setFulfilled(r.report);
+          flash(r.report.title);
+        } else {
+          flash(
+            r.walletBalance !== undefined
+              ? "کیف پول کاربر شارژ شد ✅"
+              : r.serverlessPending
+                ? "تأیید شد — منتظر ارسال لینک ساب از ربات"
+                : `تأیید شد ✅ ${r.code ?? ""}`,
+          );
+        }
       }
       await load();
     } catch (e) {
@@ -681,6 +721,7 @@ function OrdersTab({ flash }: { flash: Flash }) {
   };
 
   return (
+    <>
     <div className="panel">
       <h2>سفارش‌های در انتظار بررسی</h2>
       <div className="list">
@@ -706,6 +747,11 @@ function OrdersTab({ flash }: { flash: Flash }) {
               {payMethodLabel(o.paymentMethod) && (
                 <span className="badge info" style={{ marginInlineStart: 6 }}>
                   {payMethodLabel(o.paymentMethod)}
+                </span>
+              )}
+              {o.user.roleLabel && (
+                <span className="badge" style={{ marginInlineStart: 6 }}>
+                  {o.user.roleLabel}
                 </span>
               )}
               <pre className="muted" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", margin: "7px 0 0" }}>
@@ -768,6 +814,118 @@ function OrdersTab({ flash }: { flash: Flash }) {
         {!orders.length && <p className="muted">سفارش باز وجود ندارد.</p>}
       </div>
     </div>
+
+    {fulfilled && (
+      <Modal open title={fulfilled.title} onClose={() => setFulfilled(null)} wide>
+        <div className="order-fulfilled">
+          {(fulfilled.receiptText || fulfilled.hasReceiptImage) && (
+            <div className="order-receipt-box">
+              <div className="order-receipt-box__title">رسید تأییدشده</div>
+              {fulfilled.receiptText ? (
+                <div className="order-receipt-box__text" dir="auto">
+                  {fulfilled.receiptText}
+                </div>
+              ) : null}
+              {fulfilled.hasReceiptImage && <OrderReceiptImage orderId={fulfilled.orderId} />}
+            </div>
+          )}
+
+          <div className="grid" style={{ marginTop: 12 }}>
+            <div className="stat accent">
+              <div className="label">مبلغ</div>
+              <div className="value num">{fulfilled.amountLabel}</div>
+            </div>
+            <div className="stat">
+              <div className="label">نوع همکاری</div>
+              <div className="value" style={{ fontSize: "1rem" }}>
+                {fulfilled.buyer.roleLabel}
+              </div>
+            </div>
+          </div>
+
+          <h2 style={{ marginTop: 16, fontSize: "1rem" }}>مشخصات خریدار</h2>
+          <div className="muted" style={{ lineHeight: 1.7 }}>
+            {[
+              fulfilled.buyer.firstName,
+              fulfilled.buyer.username ? `@${fulfilled.buyer.username}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "—"}
+            <br />
+            آی‌دی تلگرام: <span className="num">{fulfilled.buyer.telegramId}</span>
+            {fulfilled.buyer.agentName ? (
+              <>
+                <br />
+                برند / نماینده: {fulfilled.buyer.agentName}
+              </>
+            ) : null}
+          </div>
+
+          <h2 style={{ marginTop: 16, fontSize: "1rem" }}>خلاصه سفارش</h2>
+          <pre className="muted" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", margin: 0 }}>
+            {fulfilled.orderSummary}
+          </pre>
+
+          {fulfilled.walletBalance != null && (
+            <>
+              <h2 style={{ marginTop: 16, fontSize: "1rem" }}>کیف پول</h2>
+              <p className="num" style={{ margin: 0 }}>
+                موجودی پس از شارژ: {formatToman(fulfilled.walletBalance)}
+              </p>
+            </>
+          )}
+
+          {fulfilled.configs.length > 0 && (
+            <>
+              <h2 style={{ marginTop: 16, fontSize: "1rem" }}>مشخصات کانفیگ</h2>
+              <div className="list" style={{ gap: 8 }}>
+                {fulfilled.configs.map((cfg) => (
+                  <div key={cfg.code} className="row-card row-card--stack">
+                    <div>
+                      <strong className="num">{cfg.code}</strong>
+                      <div className="muted" dir="ltr" style={{ textAlign: "left" }}>
+                        {cfg.email}
+                      </div>
+                      {cfg.expiresAt && (
+                        <div className="muted">انقضا: {formatExpiryDate(cfg.expiresAt)}</div>
+                      )}
+                      {cfg.subUrl && (
+                        <div className="muted url-break" dir="ltr" style={{ textAlign: "left", marginTop: 4 }}>
+                          {cfg.subUrl}
+                        </div>
+                      )}
+                    </div>
+                    {cfg.subUrl && (
+                      <div className="actions">
+                        <button
+                          type="button"
+                          className="btn ghost sm"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(cfg.subUrl!).then(
+                              () => flash("لینک کپی شد"),
+                              () => flash(null, "کپی ناموفق"),
+                            );
+                          }}
+                        >
+                          کپی لینک
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="actions" style={{ marginTop: 16 }}>
+            <button type="button" className="btn primary" onClick={() => setFulfilled(null)}>
+              بستن
+            </button>
+          </div>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -793,6 +951,9 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
   const [partnerBusy, setPartnerBusy] = useState<string | null>(null);
   const [discountPctDraft, setDiscountPctDraft] = useState("30");
   const [discountBusy, setDiscountBusy] = useState(false);
+  const [identityName, setIdentityName] = useState("");
+  const [identityGroup, setIdentityGroup] = useState("");
+  const [identityBusy, setIdentityBusy] = useState(false);
   const [detail, setDetail] = useState<{
     txs: Array<{ id: string; amount: number; type: string; note: string | null; createdAt: string }>;
     subscriptions: Array<{ id: string; code: string; status: string; expiresAt: string }>;
@@ -823,15 +984,21 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
   useEffect(() => {
     if (!selected) {
       setDetail(null);
+      setIdentityName("");
+      setIdentityGroup("");
       return;
     }
     setDiscountPctDraft(String(selected.discountMaxPercent ?? 30));
+    setIdentityName(selected.agentName ?? "");
+    setIdentityGroup(selected.panelGroup ?? "");
     void api<NonNullable<typeof detail> & { user: AdminUser }>(`/admin/users/${selected.id}`).then((r) => {
       setDetail({ txs: r.txs, subscriptions: r.subscriptions });
       setSelected((s) =>
         s && s.id === r.user.id
           ? {
               ...s,
+              agentName: r.user.agentName ?? null,
+              panelGroup: r.user.panelGroup ?? null,
               discountCodesAllowed: r.user.discountCodesAllowed ?? true,
               discountMaxPercent: r.user.discountMaxPercent ?? 30,
               useCustomPricing: r.user.useCustomPricing ?? false,
@@ -840,6 +1007,8 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
           : s,
       );
       setDiscountPctDraft(String(r.user.discountMaxPercent ?? 30));
+      setIdentityName(r.user.agentName ?? "");
+      setIdentityGroup(r.user.panelGroup ?? "");
     });
   }, [selected?.id]);
 
@@ -926,6 +1095,40 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       flash(null, errText(e));
     } finally {
       setDiscountBusy(false);
+    }
+  }
+
+  async function saveIdentity() {
+    if (!selected) return;
+    setIdentityBusy(true);
+    try {
+      const r = await api<{ user: { agentName: string | null; panelGroup: string | null } }>(
+        `/admin/users/${selected.id}/identity`,
+        {
+          method: "PATCH",
+          body: {
+            agentName: identityName.trim() || null,
+            panelGroup: identityGroup.trim() || null,
+          },
+        },
+      );
+      flash("نام و گروه ذخیره شد");
+      setSelected((s) =>
+        s
+          ? {
+              ...s,
+              agentName: r.user.agentName,
+              panelGroup: r.user.panelGroup,
+            }
+          : s,
+      );
+      setIdentityName(r.user.agentName ?? "");
+      setIdentityGroup(r.user.panelGroup ?? "");
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setIdentityBusy(false);
     }
   }
 
@@ -1139,6 +1342,38 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                 </div>
               </div>
             )}
+          </div>
+
+          <h2 style={{ marginTop: 16, fontSize: "1rem" }}>نام و گروه</h2>
+          <p className="muted" style={{ marginTop: 0, marginBottom: 10, fontSize: "0.88rem" }}>
+            کامنت اکانت در سنایی به‌ترتیب از: نام ← گروه ← یوزرنیم تلگرام ← آی‌دی تلگرام
+          </p>
+          <div className="field">
+            <label htmlFor="admin-user-identity-name">نام</label>
+            <input
+              id="admin-user-identity-name"
+              value={identityName}
+              onChange={(e) => setIdentityName(e.target.value)}
+              placeholder="نام نمایشی برای کامنت پنل"
+              maxLength={64}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="admin-user-identity-group">گروه کاربر</label>
+            <input
+              id="admin-user-identity-group"
+              value={identityGroup}
+              onChange={(e) => setIdentityGroup(e.target.value)}
+              placeholder="مثلاً AliShop (حروف/عدد انگلیسی)"
+              maxLength={32}
+              dir="ltr"
+              style={{ textAlign: "left" }}
+            />
+          </div>
+          <div className="actions" style={{ marginBottom: 8 }}>
+            <button type="button" className="btn primary sm" disabled={identityBusy} onClick={() => void saveIdentity()}>
+              ذخیره نام و گروه
+            </button>
           </div>
 
           {(selected.role === "partner" || selected.role === "wholesale" || selected.role === "reseller") && (

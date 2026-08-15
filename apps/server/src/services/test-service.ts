@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { randomSubId, shortCode } from "../utils/format.js";
 import { resolvePanelForCategory } from "./panel-servers.js";
 import { resolveSubUrl } from "./provision.js";
-import { ensureClientsInGroup, TELEGRAM_GROUP } from "./panel-groups.js";
+import { ensureClientsInGroup, TELEGRAM_GROUP, buildPanelClientComment } from "./panel-groups.js";
 import { getDefaultLimitIp, getSetting } from "./settings.js";
 import { isDemoMode } from "./license.js";
 
@@ -124,7 +124,7 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
       limitIp,
       tgId: Number(user.telegramId),
       subId,
-      comment: `test:${user.telegramId}`,
+      comment: buildPanelClientComment(user),
     },
     inboundIds: resolved.inboundIds,
   });

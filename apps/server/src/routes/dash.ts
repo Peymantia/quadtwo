@@ -95,7 +95,8 @@ import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseF
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { mapPriceOverride } from "../services/user-price-overrides.js";
-import { approvePartner, demoteToUser, listPendingPartnerRequests, rejectPartner, submitPartnerRequest } from "../services/users.js";
+import { adminUpdateUserIdentity, approvePartner, demoteToUser, listPendingPartnerRequests, rejectPartner, submitPartnerRequest } from "../services/users.js";
+import { roleLabelFa } from "../services/roles.js";
 import { formatTraffic, formatToman, persianMonthName } from "../utils/format.js";
 import { adminSalesReport, searchUsersAndOrders, buildSalesStats, parseSalesPeriod, agentsSalesLeaderboard } from "../services/admin-reports.js";
 import { listConfigGroups, listConfigsForGroup, deleteConfig, getConfigDetail, updateConfig, diffPanelVsBot, importPanelClientsToBot, reconcileSubscriptionsFromPanel, refreshSubscriptionFromPanel, selectiveSync, undoLastSync, getSyncUndoStatus, endingUrgencyDays, type ConfigListSort } from "../services/admin-configs.js";
@@ -1852,6 +1853,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           username: o.user.username,
           telegramId: String(o.user.telegramId),
           firstName: o.user.firstName,
+          role: o.user.role,
+          roleLabel: roleLabelFa(o.user.role),
         },
         provisionError: o.status === "paid" ? o.adminNote : null,
       })),
@@ -1893,14 +1896,30 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           order.user.telegramId,
           `✅ کیف پول شارژ شد\nموجودی: ${formatToman(result.balance)}`,
         );
-        const { finalizeOrderAdminMessages, orderApprovedAdminStatus } = await import(
-          "../services/order-notify.js"
-        );
-        void finalizeOrderAdminMessages(
-          orderId,
-          orderApprovedAdminStatus({ kind: order.kind, price: order.price, wallet: true }),
-        );
-        return c.json({ ok: true, walletBalance: result.balance });
+        const { notifyAdminsOrderFulfilled } = await import("../services/order-notify.js");
+        const report = await notifyAdminsOrderFulfilled(orderId, {
+          walletBalance: result.balance,
+        });
+        return c.json({
+          ok: true,
+          walletBalance: result.balance,
+          report: report
+            ? {
+                title: report.title,
+                amountLabel: report.amountLabel,
+                price: report.price,
+                buyer: report.buyer,
+                receiptText: report.receiptText,
+                hasReceiptImage: report.hasReceiptImage,
+                orderSummary: report.orderSummary,
+                orderKind: report.orderKind,
+                configs: report.configs,
+                walletBalance: report.walletBalance,
+                text: report.text,
+                orderId,
+              }
+            : null,
+        });
       }
       if (isServerlessPending(result)) {
         return c.json({ ok: true, serverlessPending: true });
@@ -1912,32 +1931,57 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
           : order.kind === "renew"
             ? "renew"
             : "new";
+      const provisioned = result as import("../services/provision.js").ProvisionResultWithBulk;
       try {
-        await deliverProvisionToUser(order.user.telegramId, result, order.trafficGb, mode);
+        await deliverProvisionToUser(order.user.telegramId, provisioned, order.trafficGb, mode);
       } catch (err) {
         console.error("deliverProvisionToUser after web approve", err);
         await notifyTelegram(
           order.user.telegramId,
-          `✅ سفارش شما تأیید شد\nکد: ${result.code}${result.subUrl ? `\nلینک اشتراک:\n${result.subUrl}` : ""}`,
+          `✅ سفارش شما تأیید شد\nکد: ${provisioned.code}${provisioned.subUrl ? `\nلینک اشتراک:\n${provisioned.subUrl}` : ""}`,
         );
       }
-      const { finalizeOrderAdminMessages, orderApprovedAdminStatus } = await import(
-        "../services/order-notify.js"
-      );
-      void finalizeOrderAdminMessages(
-        orderId,
-        orderApprovedAdminStatus({
-          kind: order.kind,
-          price: order.price,
-          code: result.code,
-          quantity: order.quantity,
-        }),
-      );
+      const { notifyAdminsOrderFulfilled } = await import("../services/order-notify.js");
+      const report = await notifyAdminsOrderFulfilled(orderId, {
+        provision: {
+          code: provisioned.code,
+          email: provisioned.email,
+          subUrl: provisioned.subUrl,
+          expiresAt: provisioned.expiresAt,
+          bulk: provisioned.bulk?.map((b) => ({
+            code: b.code,
+            email: b.email,
+            subUrl: b.subUrl,
+            expiresAt: b.expiresAt,
+          })),
+        },
+      });
       return c.json({
         ok: true,
-        code: result.code,
-        subUrl: result.subUrl,
-        subscriptionId: result.subscriptionId,
+        code: provisioned.code,
+        subUrl: provisioned.subUrl,
+        subscriptionId: provisioned.subscriptionId,
+        email: provisioned.email,
+        expiresAt:
+          provisioned.expiresAt instanceof Date
+            ? provisioned.expiresAt.toISOString()
+            : provisioned.expiresAt,
+        report: report
+          ? {
+              title: report.title,
+              amountLabel: report.amountLabel,
+              price: report.price,
+              buyer: report.buyer,
+              receiptText: report.receiptText,
+              hasReceiptImage: report.hasReceiptImage,
+              orderSummary: report.orderSummary,
+              orderKind: report.orderKind,
+              configs: report.configs,
+              walletBalance: report.walletBalance,
+              text: report.text,
+              orderId,
+            }
+          : null,
       });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
@@ -2884,6 +2928,37 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         createdAt: o.createdAt.toISOString(),
       })),
     });
+  });
+
+  /** Admin edit: display name + panel group (Sanaei comment priority uses these). */
+  api.patch("/admin/users/:id/identity", async (c) => {
+    const body = await c.req.json<{ agentName?: string | null; panelGroup?: string | null }>();
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
+    if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    try {
+      const updated = await adminUpdateUserIdentity(target.id, {
+        ...("agentName" in body ? { agentName: body.agentName } : {}),
+        ...("panelGroup" in body ? { panelGroup: body.panelGroup } : {}),
+      });
+      await auditLog({
+        action: "web_user_identity",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: updated.id,
+        detail: `name:${updated.agentName ?? "—"} group:${updated.panelGroup ?? "—"}`,
+      });
+      return c.json({
+        ok: true,
+        user: {
+          id: updated.id,
+          agentName: updated.agentName,
+          panelGroup: updated.panelGroup,
+        },
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
   });
 
   /** Per-agent discount: allow codes + max percent (partner / reseller / wholesale). */

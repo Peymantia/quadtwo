@@ -65,6 +65,25 @@ export function resolveClientGroup(user: User): string {
   );
 }
 
+/**
+ * 3x-ui client comment for new accounts — admin-set identity first.
+ * Priority: نام → نام گروه → یوزرنیم تلگرام → آی‌دی تلگرام
+ */
+export function buildPanelClientComment(user: {
+  agentName?: string | null;
+  panelGroup?: string | null;
+  username?: string | null;
+  telegramId: bigint | number | string;
+}): string {
+  const name = user.agentName?.trim();
+  if (name) return name.slice(0, 128);
+  const group = user.panelGroup?.trim();
+  if (group) return group.slice(0, 128);
+  const uname = user.username?.trim().replace(/^@+/, "");
+  if (uname) return uname.slice(0, 128);
+  return String(user.telegramId);
+}
+
 /** Block checkout until agent name + panel group are ready. */
 export function assertAgentReadyForPurchase(user: User): { ok: true } | { ok: false; message: string } {
   if (user.role === "admin") {

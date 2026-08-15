@@ -2538,22 +2538,18 @@ export function createBot(
         target: orderId,
       });
       const result = await fulfillAfterPaid(orderId);
-      const { finalizeOrderAdminMessages, orderApprovedAdminStatus } = await import(
-        "../services/order-notify.js"
-      );
       if ("kind" in result && result.kind === "wallet_credit") {
         await ctx.api.sendMessage(
           Number(order.user.telegramId),
           `✅ کیف پول شارژ شد\nموجودی: ${formatToman(result.balance)}`,
         );
-        const status = orderApprovedAdminStatus({
-          kind: order.kind,
-          price: order.price,
-          wallet: true,
+        const { notifyAdminsOrderFulfilled } = await import("../services/order-notify.js");
+        const report = await notifyAdminsOrderFulfilled(orderId, {
+          walletBalance: result.balance,
         });
-        void finalizeOrderAdminMessages(orderId, status);
-        await ctx.editMessageCaption({ caption: status }).catch(() => undefined);
-        await ctx.editMessageText(status).catch(() => undefined);
+        if (report && ctx.from?.id && !(await listNotifyAdminTelegramIds()).includes(ctx.from.id)) {
+          await ctx.reply(report.text).catch(() => undefined);
+        }
         return;
       }
       if (isServerlessPending(result)) {
@@ -2576,16 +2572,25 @@ export function createBot(
         target: orderId,
         detail: provisioned.code,
       });
-      const qty = order.quantity ?? 1;
-      const status = orderApprovedAdminStatus({
-        kind: order.kind,
-        price: order.price,
-        code: provisioned.code,
-        quantity: qty,
+      const { notifyAdminsOrderFulfilled } = await import("../services/order-notify.js");
+      const report = await notifyAdminsOrderFulfilled(orderId, {
+        provision: {
+          code: provisioned.code,
+          email: provisioned.email,
+          subUrl: provisioned.subUrl,
+          expiresAt: provisioned.expiresAt,
+          bulk: provisioned.bulk?.map((b) => ({
+            code: b.code,
+            email: b.email,
+            subUrl: b.subUrl,
+            expiresAt: b.expiresAt,
+          })),
+        },
       });
-      void finalizeOrderAdminMessages(orderId, status);
-      await ctx.editMessageCaption({ caption: status }).catch(() => undefined);
-      await ctx.editMessageText(status).catch(() => undefined);
+      // Approving admin already gets the broadcast; if they aren't in notify list, reply locally
+      if (report && ctx.from?.id && !(await listNotifyAdminTelegramIds()).includes(ctx.from.id)) {
+        await ctx.reply(report.text).catch(() => undefined);
+      }
     } catch (err) {
       console.error(err);
       await auditLog({
