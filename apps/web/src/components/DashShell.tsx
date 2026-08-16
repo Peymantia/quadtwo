@@ -503,7 +503,11 @@ export function DashShell(props: {
     };
   }, [navTabs]);
 
-  const hasMore = more.length > 0 || hasSettings || showTerms || showSettingsInMore;
+  const hasMore =
+    hasSettings ||
+    showTerms ||
+    showSettingsInMore ||
+    (isAdminPanel && more.length > 0);
   const moreActive = more.some((t) => t.key === props.active);
   const settingsActive = props.active === "settings";
   const bubbleActive = Boolean(bubble && props.active === bubble.key);
@@ -753,12 +757,6 @@ export function DashShell(props: {
             <div className="more-sheet-handle" />
             <div className="more-sheet-title">منوی بیشتر</div>
             <div className="more-sheet-grid">
-              {showTerms && (
-                <button type="button" className="more-sheet-item" onClick={openTerms}>
-                  <Icon name="file" size={22} />
-                  <span>قوانین</span>
-                </button>
-              )}
               {showSettingsInMore && (
                 <button
                   type="button"
@@ -771,17 +769,25 @@ export function DashShell(props: {
                   <span>تنظیمات</span>
                 </button>
               )}
-              {more.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  className={`more-sheet-item${props.active === t.key ? " active" : ""}`}
-                  onClick={() => pickTab(t.key)}
-                >
-                  <Icon name={t.icon} size={22} />
-                  <span>{t.label}</span>
+              {showTerms && (
+                <button type="button" className="more-sheet-item" onClick={openTerms}>
+                  <Icon name="file" size={22} />
+                  <span>قوانین</span>
                 </button>
-              ))}
+              )}
+              {/* Admin overflow tabs only — non-admin more menu is just تنظیمات · قوانین · خروج */}
+              {isAdminPanel &&
+                more.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    className={`more-sheet-item${props.active === t.key ? " active" : ""}`}
+                    onClick={() => pickTab(t.key)}
+                  >
+                    <Icon name={t.icon} size={22} />
+                    <span>{t.label}</span>
+                  </button>
+                ))}
               <button
                 type="button"
                 className="more-sheet-item more-sheet-item--logout"

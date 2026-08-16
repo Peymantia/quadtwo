@@ -955,7 +955,7 @@ export function notifSettingsText(cfg: NotifConfig) {
     "",
     "⚠️ هشدار قبل از حذف",
     `  • وضعیت: ${on(cfg.preDelete.enabled)}`,
-    `  • ~${cfg.preDelete.hours} ساعت قبل از حذف خودکار سرویس از پنل`,
+    `  • بعد از انقضا، تا ~${cfg.preDelete.hours} ساعت قبل از حذف خودکار از پنل`,
     "",
     "🗑 حذف نهایی سرویس",
     `  • وضعیت: ${on(cfg.deleted.enabled)}`,

@@ -122,10 +122,9 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
     if (cfg.preDelete.enabled && clockStarted) {
       const msAfter = now - sub.expiresAt.getTime();
       const hoursPast = msAfter / MS_HOUR;
-      const msUntil = sub.expiresAt.getTime() - now;
-      const inWindow =
-        (msUntil > 0 && msUntil <= cfg.preDelete.hours * MS_HOUR) ||
-        (msAfter >= 0 && hoursPast <= cfg.preDelete.hours);
+      // Only after expiry (grace before auto-delete). Before expiry, expiryDays covers it —
+      // otherwise users get two near-identical warnings ~24h before end.
+      const inWindow = msAfter >= 0 && hoursPast <= cfg.preDelete.hours;
       if (inWindow) {
         const bucket = `pre:${sub.expiresAt.getTime()}:${cfg.preDelete.hours}`;
         if (!(await alreadySent(sub.id, "preDelete", bucket))) {
@@ -136,7 +135,7 @@ export async function runNotificationSweep(api: Api): Promise<{ sent: number; ch
               "⚠️ هشدار قبل از حذف",
               "",
               `سرویس: ${sub.code} (${sub.email})`,
-              `حدود ${cfg.preDelete.hours} ساعت تا حذف خودکار از پنل باقی مانده (یا اخیراً منقضی شده).`,
+              `حدود ${Math.max(0, Math.round(cfg.preDelete.hours - hoursPast))} ساعت تا حذف خودکار از پنل باقی مانده.`,
               "اگر تمدید نکنید، سرویس از پنل پاک می‌شود.",
               "",
               canOfferRenew ? "برای تمدید، دکمه زیر را بزنید." : "سرویس تست قابل تمدید نیست — سرویس اصلی بخرید.",

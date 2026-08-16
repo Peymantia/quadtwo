@@ -3463,6 +3463,41 @@ summary:focus-visible,
 .modal-body {
   padding: 14px 18px 18px;
   overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.terms-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  max-height: min(68dvh, 520px);
+}
+
+.terms-modal-text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  line-height: 1.75;
+  overflow: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.terms-modal-actions {
+  flex-shrink: 0;
+  margin: 0;
+  padding-top: 4px;
+}
+
+.terms-modal-actions .btn {
+  width: 100%;
+  white-space: normal;
+  line-height: 1.35;
+  min-height: 44px;
 }
 
 /* Card-to-card payment destination */
