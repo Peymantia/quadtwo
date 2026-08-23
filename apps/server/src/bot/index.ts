@@ -87,6 +87,7 @@ import {
   draftDisplayPrice,
   draftPrice,
   getOrCreateDraft,
+  resetDraftAccountName,
   setDraftCategory,
   setDraftNameMode,
   setDraftDiscountCode,
@@ -436,6 +437,8 @@ async function showServerlessDurationPicker(ctx: Context, edit = false) {
 
 async function startBuyFlow(ctx: Context) {
   if (!(await requireAccess(ctx))) return;
+  // Don't reuse a previous custom account name on the next purchase
+  await resetDraftAccountName(BigInt(ctx.from!.id)).catch(() => undefined);
   if (await isServerlessEnabled()) {
     await showServerlessDurationPicker(ctx);
     return;
@@ -1955,6 +1958,8 @@ export function createBot(
           detail: `${order.kind} ${formatToman(order.price)}`,
         });
       }
+      // Custom name was applied to this order — next buy should start as random
+      await resetDraftAccountName(BigInt(tid)).catch(() => undefined);
       if (order.price <= 0) {
         try {
           await ctx.editMessageText(`${orderSummaryText(order)}\n\n✅ رایگان (ادمین) — در حال آماده‌سازی…`);

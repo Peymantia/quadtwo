@@ -260,6 +260,11 @@ export async function setDraftNameMode(telegramId: bigint, mode: "random" | "cus
   });
 }
 
+/** After a purchase uses a custom name, clear it so the next buy defaults to random. */
+export async function resetDraftAccountName(telegramId: bigint) {
+  return setDraftNameMode(telegramId, "random");
+}
+
 export async function setDraftDiscountCode(telegramId: bigint, code: string | null) {
   const { normalizeDiscountCode } = await import("../services/discount-codes.js");
   const { where } = await buyDraftKey(telegramId);
