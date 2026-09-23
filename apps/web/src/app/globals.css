@@ -709,12 +709,16 @@ h3 {
 .field select,
 .field textarea {
   border: 1px solid var(--line);
-  background: var(--elev);
+  background-color: var(--elev);
   color: var(--text);
   border-radius: var(--radius-sm);
   padding: 13px 15px;
   outline: none;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.field select {
+  color-scheme: inherit;
 }
 
 .field input:focus,
@@ -725,7 +729,8 @@ h3 {
 }
 
 .field select option {
-  background: var(--card-solid);
+  background: var(--card-solid, var(--elev));
+  color: var(--text);
 }
 
 .btn {
@@ -1840,6 +1845,17 @@ html[data-theme="light"] .quick-action-btn {
   box-sizing: border-box;
 }
 
+.users-filters .field select {
+  background-color: var(--elev);
+  color: var(--text);
+  color-scheme: inherit;
+}
+
+.users-filters .field select option {
+  background: var(--card-solid, var(--elev));
+  color: var(--text);
+}
+
 .users-list {
   display: grid;
   grid-template-columns: 1fr;
@@ -1967,7 +1983,7 @@ html[data-theme="light"] .quick-action-btn {
   min-height: 40px;
   box-sizing: border-box;
   border: 1px solid var(--line);
-  background: var(--elev);
+  background-color: var(--elev);
   color: var(--text);
   border-radius: 9px;
   padding: 8px 10px;
@@ -1978,15 +1994,37 @@ html[data-theme="light"] .quick-action-btn {
 }
 
 .users-mrole option {
-  background: var(--card-solid, var(--elev));
+  background-color: var(--card-solid, var(--elev));
   color: var(--text);
 }
 
-html[data-theme="dark"] .users-mrole,
-html[data-theme="dark"] .users-mrole option {
-  background: var(--elev);
+/* Classic (no data-theme) + studio dark: keep native select readable */
+html:not([data-theme="light"]) .users-mrole,
+html:not([data-theme="light"]) .users-mrole option,
+html:not([data-theme="light"]) .users-filters .field select,
+html:not([data-theme="light"]) .users-filters .field select option {
+  background-color: var(--elev);
   color: var(--text);
   color-scheme: dark;
+}
+
+html:not([data-theme="light"]) .users-mrole option,
+html:not([data-theme="light"]) .users-filters .field select option {
+  background-color: var(--card-solid, var(--elev));
+}
+
+html[data-theme="light"] .users-mrole,
+html[data-theme="light"] .users-mrole option,
+html[data-theme="light"] .users-filters .field select,
+html[data-theme="light"] .users-filters .field select option {
+  background-color: var(--elev);
+  color: var(--text);
+  color-scheme: light;
+}
+
+html[data-theme="light"] .users-mrole option,
+html[data-theme="light"] .users-filters .field select option {
+  background-color: var(--card-solid, var(--elev));
 }
 
 .users-mneg-label {
@@ -4826,13 +4864,19 @@ html[data-theme="dark"] .sub-qr-img {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--line);
-  background: var(--elev);
+  background-color: var(--elev);
   color: var(--text);
   border-radius: var(--radius-sm);
   padding: 9px 10px;
   outline: none;
   font: inherit;
   font-size: 0.86rem;
+  color-scheme: inherit;
+}
+
+.prices-role-mode-row select option {
+  background-color: var(--card-solid, var(--elev));
+  color: var(--text);
 }
 
 .prices-role-mode-row select:disabled {

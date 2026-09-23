@@ -1446,7 +1446,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
             </div>
             <div className="users-mrow-actions">
               <span className="users-mneg-label" title="اعتبار منفی">
-                منفی
+                اعتبار منفی
                 <label className="switch">
                   <input
                     type="checkbox"

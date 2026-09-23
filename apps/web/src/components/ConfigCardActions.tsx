@@ -102,28 +102,30 @@ export function ConfigCardActions({
       </div>
 
       <Modal open={editOpen} title="ویرایش اکانت" onClose={() => setEditOpen(false)}>
-        <div className="field">
-          <label>نام اکانت (ایمیل پنل)</label>
-          <input
-            dir="ltr"
-            value={accountName}
-            onChange={(e) => setAccountName(filterAccountNameInput(e.target.value))}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
-            {ACCOUNT_NAME_HINT}
-          </p>
+        <div className="edit-form-grid">
+          <div className="field">
+            <label>نام اکانت (ایمیل پنل)</label>
+            <input
+              dir="ltr"
+              value={accountName}
+              onChange={(e) => setAccountName(filterAccountNameInput(e.target.value))}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+              {ACCOUNT_NAME_HINT}
+            </p>
+          </div>
+          <div className="field">
+            <label>عنوان نمایشی (اختیاری)</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان نمایشی" />
+          </div>
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>یادداشت</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="یادداشت…" />
+          </div>
         </div>
-        <div className="field">
-          <label>عنوان نمایشی (اختیاری)</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان نمایشی" />
-        </div>
-        <div className="field">
-          <label>یادداشت</label>
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="یادداشت…" />
-        </div>
-        <div className="qa-row qa-row--1" dir="ltr">
+        <div className="qa-row qa-row--1" dir="ltr" style={{ marginTop: 12 }}>
           <button
             type="button"
             className="btn sm"
