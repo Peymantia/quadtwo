@@ -1431,7 +1431,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                     <span>{u.firstName || "—"}</span>
                   )}
                 </div>
-                {u.agentName ? <div className="muted">{u.agentName}</div> : null}
+                <div className="users-magent">{u.agentName || "\u00A0"}</div>
               </div>
               <div className="users-mwallet num">{formatToman(u.balance)}</div>
             </div>
