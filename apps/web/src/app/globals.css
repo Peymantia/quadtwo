@@ -5905,6 +5905,19 @@ html[data-theme="dark"] .sub-qr-img {
   line-height: 1.6;
 }
 
+.acct-created-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (min-width: 560px) {
+  .acct-created-body {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
 .acct-created-meta {
   margin: 0;
   display: flex;
@@ -5914,11 +5927,12 @@ html[data-theme="dark"] .sub-qr-img {
   border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--elev);
+  min-width: 0;
 }
 
 .acct-created-row {
   display: grid;
-  grid-template-columns: 5.5rem 1fr;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
   gap: 8px 12px;
   align-items: start;
 }
@@ -5934,6 +5948,49 @@ html[data-theme="dark"] .sub-qr-img {
   font-weight: 650;
   word-break: break-word;
   color: var(--text);
+  text-align: right;
+}
+
+.acct-created-row dd[dir="ltr"],
+.acct-created-row dd.num {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}
+
+.acct-created-qr-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--elev);
+  justify-self: center;
+}
+
+.acct-created-qr {
+  width: 180px;
+  height: 180px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: block;
+}
+
+.acct-created-qr-placeholder {
+  width: 180px;
+  height: 180px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px dashed var(--line);
+}
+
+.acct-created-qr-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  text-align: center;
 }
 
 .acct-created-link {
@@ -5951,12 +6008,20 @@ html[data-theme="dark"] .sub-qr-img {
   color: var(--text);
   max-height: 4.5em;
   overflow: auto;
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+  word-break: break-all;
 }
 
 .acct-created-btns {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
+}
+
+.acct-created-btns--secondary {
+  grid-template-columns: 1fr 1fr;
 }
 
 .acct-created-btns > .btn {

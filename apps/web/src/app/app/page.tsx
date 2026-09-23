@@ -430,6 +430,7 @@ export default function UserAppPage() {
     try {
       const r = await api<{
         subscription: {
+          subscriptionId?: string;
           code: string;
           email?: string;
           subUrl?: string | null;
@@ -439,10 +440,12 @@ export default function UserAppPage() {
         };
       }>("/me/test");
       setCreated({
+        subscriptionId: r.subscription.subscriptionId,
         code: r.subscription.code,
         email: r.subscription.email,
         subUrl: r.subscription.subUrl,
         trafficGb: r.subscription.trafficGb,
+        expiresHint: r.subscription.expiresHint ?? "۱ روز از اولین اتصال · ۲۵۰ مگابایت",
         isTest: true,
         categoryLabel: "تست",
         months: null,

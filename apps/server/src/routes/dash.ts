@@ -867,6 +867,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       return c.json({
         ok: true,
         subscription: {
+          subscriptionId: sub.subscriptionId,
           code: sub.code,
           email: sub.email,
           subUrl: sub.subUrl,
@@ -896,6 +897,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       return c.json({
         ok: true,
         provisioned: {
+          subscriptionId: sub.subscriptionId,
           code: sub.code,
           email: sub.email,
           subUrl: sub.subUrl,

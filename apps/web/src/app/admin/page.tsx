@@ -549,9 +549,11 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
       if (r.provisioned?.code) {
         setCreated({
           ...r.provisioned,
+          subscriptionId: r.provisioned.subscriptionId,
           categoryLabel: "تست",
           months: 1,
           trafficGb: r.provisioned.trafficGb ?? 1,
+          expiresHint: r.provisioned.expiresHint ?? "۱ روز از اولین اتصال · ۱ گیگابایت",
           isTest: true,
         });
         setTestName("");
