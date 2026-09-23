@@ -252,15 +252,6 @@ export function AccountCreatedModal({
             >
               {acct.subUrl}
             </a>
-            <button
-              type="button"
-              className="btn primary sm wide"
-              disabled={busy || !acct.subUrl}
-              onClick={() => void copy(acct.subUrl!, "لینک اشتراک کپی شد")}
-            >
-              <Icon name="copy" size={15} />
-              کپی لینک اشتراک
-            </button>
           </div>
         ) : (
           <p className="muted">لینک اشتراک هنوز آماده نیست.</p>
@@ -289,7 +280,7 @@ export function AccountCreatedModal({
                 }}
               >
                 <Icon name="copy" size={15} />
-                لینک اشتراک
+                کپی لینک اشتراک
               </button>
               <button
                 type="button"
@@ -298,7 +289,7 @@ export function AccountCreatedModal({
                 onClick={openBase64}
               >
                 <Icon name="link" size={15} />
-                لینک Base64 کانفیگ
+                لینک Base64 اشتراک
               </button>
             </div>
             <div className="qa-row qa-row--2">
