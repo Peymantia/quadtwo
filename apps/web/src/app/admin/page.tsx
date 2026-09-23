@@ -102,6 +102,7 @@ type AdminUser = {
   discountCodesAllowed?: boolean;
   discountMaxPercent?: number;
   useCustomPricing?: boolean;
+  negativeCreditAllowed?: boolean;
   priceOverrides?: Array<{
     id: string;
     category: string;
@@ -526,6 +527,44 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
     }
   }
 
+  const [testName, setTestName] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
+
+  async function createTestAccount() {
+    const trimmed = testName.trim().replace(/_Test$/i, "");
+    if (trimmed && !isValidAccountName(trimmed)) {
+      flash(null, `نام اکانت نامعتبر است. ${ACCOUNT_NAME_HINT}`);
+      return;
+    }
+    setTestBusy(true);
+    setCreated(null);
+    try {
+      const r = await api<{
+        provisioned?: CreatedAccount & { expiresHint?: string };
+        error?: string;
+      }>("/admin/test", {
+        body: { accountName: trimmed || undefined },
+      });
+      if (r.provisioned?.code) {
+        setCreated({
+          ...r.provisioned,
+          categoryLabel: "تست",
+          months: 1,
+          trafficGb: r.provisioned.trafficGb ?? 1,
+          isTest: true,
+        });
+        setTestName("");
+        flash("اکانت تست ساخته شد");
+      } else {
+        flash(null, "ساخت اکانت تست انجام نشد");
+      }
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="panel">
@@ -581,6 +620,39 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
           <p className="muted">پلنی برای فروش فعال نیست.</p>
         )}
       </div>
+
+      <div className="panel">
+        <h2>اکانت تست ادمین</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          ۱ روز · ۱ گیگابایت — بدون محدودیت تعداد. نام خالی = رندوم. همیشه پسوند <code dir="ltr">_Test</code> اضافه
+          می‌شود.
+        </p>
+        <div className="field">
+          <label>نام اکانت (اختیاری)</label>
+          <input
+            dir="ltr"
+            value={testName}
+            onChange={(e) => setTestName(filterAccountNameInput(e.target.value))}
+            placeholder="mycheck"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={testBusy}
+          />
+          <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+            مثلاً <code dir="ltr">mycheck</code> → <code dir="ltr">mycheck_Test</code>
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn light wide"
+          style={{ marginTop: 12 }}
+          disabled={testBusy || busy}
+          onClick={() => void createTestAccount()}
+        >
+          {testBusy ? "در حال ساخت…" : "ساخت اکانت تست"}
+        </button>
+      </div>
+
       <AccountCreatedModal
         open={!!created}
         account={created}
@@ -940,6 +1012,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [walletAmount, setWalletAmount] = useState("");
   const [walletNote, setWalletNote] = useState("");
+  const [negCreditBusy, setNegCreditBusy] = useState(false);
   const [partnerReqs, setPartnerReqs] = useState<
     Array<{
       id: string;
@@ -1004,6 +1077,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               discountCodesAllowed: r.user.discountCodesAllowed ?? true,
               discountMaxPercent: r.user.discountMaxPercent ?? 30,
               useCustomPricing: r.user.useCustomPricing ?? false,
+              negativeCreditAllowed: r.user.negativeCreditAllowed ?? false,
               priceOverrides: r.user.priceOverrides ?? [],
             }
           : s,
@@ -1097,6 +1171,48 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       flash(null, errText(e));
     } finally {
       setDiscountBusy(false);
+    }
+  }
+
+  async function setUserNegativeCredit(userId: string, allowed: boolean) {
+    setNegCreditBusy(true);
+    try {
+      await api(`/admin/users/${userId}/negative-credit`, {
+        method: "PATCH",
+        body: { allowed },
+      });
+      setUsers((list) => list.map((u) => (u.id === userId ? { ...u, negativeCreditAllowed: allowed } : u)));
+      setSelected((s) => (s && s.id === userId ? { ...s, negativeCreditAllowed: allowed } : s));
+      flash(allowed ? "اعتبار منفی فعال شد" : "اعتبار منفی غیرفعال شد");
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setNegCreditBusy(false);
+    }
+  }
+
+  async function bulkNegativeCredit(allowed: boolean) {
+    const ids = shown.map((u) => u.id);
+    if (!ids.length) {
+      flash(null, "کاربری در لیست نیست");
+      return;
+    }
+    const label = allowed ? "فعال" : "غیرفعال";
+    const scope = roleFilter ? `نقش فیلترشده (${ROLE_FA[roleFilter] || roleFilter})` : "همهٔ کاربران لیست";
+    if (!(await askConfirm(`اعتبار منفی برای ${ids.length} کاربر (${scope}) ${label} شود؟`))) return;
+    setNegCreditBusy(true);
+    try {
+      const r = await api<{ count: number }>("/admin/users/negative-credit/bulk", {
+        body: roleFilter
+          ? { allowed, all: true, role: roleFilter }
+          : { allowed, userIds: ids },
+      });
+      flash(`اعتبار منفی برای ${r.count} کاربر ${label} شد`);
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setNegCreditBusy(false);
     }
   }
 
@@ -1260,6 +1376,24 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
             <input id="admin-users-search" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
         </div>
+        <div className="actions" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
+          <button
+            type="button"
+            className="btn primary sm"
+            disabled={negCreditBusy || shown.length === 0}
+            onClick={() => void bulkNegativeCredit(true)}
+          >
+            اعتبار منفی برای همهٔ لیست
+          </button>
+          <button
+            type="button"
+            className="btn ghost sm"
+            disabled={negCreditBusy || shown.length === 0}
+            onClick={() => void bulkNegativeCredit(false)}
+          >
+            خاموش کردن اعتبار منفی لیست
+          </button>
+        </div>
       </div>
 
       <div className="users-list">
@@ -1296,6 +1430,15 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               </div>
             </div>
             <div className="users-mrow-actions">
+              <label className="switch" title="اعتبار منفی" style={{ marginInlineEnd: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(u.negativeCreditAllowed)}
+                  disabled={negCreditBusy}
+                  onChange={(e) => void setUserNegativeCredit(u.id, e.target.checked)}
+                />
+                <span className="track" />
+              </label>
               <select
                 className="users-mrole"
                 value={u.role}
@@ -1376,6 +1519,25 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
             <button type="button" className="btn primary sm" disabled={identityBusy} onClick={() => void saveIdentity()}>
               ذخیره نام و گروه
             </button>
+          </div>
+
+          <h2 style={{ marginTop: 16, fontSize: "1rem" }}>اعتبار منفی</h2>
+          <div className="setting-row" style={{ marginBottom: 10 }}>
+            <div>
+              <div className="t">اجازهٔ اعتبار منفی</div>
+              <div className="d">
+                اگر روشن باشد، این کاربر می‌تواند تا سقف تنظیمات ادمین از کیف پول منفی خرید کند.
+              </div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={Boolean(selected.negativeCreditAllowed)}
+                disabled={negCreditBusy}
+                onChange={(e) => void setUserNegativeCredit(selected.id, e.target.checked)}
+              />
+              <span className="track" />
+            </label>
           </div>
 
           {(selected.role === "partner" || selected.role === "wholesale" || selected.role === "reseller") && (
@@ -2485,6 +2647,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     enable: boolean;
   } | null>(null);
   const [editForm, setEditForm] = useState({
+    accountName: "",
     title: "",
     trafficGb: "",
     expiresAt: "",
@@ -2586,7 +2749,9 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
       const d = await api<ConfigDetailFull>(`/admin/configs/detail?${q}`);
       setEditing(d);
       setEditForm({
-        title: d.title ?? "",
+        accountName: d.email,
+        // Display title only when it differs from the panel email (avoid showing group comment as "name")
+        title: d.title && d.title !== d.email ? d.title : "",
         trafficGb: d.trafficGb == null ? "" : String(d.trafficGb),
         expiresAt: toLocalInput(d.expiresAt),
         limitIp: String(d.limitIp ?? 0),
@@ -2622,14 +2787,20 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
 
   async function saveEdit() {
     if (!editing) return;
+    const nextName = editForm.accountName.trim();
+    if (!isValidAccountName(nextName)) {
+      flash(null, `نام اکانت نامعتبر است. ${ACCOUNT_NAME_HINT}`);
+      return;
+    }
     setEditBusy(true);
     try {
-      const r = await api<{ message: string }>("/admin/configs/update", {
+      const r = await api<{ message: string; email?: string }>("/admin/configs/update", {
         method: "PUT",
         body: {
           email: editing.email,
           subId: editing.subId,
-          title: editForm.title || null,
+          newEmail: nextName !== editing.email ? nextName : undefined,
+          title: editForm.title.trim() || null,
           note: editForm.note || null,
           trafficGb: editForm.trafficGb === "" ? null : Number(editForm.trafficGb),
           expiresAt: fromLocalInput(editForm.expiresAt),
@@ -2754,6 +2925,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
   }
 
   async function submitAdminRenew(payload: {
+    mode: "renew" | "edit" | "reserve";
     trafficGb: number | null;
     months: number;
     category: string;
@@ -2762,17 +2934,24 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
     if (!renewInfo) return;
     setEditBusy(true);
     try {
-      await api("/admin/configs/renew", {
+      const r = await api<{ reserved?: boolean }>("/admin/configs/renew", {
         method: "POST",
         body: {
           subId: renewInfo.subscription.id,
           trafficGb: payload.trafficGb,
           months: payload.months,
           category: payload.category,
+          mode: payload.mode,
         },
       });
       setRenewInfo(null);
-      flash("سرویس تمدید شد ✅");
+      flash(
+        r.reserved
+          ? "رزرو تمدید ثبت شد ✅"
+          : payload.mode === "edit"
+            ? "اشتراک ویرایش شد ✅"
+            : "سرویس تمدید شد ✅",
+      );
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -2783,35 +2962,30 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
 
   return (
     <>
-      <SettingsAccordion
-        id="bulk"
-        title="تغییر دسته‌جمعی"
-        icon="layers"
-        openId={configsAcc}
-        onToggle={(id) => setConfigsAcc((cur) => (cur === id ? null : id))}
-      >
-        <BulkAdjustPanel flash={flash} askConfirm={askConfirm} />
-      </SettingsAccordion>
-
-      <SettingsAccordion
-        id="filters"
-        title="جستجو و فیلتر اکانت‌ها"
-        icon="wifi"
-        openId={configsAcc}
-        onToggle={(id) => setConfigsAcc((cur) => (cur === id ? null : id))}
-      >
-        <p className="muted" style={{ marginTop: 0 }}>
-          اکانت‌های دیتابیس ربات به‌همراه کلاینت‌های زنده‌ی 3x-ui. اگر فقط روی پنل ساخته شده باشند با برچسب «فقط پنل» دیده می‌شوند.
-        </p>
-        <div className="configs-filters">
-          <div className="field">
-            <label>جستجو (ایمیل، کد، مالک، نوت، عنوان)</label>
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="مثلاً email یا کد یا نوت"
-            />
-          </div>
+      <div className="panel configs-search-panel">
+        <div className="field configs-search-field">
+          <label htmlFor="admin-configs-search">جستجوی سریع اکانت</label>
+          <input
+            id="admin-configs-search"
+            type="search"
+            dir="auto"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="ایمیل، نام، کد، نوت، لینک، مالک، وضعیت…"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {searchInput.trim() && (
+            <p className="muted configs-search-hint">
+              {loading ? "در حال جستجو…" : `${total.toLocaleString("fa-IR")} نتیجه`}
+              {" · "}
+              <button type="button" className="linkish" onClick={() => setSearchInput("")}>
+                پاک کردن
+              </button>
+            </p>
+          )}
+        </div>
+        <div className="configs-filters configs-filters--toolbar">
           <div className="field">
             <label htmlFor="admin-config-group">گروه پنل</label>
             <select
@@ -2847,6 +3021,16 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             </select>
           </div>
         </div>
+      </div>
+
+      <SettingsAccordion
+        id="bulk"
+        title="تغییر دسته‌جمعی"
+        icon="layers"
+        openId={configsAcc}
+        onToggle={(id) => setConfigsAcc((cur) => (cur === id ? null : id))}
+      >
+        <BulkAdjustPanel flash={flash} askConfirm={askConfirm} />
       </SettingsAccordion>
 
       {loading && <p className="muted">در حال دریافت…</p>}
@@ -3022,12 +3206,26 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
 
       {editing && (
         <Modal open title={`ویرایش اکانت — ${editing.email}`} onClose={() => setEditing(null)} wide>
-          <div className="muted num" style={{ marginBottom: 12 }}>
-            {editing.email}
+          <div className="field">
+            <label>نام اکانت (ایمیل پنل)</label>
+            <input
+              dir="ltr"
+              value={editForm.accountName}
+              onChange={(e) => setEditForm((s) => ({ ...s, accountName: filterAccountNameInput(e.target.value) }))}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+              {ACCOUNT_NAME_HINT}
+            </p>
           </div>
           <div className="field">
-            <label>نام</label>
-            <input value={editForm.title} onChange={(e) => setEditForm((s) => ({ ...s, title: e.target.value }))} />
+            <label>عنوان نمایشی (اختیاری)</label>
+            <input
+              value={editForm.title}
+              onChange={(e) => setEditForm((s) => ({ ...s, title: e.target.value }))}
+              placeholder="مثلاً نام مشتری"
+            />
           </div>
           <div className="field">
             <label>حجم GB (خالی = نامحدود)</label>
@@ -3830,6 +4028,8 @@ const SETTINGS_DEFAULTS: Record<string, string> = {
   default_limit_ip: "2",
   max_purchase_months: "1",
   web_session_hours: "168",
+  negative_credit_limit: "500000",
+  negative_credit_grace_hours: "24",
 };
 
 const GUIDE_PLATFORMS = [
@@ -5051,7 +5251,9 @@ function SettingsTab({
         <div className="setting-row">
           <div>
             <div className="t">سرویس تست رایگان</div>
-            <div className="d">کاربران بتوانند یک اکانت تست دریافت کنند.</div>
+            <div className="d">
+              کاربران عادی یک‌بار ۲۵۰مگ · ادمین نامحدود ۱روز/۱گیگ با پسوند _Test
+            </div>
           </div>
           <label className="switch">
             <input
@@ -5131,6 +5333,36 @@ function SettingsTab({
             inputMode="decimal"
             value={formatSettingNumber(settings.discount_max_percent, 30)}
             onChange={(e) => onSettingNumberChange("discount_max_percent", e.target.value, 30)}
+            style={{ width: 72 }}
+          />
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">سقف اعتبار منفی (تومان)</div>
+            <div className="d">
+              حداکثر بدهی مجاز برای کاربرانی که اعتبار منفی برایشان فعال است (پیش‌فرض ۵۰۰٬۰۰۰).
+            </div>
+          </div>
+          <input
+            className="num settings-input"
+            inputMode="numeric"
+            value={formatSettingNumber(settings.negative_credit_limit, 500000)}
+            onChange={(e) => onSettingNumberChange("negative_credit_limit", e.target.value, 500000)}
+            style={{ width: 110 }}
+          />
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">مهلت اکانت‌های تسویه‌نشده (ساعت)</div>
+            <div className="d">
+              از لحظهٔ ساخت/خرید با اعتبار منفی؛ بعد از این مدت اکانت موقتاً غیرفعال می‌شود (پیش‌فرض ۲۴).
+            </div>
+          </div>
+          <input
+            className="num settings-input"
+            inputMode="numeric"
+            value={formatSettingNumber(settings.negative_credit_grace_hours, 24)}
+            onChange={(e) => onSettingNumberChange("negative_credit_grace_hours", e.target.value, 24)}
             style={{ width: 72 }}
           />
         </div>

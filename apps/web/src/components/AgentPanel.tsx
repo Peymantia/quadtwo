@@ -42,6 +42,10 @@ type ConfigItem = {
   createdAt?: string | null;
   usedTrafficBytes?: number;
   subUrl?: string | null;
+  unsettled?: boolean;
+  unsettledAmount?: number;
+  unsettledDeadline?: string | null;
+  unsettledHeld?: boolean;
 };
 
 const TABS: ShellTab[] = [
@@ -164,7 +168,16 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     const q = filter.trim().toLowerCase();
     const base = q
       ? configs.filter((c) => {
-          const hay = [c.code, c.email, c.title, c.note]
+          const hay = [
+            c.code,
+            c.email,
+            c.title,
+            c.note,
+            c.subUrl,
+            c.status,
+            c.subId,
+            c.trafficGb != null ? String(c.trafficGb) : null,
+          ]
             .filter(Boolean)
             .join("\n")
             .toLowerCase();
@@ -402,13 +415,19 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     }
   }
 
-  async function saveEdit(c: ConfigItem, patch: { title: string | null; note: string | null }) {
+  async function saveEdit(c: ConfigItem, patch: { accountName?: string; title: string | null; note: string | null }) {
     setBusy(true);
     setErr(null);
     try {
       await api("/partner/configs/update", {
         method: "PUT",
-        body: { email: c.email, subId: c.subId, title: patch.title, note: patch.note },
+        body: {
+          email: c.email,
+          subId: c.subId,
+          newEmail: patch.accountName,
+          title: patch.title,
+          note: patch.note,
+        },
       });
       await loadConfigs();
     } catch (e) {
@@ -437,6 +456,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
   }
 
   async function submitRenew(payload: {
+    mode: "renew" | "edit" | "reserve";
     trafficGb: number | null;
     months: number;
     category: string;
@@ -447,15 +467,17 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
     if (!renewInfo) return;
     setBusy(true);
     setErr(null);
+    const kind =
+      payload.mode === "edit" ? "edit" : payload.mode === "reserve" ? "renew_reserve" : "renew";
     try {
       const r = await api<{
         order?: { id: string; price: number };
         card?: PayCard;
         crypto?: CryptoPayInfo;
-        provisioned?: CreatedAccount;
+        provisioned?: CreatedAccount | { kind: "renew_reserved"; orderId: string };
       }>("/me/orders", {
         body: {
-          kind: "renew",
+          kind,
           targetSubId: renewInfo.subscription.id,
           trafficGb: payload.trafficGb,
           months: payload.months,
@@ -467,7 +489,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         },
       });
       setRenewInfo(null);
-      if (r.provisioned?.code) {
+      if (r.provisioned && "kind" in r.provisioned && r.provisioned.kind === "renew_reserved") {
+        setMsg("رزرو تمدید ثبت شد؛ به‌محض اتمام اشتراک اعمال می‌شود.");
+        await reload();
+        await loadConfigs();
+      } else if (r.provisioned && "code" in r.provisioned && r.provisioned.code) {
         setResult(r.provisioned);
         await reload();
         await loadConfigs();
@@ -477,7 +503,8 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
         setPayCard(r.card);
         setPayModal({ kind: "card", orderId: r.order.id, price: r.order.price, card: r.card });
       } else if (r.order) {
-        setMsg(`سفارش تمدید ${formatToman(r.order.price)} ثبت شد`);
+        const label = payload.mode === "edit" ? "ویرایش" : payload.mode === "reserve" ? "رزرو تمدید" : "تمدید";
+        setMsg(`سفارش ${label} ${formatToman(r.order.price)} ثبت شد`);
         await reload();
       }
     } catch (e) {
@@ -554,6 +581,11 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
             <div className="stat accent">
               <div className="label">موجودی کیف پول</div>
               <div className="value num">{formatToman(home.wallet.balance)}</div>
+              {(home.wallet.debt ?? 0) > 0 && (
+                <div className="muted" style={{ marginTop: 6 }}>
+                  بدهی: {formatToman(home.wallet.debt!)}
+                </div>
+              )}
             </div>
             <div className="stat">
               <div className="label">
@@ -632,7 +664,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               account={result}
               onClose={() => setResult(null)}
               onCopied={() => setMsg("لینک اشتراک کپی شد")}
-              walletBalance={home.wallet.balance}
+              walletBalance={home.wallet.spendable ?? home.wallet.balance}
               onRefresh={() => void loadConfigs()}
             />
           )}
@@ -642,9 +674,27 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       {tab === "configs" && (
         <div className="panel">
           <h2>کانفیگ‌های گروه شما</h2>
-          <div className="field">
-            <label>جستجو</label>
-            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="کد، ایمیل، عنوان یا نوت" />
+          <div className="field configs-search-field">
+            <label htmlFor="partner-configs-search">جستجوی سریع اکانت</label>
+            <input
+              id="partner-configs-search"
+              type="search"
+              dir="auto"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="ایمیل، نام، کد، نوت، لینک…"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {filter.trim() && (
+              <p className="muted configs-search-hint">
+                {filteredSorted.length.toLocaleString("fa-IR")} نتیجه
+                {" · "}
+                <button type="button" className="linkish" onClick={() => setFilter("")}>
+                  پاک کردن
+                </button>
+              </p>
+            )}
           </div>
           <SortSelect id="partner-config-sort" value={configSort} onChange={setConfigSort} />
           <div className="list">
@@ -670,6 +720,12 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
                             {c.email}
                           </strong>
                           {expired && <span className="badge warn">منقضی</span>}
+                          {c.unsettled && (
+                            <span className="badge warn">
+                              تسویه نشده
+                              {c.unsettledAmount ? ` · ${formatToman(c.unsettledAmount)}` : ""}
+                            </span>
+                          )}
                         </div>
                         {c.title && c.title !== c.email && <div className="muted">{c.title}</div>}
                         {c.note && <div className="muted config-card-note">نوت: {c.note}</div>}

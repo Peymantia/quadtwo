@@ -360,6 +360,24 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
     let result: ProvisionResultWithBulk | ProvisionResult;
     if (order.kind === OrderKind.renew && order.targetSub) {
       result = await renewSubscription(order, order.targetSub.id);
+    } else if (order.kind === OrderKind.edit && order.targetSub) {
+      const { editSubscriptionPackage } = await import("./subscription-lifecycle.js");
+      const updated = await editSubscriptionPackage(order, order.targetSub.id);
+      const subUrl =
+        updated.subUrl ||
+        (await refreshSubscriptionSubUrl(updated.id)) ||
+        `sub://${updated.panelSubId || updated.code}`;
+      result = {
+        subscriptionId: updated.id,
+        code: updated.code,
+        email: updated.email,
+        subUrl,
+        expiresAt: updated.expiresAt,
+        qrPng: await qrForSub(subUrl),
+      };
+    } else if (order.kind === OrderKind.renew_reserve && order.targetSub) {
+      // Should not reach here via normal fulfill — reserved orders stay queued.
+      throw new Error("رزرو تمدید باید در صف بماند تا سرویس فعلی تمام شود");
     } else if (order.kind === OrderKind.add_days && order.targetSub) {
       const { applyAddDays } = await import("./sub-addons.js");
       const updated = await applyAddDays(order.targetSub.id, order.months);
@@ -783,6 +801,10 @@ export async function toggleSubscriptionEnabled(subscriptionId: string, userId: 
 
   const currentlyEnabled = client.enable !== false;
   const newEnable = !currentlyEnabled;
+  if (newEnable) {
+    const { assertCanEnableSubscription } = await import("./negative-credit.js");
+    await assertCanEnableSubscription(sub);
+  }
   await resolved.xui.updateClient(sub.email, {
     ...client,
     email: sub.email,

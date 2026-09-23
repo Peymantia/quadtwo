@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { SubscriptionStatus } from "@prisma/client";
+import { SubscriptionStatus, UserRole } from "@prisma/client";
 import { prisma } from "../db.js";
+import { stripAccountName } from "../utils/account-name.js";
 import { randomSubId, shortCode } from "../utils/format.js";
 import { resolvePanelForCategory } from "./panel-servers.js";
 import { resolveSubUrl } from "./provision.js";
@@ -8,8 +9,12 @@ import { ensureClientsInGroup, TELEGRAM_GROUP, buildPanelClientComment } from ".
 import { getDefaultLimitIp, getSetting } from "./settings.js";
 import { isDemoMode } from "./license.js";
 
-const TEST_MB = 250;
+/** Legacy free user trial: 250 MB */
+const USER_TEST_MB = 250;
+/** Admin showcase / QA accounts */
+const ADMIN_TEST_GB = 1;
 const TEST_MS = 24 * 60 * 60 * 1000;
+const TEST_SUFFIX = "_Test";
 
 export type TestProvisionResult = {
   subscriptionId: string;
@@ -17,13 +22,38 @@ export type TestProvisionResult = {
   email: string;
   subUrl: string;
   expiresHint: string;
+  trafficGb: number;
 };
 
+export type ClaimTestOptions = {
+  /** Optional base name (admin only). Always ends with `_Test`. */
+  accountName?: string;
+};
+
+/** Ensure panel email ends with `_Test` (max 32 chars). */
+export function withTestAccountSuffix(name: string): string {
+  const cleaned = stripAccountName(name) || `t${randomBytes(3).toString("hex")}`;
+  const without = cleaned.replace(/_Test$/i, "");
+  const maxBase = Math.max(1, 32 - TEST_SUFFIX.length);
+  return `${without.slice(0, maxBase)}${TEST_SUFFIX}`;
+}
+
+function userTestTotalBytes() {
+  return USER_TEST_MB * 1024 * 1024;
+}
+
+function adminTestTotalBytes() {
+  return ADMIN_TEST_GB * 1024 ** 3;
+}
+
 /**
- * One free test account per telegram user: 1 day / 250 MB, starts on first connect.
- * Uses the panel configured for category "data".
+ * One free test account per normal telegram user: 1 day / 250 MB.
+ * Admins may create unlimited 1 day / 1 GB test accounts (names end with `_Test`).
  */
-export async function claimTestService(userId: string): Promise<TestProvisionResult> {
+export async function claimTestService(
+  userId: string,
+  opts: ClaimTestOptions = {},
+): Promise<TestProvisionResult> {
   const enabled = (await getSetting("test_service_enabled")) === "true";
   if (!enabled) throw new Error("سرویس تست فعلاً غیرفعال است");
   if ((await getSetting("serverless_enabled")) === "true") {
@@ -31,19 +61,22 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
   }
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  if (user.testClaimedAt) {
-    throw new Error("شما قبلاً سرویس تست را دریافت کرده‌اید. هر کاربر فقط یک‌بار می‌تواند بگیرد.");
-  }
+  const isAdmin = user.role === UserRole.admin;
 
-  const existing = await prisma.subscription.findFirst({
-    where: { userId, isTest: true },
-  });
-  if (existing) {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { testClaimedAt: existing.createdAt },
+  if (!isAdmin) {
+    if (user.testClaimedAt) {
+      throw new Error("شما قبلاً سرویس تست را دریافت کرده‌اید. هر کاربر فقط یک‌بار می‌تواند بگیرد.");
+    }
+    const existing = await prisma.subscription.findFirst({
+      where: { userId, isTest: true },
     });
-    throw new Error("شما قبلاً سرویس تست را دریافت کرده‌اید.");
+    if (existing) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { testClaimedAt: existing.createdAt },
+      });
+      throw new Error("شما قبلاً سرویس تست را دریافت کرده‌اید.");
+    }
   }
 
   const { resolveTenantIdOrPlatform } = await import("./tenants.js");
@@ -51,47 +84,70 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
   const code = shortCode("TST");
   const tgTail = String(user.telegramId).slice(-4);
   const codeTail = code.replace(/^TST-/i, "").slice(-2).toLowerCase();
-  const email = `t${tgTail}${codeTail}`;
+
+  let emailBase: string;
+  if (isAdmin && opts.accountName?.trim()) {
+    emailBase = opts.accountName.trim();
+  } else {
+    emailBase = `t${tgTail}${codeTail}`;
+  }
+  let email = withTestAccountSuffix(emailBase);
+
+  // Avoid collisions for repeated admin claims
+  if (isAdmin) {
+    const taken = await prisma.subscription.findFirst({ where: { email }, select: { id: true } });
+    if (taken) {
+      const stamp = randomBytes(2).toString("hex");
+      email = withTestAccountSuffix(`${stripAccountName(emailBase).slice(0, 20)}${stamp}`);
+    }
+  }
+
   const subId = randomSubId();
   const expiresAt = new Date(Date.now() + TEST_MS);
+  const trafficGb = isAdmin ? ADMIN_TEST_GB : USER_TEST_MB / 1024;
+  const totalBytes = isAdmin ? adminTestTotalBytes() : userTestTotalBytes();
+  const expiresHint = isAdmin
+    ? "۱ روز از اولین اتصال · ۱ گیگابایت"
+    : "۱ روز از اولین اتصال · ۲۵۰ مگابایت";
 
   if (isDemoMode()) {
     const uuid = randomBytes(16)
       .toString("hex")
       .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
     const subUrl = `https://demo.invalid/sub/${subId}`;
-    const [subscription] = await prisma.$transaction([
-      prisma.subscription.create({
-        data: {
-          tenantId,
-          code,
-          userId: user.id,
-          panelServerId: null,
-          title: `[دمو] ${email}`.slice(0, 80),
-          email,
-          clientUuid: uuid,
-          panelSubId: subId,
-          trafficGb: null,
-          startsOnConnect: true,
-          activatedAt: null,
-          isTest: true,
-          expiresAt,
-          subUrl,
-          note: "⚠️ اکانت تست نمایشی — به پنل واقعی وصل نیست",
-          status: SubscriptionStatus.active,
-        },
-      }),
-      prisma.user.update({
+    const subscription = await prisma.subscription.create({
+      data: {
+        tenantId,
+        code,
+        userId: user.id,
+        panelServerId: null,
+        title: `[دمو] ${email}`.slice(0, 80),
+        email,
+        clientUuid: uuid,
+        panelSubId: subId,
+        trafficGb,
+        startsOnConnect: true,
+        activatedAt: null,
+        isTest: true,
+        expiresAt,
+        subUrl,
+        note: "⚠️ اکانت تست نمایشی — به پنل واقعی وصل نیست",
+        status: SubscriptionStatus.active,
+      },
+    });
+    if (!isAdmin) {
+      await prisma.user.update({
         where: { id: user.id },
         data: { testClaimedAt: new Date() },
-      }),
-    ]);
+      });
+    }
     return {
       subscriptionId: subscription.id,
       code,
       email,
       subUrl,
-      expiresHint: "۱ روز از اولین اتصال · ۲۵۰ مگابایت (نمایشی)",
+      expiresHint: `${expiresHint} (نمایشی)`,
+      trafficGb,
     };
   }
 
@@ -100,7 +156,6 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
     throw new Error("هیچ inbound تنظیم نشده — در کنترل سنتر سرورهای پنل را پر کنید");
   }
 
-  const totalGB = TEST_MB * 1024 * 1024;
   const panelExpiry = -TEST_MS;
   const limitIp = await getDefaultLimitIp();
 
@@ -120,7 +175,7 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
       email,
       enable: true,
       expiryTime: panelExpiry,
-      totalGB,
+      totalGB: totalBytes,
       limitIp,
       tgId: Number(user.telegramId),
       subId,
@@ -143,37 +198,38 @@ export async function claimTestService(userId: string): Promise<TestProvisionRes
 
   const subUrl = await resolveSubUrl(panelSubId, resolved.xui, resolved.subBase);
 
-  const [subscription] = await prisma.$transaction([
-    prisma.subscription.create({
-      data: {
-        tenantId,
-        code,
-        userId: user.id,
-        panelServerId: resolved.panel?.id ?? null,
-        title: email,
-        email,
-        clientUuid,
-        panelSubId,
-        trafficGb: null,
-        startsOnConnect: true,
-        activatedAt: null,
-        isTest: true,
-        expiresAt,
-        subUrl,
-        status: SubscriptionStatus.active,
-      },
-    }),
-    prisma.user.update({
+  const subscription = await prisma.subscription.create({
+    data: {
+      tenantId,
+      code,
+      userId: user.id,
+      panelServerId: resolved.panel?.id ?? null,
+      title: email,
+      email,
+      clientUuid,
+      panelSubId,
+      trafficGb,
+      startsOnConnect: true,
+      activatedAt: null,
+      isTest: true,
+      expiresAt,
+      subUrl,
+      status: SubscriptionStatus.active,
+    },
+  });
+  if (!isAdmin) {
+    await prisma.user.update({
       where: { id: user.id },
       data: { testClaimedAt: new Date() },
-    }),
-  ]);
+    });
+  }
 
   return {
     subscriptionId: subscription.id,
     code,
     email,
     subUrl,
-    expiresHint: "۱ روز از اولین اتصال · ۲۵۰ مگابایت",
+    expiresHint,
+    trafficGb,
   };
 }

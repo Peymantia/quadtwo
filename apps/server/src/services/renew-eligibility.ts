@@ -139,10 +139,18 @@ export async function listRenewableSubscriptions(userId: string) {
     take: 40,
   });
 
-  const out: typeof subs = [];
+  const out: Array<{ sub: (typeof subs)[number]; mode: "renew" | "reserve" }> = [];
   for (const s of subs) {
     const el = await checkRenewEligibility(s.id);
-    if (el.ok) out.push(s);
+    if (el.ok) {
+      out.push({ sub: s, mode: "renew" });
+      continue;
+    }
+    const canReserve =
+      typeof el.hoursLeft === "number" &&
+      el.hoursLeft > 0 &&
+      !(s.startsOnConnect && !s.activatedAt);
+    if (canReserve) out.push({ sub: s, mode: "reserve" });
   }
   return out.slice(0, 12);
 }

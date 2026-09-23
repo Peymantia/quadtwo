@@ -143,22 +143,28 @@ import { createTelegramBot } from "../bot/telegram.js";
 
 type Vars = { userId: string; role: string; telegramId: string; tenantId: string };
 
-function isWalletCreditResult(
-  r: ProvisionResult | { kind: "wallet_credit"; balance: number } | { kind: "serverless_pending" },
-): r is { kind: "wallet_credit"; balance: number } {
+type FulfillLike =
+  | ProvisionResult
+  | { kind: "wallet_credit"; balance: number }
+  | { kind: "serverless_pending" }
+  | { kind: "renew_reserved"; orderId: string };
+
+function isWalletCreditResult(r: FulfillLike): r is { kind: "wallet_credit"; balance: number } {
   return "kind" in r && r.kind === "wallet_credit";
 }
 
-function isServerlessPendingResult(
-  r: ProvisionResult | { kind: "wallet_credit"; balance: number } | { kind: "serverless_pending" },
-): r is { kind: "serverless_pending" } {
+function isServerlessPendingResult(r: FulfillLike): r is { kind: "serverless_pending" } {
   return "kind" in r && r.kind === "serverless_pending";
 }
 
-async function provisionedJson(
-  result: ProvisionResult | { kind: "wallet_credit"; balance: number } | { kind: "serverless_pending" },
-) {
-  if (isWalletCreditResult(result) || isServerlessPendingResult(result)) return result;
+function isRenewReservedResult(r: FulfillLike): r is { kind: "renew_reserved"; orderId: string } {
+  return "kind" in r && r.kind === "renew_reserved";
+}
+
+async function provisionedJson(result: FulfillLike) {
+  if (isWalletCreditResult(result) || isServerlessPendingResult(result) || isRenewReservedResult(result)) {
+    return result;
+  }
   return serializeProvisionForApi(result);
 }
 
@@ -306,6 +312,8 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     await ensureDemoSampleSubscriptions(userId);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const wallet = await getWallet(userId);
+    const { getSpendableBalance } = await import("../services/negative-credit.js");
+    const credit = await getSpendableBalance(userId);
     const subs = await prisma.subscription.count({ where: { userId } });
     const active = await prisma.subscription.count({ where: { userId, status: "active" } });
     const brand = await getSetting("brand_name");
@@ -347,7 +355,13 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
         }),
         discountMaxPercent: user.discountMaxPercent,
       },
-      wallet: { balance: wallet.balance },
+      wallet: {
+        balance: wallet.balance,
+        creditLimit: credit.creditLimit,
+        spendable: credit.spendable,
+        debt: credit.debt,
+        negativeCreditAllowed: credit.creditLimit > 0,
+      },
       stats: { subscriptions: subs, active },
     });
   });
@@ -431,12 +445,21 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/me/wallet", async (c) => {
     const wallet = await getWallet(c.get("userId"));
+    const { getSpendableBalance } = await import("../services/negative-credit.js");
+    const credit = await getSpendableBalance(c.get("userId"));
     const txs = await prisma.walletTransaction.findMany({
       where: { walletId: wallet.id },
       orderBy: { createdAt: "desc" },
       take: 30,
     });
-    return c.json({ balance: wallet.balance, txs });
+    return c.json({
+      balance: wallet.balance,
+      creditLimit: credit.creditLimit,
+      spendable: credit.spendable,
+      debt: credit.debt,
+      negativeCreditAllowed: credit.creditLimit > 0,
+      txs,
+    });
   });
 
   api.get("/me/payment-card", async (c) => {
@@ -483,6 +506,10 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           subUrl: s.subUrl,
           status: s.status,
           isTest: s.isTest,
+          unsettled: s.unsettled,
+          unsettledAmount: s.unsettledAmount,
+          unsettledDeadline: s.unsettledDeadline?.toISOString() ?? null,
+          unsettledHeld: s.unsettledHeld,
         };
       }),
     );
@@ -539,6 +566,10 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     });
     if (!sub) return c.json({ error: "Not found" }, 404);
     try {
+      if (body.enable !== false) {
+        const { assertCanEnableSubscription } = await import("../services/negative-credit.js");
+        await assertCanEnableSubscription(sub);
+      }
       const result = await updateConfig({
         email: sub.email,
         subId: sub.id,
@@ -568,7 +599,12 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   });
 
   api.patch("/me/subscriptions/:id", async (c) => {
-    const body = await c.req.json<{ title?: string | null; note?: string | null }>();
+    const body = await c.req.json<{
+      title?: string | null;
+      note?: string | null;
+      newEmail?: string | null;
+      accountName?: string | null;
+    }>();
     const sub = await prisma.subscription.findFirst({
       where: { id: c.req.param("id"), userId: c.get("userId") },
     });
@@ -577,6 +613,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       const result = await updateConfig({
         email: sub.email,
         subId: sub.id,
+        newEmail: body.newEmail ?? body.accountName,
         title: body.title,
         note: body.note,
       });
@@ -772,17 +809,26 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       where: { id: c.req.param("id"), userId: c.get("userId") },
     });
     if (!sub) return c.json({ error: "Not found" }, 404);
+    if (sub.isTest) return c.json({ ok: false, message: "سرویس تست قابل تمدید نیست" }, 400);
     const eligibility = await checkRenewEligibility(sub.id);
-    if (!eligibility.ok) {
-      return c.json({ ok: false, message: eligibility.message }, 400);
-    }
     const category = await inferRenewCategory(sub);
     const labels = await getCategoryLabels();
     const maxMonths = await getMaxPurchaseMonths();
+    const canRenewNow = eligibility.ok;
+    const canReserve =
+      !eligibility.ok && typeof eligibility.hoursLeft === "number" && eligibility.hoursLeft > 0;
+    const canEdit = !(sub.startsOnConnect && !sub.activatedAt);
     return c.json({
       ok: true,
-      message: eligibility.message,
+      message: canRenewNow
+        ? eligibility.message
+        : canReserve
+          ? "می‌توانید تمدید را از الان رزرو کنید تا بعد از اتمام سرویس اعمال شود."
+          : eligibility.message,
       reason: eligibility.reason,
+      canRenewNow,
+      canReserve,
+      canEdit,
       subscription: {
         id: sub.id,
         code: sub.code,
@@ -814,7 +860,10 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.post("/me/test", async (c) => {
     try {
-      const sub = await claimTestService(c.get("userId"));
+      const body = await c.req.json<{ accountName?: string }>().catch(() => ({} as { accountName?: string }));
+      const sub = await claimTestService(c.get("userId"), {
+        accountName: typeof body.accountName === "string" ? body.accountName : undefined,
+      });
       return c.json({
         ok: true,
         subscription: {
@@ -822,6 +871,37 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
           email: sub.email,
           subUrl: sub.subUrl,
           expiresHint: sub.expiresHint,
+          trafficGb: sub.trafficGb,
+          isTest: true,
+        },
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/test", async (c) => {
+    try {
+      const body = await c.req.json<{ accountName?: string }>().catch(() => ({} as { accountName?: string }));
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
+      if (user.role !== "admin") return c.json({ error: "فقط ادمین" }, 403);
+      const sub = await claimTestService(user.id, {
+        accountName: typeof body.accountName === "string" ? body.accountName : undefined,
+      });
+      await auditLog({
+        action: "admin_test_claimed",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: sub.code,
+      });
+      return c.json({
+        ok: true,
+        provisioned: {
+          code: sub.code,
+          email: sub.email,
+          subUrl: sub.subUrl,
+          expiresHint: sub.expiresHint,
+          trafficGb: sub.trafficGb,
+          isTest: true,
         },
       });
     } catch (err) {
@@ -1172,8 +1252,9 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
   api.post("/me/wallet/charge", async (c) => {
     const body = await c.req.json<{ amount?: number; note?: string }>();
     const amount = Math.floor(Number(body.amount ?? 0));
-    if (!amount || amount < 10_000) return c.json({ error: "حداقل شارژ ۱۰٬۰۰۰ تومان است" }, 400);
     try {
+      const { assertWalletChargeMin } = await import("../services/negative-credit.js");
+      await assertWalletChargeMin(c.get("userId"), amount);
       await assertCheckoutPaymentMethod("card_to_card");
       const order = await createWalletChargeOrder(c.get("userId"), amount);
       // Dashboard flow: receipt info is text-only; goes straight to admin review
@@ -1409,7 +1490,13 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
           })),
           prisma.subscription.findUnique({
             where: { id: item.subId },
-            select: { subUrl: true },
+            select: {
+              subUrl: true,
+              unsettled: true,
+              unsettledAmount: true,
+              unsettledDeadline: true,
+              unsettledHeld: true,
+            },
           }),
         ]);
         return {
@@ -1417,6 +1504,10 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
           trafficGb: traf.totalGb ?? item.trafficGb ?? null,
           usedTrafficBytes: traf.usedBytes,
           subUrl: sub?.subUrl ?? null,
+          unsettled: sub?.unsettled ?? false,
+          unsettledAmount: sub?.unsettledAmount ?? 0,
+          unsettledDeadline: sub?.unsettledDeadline?.toISOString() ?? null,
+          unsettledHeld: sub?.unsettledHeld ?? false,
         };
       }),
     );
@@ -1484,15 +1575,24 @@ export function registerDashPartnerRoutes(api: Hono<{ Variables: Vars }>) {
     const body = await c.req.json<{
       email: string;
       subId?: string | null;
+      newEmail?: string | null;
       title?: string | null;
       note?: string | null;
       enable?: boolean;
     }>();
     try {
       const access = await resolvePartnerConfigAccess(c.get("userId"), c.get("role"), body.email, body.subId);
+      if (body.enable === true && access.subId) {
+        const sub = await prisma.subscription.findUnique({ where: { id: access.subId } });
+        if (sub) {
+          const { assertCanEnableSubscription } = await import("../services/negative-credit.js");
+          await assertCanEnableSubscription(sub);
+        }
+      }
       const result = await updateConfig({
         email: access.email,
         subId: access.subId,
+        newEmail: body.newEmail,
         title: body.title,
         note: body.note,
         enable: body.enable,
@@ -1933,11 +2033,18 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       if (isServerlessPending(result)) {
         return c.json({ ok: true, serverlessPending: true });
       }
+      if (isRenewReservedResult(result)) {
+        await notifyTelegram(
+          order.user.telegramId,
+          "✅ رزرو تمدید شما تأیید شد و در صف اعمال قرار گرفت؛ به‌محض اتمام اشتراک اعمال می‌شود.",
+        );
+        return c.json({ ok: true, reserved: true });
+      }
       const { deliverProvisionToUser } = await import("../services/provision-notify.js");
       const mode =
         order.kind === "add_days" || order.kind === "add_gb"
           ? "addon"
-          : order.kind === "renew"
+          : order.kind === "renew" || order.kind === "edit"
             ? "renew"
             : "new";
       const provisioned = result as import("../services/provision.js").ProvisionResultWithBulk;
@@ -2507,6 +2614,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     const body = await c.req.json<{
       email: string;
       subId?: string | null;
+      newEmail?: string | null;
       title?: string | null;
       note?: string | null;
       trafficGb?: number | null;
@@ -2519,7 +2627,8 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       await auditLog({
         action: "admin_config_update",
         actorTelegramId: BigInt(c.get("telegramId")),
-        target: body.email,
+        target: result.email,
+        detail: body.newEmail && body.newEmail !== body.email ? `rename:${body.email}→${result.email}` : undefined,
       });
       return c.json(result);
     } catch (err) {
@@ -2584,7 +2693,10 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     const maxMonths = await getMaxPurchaseMonths();
     return c.json({
       ok: true,
-      message: "تمدید ادمین (بدون محدودیت اتمام)",
+      message: "تمدید / ویرایش / رزرو ادمین (بدون محدودیت اتمام)",
+      canRenewNow: true,
+      canReserve: true,
+      canEdit: true,
       subscription: {
         id: sub.id,
         code: sub.code,
@@ -2610,8 +2722,12 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       trafficGb?: number | null;
       months?: number;
       category?: string;
+      mode?: "renew" | "edit" | "reserve";
     }>();
     if (!body.subId) return c.json({ error: "subId لازم است" }, 400);
+    const mode = body.mode === "edit" || body.mode === "reserve" ? body.mode : "renew";
+    const kind =
+      mode === "edit" ? OrderKind.edit : mode === "reserve" ? OrderKind.renew_reserve : OrderKind.renew;
     try {
       const order = await createMatrixOrder({
         userId: c.get("userId"),
@@ -2619,20 +2735,21 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         months: Math.max(1, Number(body.months) || 1),
         category: body.category,
         accountName: "renew",
-        kind: OrderKind.renew,
+        kind,
         targetSubId: body.subId,
         forceRenew: true,
       });
       const result = await provisionAdminComplimentary(order.id, c.get("userId"));
       await auditLog({
-        action: "admin_renew",
+        action: mode === "edit" ? "admin_edit" : mode === "reserve" ? "admin_renew_reserve" : "admin_renew",
         actorTelegramId: BigInt(c.get("telegramId")),
         target: body.subId,
       });
       return c.json({
         ok: true,
-        order: { id: order.id, price: order.price },
+        order: { id: order.id, price: order.price, kind },
         provisioned: await provisionedJson(result),
+        reserved: isRenewReservedResult(result),
       });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
@@ -2879,6 +2996,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         discountCodesAllowed: u.discountCodesAllowed,
         discountMaxPercent: u.discountMaxPercent,
         useCustomPricing: u.useCustomPricing,
+        negativeCreditAllowed: u.negativeCreditAllowed,
         priceOverrides: u.priceOverrides.map(mapPriceOverride),
       })),
     });
@@ -2910,6 +3028,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         discountCodesAllowed: user.discountCodesAllowed,
         discountMaxPercent: user.discountMaxPercent,
         useCustomPricing: user.useCustomPricing,
+        negativeCreditAllowed: user.negativeCreditAllowed,
         createdAt: user.createdAt.toISOString(),
         priceOverrides: user.priceOverrides.map(mapPriceOverride),
       },
@@ -3018,6 +3137,65 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         discountMaxPercent: updated.discountMaxPercent,
       },
     });
+  });
+
+  /** Per-user: allow wallet overdraft (negative credit). */
+  api.patch("/admin/users/:id/negative-credit", async (c) => {
+    const body = await c.req.json<{ allowed?: boolean }>();
+    if (typeof body.allowed !== "boolean") {
+      return c.json({ error: "allowed باید boolean باشد" }, 400);
+    }
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
+    if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    const updated = await prisma.user.update({
+      where: { id: target.id },
+      data: { negativeCreditAllowed: body.allowed },
+    });
+    await auditLog({
+      action: "web_user_negative_credit",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: target.id,
+      detail: body.allowed ? "on" : "off",
+    });
+    return c.json({
+      ok: true,
+      user: { id: updated.id, negativeCreditAllowed: updated.negativeCreditAllowed },
+    });
+  });
+
+  /** Bulk toggle negative credit: all filtered users, or explicit ids. */
+  api.post("/admin/users/negative-credit/bulk", async (c) => {
+    const body = await c.req.json<{
+      allowed?: boolean;
+      all?: boolean;
+      userIds?: string[];
+      role?: string;
+    }>();
+    if (typeof body.allowed !== "boolean") {
+      return c.json({ error: "allowed باید boolean باشد" }, 400);
+    }
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    let where: { tenantId: string; id?: { in: string[] }; role?: UserRole } = { tenantId };
+    if (body.all) {
+      if (body.role) where = { ...where, role: body.role as UserRole };
+    } else if (Array.isArray(body.userIds) && body.userIds.length) {
+      where = { ...where, id: { in: body.userIds.slice(0, 500) } };
+    } else {
+      return c.json({ error: "userIds یا all لازم است" }, 400);
+    }
+    const r = await prisma.user.updateMany({
+      where,
+      data: { negativeCreditAllowed: body.allowed },
+    });
+    await auditLog({
+      action: "web_users_negative_credit_bulk",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      detail: `${body.allowed ? "on" : "off"} count=${r.count}`,
+    });
+    return c.json({ ok: true, count: r.count });
   });
 
   /** Toggle custom vs panel-default pricing without deleting saved overrides. */

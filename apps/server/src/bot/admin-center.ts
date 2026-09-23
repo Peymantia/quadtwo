@@ -44,7 +44,7 @@ import {
   type SalesCategories,
   resolveMiniAppUrl,
 } from "../services/settings.js";
-import { demoteToUser, listNotifyAdminTelegramIds, listPendingPartnerRequests } from "../services/users.js";
+import { demoteToUser, listNotifyAdminTelegramIds, listPendingPartnerRequests, upsertUserFromTelegram } from "../services/users.js";
 import { formatToman } from "../utils/format.js";
 import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer } from "../services/backup.js";
 import {
@@ -1680,20 +1680,76 @@ export function registerControlCenter(bot: Bot) {
   bot.callbackQuery("cc:test", async (ctx) => {
     if (!(await isControlAdmin(ctx.from?.id))) return;
     await ctx.answerCallbackQuery();
+    await ctx.editMessageText(
+      [
+        "🧪 اکانت تست ادمین",
+        "",
+        "ساخت اکانت تست برای خودتان:",
+        "• مدت: ۱ روز (از اولین اتصال)",
+        "• حجم: ۱ گیگابایت",
+        "• نام: رندوم یا دستی — همیشه با _Test تمام می‌شود",
+        "",
+        "محدودیت یک‌باره برای ادمین اعمال نمی‌شود.",
+      ].join("\n"),
+      {
+        reply_markup: new InlineKeyboard()
+          .text("🧪 ساخت الان", "cc:test:claim")
+          .success()
+          .row()
+          .text("⚙️ تنظیم تست کاربران", "cc:test:cfg")
+          .row()
+          .text("« کنترل سنتر", "cc:home"),
+      },
+    );
+  });
+
+  bot.callbackQuery("cc:test:claim", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery({ text: "در حال ساخت…" });
+    try {
+      const user = await upsertUserFromTelegram(ctx.from!);
+      const { claimTestService } = await import("../services/test-service.js");
+      const result = await claimTestService(user.id);
+      await auditLog({
+        action: "admin_test_claimed",
+        actorTelegramId: ctx.from!.id,
+        target: result.code,
+      });
+      await ctx.reply(
+        [
+          "🧪 اکانت تست ادمین آماده شد",
+          "",
+          `کد: <code>${result.code}</code>`,
+          `اکانت: <code>${result.email}</code>`,
+          `مشخصات: ${result.expiresHint}`,
+        ].join("\n"),
+        { parse_mode: "HTML" },
+      );
+    } catch (err) {
+      await ctx.reply(String(err instanceof Error ? err.message : err));
+    }
+  });
+
+  bot.callbackQuery("cc:test:cfg", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.answerCallbackQuery();
     const on = (await getSetting("test_service_enabled")) === "true";
     await ctx.editMessageText(
       [
-        "🧪 سرویس تست",
+        "⚙️ سرویس تست کاربران",
         "",
-        "هر کاربر تلگرام فقط یک‌بار می‌تواند اکانت تست بگیرد:",
+        "هر کاربر عادی فقط یک‌بار می‌تواند اکانت تست بگیرد:",
         "• مدت: ۱ روز (از اولین اتصال)",
         "• حجم: ۲۵۰ مگابایت",
+        "• نام با پسوند _Test",
         "",
         `وضعیت فعلی: ${on ? "🟢 روشن" : "🔴 خاموش"}`,
       ].join("\n"),
       {
         reply_markup: new InlineKeyboard()
           .text(on ? "خاموش کردن" : "روشن کردن", "cc:test:tog")
+          .row()
+          .text("« اکانت تست ادمین", "cc:test")
           .row()
           .text("« کنترل سنتر", "cc:home"),
       },
@@ -1783,10 +1839,12 @@ export function registerControlCenter(bot: Bot) {
     await setSetting("test_service_enabled", on ? "false" : "true");
     await ctx.answerCallbackQuery({ text: on ? "خاموش شد" : "روشن شد" });
     await ctx.editMessageText(
-      `🧪 سرویس تست الان ${on ? "🔴 خاموش" : "🟢 روشن"} است.`,
+      `⚙️ سرویس تست کاربران الان ${on ? "🔴 خاموش" : "🟢 روشن"} است.`,
       {
         reply_markup: new InlineKeyboard()
           .text(on ? "روشن کردن" : "خاموش کردن", "cc:test:tog")
+          .row()
+          .text("« اکانت تست ادمین", "cc:test")
           .row()
           .text("« کنترل سنتر", "cc:home"),
       },

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Modal } from "./Modal";
 import { Icon } from "./DashShell";
+import { ACCOUNT_NAME_HINT, filterAccountNameInput, isValidAccountName } from "../lib/account-name";
 
 export type ConfigActionItem = {
   email: string;
@@ -44,10 +45,15 @@ export function ConfigCardActions({
   onRotate: () => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
   onDelete: () => void | Promise<void>;
-  onSaveEdit: (patch: { title: string | null; note: string | null }) => void | Promise<void>;
+  onSaveEdit: (patch: {
+    accountName?: string;
+    title: string | null;
+    note: string | null;
+  }) => void | Promise<void>;
 }) {
   const [editOpen, setEditOpen] = useState(false);
-  const [title, setTitle] = useState(item.title ?? "");
+  const [accountName, setAccountName] = useState(item.email);
+  const [title, setTitle] = useState(item.title && item.title !== item.email ? item.title : "");
   const [note, setNote] = useState(item.note ?? "");
 
   return (
@@ -59,7 +65,8 @@ export function ConfigCardActions({
             className="btn sm"
             disabled={busy || !item.subId}
             onClick={() => {
-              setTitle(item.title ?? "");
+              setAccountName(item.email);
+              setTitle(item.title && item.title !== item.email ? item.title : "");
               setNote(item.note ?? "");
               setEditOpen(true);
             }}
@@ -96,7 +103,20 @@ export function ConfigCardActions({
 
       <Modal open={editOpen} title="ویرایش اکانت" onClose={() => setEditOpen(false)}>
         <div className="field">
-          <label>عنوان</label>
+          <label>نام اکانت (ایمیل پنل)</label>
+          <input
+            dir="ltr"
+            value={accountName}
+            onChange={(e) => setAccountName(filterAccountNameInput(e.target.value))}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+            {ACCOUNT_NAME_HINT}
+          </p>
+        </div>
+        <div className="field">
+          <label>عنوان نمایشی (اختیاری)</label>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان نمایشی" />
         </div>
         <div className="field">
@@ -107,12 +127,13 @@ export function ConfigCardActions({
           <button
             type="button"
             className="btn sm"
-            disabled={busy}
+            disabled={busy || !isValidAccountName(accountName)}
             onClick={() => {
               onBusy?.(true);
               void (async () => {
                 try {
                   await onSaveEdit({
+                    accountName: accountName.trim() !== item.email ? accountName.trim() : undefined,
                     title: title.trim() || null,
                     note: note.trim() || null,
                   });

@@ -6,7 +6,23 @@ import { applyPanelExpiryToBotData, panelExpiryDiffersFromBot } from "./panel-ex
 import { isDemoMode } from "./license.js";
 import { DEMO_SAMPLE_MARKER } from "./demo-samples.js";
 
-const TEST_BYTES = 250 * 1024 * 1024;
+const LEGACY_TEST_BYTES = 250 * 1024 * 1024;
+
+function testPlanBytes(sub: { isTest: boolean; trafficGb: number | null }): number {
+  if (!sub.isTest) return sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
+  if (sub.trafficGb != null && sub.trafficGb > 0) return sub.trafficGb * 1024 ** 3;
+  return LEGACY_TEST_BYTES;
+}
+
+function testTrafficLabel(sub: { isTest: boolean; trafficGb: number | null }): string {
+  if (!sub.isTest) return formatTraffic(sub.trafficGb);
+  if (sub.trafficGb != null && sub.trafficGb >= 1) return formatTraffic(sub.trafficGb);
+  if (sub.trafficGb != null && sub.trafficGb > 0) {
+    const mb = Math.round(sub.trafficGb * 1024);
+    return `${mb} مگابایت`;
+  }
+  return "۲۵۰ مگابایت";
+}
 
 export type LiveSubStatus = {
   code: string;
@@ -61,20 +77,16 @@ function staticDbStatus(
   onlineHint: string,
   panelName: string | null = null,
 ): LiveSubStatus {
-  const total = sub.isTest ? TEST_BYTES : sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
+  const total = testPlanBytes(sub);
   const lip = sub.limitIp ?? 0;
   return {
     code: sub.code,
     email: sub.email,
     status: sub.status,
     isTest: sub.isTest,
-    trafficLabel: sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb),
+    trafficLabel: testTrafficLabel(sub),
     usedLabel: "—",
-    remainingLabel: sub.isTest
-      ? formatBytes(TEST_BYTES)
-      : total <= 0
-        ? "نامحدود / نامشخص"
-        : formatBytes(total),
+    remainingLabel: total <= 0 ? "نامحدود / نامشخص" : formatBytes(total),
     expiryLabel: formatExpiryLabel({
       expiresAt: sub.expiresAt,
       startsOnConnect: sub.startsOnConnect,
@@ -149,7 +161,7 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
   let fresh = (await prisma.subscription.findUnique({ where: { id: sub.id } })) ?? sub;
 
   let used = 0;
-  let total = fresh.trafficGb === null ? 0 : fresh.trafficGb * 1024 * 1024 * 1024;
+  let total = testPlanBytes(fresh);
   let onlineHint = "";
   let limitIpLabel = "";
   let panelEnabled: boolean | null = null;
@@ -239,13 +251,12 @@ export async function getLiveSubscriptionStatus(subscriptionId: string): Promise
     email: fresh.email,
     status: fresh.status,
     isTest: fresh.isTest,
-    trafficLabel: fresh.isTest ? "۲۵۰ مگابایت" : formatTraffic(fresh.trafficGb),
+    trafficLabel: testTrafficLabel(fresh),
     usedLabel: formatBytes(used),
-    remainingLabel: fresh.isTest
-      ? formatBytes(Math.max(0, TEST_BYTES - used))
-      : remaining === null
+    remainingLabel:
+      remaining === null && !fresh.isTest
         ? "نامحدود / نامشخص"
-        : formatBytes(remaining),
+        : formatBytes(Math.max(0, (total || testPlanBytes(fresh)) - used)),
     expiryLabel: formatExpiryLabel({
       expiresAt: fresh.expiresAt,
       startsOnConnect: fresh.startsOnConnect,
@@ -266,18 +277,20 @@ export async function getSubscriptionTrafficBytes(
 ): Promise<{ usedBytes: number; totalBytes: number; totalGb: number | null }> {
   const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
   if (!sub) return { usedBytes: 0, totalBytes: 0, totalGb: null };
+  const planBytes = testPlanBytes(sub);
+  const planGb =
+    sub.isTest && (sub.trafficGb == null || sub.trafficGb <= 0)
+      ? 0.25
+      : sub.trafficGb;
   if (isLocalDemoSub(sub)) {
-    if (sub.isTest) return { usedBytes: 0, totalBytes: TEST_BYTES, totalGb: 0.25 };
-    const totalBytes = sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
-    return { usedBytes: 0, totalBytes, totalGb: sub.trafficGb };
+    return { usedBytes: 0, totalBytes: planBytes, totalGb: planGb };
   }
   if (sub.serverless || (!sub.panelServerId && !sub.clientUuid)) {
-    const totalBytes = sub.isTest ? TEST_BYTES : sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
-    return { usedBytes: 0, totalBytes, totalGb: sub.isTest ? 0.25 : sub.trafficGb };
+    return { usedBytes: 0, totalBytes: planBytes, totalGb: planGb };
   }
   let usedBytes = 0;
-  let totalBytes = sub.trafficGb == null ? 0 : sub.trafficGb * 1024 ** 3;
-  let totalGb = sub.trafficGb;
+  let totalBytes = planBytes;
+  let totalGb = planGb;
   try {
     const resolved = await resolvePanelForSubscription(sub);
     const traf = await resolved.xui.getClientTraffic(sub.email);
@@ -290,10 +303,6 @@ export async function getSubscriptionTrafficBytes(
     }
   } catch {
     /* keep DB totals */
-  }
-  if (sub.isTest) {
-    totalBytes = TEST_BYTES;
-    totalGb = 0.25;
   }
   return { usedBytes, totalBytes, totalGb };
 }

@@ -30,6 +30,7 @@ import {
   fulfillAfterPaid,
   isServerlessEnabled,
   isServerlessPending,
+  isRenewReserved,
   normalizeSubUrl,
   SERVERLESS_BUYER_WAIT_MSG,
   serverlessConfirmKeyboard,
@@ -169,7 +170,7 @@ const waitingServerless = new Map<
   number,
   { orderId: string; step: "url" | "confirm"; subUrl?: string }
 >();
-/** Renew wizard: telegramId → { subId, months } */
+/** Renew wizard: telegramId → draft */
 const renewState = new Map<
   number,
   {
@@ -179,6 +180,7 @@ const renewState = new Map<
     unlimited: boolean;
     category: string;
     discountCode?: string | null;
+    mode: "renew" | "edit" | "reserve";
   }
 >();
 const waitingConfigLookup = new Set<number>();
@@ -456,7 +458,12 @@ async function startBuyFlow(ctx: Context) {
 async function showRenewWizard(
   ctx: Context,
   subId: string,
-  opts: { months?: number; trafficGb?: number | null; unlimited?: boolean } = {},
+  opts: {
+    months?: number;
+    trafficGb?: number | null;
+    unlimited?: boolean;
+    mode?: "renew" | "edit" | "reserve";
+  } = {},
   edit = false,
 ) {
   const user = await upsertUserFromTelegram(ctx.from!);
@@ -467,15 +474,40 @@ async function showRenewWizard(
   }
 
   const eligibility = await checkRenewEligibility(sub.id);
-  if (!eligibility.ok) {
-    await ctx.reply(eligibility.message);
+  const prev = renewState.get(ctx.from!.id);
+  const same = prev?.subId === subId ? prev : null;
+  let mode: "renew" | "edit" | "reserve" =
+    opts.mode ?? same?.mode ?? (eligibility.ok ? "renew" : "reserve");
+
+  if (mode === "renew" && !eligibility.ok) {
+    const canReserve =
+      typeof eligibility.hoursLeft === "number" &&
+      eligibility.hoursLeft > 0 &&
+      !(sub.startsOnConnect && !sub.activatedAt);
+    if (canReserve) mode = "reserve";
+    else if (!(sub.startsOnConnect && !sub.activatedAt)) mode = "edit";
+    else {
+      await ctx.reply(eligibility.message);
+      return;
+    }
+  }
+  if (mode === "reserve") {
+    if (sub.startsOnConnect && !sub.activatedAt) {
+      await ctx.reply("این سرویس هنوز فعال نشده؛ بعد از اولین اتصال می‌توانید رزرو تمدید بگذارید.");
+      return;
+    }
+    if (eligibility.ok) {
+      await ctx.reply("این سرویس الان قابل تمدید فوری است؛ رزرو لازم نیست.");
+      return;
+    }
+  }
+  if (mode === "edit" && sub.startsOnConnect && !sub.activatedAt) {
+    await ctx.reply("این سرویس هنوز فعال نشده؛ بعد از اولین اتصال می‌توانید ویرایش کنید.");
     return;
   }
 
   const category = await inferRenewCategory(sub);
   const maxMonths = await getMaxPurchaseMonths();
-  const prev = renewState.get(ctx.from!.id);
-  const same = prev?.subId === subId ? prev : null;
 
   let unlimited =
     opts.unlimited ??
@@ -494,8 +526,8 @@ async function showRenewWizard(
   }
 
   const months = Math.min(maxMonths, clampMonths(opts.months ?? same?.months ?? 1));
-  const discountCode = same?.discountCode ?? null;
-  renewState.set(ctx.from!.id, { subId, months, trafficGb, unlimited, category, discountCode });
+  const discountCode = mode === "edit" ? null : (same?.discountCode ?? null);
+  renewState.set(ctx.from!.id, { subId, months, trafficGb, unlimited, category, discountCode, mode });
 
   const priced = await draftPrice(user, {
     trafficGb,
@@ -507,34 +539,43 @@ async function showRenewWizard(
   let priceLabel = priced ? formatToman(priced.price) : null;
   let discountLine = "";
   let activeDiscount = discountCode;
-  const discountsOn = await isDiscountCodesEnabled();
+  const discountsOn = mode !== "edit" && (await isDiscountCodesEnabled());
   if (discountsOn && activeDiscount && priced) {
-    const prev = await previewDiscount({
+    const prevDisc = await previewDiscount({
       buyer: withEffectiveRole(user, ctx.from!.id),
       code: activeDiscount,
       price: priced.price,
     });
-    if (!("error" in prev) && prev.discountAmount > 0) {
-      priceLabel = formatToman(prev.priceAfter);
-      discountLine = `🎟 تخفیف ${prev.code}: −${formatToman(prev.discountAmount)}`;
-    } else if ("error" in prev) {
+    if (!("error" in prevDisc) && prevDisc.discountAmount > 0) {
+      priceLabel = formatToman(prevDisc.priceAfter);
+      discountLine = `🎟 تخفیف ${prevDisc.code}: −${formatToman(prevDisc.discountAmount)}`;
+    } else if ("error" in prevDisc) {
       activeDiscount = null;
-      renewState.set(ctx.from!.id, { subId, months, trafficGb, unlimited, category, discountCode: null });
+      renewState.set(ctx.from!.id, { subId, months, trafficGb, unlimited, category, discountCode: null, mode });
     }
   }
 
+  const title =
+    mode === "edit" ? "✏️ ویرایش اشتراک" : mode === "reserve" ? "⏳ رزرو تمدید" : "♻️ تمدید سرویس";
+  const actionHint =
+    mode === "edit"
+      ? "حجم و مدت جدید همین الان اعمال می‌شود."
+      : mode === "reserve"
+        ? "مبلغ الان پرداخت می‌شود و بعد از اتمام اشتراک اعمال می‌گردد."
+        : "حجم و مدت تمدید را با +/− انتخاب کنید.";
+
   const text = [
-    "♻️ تمدید سرویس",
+    title,
     "",
     `سرویس: ${sub.code}`,
     `اکانت: ${sub.email}`,
     `حجم فعلی: ${sub.isTest ? "۲۵۰ مگابایت" : formatTraffic(sub.trafficGb)}`,
-    eligibility.reason ? `وضعیت: ${eligibility.message}` : "",
+    eligibility.reason || mode !== "renew" ? `وضعیت: ${eligibility.message}` : "",
     "",
-    "حجم و مدت تمدید را با +/− انتخاب کنید.",
+    actionHint,
     maxMonths <= 1 ? "مدت: ۱ ماهه (فعلاً فقط یک‌ماهه)." : "",
     "",
-    `حجم تمدید: ${unlimited ? "نامحدود" : formatTraffic(trafficGb)}`,
+    `حجم: ${unlimited ? "نامحدود" : formatTraffic(trafficGb)}`,
     `مدت: ${months} ماه`,
     priceLabel ? `قیمت: ${priceLabel}` : "این ترکیب قیمت‌گذاری نشده.",
     discountLine,
@@ -552,9 +593,15 @@ async function showRenewWizard(
     category,
     discountsEnabled: discountsOn,
     discountCode: activeDiscount,
+    mode,
   });
+
   if (edit && ctx.callbackQuery?.message) {
-    await ctx.editMessageText(text, { reply_markup: kb });
+    try {
+      await ctx.editMessageText(text, { reply_markup: kb });
+    } catch {
+      await ctx.reply(text, { reply_markup: kb });
+    }
   } else {
     await ctx.reply(text, { reply_markup: kb });
   }
@@ -888,21 +935,29 @@ async function handleMyServices(ctx: Context) {
 async function handleRenew(ctx: Context) {
   if (!(await requireAccess(ctx))) return;
   const user = await upsertUserFromTelegram(ctx.from!);
-  const subs = await listRenewableSubscriptions(user.id);
-  if (!subs.length) {
+  const items = await listRenewableSubscriptions(user.id);
+  if (!items.length) {
     await ctx.reply(
       [
-        "سرویسی آمادهٔ تمدید نیست.",
+        "سرویسی آمادهٔ تمدید یا رزرو نیست.",
         "",
-        "تمدید فقط وقتی فعال می‌شود که سرویس:",
-        "• در حال اتمام باشد (حجم یا تاریخ)، یا",
-        "• تمام شده باشد.",
+        "• تمدید: وقتی سرویس در حال اتمام یا تمام شده باشد",
+        "• رزرو تمدید: وقتی هنوز حجم/تاریخ باقی است",
+        "",
+        "برای ویرایش حجم و تاریخ، از جزئیات سرویس → ویرایش پلن استفاده کنید.",
       ].join("\n"),
     );
     return;
   }
-  await ctx.reply("کدام سرویس را تمدید می‌کنید؟", {
-    reply_markup: renewPickKeyboard(subs.map((s) => ({ id: s.id, code: s.code, email: s.email }))),
+  await ctx.reply("کدام سرویس را تمدید / رزرو می‌کنید؟", {
+    reply_markup: renewPickKeyboard(
+      items.map(({ sub, mode }) => ({
+        id: sub.id,
+        code: sub.code,
+        email: sub.email,
+        mode,
+      })),
+    ),
   });
 }
 
@@ -2064,6 +2119,14 @@ export function createBot(
           }
           return;
         }
+        if (isRenewReserved(result)) {
+          try {
+            await ctx.editMessageText("✅ رزرو تمدید ثبت شد؛ به‌محض اتمام اشتراک اعمال می‌شود.");
+          } catch {
+            await ctx.reply("✅ رزرو تمدید ثبت شد؛ به‌محض اتمام اشتراک اعمال می‌شود.");
+          }
+          return;
+        }
         const order = await getOrderForAdmin(orderId);
         try {
           await ctx.editMessageText("پرداخت از کیف پول انجام شد ✅");
@@ -2073,7 +2136,7 @@ export function createBot(
         const mode =
           order?.kind === OrderKind.add_days || order?.kind === OrderKind.add_gb
             ? "addon"
-            : order?.kind === OrderKind.renew
+            : order?.kind === OrderKind.renew || order?.kind === OrderKind.edit
               ? "renew"
               : "new";
         await deliverResult(ctx.api, user.telegramId, result as ProvisionResultWithBulk, order?.trafficGb ?? null, mode);
@@ -2621,11 +2684,23 @@ export function createBot(
         await ctx.editMessageText(status).catch(() => undefined);
         return;
       }
+      if (isRenewReserved(result)) {
+        const status = "✅ رزرو تمدید ثبت شد — بعد از اتمام اشتراک اعمال می‌شود";
+        await ctx.editMessageCaption({ caption: status }).catch(() => undefined);
+        await ctx.editMessageText(status).catch(() => undefined);
+        await ctx.api
+          .sendMessage(
+            Number(order.user.telegramId),
+            "✅ رزرو تمدید شما تأیید شد و در صف اعمال قرار گرفت.",
+          )
+          .catch(() => undefined);
+        return;
+      }
       const provisioned = result as ProvisionResultWithBulk;
       const mode =
         order.kind === OrderKind.add_days || order.kind === OrderKind.add_gb
           ? "addon"
-          : order.kind === OrderKind.renew
+          : order.kind === OrderKind.renew || order.kind === OrderKind.edit
             ? "renew"
             : "new";
       await deliverResult(ctx.api, order.user.telegramId, provisioned, order.trafficGb, mode);
@@ -3082,10 +3157,32 @@ export function createBot(
     });
     if (!sub) return ctx.reply("سرویس پیدا نشد.");
     if (sub.isTest) return ctx.reply("سرویس تست قابل تمدید نیست. لطفاً سرویس اصلی بخرید.");
-    const eligibility = await checkRenewEligibility(sub.id);
-    if (!eligibility.ok) return ctx.reply(eligibility.message);
     renewState.delete(ctx.from!.id);
-    await showRenewWizard(ctx, sub.id, {});
+    await showRenewWizard(ctx, sub.id, { mode: "renew" });
+  });
+
+  bot.callbackQuery(/^sub:reserve:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const sub = await prisma.subscription.findFirst({
+      where: { id: ctx.match![1], userId: user.id },
+    });
+    if (!sub) return ctx.reply("سرویس پیدا نشد.");
+    if (sub.isTest) return ctx.reply("سرویس تست قابل رزرو نیست.");
+    renewState.delete(ctx.from!.id);
+    await showRenewWizard(ctx, sub.id, { mode: "reserve" });
+  });
+
+  bot.callbackQuery(/^sub:edit:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const sub = await prisma.subscription.findFirst({
+      where: { id: ctx.match![1], userId: user.id },
+    });
+    if (!sub) return ctx.reply("سرویس پیدا نشد.");
+    if (sub.isTest) return ctx.reply("سرویس تست قابل ویرایش نیست.");
+    renewState.delete(ctx.from!.id);
+    await showRenewWizard(ctx, sub.id, { mode: "edit" });
   });
 
   bot.callbackQuery(/^sub:rename:(.+)$/, async (ctx) => {
@@ -3270,19 +3367,24 @@ export function createBot(
       return;
     }
     if (cur.category === "unlimited") {
-      await showRenewWizard(ctx, subId, { months: cur.months, trafficGb: null, unlimited: true }, true);
+      await showRenewWizard(ctx, subId, { months: cur.months, trafficGb: null, unlimited: true, mode: cur.mode }, true);
       return;
     }
     if (cur.category === "national") {
       const gb = nextNationalVolume(cur.trafficGb, dir);
-      await showRenewWizard(ctx, subId, { months: cur.months, trafficGb: gb, unlimited: false }, true);
+      await showRenewWizard(ctx, subId, { months: cur.months, trafficGb: gb, unlimited: false, mode: cur.mode }, true);
       return;
     }
     const next = nextVolume(cur.trafficGb, cur.unlimited, dir);
     await showRenewWizard(
       ctx,
       subId,
-      { months: cur.months, trafficGb: next.trafficGb, unlimited: next.unlimited },
+      {
+        months: cur.months,
+        trafficGb: next.trafficGb,
+        unlimited: next.unlimited,
+        mode: cur.mode,
+      },
       true,
     );
   });
@@ -3302,6 +3404,7 @@ export function createBot(
         months,
         trafficGb: cur?.subId === subId ? cur.trafficGb : undefined,
         unlimited: cur?.subId === subId ? cur.unlimited : undefined,
+        mode: cur?.subId === subId ? cur.mode : undefined,
       },
       true,
     );
@@ -3330,15 +3433,17 @@ export function createBot(
     const subId = ctx.match![1]!;
     const sub = await prisma.subscription.findFirst({ where: { id: subId, userId: user.id } });
     if (!sub || sub.isTest) {
-      await ctx.reply("سرویس برای تمدید معتبر نیست.");
-      return;
-    }
-    const eligibility = await checkRenewEligibility(sub.id);
-    if (!eligibility.ok) {
-      await ctx.reply(eligibility.message);
+      await ctx.reply("سرویس برای این عملیات معتبر نیست.");
       return;
     }
     const state = renewState.get(ctx.from!.id);
+    const mode = state?.subId === subId ? state.mode : "renew";
+    const kind =
+      mode === "edit"
+        ? OrderKind.edit
+        : mode === "reserve"
+          ? OrderKind.renew_reserve
+          : OrderKind.renew;
     const unlimited = state?.subId === subId ? state.unlimited : sub.trafficGb === null;
     const trafficGb = state?.subId === subId ? state.trafficGb : sub.trafficGb;
     let category = state?.subId === subId ? state.category : await inferRenewCategory(sub);
@@ -3351,22 +3456,28 @@ export function createBot(
         trafficGb: unlimited ? null : trafficGb,
         months,
         accountName: sub.email,
-        kind: OrderKind.renew,
+        kind,
         targetSubId: sub.id,
         quantity: 1,
         category,
-        discountCode: state?.discountCode,
+        discountCode: mode === "edit" ? null : state?.discountCode,
       });
       await auditLog({
         action: "order_created",
         actorTelegramId: ctx.from!.id,
         target: order.id,
-        detail: `renew ${formatToman(order.price)}`,
+        detail: `${mode} ${formatToman(order.price)}`,
       });
       if (order.price <= 0) {
         await ctx.editMessageText(`${orderSummaryText(order)}\n\n✅ رایگان (ادمین) — در حال آماده‌سازی…`);
         const result = await payOrderWithWallet(order.id, user.id);
         if ("kind" in result && result.kind === "wallet_credit") return;
+        if (isRenewReserved(result)) {
+          await ctx.editMessageText(
+            `${orderSummaryText(order)}\n\n✅ رزرو تمدید ثبت شد؛ به‌محض اتمام اشتراک اعمال می‌شود.`,
+          );
+          return;
+        }
         if (isServerlessPending(result)) {
           try {
             await ctx.editMessageText(`${orderSummaryText(order)}\n\n${SERVERLESS_BUYER_WAIT_MSG}`);
@@ -3380,7 +3491,7 @@ export function createBot(
           ctx.from!.id,
           result as ProvisionResultWithBulk,
           order.trafficGb,
-          "renew",
+          mode === "edit" ? "new" : "renew",
         );
         return;
       }

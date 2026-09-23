@@ -37,6 +37,10 @@ type Sub = {
   subUrl: string | null;
   status: string;
   isTest?: boolean;
+  unsettled?: boolean;
+  unsettledAmount?: number;
+  unsettledDeadline?: string | null;
+  unsettledHeld?: boolean;
 };
 
 type Cell = {
@@ -330,13 +334,20 @@ export default function UserAppPage() {
     }
   }
 
-  async function saveSubEdit(s: Sub, patch: { title: string | null; note: string | null }) {
+  async function saveSubEdit(
+    s: Sub,
+    patch: { accountName?: string; title: string | null; note: string | null },
+  ) {
     setBusy(true);
     setErr(null);
     try {
       await api(`/me/subscriptions/${s.id}`, {
         method: "PATCH",
-        body: patch,
+        body: {
+          title: patch.title,
+          note: patch.note,
+          newEmail: patch.accountName,
+        },
       });
       await loadSubs();
     } catch (e) {
@@ -348,6 +359,7 @@ export default function UserAppPage() {
   }
 
   async function submitRenew(payload: {
+    mode: "renew" | "edit" | "reserve";
     trafficGb: number | null;
     months: number;
     category: string;
@@ -359,15 +371,17 @@ export default function UserAppPage() {
     setErr(null);
     setMsg(null);
     setBusy(true);
+    const kind =
+      payload.mode === "edit" ? "edit" : payload.mode === "reserve" ? "renew_reserve" : "renew";
     try {
       const r = await api<{
         order?: { id: string; price: number };
         card?: PayCard;
         crypto?: CryptoPayInfo;
-        provisioned?: CreatedAccount;
+        provisioned?: CreatedAccount | { kind: "renew_reserved"; orderId: string };
       }>("/me/orders", {
         body: {
-          kind: "renew",
+          kind,
           targetSubId: renewInfo.subscription.id,
           trafficGb: payload.trafficGb,
           months: payload.months,
@@ -379,7 +393,11 @@ export default function UserAppPage() {
         },
       });
       setRenewInfo(null);
-      if (r.provisioned?.code) {
+      if (r.provisioned && "kind" in r.provisioned && r.provisioned.kind === "renew_reserved") {
+        setMsg("رزرو تمدید ثبت شد؛ به‌محض اتمام اشتراک اعمال می‌شود.");
+        await reload();
+        await loadSubs();
+      } else if (r.provisioned && "code" in r.provisioned && r.provisioned.code) {
         setCreated({
           ...r.provisioned,
           categoryLabel: rateCatalog?.categoryLabels?.[payload.category] || payload.category,
@@ -394,7 +412,8 @@ export default function UserAppPage() {
         setPayCard(r.card);
         setPayModal({ kind: "card", orderId: r.order.id, price: r.order.price, card: r.card });
       } else if (r.order) {
-        setMsg(`سفارش تمدید ${formatToman(r.order.price)} ثبت شد`);
+        const label = payload.mode === "edit" ? "ویرایش" : payload.mode === "reserve" ? "رزرو تمدید" : "تمدید";
+        setMsg(`سفارش ${label} ${formatToman(r.order.price)} ثبت شد`);
         await reload();
       }
     } catch (e) {
@@ -527,7 +546,8 @@ export default function UserAppPage() {
             <div className="panel">
               <h2>اکانت تست رایگان</h2>
               <p className="muted" style={{ marginTop: 0 }}>
-                قبل از خرید، سرویس را امتحان کنید. رایگان است و از سقف جداگانه‌ای کم می‌شود.
+                قبل از خرید، سرویس را امتحان کنید (۱ روز · ۲۵۰ مگ). نام اکانت با پسوند{" "}
+                <code dir="ltr">_Test</code> ساخته می‌شود.
               </p>
               <button type="button" className="btn light wide" disabled={busy} onClick={claimTest}>
                 <Icon name="wifi" size={16} />
@@ -595,6 +615,14 @@ export default function UserAppPage() {
                           </strong>
                           {expired && <span className="badge warn">منقضی</span>}
                           {s.isTest && <span className="badge info">تست</span>}
+                          {s.unsettled && (
+                            <span className="badge warn">
+                              تسویه نشده
+                              {s.unsettledAmount
+                                ? ` · ${formatToman(s.unsettledAmount)}`
+                                : ""}
+                            </span>
+                          )}
                         </div>
                         {s.code && (
                           <div className="muted num" style={{ marginTop: 4 }}>
@@ -679,6 +707,17 @@ export default function UserAppPage() {
             <div className="stat accent">
               <div className="label">موجودی کیف پول</div>
               <div className="value num">{formatToman(home.wallet.balance)}</div>
+              {(home.wallet.debt ?? 0) > 0 && (
+                <div className="muted" style={{ marginTop: 6 }}>
+                  بدهی: {formatToman(home.wallet.debt!)} — حداقل شارژ به همین اندازه
+                </div>
+              )}
+              {(home.wallet.creditLimit ?? 0) > 0 && (home.wallet.debt ?? 0) <= 0 && (
+                <div className="muted" style={{ marginTop: 6 }}>
+                  اعتبار منفی تا {formatToman(home.wallet.creditLimit!)} · قابل‌خرج{" "}
+                  {formatToman(home.wallet.spendable ?? home.wallet.balance)}
+                </div>
+              )}
             </div>
             <div className="stat">
               <div className="label">سرویس فعال</div>
@@ -690,6 +729,9 @@ export default function UserAppPage() {
             <h2>شارژ با کارت به کارت</h2>
             <p className="muted" style={{ marginTop: 0 }}>
               مبلغ را به کارت زیر واریز کنید، سپس درخواست شارژ را ثبت کنید. پس از تأیید ادمین موجودی اضافه می‌شود.
+              {(home.wallet.debt ?? 0) > 0
+                ? ` اگر بدهی دارید، حداقل باید ${formatToman(home.wallet.debt!)} شارژ کنید.`
+                : ""}
             </p>
             {payCard && (
               <PaymentCardBlock
@@ -841,7 +883,7 @@ export default function UserAppPage() {
         account={created}
         onClose={() => setCreated(null)}
         onCopied={() => setMsg("لینک اشتراک کپی شد")}
-        walletBalance={home.wallet.balance}
+        walletBalance={home.wallet.spendable ?? home.wallet.balance}
         onPayCard={(orderId, price, card) => {
           setPayCard(card);
           setPayModal({ kind: "card", orderId, price, card });

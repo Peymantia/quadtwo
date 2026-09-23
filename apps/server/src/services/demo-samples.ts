@@ -89,7 +89,10 @@ export async function ensureDemoSampleSubscriptions(userId: string): Promise<voi
   await prisma.$transaction(async (tx) => {
     for (const spec of SAMPLES) {
       const code = shortCode(spec.isTest ? "TST" : "DM");
-      const email = `demo_${spec.emailSuffix}_${tgTail}`.toLowerCase();
+      const rawEmail = `demo_${spec.emailSuffix}_${tgTail}`.toLowerCase();
+      const email = spec.isTest
+        ? `${rawEmail.replace(/_test$/i, "").slice(0, 27)}_Test`
+        : rawEmail;
       const subId = randomSubId();
       const expiresAt =
         spec.days != null

@@ -5,6 +5,8 @@ import { api, formatToman } from "../lib/api";
 import { Modal } from "./Modal";
 import type { PublicPaymentMethods } from "./RateShop";
 
+export type RenewMode = "renew" | "edit" | "reserve";
+
 export type RenewInfo = {
   ok: true;
   message: string;
@@ -12,12 +14,16 @@ export type RenewInfo = {
   categoryLabel: string;
   maxMonths: number;
   discountsEnabled?: boolean;
+  canRenewNow?: boolean;
+  canReserve?: boolean;
+  canEdit?: boolean;
   subscription: {
     id: string;
     code: string;
     email: string;
     trafficGb: number | null;
     trafficLabel: string;
+    expiresAt?: string;
   };
   volumeRules?: {
     data: { min: number; max: number; step: number };
@@ -30,10 +36,11 @@ type Props = {
   open: boolean;
   info: RenewInfo | null;
   busy?: boolean;
-  /** user: wallet + card · admin: complimentary renew */
+  /** user: wallet + card · admin: complimentary */
   variant?: "user" | "admin";
   onClose: () => void;
   onSubmit: (payload: {
+    mode: RenewMode;
     trafficGb: number | null;
     months: number;
     category: string;
@@ -61,7 +68,32 @@ function rulesFor(
   return { kind: "stepped", ...r };
 }
 
+function defaultMode(info: RenewInfo, variant: "user" | "admin"): RenewMode {
+  if (variant === "admin") return "renew";
+  if (info.canRenewNow) return "renew";
+  if (info.canReserve) return "reserve";
+  if (info.canEdit) return "edit";
+  return "renew";
+}
+
+function modeTitle(mode: RenewMode) {
+  if (mode === "edit") return "ویرایش اشتراک";
+  if (mode === "reserve") return "رزرو تمدید";
+  return "تمدید سرویس";
+}
+
+function modeHint(mode: RenewMode) {
+  if (mode === "edit") {
+    return "حجم و مدت جدید همین الان روی اشتراک فعلی اعمال می‌شود (حجم مصرف‌شده حفظ می‌شود).";
+  }
+  if (mode === "reserve") {
+    return "مبلغ الان کسر می‌شود و به‌محض اتمام حجم یا تاریخ، تمدید خودکار اعمال می‌شود.";
+  }
+  return "حجم و مدت تمدید را انتخاب کنید.";
+}
+
 export function RenewModal({ open, info, busy, variant = "user", onClose, onSubmit }: Props) {
+  const [mode, setMode] = useState<RenewMode>("renew");
   const [gbInput, setGbInput] = useState("10");
   const [months, setMonths] = useState(1);
   const [price, setPrice] = useState<number | null>(null);
@@ -81,7 +113,16 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
     const max = Math.max(1, Math.min(3, info?.maxMonths || 1));
     return Array.from({ length: max }, (_, i) => i + 1);
   }, [info?.maxMonths]);
-  const discountsAllowed = variant === "user" && Boolean(info?.discountsEnabled);
+  const discountsAllowed = variant === "user" && Boolean(info?.discountsEnabled) && mode !== "edit";
+
+  const canRenewNow = variant === "admin" || Boolean(info?.canRenewNow);
+  const canReserve = variant === "admin" || Boolean(info?.canReserve);
+  const canEdit = variant === "admin" || Boolean(info?.canEdit);
+  const modeCount = Number(canRenewNow) + Number(canReserve) + Number(canEdit);
+  const modeAllowed =
+    (mode === "renew" && canRenewNow) ||
+    (mode === "edit" && canEdit) ||
+    (mode === "reserve" && canReserve);
 
   useEffect(() => {
     if (!open || variant === "admin") return;
@@ -92,6 +133,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
 
   useEffect(() => {
     if (!open || !info || !rules) return;
+    setMode(defaultMode(info, variant));
     setMonths(1);
     setDiscountCode("");
     setVerifiedDiscount(null);
@@ -106,7 +148,22 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
         cur != null && cur > 0 ? snap(cur, rules.min, rules.max, rules.step) : rules.min;
       setGbInput(String(start));
     }
-  }, [open, info?.subscription.id, info?.category]);
+  }, [open, info?.subscription.id, info?.category, variant]);
+
+  // Keep selected mode valid when capabilities change
+  useEffect(() => {
+    if (!info) return;
+    if (mode === "renew" && !canRenewNow) {
+      if (canReserve) setMode("reserve");
+      else if (canEdit) setMode("edit");
+    } else if (mode === "reserve" && !canReserve) {
+      if (canRenewNow) setMode("renew");
+      else if (canEdit) setMode("edit");
+    } else if (mode === "edit" && !canEdit) {
+      if (canRenewNow) setMode("renew");
+      else if (canReserve) setMode("reserve");
+    }
+  }, [info, canRenewNow, canReserve, canEdit, mode]);
 
   const trafficGb = useMemo(() => {
     if (!rules || rules.kind === "unlimited") return null;
@@ -117,6 +174,14 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
 
   useEffect(() => {
     if (!open || !info || !rules) return;
+    if (variant === "admin") {
+      setPrice(0);
+      setPriceBefore(0);
+      setDiscountAmount(0);
+      setQuoteErr(null);
+      setQuoting(false);
+      return;
+    }
     let cancelled = false;
     const t = window.setTimeout(() => {
       setQuoting(true);
@@ -159,7 +224,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [open, info, trafficGb, months, rules, discountsAllowed, verifiedDiscount, discountCode]);
+  }, [open, info, trafficGb, months, rules, discountsAllowed, verifiedDiscount, discountCode, variant, mode]);
 
   function bumpGb(dir: 1 | -1) {
     if (!rules || rules.kind !== "stepped") return;
@@ -224,11 +289,12 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
     }
   }
 
-  const canSubmit = !busy && !quoting && price != null && Boolean(info);
+  const canSubmit = !busy && !quoting && price != null && Boolean(info) && modeAllowed;
 
   async function submit(method: "wallet" | "card_to_card" | "crypto") {
     if (!info || !rules) return;
     await onSubmit({
+      mode,
       category: info.category,
       trafficGb: rules.kind === "unlimited" ? null : trafficGb,
       months: info.category === "national" ? 1 : months,
@@ -241,8 +307,17 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
     });
   }
 
+  function adminSubmitLabel() {
+    if (mode === "edit") return "ویرایش رایگان";
+    if (mode === "reserve") return "رزرو رایگان";
+    return "تمدید رایگان";
+  }
+
+  const volLabel = mode === "edit" ? "حجم جدید" : mode === "reserve" ? "حجم رزرو تمدید" : "حجم تمدید";
+  const monthLabel = mode === "edit" ? "مدت جدید (از امروز)" : mode === "reserve" ? "مدت رزرو" : "مدت تمدید";
+
   return (
-    <Modal open={open && Boolean(info)} title="تمدید سرویس" onClose={onClose}>
+    <Modal open={open && Boolean(info)} title={modeTitle(mode)} onClose={onClose}>
       {info && rules && (
         <div className="rate-shop renew-shop">
           <p className="muted" style={{ marginTop: 0 }}>
@@ -254,6 +329,9 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
             حجم فعلی: {info.subscription.trafficLabel}
             {" · "}
             نوع: {info.categoryLabel}
+            {info.subscription.expiresAt
+              ? ` · انقضا: ${new Date(info.subscription.expiresAt).toLocaleDateString("fa-IR")}`
+              : ""}
           </p>
           {info.message && (
             <p className="muted" style={{ marginTop: 0 }}>
@@ -261,14 +339,54 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
             </p>
           )}
 
+          {modeCount > 1 && (
+            <div className="field">
+              <label>نوع عملیات</label>
+              <div className="chip-row">
+                {canRenewNow && (
+                  <button
+                    type="button"
+                    className={`chip${mode === "renew" ? " on" : ""}`}
+                    disabled={busy}
+                    onClick={() => setMode("renew")}
+                  >
+                    تمدید
+                  </button>
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    className={`chip${mode === "edit" ? " on" : ""}`}
+                    disabled={busy}
+                    onClick={() => setMode("edit")}
+                  >
+                    ویرایش
+                  </button>
+                )}
+                {canReserve && (
+                  <button
+                    type="button"
+                    className={`chip${mode === "reserve" ? " on" : ""}`}
+                    disabled={busy}
+                    onClick={() => setMode("reserve")}
+                  >
+                    رزرو تمدید
+                  </button>
+                )}
+              </div>
+              <p className="muted rate-shop-hint">{modeHint(mode)}</p>
+            </div>
+          )}
+          {modeCount <= 1 && <p className="muted rate-shop-hint">{modeHint(mode)}</p>}
+
           {rules.kind === "unlimited" ? (
             <div className="rate-shop-card">
-              <div className="rate-shop-card-label">حجم تمدید</div>
+              <div className="rate-shop-card-label">{volLabel}</div>
               <div className="rate-shop-unlimited">نامحدود</div>
             </div>
           ) : (
             <div className="rate-shop-card">
-              <div className="rate-shop-card-label">حجم تمدید (گیگابایت)</div>
+              <div className="rate-shop-card-label">{volLabel} (گیگابایت)</div>
               <div className="rate-stepper">
                 <button type="button" className="rate-step-btn" disabled={busy} onClick={() => bumpGb(-1)} aria-label="کاهش حجم">
                   −
@@ -295,7 +413,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
 
           {info.category !== "national" && monthOptions.length > 1 && (
             <div className="field">
-              <label>مدت تمدید</label>
+              <label>{monthLabel}</label>
               <div className="chip-row">
                 {monthOptions.map((m) => (
                   <button
@@ -311,11 +429,24 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
               </div>
             </div>
           )}
+          {info.category !== "national" && monthOptions.length <= 1 && (
+            <p className="muted" style={{ marginTop: 0 }}>
+              {monthLabel}: ۱ ماه
+            </p>
+          )}
 
           <div className="seek-price seek-price-live">
             <span className="muted">مبلغ</span>
             <strong className="num">
-              {quoting ? "…" : price != null ? formatToman(price) : quoteErr ? "—" : "…"}
+              {variant === "admin"
+                ? "رایگان"
+                : quoting
+                  ? "…"
+                  : price != null
+                    ? formatToman(price)
+                    : quoteErr
+                      ? "—"
+                      : "…"}
             </strong>
           </div>
           {discountAmount > 0 && priceBefore != null && priceBefore !== price && (
@@ -370,7 +501,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
           <div className="actions stack" style={{ marginTop: 14 }}>
             {variant === "admin" ? (
               <button type="button" className="btn primary wide" disabled={!canSubmit} onClick={() => void submit("wallet")}>
-                تمدید رایگان
+                {adminSubmitLabel()}
               </button>
             ) : (
               <>

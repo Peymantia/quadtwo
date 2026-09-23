@@ -123,7 +123,10 @@ export function mainMenuReply(opts: MainMenuOpts) {
       .text(BTN.allConfigs)
       .text(BTN.configLookup)
       .row()
+      .text(BTN.test)
+      .success()
       .text(BTN.hideKeyboard)
+      .row()
       .text(BTN.controlCenter)
       .row();
 
@@ -256,7 +259,10 @@ export function mainMenuInline(opts: MainMenuOpts) {
       .text(BTN.allConfigs, "m:configs")
       .text(BTN.configLookup, "m:cfglookup")
       .row()
+      .text(BTN.test, "m:test")
+      .success()
       .text(BTN.hideKeyboard, "m:hidekb")
+      .row()
       .text(BTN.controlCenter, "cc:home")
       .row();
     if (opts.demoMode) {
@@ -640,33 +646,29 @@ export function subscriptionDetailKeyboard(opts: {
   subId: string;
   panelEnabled?: boolean | null;
   canRenew?: boolean;
+  canReserve?: boolean;
+  canEdit?: boolean;
   canAddDays?: boolean;
   canAddGb?: boolean;
   isAdmin?: boolean;
 }) {
-  return userServiceActionsKeyboard(opts.subId, { isAdmin: opts.isAdmin });
+  return userServiceActionsKeyboard(opts.subId, {
+    isAdmin: opts.isAdmin,
+    canRenew: opts.canRenew,
+    canReserve: opts.canReserve,
+    canEdit: opts.canEdit,
+  });
 }
 
-/**
- * Service actions (after buy / my-services detail).
- *
- * Admin:
- * لینک اشتراک | لینک Base64 کانفیگ
- * افزایش روز | افزایش حجم
- * بروزرسانی | تغییر لینک ساب
- * تغییر نام دلخواه | نمایش QR Code
- * یادداشت | بازگشت
- *
- * Other roles:
- * لینک اشتراک | لینک Base64 کانفیگ
- * افزایش روز | افزایش حجم
- * تغییر لینک ساب | تغییر نام دلخواه
- * نمایش QR Code | یادداشت
- * بازگشت
- */
+/** Service actions (after buy / my-services detail). */
 export function userServiceActionsKeyboard(
   subId: string,
-  opts?: { isAdmin?: boolean },
+  opts?: {
+    isAdmin?: boolean;
+    canRenew?: boolean;
+    canReserve?: boolean;
+    canEdit?: boolean;
+  },
 ) {
   const kb = new InlineKeyboard()
     .text("🔗 لینک اشتراک", `sub:link:${subId}`)
@@ -675,6 +677,17 @@ export function userServiceActionsKeyboard(
     .text("📅 افزایش روز", `sub:adddays:${subId}`)
     .text("📏 افزایش حجم", `sub:addgb:${subId}`)
     .row();
+
+  const planRow: Array<{ text: string; data: string }> = [];
+  if (opts?.canRenew) planRow.push({ text: "♻️ تمدید", data: `sub:renew:${subId}` });
+  if (opts?.canReserve) planRow.push({ text: "⏳ رزرو تمدید", data: `sub:reserve:${subId}` });
+  if (opts?.canEdit) planRow.push({ text: "✏️ ویرایش پلن", data: `sub:edit:${subId}` });
+  for (let i = 0; i < planRow.length; i += 2) {
+    const a = planRow[i]!;
+    const b = planRow[i + 1];
+    if (b) kb.text(a.text, a.data).text(b.text, b.data).row();
+    else kb.text(a.text, a.data).row();
+  }
 
   if (opts?.isAdmin) {
     kb.text("🔄 بروزرسانی", `sub:refresh:${subId}`)
@@ -736,11 +749,15 @@ export function addGbWizardKeyboard(opts: {
   return kb;
 }
 
-export function renewPickKeyboard(subs: Array<{ id: string; code: string; email?: string }>) {
+export function renewPickKeyboard(
+  subs: Array<{ id: string; code: string; email?: string; mode?: "renew" | "reserve" }>,
+) {
   const kb = new InlineKeyboard();
   for (const s of subs.slice(0, 12)) {
-    const label = (s.email || s.code).slice(0, 28);
-    kb.text(`♻️ ${label}`, `sub:renew:${s.id}`).row();
+    const label = (s.email || s.code).slice(0, 24);
+    const prefix = s.mode === "reserve" ? "⏳" : "♻️";
+    const cb = s.mode === "reserve" ? `sub:reserve:${s.id}` : `sub:renew:${s.id}`;
+    kb.text(`${prefix} ${label}`, cb).row();
   }
   kb.text("« انصراف", "buy:cat:cancel");
   return kb;
@@ -756,11 +773,19 @@ export function renewWizardKeyboard(opts: {
   category?: string;
   discountsEnabled?: boolean;
   discountCode?: string | null;
+  mode?: "renew" | "edit" | "reserve";
 }) {
   const priceLabel = opts.price === null ? "❌ بدون قیمت" : formatToman(opts.price);
   const maxMonths = opts.maxMonths ?? 1;
   const vol = opts.unlimited ? "نامحدود 💎" : formatTraffic(opts.trafficGb);
   const showMonthStepper = maxMonths > 1 && opts.category !== "national";
+  const mode = opts.mode ?? "renew";
+  const confirmLabel =
+    mode === "edit"
+      ? "✅ تأیید ویرایش"
+      : mode === "reserve"
+        ? "✅ تأیید و پرداخت رزرو"
+        : "✅ تأیید و پرداخت تمدید";
 
   const kb = new InlineKeyboard();
 
@@ -796,7 +821,7 @@ export function renewWizardKeyboard(opts: {
   }
 
   return kb
-    .text("✅ تأیید و پرداخت تمدید", `renew:checkout:${opts.subId}`)
+    .text(confirmLabel, `renew:checkout:${opts.subId}`)
     .success()
     .row()
     .text("« بازگشت", "renew:back")
@@ -1002,7 +1027,9 @@ export function controlCenterKeyboard(opts?: { pendingPartners?: number }) {
     .text("📖 آموزش و دانلود اپ", "cc:guide")
     .row()
     .text("📜 قوانین", "cc:terms")
-    .text("🧪 دریافت اکانت تست", "cc:test")
+    .text("🧪 اکانت تست ادمین", "cc:test")
+    .row()
+    .text("⚙️ سرویس تست کاربران", "cc:test:cfg")
     .row()
     .text("📱 محدودیت کاربر", "cc:iplimit")
     .row()

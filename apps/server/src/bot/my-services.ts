@@ -26,11 +26,12 @@ export const addDaysState = new Map<number, { subId: string; days: number }>();
 export const addGbState = new Map<number, { subId: string; gb: number }>();
 
 /** Button label: Sanaei panel name only (email/title), no QT-code prefix. */
-function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest" | "note">) {
+function subLabel(sub: Pick<Subscription, "email" | "code" | "title" | "isTest" | "note" | "unsettled">) {
   const name = (sub.email || sub.title || "").trim() || (sub.code || "").trim() || "سرویس";
   // Always lead with note glyph so Premium/Universal icon shows (imported accounts may have empty note).
   let label = `📝 ${name}`;
   if (sub.isTest) label = `🧪 ${label}`;
+  if (sub.unsettled) label = `⚠️ ${label}`;
   return label.length > 30 ? `${label.slice(0, 29)}…` : label;
 }
 
@@ -96,15 +97,25 @@ export async function showMyServicesList(
   }
 }
 
-function detailText(live: LiveSubStatus, createdAt: Date, note?: string | null) {
+function detailText(live: LiveSubStatus, createdAt: Date, note?: string | null, unsettled?: { amount: number; deadline: Date | null; held: boolean } | null) {
   const created = createdAt.toLocaleDateString("fa-IR");
   const noteLine = note?.trim()
     ? `\n📝 یادداشت:\n${note.trim()}`
     : "\n📝 یادداشت: —";
+  const unsettledLine = unsettled
+    ? `\n⚠️ تسویه نشده · ${unsettled.amount.toLocaleString("fa-IR")} تومان${
+        unsettled.held
+          ? " · غیرفعال تا شارژ کیف پول"
+          : unsettled.deadline
+            ? ` · مهلت تا ${unsettled.deadline.toLocaleString("fa-IR")}`
+            : ""
+      }`
+    : "";
   return [
     ...liveStatusText(live).split("\n"),
     `📅 تاریخ ساخت: ${created}`,
     noteLine,
+    unsettledLine,
     live.subUrl ? `\n🔗 لینک ساب در دکمه‌های زیر` : "",
   ]
     .filter(Boolean)
@@ -124,23 +135,40 @@ export async function showSubscriptionDetail(ctx: Context, subId: string, edit =
   }
 
   const live = await getLiveSubscriptionStatus(sub.id);
+  const unsettledInfo = sub.unsettled
+    ? { amount: sub.unsettledAmount, deadline: sub.unsettledDeadline, held: sub.unsettledHeld }
+    : null;
   const text = live
-    ? detailText(live, sub.createdAt, sub.note)
+    ? detailText(live, sub.createdAt, sub.note, unsettledInfo)
     : [
         `🆔 ${sub.code}`,
         `📛 نام: ${sub.email}`,
-        `حجم: ${sub.isTest ? "۲۵۰ مگابایت" : `${sub.trafficGb ?? "—"} GB`}`,
+        `حجم: ${sub.isTest ? (sub.trafficGb != null && sub.trafficGb >= 1 ? `${sub.trafficGb} GB` : sub.trafficGb != null && sub.trafficGb > 0 ? `${Math.round(sub.trafficGb * 1024)} مگ` : "۲۵۰ مگابایت") : `${sub.trafficGb ?? "—"} GB`}`,
         `📅 تاریخ ساخت: ${sub.createdAt.toLocaleDateString("fa-IR")}`,
         sub.note?.trim() ? `📝 یادداشت:\n${sub.note.trim()}` : "📝 یادداشت: —",
-      ].join("\n");
+        unsettledInfo
+          ? `⚠️ تسویه نشده · ${unsettledInfo.amount.toLocaleString("fa-IR")} تومان`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
 
   const panelEnabled = live?.panelEnabled;
-  const renew = sub.isTest ? { ok: false } : await checkRenewEligibility(sub.id);
+  const renew = sub.isTest ? { ok: false as const, hoursLeft: null as number | null } : await checkRenewEligibility(sub.id);
+  const canReserve =
+    !sub.isTest &&
+    !renew.ok &&
+    typeof renew.hoursLeft === "number" &&
+    renew.hoursLeft > 0 &&
+    !(sub.startsOnConnect && !sub.activatedAt);
+  const canEdit = !sub.isTest && !(sub.startsOnConnect && !sub.activatedAt);
   const isAdmin = await isControlAdmin(ctx.from?.id);
   const kb = subscriptionDetailKeyboard({
     subId: sub.id,
     panelEnabled,
     canRenew: renew.ok,
+    canReserve,
+    canEdit,
     canAddDays: !sub.isTest,
     canAddGb: !sub.isTest && sub.trafficGb != null && sub.trafficGb > 0,
     isAdmin,

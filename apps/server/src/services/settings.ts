@@ -106,6 +106,10 @@ const defaults: Record<string, string> = {
   extra_admin_ids: "",
   /** Default IP/device limit for new configs (0 = unlimited) */
   default_limit_ip: "2",
+  /** Max wallet overdraft (toman) when user.negativeCreditAllowed */
+  negative_credit_limit: "500000",
+  /** Hours unsettled (negative-credit) accounts stay active before auto-disable */
+  negative_credit_grace_hours: "24",
   /** Legacy global mode — kept in sync with pricing_modes_json.user */
   pricing_mode: "matrix",
   /** Per-role: matrix = PriceCell plans | rate = per-GB + per-month formula */

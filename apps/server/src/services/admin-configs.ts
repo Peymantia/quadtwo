@@ -1,5 +1,5 @@
 import { UserRole, SubscriptionStatus, OrderStatus, OrderKind, type Subscription } from "@prisma/client";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { prisma } from "../db.js";
 import { resolvePanelForSubscription, listPanelServers, createXuiFromPanel, panelInboundIds } from "./panel-servers.js";
 import { createXuiFromEnv, type XuiClient } from "../panel/xui-client.js";
@@ -10,6 +10,7 @@ import { gbToBytes, bytesToGb, shortCode, randomSubId } from "../utils/format.js
 import { resolveSubUrl } from "./provision.js";
 import { sanitizeSubBase } from "./sub-url.js";
 import { getSetting, setSetting } from "./settings.js";
+import { assertValidAccountName } from "../utils/account-name.js";
 import {
   applyPanelExpiryToBotData,
   expiryFromPanel,
@@ -42,6 +43,8 @@ export type ConfigListItem = {
   trafficGb?: number | null;
   expiresAt?: string | null;
   createdAt?: string | null;
+  subUrl?: string | null;
+  panelSubId?: string | null;
 };
 
 function encodePanelGroupKey(name: string) {
@@ -329,6 +332,8 @@ function listItemFromSub(s: {
   trafficGb: number | null;
   expiresAt: Date;
   createdAt: Date;
+  subUrl?: string | null;
+  panelSubId?: string | null;
   user: {
     username: string | null;
     firstName?: string | null;
@@ -350,6 +355,8 @@ function listItemFromSub(s: {
     trafficGb: s.trafficGb,
     expiresAt: s.expiresAt.toISOString(),
     createdAt: s.createdAt.toISOString(),
+    subUrl: s.subUrl ?? null,
+    panelSubId: s.panelSubId ?? null,
   };
 }
 
@@ -379,6 +386,11 @@ function configMatchesSearch(item: ConfigListItem, q: string): boolean {
     item.title,
     item.note,
     item.searchText,
+    item.subUrl,
+    item.panelSubId,
+    item.status,
+    item.subId,
+    item.trafficGb != null ? String(item.trafficGb) : null,
   ]
     .filter((x): x is string => Boolean(x && String(x).trim()))
     .join("\n")
@@ -848,18 +860,21 @@ export async function getConfigDetail(opts: {
 
 /**
  * Update account fields on bot DB and/or 3x-ui panel.
+ * Pass `newEmail` to rename the Sanaei panel client email (account name).
  */
 export async function updateConfig(opts: {
   email: string;
   subId?: string | null;
+  /** New panel email / account name (Sanaei client email) */
+  newEmail?: string | null;
   title?: string | null;
   note?: string | null;
   trafficGb?: number | null;
   expiresAt?: string | null;
   limitIp?: number;
   enable?: boolean;
-}): Promise<{ ok: true; message: string }> {
-  const email = opts.email.trim();
+}): Promise<{ ok: true; message: string; email: string }> {
+  let email = opts.email.trim();
   if (!email) throw new Error("ایمیل کانفیگ خالی است");
 
   const sub = await findSubByEmailOrId(email, opts.subId);
@@ -875,6 +890,17 @@ export async function updateConfig(opts: {
   if (!xui) {
     const clients = await activeXuiClients();
     xui = clients[0] ?? null;
+  }
+
+  const desiredRaw = opts.newEmail?.trim();
+  if (desiredRaw && desiredRaw.toLowerCase() !== email.toLowerCase()) {
+    const renamed = await renameConfigEmail({
+      currentEmail: email,
+      subId: sub?.id ?? opts.subId,
+      newEmail: desiredRaw,
+      xui,
+    });
+    email = renamed.email;
   }
 
   let panelUpdated = false;
@@ -898,8 +924,11 @@ export async function updateConfig(opts: {
         }
         if (opts.enable !== undefined) patch.enable = opts.enable;
         if (opts.title !== undefined || opts.note !== undefined) {
-          const title = opts.title !== undefined ? opts.title : sub?.title;
-          const note = opts.note !== undefined ? opts.note : sub?.note;
+          const fresh = sub
+            ? await prisma.subscription.findUnique({ where: { id: sub.id } })
+            : null;
+          const title = opts.title !== undefined ? opts.title : fresh?.title ?? sub?.title;
+          const note = opts.note !== undefined ? opts.note : fresh?.note ?? sub?.note;
           const parts = [title?.trim(), note?.trim()].filter(Boolean);
           patch.comment = parts.join(" | ").slice(0, 200);
         }
@@ -912,7 +941,8 @@ export async function updateConfig(opts: {
     }
   }
 
-  if (sub) {
+  const freshSub = await findSubByEmailOrId(email, sub?.id ?? opts.subId);
+  if (freshSub) {
     const data: Record<string, unknown> = {};
     if (opts.title !== undefined) {
       data.title = opts.title?.trim() ? opts.title.trim().slice(0, 80) : null;
@@ -932,7 +962,7 @@ export async function updateConfig(opts: {
       data.expiresAt = d;
       data.startsOnConnect = false;
       data.panelExpiryTime = BigInt(d.getTime());
-      if (!sub.activatedAt) data.activatedAt = new Date();
+      if (!freshSub.activatedAt) data.activatedAt = new Date();
     }
     if (opts.enable !== undefined) {
       data.status = opts.enable ? "active" : "disabled";
@@ -941,7 +971,7 @@ export async function updateConfig(opts: {
       data.limitIp = Math.max(0, Math.min(100, Math.floor(opts.limitIp)));
     }
     if (Object.keys(data).length) {
-      await prisma.subscription.update({ where: { id: sub.id }, data });
+      await prisma.subscription.update({ where: { id: freshSub.id }, data });
     }
   } else if (!panelUpdated) {
     throw new Error("اکانت در پنل و دیتابیس پیدا نشد");
@@ -949,8 +979,72 @@ export async function updateConfig(opts: {
 
   const parts: string[] = [];
   if (panelUpdated) parts.push("پنل");
-  if (sub) parts.push("دیتابیس ربات");
-  return { ok: true, message: `ذخیره شد (${parts.join(" + ")})` };
+  if (freshSub || sub) parts.push("دیتابیس ربات");
+  return { ok: true, message: `ذخیره شد (${parts.join(" + ")})`, email };
+}
+
+/** Rename Sanaei panel client email (+ bot DB) for admin/partner config edit. */
+async function renameConfigEmail(opts: {
+  currentEmail: string;
+  subId?: string | null;
+  newEmail: string;
+  xui: XuiClient | null;
+}): Promise<{ email: string }> {
+  let base = assertValidAccountName(opts.newEmail);
+  if (base.length > 29) base = base.slice(0, 29);
+
+  const sub = await findSubByEmailOrId(opts.currentEmail, opts.subId);
+
+  async function taken(candidate: string): Promise<boolean> {
+    const db = await prisma.subscription.findFirst({
+      where: {
+        email: candidate,
+        ...(sub ? { id: { not: sub.id } } : {}),
+      },
+      select: { id: true },
+    });
+    if (db) return true;
+    if (!opts.xui) return false;
+    try {
+      const got = await opts.xui.getClient(candidate);
+      return Boolean(got.obj?.client);
+    } catch {
+      return false;
+    }
+  }
+
+  let candidate = base;
+  let attempts = 0;
+  while (candidate.toLowerCase() !== opts.currentEmail.toLowerCase() && (await taken(candidate))) {
+    attempts += 1;
+    if (attempts > 20) throw new Error("نام‌های مشابه زیاد است؛ نام دیگری انتخاب کنید");
+    const suffix = String(randomInt(100, 1000));
+    candidate = `${base.slice(0, Math.max(1, 32 - suffix.length))}${suffix}`;
+  }
+
+  if (candidate.toLowerCase() === opts.currentEmail.toLowerCase()) {
+    return { email: opts.currentEmail };
+  }
+
+  if (opts.xui) {
+    const got = await opts.xui.getClient(opts.currentEmail);
+    const client = got.obj?.client;
+    if (!client) throw new Error("کلاینت در پنل پیدا نشد");
+    await opts.xui.updateClient(opts.currentEmail, { ...client, email: candidate });
+  }
+
+  if (sub) {
+    await prisma.subscription.update({
+      where: { id: sub.id },
+      data: {
+        email: candidate,
+        // Keep display title unless it was just mirroring the old email
+        title: !sub.title || sub.title === sub.email ? candidate : sub.title,
+      },
+    });
+  }
+
+  return { email: candidate };
 }
 
 export type SyncDiffItem = {
@@ -1783,13 +1877,14 @@ export async function refreshSubscriptionFromPanel(
           changed.push("یادداشت");
         }
       } else {
-        // Whole comment as display title when it looks like a name; otherwise as note.
-        if (panelComment.length <= 80 && panelComment !== (sub.title ?? "").trim()) {
-          data.title = panelComment.slice(0, 80);
-          changed.push("عنوان");
-        } else if (panelComment !== (sub.note ?? "").trim()) {
-          data.note = panelComment.slice(0, 500);
-          changed.push("یادداشت");
+        // Single-segment panel comment is usually agent/group identity from provision —
+        // never treat it as the account display title (that confused the edit "نام" field).
+        if (
+          !sub.note &&
+          panelComment.length <= 80 &&
+          panelComment !== (sub.email ?? "").trim()
+        ) {
+          // leave note empty; identity stays on the panel comment only
         }
       }
     }

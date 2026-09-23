@@ -81,6 +81,14 @@ if (bots.length) {
   startPanelReconcileCron();
   console.log("panel reconcile cron started (every 10m, per tenant)");
 
+  const { startRenewReserveCron } = await import("./services/subscription-lifecycle.js");
+  startRenewReserveCron();
+  console.log("renew-reserve cron started (every 5m)");
+
+  const { startUnsettledDisableCron } = await import("./services/negative-credit.js");
+  startUnsettledDisableCron();
+  console.log("unsettled-disable cron started (every 5m)");
+
   const { startBackupCron } = await import("./services/backup.js");
   const { isDemoMode } = await import("./services/license.js");
   if (isDemoMode()) {

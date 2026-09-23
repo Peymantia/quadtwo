@@ -19,7 +19,13 @@ export type HomeData = {
     discountMaxPercent?: number;
     isSuperAdmin?: boolean;
   };
-  wallet: { balance: number };
+  wallet: {
+    balance: number;
+    creditLimit?: number;
+    spendable?: number;
+    debt?: number;
+    negativeCreditAllowed?: boolean;
+  };
   stats: { subscriptions: number; active: number };
 };
 

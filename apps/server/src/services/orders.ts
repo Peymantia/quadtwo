@@ -81,18 +81,56 @@ export async function createMatrixOrder(input: {
     throw new Error("در شرایط فعلی خرید عمده‌فروشی فعال نیست");
   }
 
-  if (kind === OrderKind.renew) {
-    if (!input.targetSubId) throw new Error("سرویس هدف برای تمدید مشخص نشده است");
+  if (kind === OrderKind.renew || kind === OrderKind.edit || kind === OrderKind.renew_reserve) {
+    if (!input.targetSubId) throw new Error("سرویس هدف مشخص نشده است");
     const target = await prisma.subscription.findFirst({
       where: input.forceRenew
         ? { id: input.targetSubId }
         : { id: input.targetSubId, userId: input.userId },
     });
-    if (!target) throw new Error("سرویس برای تمدید پیدا نشد");
-    if (!input.forceRenew) {
+    if (!target) throw new Error("سرویس پیدا نشد");
+    if (target.isTest) throw new Error("سرویس تست قابل ویرایش/تمدید نیست");
+
+    if (kind === OrderKind.renew && !input.forceRenew) {
       const eligibility = await checkRenewEligibility(target.id);
       if (!eligibility.ok) throw new Error(eligibility.message);
     }
+
+    if (kind === OrderKind.edit) {
+      if (target.startsOnConnect && !target.activatedAt && !input.forceRenew) {
+        throw new Error("این سرویس هنوز فعال نشده؛ بعد از اولین اتصال می‌توانید ویرایش کنید.");
+      }
+    }
+
+    if (kind === OrderKind.renew_reserve) {
+      if (target.startsOnConnect && !target.activatedAt && !input.forceRenew) {
+        throw new Error("این سرویس هنوز فعال نشده؛ بعد از اولین اتصال می‌توانید رزرو تمدید بگذارید.");
+      }
+      if (!input.forceRenew) {
+        const eligibility = await checkRenewEligibility(target.id);
+        if (eligibility.ok) {
+          throw new Error("این سرویس الان قابل تمدید فوری است؛ رزرو لازم نیست. از تمدید استفاده کنید.");
+        }
+      }
+      const existingReserve = await prisma.order.findFirst({
+        where: {
+          targetSubId: target.id,
+          kind: OrderKind.renew_reserve,
+          status: {
+            in: [
+              OrderStatus.pending_payment,
+              OrderStatus.awaiting_review,
+              OrderStatus.reserved,
+              OrderStatus.paid,
+            ],
+          },
+        },
+      });
+      if (existingReserve) {
+        throw new Error("برای این سرویس قبلاً یک رزرو تمدید ثبت شده است");
+      }
+    }
+
     if (target.serverless || serverlessOn) {
       category = SERVERLESS_CATEGORY;
     } else {
@@ -118,7 +156,7 @@ export async function createMatrixOrder(input: {
   }
 
   // ——— Serverless formula plans (weekly months=0, or 1–2 months) ———
-  if (serverlessOn && (kind === OrderKind.new || kind === OrderKind.renew)) {
+  if (serverlessOn && (kind === OrderKind.new || kind === OrderKind.renew || kind === OrderKind.edit || kind === OrderKind.renew_reserve)) {
     category = SERVERLESS_CATEGORY;
     const cfg = await getServerlessPricingConfig();
     const monthsRaw = Number(input.months);
@@ -250,7 +288,10 @@ export async function createMatrixOrder(input: {
       : await resolvePrice(pricedUser, trafficGb, months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
   const quantity =
-    kind === OrderKind.renew || serverlessOn
+    kind === OrderKind.renew ||
+    kind === OrderKind.edit ||
+    kind === OrderKind.renew_reserve ||
+    serverlessOn
       ? 1
       : Math.max(1, Math.min(50, input.quantity ?? 1));
   const defaultIp = await getDefaultLimitIp();
@@ -314,7 +355,8 @@ export async function createMatrixOrder(input: {
 }
 
 export async function createWalletChargeOrder(userId: string, amount: number) {
-  if (amount < 10_000) throw new Error("حداقل شارژ ۱۰٬۰۰۰ تومان است");
+  const { assertWalletChargeMin } = await import("./negative-credit.js");
+  await assertWalletChargeMin(userId, amount);
   const { resolveTenantIdOrPlatform } = await import("./tenants.js");
   const tenantId = await resolveTenantIdOrPlatform();
   return prisma.order.create({
@@ -324,7 +366,7 @@ export async function createWalletChargeOrder(userId: string, amount: number) {
       kind: OrderKind.wallet_charge,
       trafficGb: null,
       months: 0,
-      price: amount,
+      price: Math.floor(amount),
       accountName: "wallet",
       status: OrderStatus.pending_payment,
       paymentMethod: PaymentMethod.card_to_card,
@@ -354,7 +396,19 @@ export async function payOrderWithWallet(orderId: string, userId: string) {
     },
   });
   await recordDiscountUse(order.discountCodeId);
-  return fulfillAfterPaid(order.id);
+  const result = await fulfillAfterPaid(order.id);
+  try {
+    const { markUnsettledFromWalletPurchase } = await import("./negative-credit.js");
+    await markUnsettledFromWalletPurchase(
+      order.id,
+      result && typeof result === "object" && "subscriptionId" in result
+        ? (result as { subscriptionId: string; bulk?: Array<{ subscriptionId: string }> })
+        : null,
+    );
+  } catch (err) {
+    console.warn("[negative-credit] mark unsettled failed", order.id, err);
+  }
+  return result;
 }
 
 /** Admin complimentary create: mark paid without debit, then fulfill. */
@@ -371,7 +425,14 @@ export async function provisionAdminComplimentary(orderId: string, _adminUserId?
     data: {
       paymentMethod: PaymentMethod.wallet,
       status: OrderStatus.paid,
-      adminNote: order.kind === OrderKind.renew ? "تمدید رایگان توسط ادمین" : "ساخت رایگان توسط ادمین",
+      adminNote:
+        order.kind === OrderKind.renew
+          ? "تمدید رایگان توسط ادمین"
+          : order.kind === OrderKind.edit
+            ? "ویرایش رایگان توسط ادمین"
+            : order.kind === OrderKind.renew_reserve
+              ? "رزرو تمدید رایگان توسط ادمین"
+              : "ساخت رایگان توسط ادمین",
     },
   });
   await recordDiscountUse(order.discountCodeId);
@@ -468,6 +529,7 @@ export async function markPaid(orderId: string) {
   if (!existing) throw new Error("سفارش پیدا نشد");
   if (
     existing.status === OrderStatus.paid ||
+    existing.status === OrderStatus.reserved ||
     existing.status === OrderStatus.awaiting_delivery ||
     existing.status === OrderStatus.provisioning ||
     existing.status === OrderStatus.completed
@@ -501,17 +563,21 @@ export function orderSummaryText(order: {
   const kindLabel =
     order.kind === OrderKind.renew
       ? "تمدید"
-      : order.kind === OrderKind.add_days
-        ? `افزایش ${order.months} روز`
-        : order.kind === OrderKind.add_gb
-          ? `افزایش ${order.trafficGb ?? 0} گیگ`
-          : order.kind === OrderKind.rotate_sub
-            ? "تغییر لینک ساب"
-            : order.kind === OrderKind.rotate_uuid
-              ? "تغییر لینک کانفیگ"
-              : qty > 1
-                ? "خرید عمده (Bulk)"
-                : "خرید جدید";
+      : order.kind === OrderKind.edit
+        ? "ویرایش اشتراک"
+        : order.kind === OrderKind.renew_reserve
+          ? "رزرو تمدید"
+          : order.kind === OrderKind.add_days
+            ? `افزایش ${order.months} روز`
+            : order.kind === OrderKind.add_gb
+              ? `افزایش ${order.trafficGb ?? 0} گیگ`
+              : order.kind === OrderKind.rotate_sub
+                ? "تغییر لینک ساب"
+                : order.kind === OrderKind.rotate_uuid
+                  ? "تغییر لینک کانفیگ"
+                  : qty > 1
+                    ? "خرید عمده (Bulk)"
+                    : "خرید جدید";
   const vol =
     order.kind === OrderKind.add_days
       ? `${order.months} روز`

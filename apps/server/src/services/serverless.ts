@@ -52,7 +52,8 @@ export type ServerlessDurationOption = {
 export type FulfillResult =
   | ProvisionResult
   | { kind: "wallet_credit"; balance: number }
-  | { kind: "serverless_pending" };
+  | { kind: "serverless_pending" }
+  | { kind: "renew_reserved"; orderId: string };
 
 function numSetting(raw: string, fallback: number, min = 0, max = 10_000_000): number {
   const n = Number(raw);
@@ -265,7 +266,11 @@ export async function orderNeedsServerlessDelivery(order: {
     return false;
   }
 
-  if (order.kind === OrderKind.renew) {
+  if (order.kind === OrderKind.renew_reserve) {
+    return false;
+  }
+
+  if (order.kind === OrderKind.renew || order.kind === OrderKind.edit) {
     const target = order.targetSub;
     if (!target) return true;
     return isServerlessNativeSub(target);
@@ -408,6 +413,15 @@ export async function fulfillAfterPaid(orderId: string): Promise<FulfillResult> 
     return provisionOrder(orderId);
   }
 
+  // Prepaid renew: charge now, apply when current package ends
+  if (order.kind === OrderKind.renew_reserve) {
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.reserved },
+    });
+    return { kind: "renew_reserved" as const, orderId };
+  }
+
   if (await orderNeedsServerlessDelivery(order)) {
     return enterServerlessAwaitingDelivery(orderId);
   }
@@ -420,6 +434,12 @@ export function isServerlessPending(
   result: FulfillResult,
 ): result is { kind: "serverless_pending" } {
   return "kind" in result && result.kind === "serverless_pending";
+}
+
+export function isRenewReserved(
+  result: FulfillResult,
+): result is { kind: "renew_reserved"; orderId: string } {
+  return "kind" in result && result.kind === "renew_reserved";
 }
 
 async function qrForSub(subUrl: string) {
