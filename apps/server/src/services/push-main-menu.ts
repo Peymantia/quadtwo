@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { effectiveRole } from "./demo-role.js";
 import { isDemoMode } from "./license.js";
 import { isServerlessEnabled, resolveMiniAppUrl } from "./settings.js";
-import { attachPremiumTextEntities, getEmojiStyle } from "./emoji-transform.js";
+import { attachPremiumTextEntities, applyPremiumReplyMarkup, getEmojiStyle } from "./emoji-transform.js";
 
 export async function mainMenuOptsForTelegramId(telegramId: bigint | number): Promise<MainMenuOpts | null> {
   const user = await prisma.user.findFirst({ where: { telegramId: BigInt(telegramId) } });
@@ -31,7 +31,7 @@ export async function notifyTelegramWithMainMenu(telegramId: bigint | number, te
       text,
     };
     if (opts) {
-      body.reply_markup = mainMenuReply(opts);
+      body.reply_markup = await applyPremiumReplyMarkup(mainMenuReply(opts));
     }
     if (style === "premium") {
       const entities = attachPremiumTextEntities(text);

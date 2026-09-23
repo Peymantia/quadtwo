@@ -138,6 +138,7 @@ import { getSubscriptionTrafficBytes } from "../services/live-status.js";
 import { checkRenewEligibility, inferRenewCategory } from "../services/renew-eligibility.js";
 import { dashBaseUrl, env } from "../config/env.js";
 import { clearEmojiStyleCache, attachPremiumTextEntities, getEmojiStyle } from "../services/emoji-transform.js";
+import { getDemoAppearance, setDemoAppearance } from "../services/demo-appearance.js";
 import { createTelegramBot } from "../bot/telegram.js";
 
 type Vars = { userId: string; role: string; telegramId: string; tenantId: string };
@@ -3293,6 +3294,92 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.get("/admin/settings", async (c) => c.json({ settings: await getAllSettings() }));
 
+  /** Production admin → demo sidecar appearance (emoji + web theme). */
+  api.get("/admin/demo-appearance", async (c) => {
+    if (isDemoMode()) {
+      // Already on the demo process — use local settings
+      const s = await getAllSettings();
+      return c.json({
+        available: true,
+        self: true,
+        emoji_style: s.emoji_style === "premium" ? "premium" : "universal",
+        ui_skin: s.ui_skin === "studio" ? "studio" : "classic",
+        ui_color_mode:
+          s.ui_color_mode === "light" ||
+          s.ui_color_mode === "dark" ||
+          s.ui_color_mode === "system" ||
+          s.ui_color_mode === "telegram"
+            ? s.ui_color_mode
+            : "system",
+      });
+    }
+    const result = await getDemoAppearance();
+    return c.json({ ...result, self: false });
+  });
+
+  api.put("/admin/demo-appearance", async (c) => {
+    const body = await c.req.json<{
+      emoji_style?: string;
+      ui_skin?: string;
+      ui_color_mode?: string;
+    }>();
+    const patch: {
+      emoji_style?: "premium" | "universal";
+      ui_skin?: "studio" | "classic";
+      ui_color_mode?: "light" | "dark" | "system" | "telegram";
+    } = {
+      emoji_style:
+        body.emoji_style === "premium"
+          ? "premium"
+          : body.emoji_style === "universal"
+            ? "universal"
+            : undefined,
+      ui_skin:
+        body.ui_skin === "studio" ? "studio" : body.ui_skin === "classic" ? "classic" : undefined,
+      ui_color_mode:
+        body.ui_color_mode === "light" ||
+        body.ui_color_mode === "dark" ||
+        body.ui_color_mode === "system" ||
+        body.ui_color_mode === "telegram"
+          ? body.ui_color_mode
+          : undefined,
+    };
+
+    if (isDemoMode()) {
+      if (patch.emoji_style) {
+        await setSetting("emoji_style", patch.emoji_style);
+        clearEmojiStyleCache();
+      }
+      if (patch.ui_skin) await setSetting("ui_skin", patch.ui_skin);
+      if (patch.ui_color_mode) await setSetting("ui_color_mode", patch.ui_color_mode);
+      await setSetting("demo_appearance_seeded", "1");
+      const s = await getAllSettings();
+      return c.json({
+        available: true,
+        self: true,
+        emoji_style: s.emoji_style === "premium" ? "premium" : "universal",
+        ui_skin: s.ui_skin === "studio" ? "studio" : "classic",
+        ui_color_mode:
+          s.ui_color_mode === "light" ||
+          s.ui_color_mode === "dark" ||
+          s.ui_color_mode === "system" ||
+          s.ui_color_mode === "telegram"
+            ? s.ui_color_mode
+            : "system",
+      });
+    }
+
+    try {
+      const result = await setDemoAppearance(patch);
+      if (!result.available) {
+        return c.json({ error: "دیتابیس دمو پیدا نشد — اول q2 demo setup را اجرا کنید" }, 404);
+      }
+      return c.json({ ...result, self: false });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
   api.get("/admin/notifications", async (c) => {
     const cfg = await getNotifConfig();
     const base = defaultNotifConfig();
@@ -3483,6 +3570,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         const style = v === "premium" ? "premium" : "universal";
         await setSetting("emoji_style", style);
         clearEmojiStyleCache();
+        if (isDemoMode()) await setSetting("demo_appearance_seeded", "1");
         continue;
       }
       if (k === "pricing_modes_json") {
@@ -3556,12 +3644,14 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       }
       if (k === "ui_skin") {
         await setSetting("ui_skin", v === "studio" ? "studio" : "classic");
+        if (isDemoMode()) await setSetting("demo_appearance_seeded", "1");
         continue;
       }
       if (k === "ui_color_mode") {
         const mode =
           v === "light" || v === "dark" || v === "system" || v === "telegram" ? v : "system";
         await setSetting("ui_color_mode", mode);
+        if (isDemoMode()) await setSetting("demo_appearance_seeded", "1");
         continue;
       }
       await setSetting(k, String(v));

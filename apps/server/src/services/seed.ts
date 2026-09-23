@@ -157,6 +157,12 @@ export async function ensureWholesaleDefaultPlans() {
 async function seedForTenant(tenantId: string) {
   await ensureDefaultSettings();
   await disableForcedChannelsInDemo();
+  try {
+    const { ensureDemoShowcaseAppearanceDefaults } = await import("./demo-appearance.js");
+    await ensureDemoShowcaseAppearanceDefaults();
+  } catch (err) {
+    console.warn("[demo] appearance defaults failed:", err);
+  }
   await cleanupInvalidUnlimitedCells();
   await ensureUnlimitedSalesEnabled();
 

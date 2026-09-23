@@ -263,6 +263,7 @@ export default function AdminPage() {
           flash={flash}
           askConfirm={askConfirm}
           hasPassword={Boolean(home.user.hasPassword)}
+          demoMode={Boolean(home.demoMode)}
           onPasswordSaved={() => void reload()}
           onCancel={() => {
             flash(null, null);
@@ -3844,15 +3845,25 @@ function SettingsTab({
   hasPassword,
   onPasswordSaved,
   onCancel,
+  demoMode = false,
 }: {
   flash: Flash;
   askConfirm: AskConfirm;
   hasPassword: boolean;
   onPasswordSaved: () => void;
   onCancel: () => void;
+  demoMode?: boolean;
 }) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
+  const [demoAppearance, setDemoAppearance] = useState<{
+    available: boolean;
+    self?: boolean;
+    emoji_style: string;
+    ui_skin: string;
+    ui_color_mode: string;
+  } | null>(null);
+  const [demoAppearanceBusy, setDemoAppearanceBusy] = useState(false);
   const [guideEdit, setGuideEdit] = useState<(typeof GUIDE_PLATFORMS)[number] | null>(null);
   const [guideDraft, setGuideDraft] = useState({ text: "", url: "" });
   const [termsEditOpen, setTermsEditOpen] = useState(false);
@@ -3924,6 +3935,33 @@ function SettingsTab({
       setBackupFiles(r.files ?? []);
     });
     void api<{ config: NonNullable<typeof notif> }>("/admin/notifications").then((r) => setNotif(r.config));
+    void api<{
+      available: boolean;
+      self?: boolean;
+      emoji_style?: string;
+      ui_skin?: string;
+      ui_color_mode?: string;
+    }>("/admin/demo-appearance")
+      .then((r) => {
+        if (!r.available) {
+          setDemoAppearance(null);
+          return;
+        }
+        setDemoAppearance({
+          available: true,
+          self: Boolean(r.self),
+          emoji_style: r.emoji_style === "premium" ? "premium" : "universal",
+          ui_skin: r.ui_skin === "studio" ? "studio" : "classic",
+          ui_color_mode:
+            r.ui_color_mode === "light" ||
+            r.ui_color_mode === "dark" ||
+            r.ui_color_mode === "telegram" ||
+            r.ui_color_mode === "system"
+              ? r.ui_color_mode
+              : "system",
+        });
+      })
+      .catch(() => setDemoAppearance(null));
   }, []);
 
   function openGuideEdit(platform: (typeof GUIDE_PLATFORMS)[number]) {
@@ -5235,13 +5273,15 @@ function SettingsTab({
 
       <SettingsAccordion
         id="appearance"
-        title="ظاهر و ایموجی"
+        title={demoMode ? "ظاهر و ایموجی ربات دمو" : "ظاهر و ایموجی"}
         icon="layers"
         openId={openSection}
         onToggle={toggleSection}
       >
         <p className="muted" style={{ marginTop: 0 }}>
-          قالب، حالت رنگ و سبک ایموجی ربات را یکجا تنظیم کنید. تغییرات با دکمهٔ ذخیره در پایین صفحه اعمال می‌شود.
+          {demoMode
+            ? "قالب وب‌پنل و سبک ایموجی همین ربات دمو را تنظیم کنید. بعد از ذخیره، در ربات /update بزنید."
+            : "قالب، حالت رنگ و سبک ایموجی ربات فروش را یکجا تنظیم کنید. تغییرات با دکمهٔ ذخیره در پایین صفحه اعمال می‌شود."}
         </p>
         <div className="settings-appearance-row">
           <div className="field settings-appearance-row__field">
@@ -5301,6 +5341,120 @@ function SettingsTab({
           در Studio کاربران می‌توانند با دکمه خورشید/ماه در هدر بین روشن و تیره جابه‌جا شوند. مود فقط برای Studio فعال است.
         </p>
       </SettingsAccordion>
+
+      {!demoMode && demoAppearance?.available && (
+        <SettingsAccordion
+          id="demo-appearance"
+          title="ظاهر ربات دمو"
+          icon="sun"
+          openId={openSection}
+          onToggle={toggleSection}
+        >
+          <p className="muted" style={{ marginTop: 0 }}>
+            ایموجی و تم وب‌پنل ربات نمایشگاهی (جدا از فروش اصلی). ذخیره فوراً روی دیتابیس دمو اعمال می‌شود؛ در ربات دمو
+            /update بزنید.
+          </p>
+          <div className="settings-appearance-row">
+            <div className="field settings-appearance-row__field">
+              <label>قالب</label>
+              <select
+                value={parseUiSkin(demoAppearance.ui_skin)}
+                disabled={demoAppearanceBusy}
+                onChange={(e) => {
+                  const ui_skin = parseUiSkin(e.target.value);
+                  setDemoAppearance((d) => (d ? { ...d, ui_skin } : d));
+                }}
+              >
+                <option value="classic">Classic</option>
+                <option value="studio">Studio</option>
+              </select>
+            </div>
+            <div className="field settings-appearance-row__field">
+              <label>مود</label>
+              <select
+                value={parseColorMode(demoAppearance.ui_color_mode)}
+                disabled={demoAppearanceBusy || parseUiSkin(demoAppearance.ui_skin) === "classic"}
+                onChange={(e) => {
+                  const ui_color_mode = e.target.value as ColorMode;
+                  setDemoAppearance((d) => (d ? { ...d, ui_color_mode } : d));
+                }}
+              >
+                <option value="system">خودکار</option>
+                <option value="dark">تیره</option>
+                <option value="light">روشن</option>
+                <option value="telegram">تلگرام</option>
+              </select>
+            </div>
+            <div className="field settings-appearance-row__field">
+              <label>ایموجی</label>
+              <select
+                value={demoAppearance.emoji_style === "premium" ? "premium" : "universal"}
+                disabled={demoAppearanceBusy}
+                onChange={(e) =>
+                  setDemoAppearance((d) =>
+                    d
+                      ? {
+                          ...d,
+                          emoji_style: e.target.value === "premium" ? "premium" : "universal",
+                        }
+                      : d,
+                  )
+                }
+              >
+                <option value="universal">Universal</option>
+                <option value="premium">Premium</option>
+              </select>
+            </div>
+          </div>
+          {demoAppearance.emoji_style === "premium" && (
+            <p className="hint settings-appearance-note">
+              حساب تلگرام سازندهٔ ربات دمو باید Premium باشد تا ایموجی‌های سفارشی دیده شوند.
+            </p>
+          )}
+          <div className="row" style={{ marginTop: 12, gap: 8 }}>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={demoAppearanceBusy}
+              onClick={() => {
+                void (async () => {
+                  setDemoAppearanceBusy(true);
+                  try {
+                    const r = await api<{
+                      available: boolean;
+                      emoji_style: string;
+                      ui_skin: string;
+                      ui_color_mode: string;
+                    }>("/admin/demo-appearance", {
+                      method: "PUT",
+                      body: {
+                        emoji_style: demoAppearance.emoji_style,
+                        ui_skin: demoAppearance.ui_skin,
+                        ui_color_mode: demoAppearance.ui_color_mode,
+                      },
+                    });
+                    setDemoAppearance({
+                      available: true,
+                      self: false,
+                      emoji_style: r.emoji_style === "premium" ? "premium" : "universal",
+                      ui_skin: r.ui_skin === "studio" ? "studio" : "classic",
+                      ui_color_mode: parseColorMode(r.ui_color_mode),
+                    });
+                    flash("ظاهر ربات دمو ذخیره شد");
+                  } catch (e) {
+                    flash(null, errText(e));
+                  } finally {
+                    setDemoAppearanceBusy(false);
+                  }
+                })();
+              }}
+            >
+              <Icon name="check" size={15} />
+              ذخیره ظاهر دمو
+            </button>
+          </div>
+        </SettingsAccordion>
+      )}
 
       <SettingsAccordion
         id="basics"
