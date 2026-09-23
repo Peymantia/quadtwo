@@ -24,6 +24,7 @@ import { broadcastAppearance } from "../../components/ThemeBoot";
 import { parseColorMode, parseUiSkin, setUserColorOverride, type ColorMode } from "../../lib/theme";
 import { PricesTab } from "../../components/prices/PricesTab";
 import { UserCustomPricingPanel } from "../../components/UserCustomPricingPanel";
+import { PanelHealthMonitor } from "../../components/PanelHealthMonitor";
 import { DEFAULT_TERMS_TEXT } from "../../lib/terms-default";
 
 const CONFIG_PAGE_SIZES = [10, 20, 30, 50, 100] as const;
@@ -332,6 +333,9 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
           <div className="value num">{stats?.activeSubs ?? "—"}</div>
         </button>
       </div>
+
+      <PanelHealthMonitor />
+
       <div className="panel">
         <h2>دسترسی سریع</h2>
         <div className="quick-actions">
@@ -4085,6 +4089,10 @@ const SETTINGS_DEFAULTS: Record<string, string> = {
   web_session_hours: "168",
   negative_credit_limit: "500000",
   negative_credit_grace_hours: "24",
+  panel_alert_enabled: "true",
+  panel_cpu_alert_pct: "85",
+  panel_ram_alert_pct: "90",
+  panel_disk_alert_pct: "92",
 };
 
 const GUIDE_PLATFORMS = [
@@ -5420,6 +5428,59 @@ function SettingsTab({
             onChange={(e) => onSettingNumberChange("negative_credit_grace_hours", e.target.value, 24)}
             style={{ width: 72 }}
           />
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">هشدار مصرف سرور پنل</div>
+            <div className="d">
+              اگر CPU / RAM / دیسک از آستانه بالاتر برود، به ادمین‌ها در ربات پیام می‌رود (هر ۴۵ دقیقه یک‌بار برای هر سرور).
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={settings.panel_alert_enabled !== "false"}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  panel_alert_enabled: e.target.checked ? "true" : "false",
+                }))
+              }
+            />
+            <span className="track" />
+          </label>
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="t">آستانه CPU / RAM / دیسک (٪)</div>
+            <div className="d">پیش‌فرض ۸۵ / ۹۰ / ۹۲</div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              className="num settings-input"
+              inputMode="numeric"
+              title="CPU"
+              value={formatSettingNumber(settings.panel_cpu_alert_pct, 85)}
+              onChange={(e) => onSettingNumberChange("panel_cpu_alert_pct", e.target.value, 85)}
+              style={{ width: 56 }}
+            />
+            <input
+              className="num settings-input"
+              inputMode="numeric"
+              title="RAM"
+              value={formatSettingNumber(settings.panel_ram_alert_pct, 90)}
+              onChange={(e) => onSettingNumberChange("panel_ram_alert_pct", e.target.value, 90)}
+              style={{ width: 56 }}
+            />
+            <input
+              className="num settings-input"
+              inputMode="numeric"
+              title="Disk"
+              value={formatSettingNumber(settings.panel_disk_alert_pct, 92)}
+              onChange={(e) => onSettingNumberChange("panel_disk_alert_pct", e.target.value, 92)}
+              style={{ width: 56 }}
+            />
+          </div>
         </div>
         <div className="setting-row">
           <div>

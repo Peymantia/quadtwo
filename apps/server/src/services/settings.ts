@@ -110,6 +110,11 @@ const defaults: Record<string, string> = {
   negative_credit_limit: "500000",
   /** Hours unsettled (negative-credit) accounts stay active before auto-disable */
   negative_credit_grace_hours: "24",
+  /** Alert admins when panel host CPU/RAM/disk is high */
+  panel_alert_enabled: "true",
+  panel_cpu_alert_pct: "85",
+  panel_ram_alert_pct: "90",
+  panel_disk_alert_pct: "92",
   /** Legacy global mode — kept in sync with pricing_modes_json.user */
   pricing_mode: "matrix",
   /** Per-role: matrix = PriceCell plans | rate = per-GB + per-month formula */

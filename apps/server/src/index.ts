@@ -89,6 +89,10 @@ if (bots.length) {
   startUnsettledDisableCron();
   console.log("unsettled-disable cron started (every 5m)");
 
+  const { startPanelStatusAlertCron } = await import("./services/panel-status.js");
+  startPanelStatusAlertCron(apiForTenant);
+  console.log("panel status alert cron started (every 3m, per tenant)");
+
   const { startBackupCron } = await import("./services/backup.js");
   const { isDemoMode } = await import("./services/license.js");
   if (isDemoMode()) {

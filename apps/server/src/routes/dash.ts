@@ -2996,6 +2996,36 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     }
   });
 
+  /** Live CPU/RAM/disk status for all tenant panel servers (tabs on home). */
+  api.get("/admin/panels/status", async (c) => {
+    try {
+      const { fetchAllPanelStatuses } = await import("../services/panel-status.js");
+      const panels = await fetchAllPanelStatuses();
+      return c.json({
+        panels,
+        thresholds: {
+          cpu: Number((await getSetting("panel_cpu_alert_pct")) || 85),
+          ram: Number((await getSetting("panel_ram_alert_pct")) || 90),
+          disk: Number((await getSetting("panel_disk_alert_pct")) || 92),
+          enabled: (await getSetting("panel_alert_enabled")) !== "false",
+        },
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.get("/admin/panels/:id/status", async (c) => {
+    try {
+      const { fetchPanelStatusById } = await import("../services/panel-status.js");
+      const panel = await fetchPanelStatusById(c.req.param("id"));
+      if (!panel) return c.json({ error: "Not found" }, 404);
+      return c.json({ panel });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
   api.post("/admin/import", async (c) => {
     const buf = Buffer.from(await c.req.arrayBuffer());
     const result = await importWorkbook(readWorkbookFromBuffer(buf));

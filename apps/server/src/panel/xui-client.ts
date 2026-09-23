@@ -22,6 +22,27 @@ export type XuiInbound = {
   remark?: string;
 };
 
+/** Live system status from `GET /panel/api/server/status`. */
+export type XuiServerStatus = {
+  cpu?: number;
+  cpuCores?: number;
+  logicalPro?: number;
+  cpuSpeedMhz?: number;
+  mem?: { current?: number; total?: number };
+  swap?: { current?: number; total?: number };
+  disk?: { current?: number; total?: number };
+  loads?: number[];
+  uptime?: number;
+  tcpCount?: number;
+  udpCount?: number;
+  xray?: { state?: string; errorMsg?: string; version?: string };
+  panelVersion?: string;
+  netIO?: { up?: number; down?: number };
+  netTraffic?: { sent?: number; recv?: number };
+  publicIP?: { ipv4?: string; ipv6?: string };
+  appStats?: { threads?: number; mem?: number; uptime?: number };
+};
+
 /**
  * 3x-ui Go model expects Client.id (UUID) as string.
  * Spreading getClient() can leave numeric id and break update/add.
@@ -347,6 +368,14 @@ export class XuiClient {
 
   getNewUUID() {
     return this.request<string>("panel/api/server/getNewUUID");
+  }
+
+  /**
+   * Live host metrics from 3x-ui (CPU, RAM, disk, Xray, net, …).
+   * @see GET /panel/api/server/status
+   */
+  getServerStatus() {
+    return this.request<XuiServerStatus>("panel/api/server/status");
   }
 
   listClients() {
