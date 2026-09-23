@@ -1445,42 +1445,44 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               </div>
             </div>
             <div className="users-mrow-actions">
-              <span className="users-mneg-label" title="اعتبار منفی">
-                اعتبار منفی
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(u.negativeCreditAllowed)}
-                    disabled={negCreditBusy}
-                    onChange={(e) => void setUserNegativeCredit(u.id, e.target.checked)}
-                  />
-                  <span className="track" />
-                </label>
-              </span>
-              <span className="users-mdisable-label" title="غیرفعال کردن خرید">
-                خرید
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={!u.purchasesDisabled}
-                    disabled={negCreditBusy || u.role === "admin"}
-                    onChange={(e) => void setUserPurchasesDisabled(u.id, !e.target.checked)}
-                  />
-                  <span className="track" />
-                </label>
-              </span>
-              <select
-                className="users-mrole"
-                value={u.role}
-                onChange={(e) => changeRole(u, e.target.value)}
-                aria-label="نقش"
-              >
-                {Object.entries(ROLE_FA).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
+              <div className="users-mrow-toggles">
+                <span className="users-mneg-label" title="اعتبار منفی">
+                  اعتبار منفی
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(u.negativeCreditAllowed)}
+                      disabled={negCreditBusy}
+                      onChange={(e) => void setUserNegativeCredit(u.id, e.target.checked)}
+                    />
+                    <span className="track" />
+                  </label>
+                </span>
+                <span className="users-mdisable-label" title="وضعیت کاربر">
+                  وضعیت کاربر
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={!u.purchasesDisabled}
+                      disabled={negCreditBusy || u.role === "admin"}
+                      onChange={(e) => void setUserPurchasesDisabled(u.id, !e.target.checked)}
+                    />
+                    <span className="track" />
+                  </label>
+                </span>
+                <select
+                  className="users-mrole"
+                  value={u.role}
+                  onChange={(e) => changeRole(u, e.target.value)}
+                  aria-label="نقش"
+                >
+                  {Object.entries(ROLE_FA).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button type="button" className="btn ghost sm users-mdetail-btn" onClick={() => setSelected(u)}>
                 <Icon name="wallet" size={14} />
                 جزئیات شارژ و قیمت

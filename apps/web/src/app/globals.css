@@ -1967,9 +1967,27 @@ html[data-theme="light"] .quick-action-btn {
   direction: rtl;
 }
 
-.users-mrow-actions .users-mrole {
-  flex: 1 1 110px;
-  max-width: 160px;
+.users-mrow-toggles {
+  display: flex;
+  flex: 1 1 100%;
+  width: 100%;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.users-mrow-toggles .users-mneg-label,
+.users-mrow-toggles .users-mdisable-label {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.users-mrow-toggles .users-mrole {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
 }
 
 .users-mrow-actions .users-mdetail-btn {
