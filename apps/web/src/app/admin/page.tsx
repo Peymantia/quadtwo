@@ -4176,7 +4176,7 @@ function SettingsTab({
 
   useEffect(() => {
     void api<{ settings: Record<string, string> }>("/admin/settings").then((r) => {
-      const nextSettings = { ...r.settings };
+      const nextSettings = { ...SETTINGS_DEFAULTS, ...r.settings };
       const nextPay = parsePayMethods(r.settings.payment_methods_json);
       setSettings(nextSettings);
       setBaselineSettings({ ...nextSettings });
