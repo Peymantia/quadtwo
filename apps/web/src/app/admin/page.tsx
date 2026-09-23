@@ -103,6 +103,7 @@ type AdminUser = {
   discountMaxPercent?: number;
   useCustomPricing?: boolean;
   negativeCreditAllowed?: boolean;
+  purchasesDisabled?: boolean;
   priceOverrides?: Array<{
     id: string;
     category: string;
@@ -624,8 +625,7 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
       <div className="panel">
         <h2>اکانت تست ادمین</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          ۱ روز · ۱ گیگابایت — بدون محدودیت تعداد. نام خالی = رندوم. همیشه پسوند <code dir="ltr">_Test</code> اضافه
-          می‌شود.
+          ۱ روز · ۱ گیگابایت — بدون محدودیت تعداد. نام خالی = رندوم.
         </p>
         <div className="field">
           <label>نام اکانت (اختیاری)</label>
@@ -638,9 +638,6 @@ function AdminCreateTab({ flash }: { flash: Flash }) {
             spellCheck={false}
             disabled={testBusy}
           />
-          <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
-            مثلاً <code dir="ltr">mycheck</code> → <code dir="ltr">mycheck_Test</code>
-          </p>
         </div>
         <button
           type="button"
@@ -1078,6 +1075,7 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               discountMaxPercent: r.user.discountMaxPercent ?? 30,
               useCustomPricing: r.user.useCustomPricing ?? false,
               negativeCreditAllowed: r.user.negativeCreditAllowed ?? false,
+              purchasesDisabled: r.user.purchasesDisabled ?? false,
               priceOverrides: r.user.priceOverrides ?? [],
             }
           : s,
@@ -1184,6 +1182,23 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
       setUsers((list) => list.map((u) => (u.id === userId ? { ...u, negativeCreditAllowed: allowed } : u)));
       setSelected((s) => (s && s.id === userId ? { ...s, negativeCreditAllowed: allowed } : s));
       flash(allowed ? "اعتبار منفی فعال شد" : "اعتبار منفی غیرفعال شد");
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setNegCreditBusy(false);
+    }
+  }
+
+  async function setUserPurchasesDisabled(userId: string, disabled: boolean) {
+    setNegCreditBusy(true);
+    try {
+      await api(`/admin/users/${userId}/purchases`, {
+        method: "PATCH",
+        body: { disabled },
+      });
+      setUsers((list) => list.map((u) => (u.id === userId ? { ...u, purchasesDisabled: disabled } : u)));
+      setSelected((s) => (s && s.id === userId ? { ...s, purchasesDisabled: disabled } : s));
+      flash(disabled ? "خرید کاربر غیرفعال شد" : "خرید کاربر فعال شد");
     } catch (e) {
       flash(null, errText(e));
     } finally {
@@ -1430,15 +1445,30 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
               </div>
             </div>
             <div className="users-mrow-actions">
-              <label className="switch" title="اعتبار منفی" style={{ marginInlineEnd: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(u.negativeCreditAllowed)}
-                  disabled={negCreditBusy}
-                  onChange={(e) => void setUserNegativeCredit(u.id, e.target.checked)}
-                />
-                <span className="track" />
-              </label>
+              <span className="users-mneg-label" title="اعتبار منفی">
+                منفی
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(u.negativeCreditAllowed)}
+                    disabled={negCreditBusy}
+                    onChange={(e) => void setUserNegativeCredit(u.id, e.target.checked)}
+                  />
+                  <span className="track" />
+                </label>
+              </span>
+              <span className="users-mdisable-label" title="غیرفعال کردن خرید">
+                خرید
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={!u.purchasesDisabled}
+                    disabled={negCreditBusy || u.role === "admin"}
+                    onChange={(e) => void setUserPurchasesDisabled(u.id, !e.target.checked)}
+                  />
+                  <span className="track" />
+                </label>
+              </span>
               <select
                 className="users-mrole"
                 value={u.role}
@@ -1535,6 +1565,25 @@ function UsersTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm 
                 checked={Boolean(selected.negativeCreditAllowed)}
                 disabled={negCreditBusy}
                 onChange={(e) => void setUserNegativeCredit(selected.id, e.target.checked)}
+              />
+              <span className="track" />
+            </label>
+          </div>
+
+          <h2 style={{ marginTop: 16, fontSize: "1rem" }}>دسترسی خرید</h2>
+          <div className="setting-row" style={{ marginBottom: 10 }}>
+            <div>
+              <div className="t">امکان خرید و شارژ</div>
+              <div className="d">
+                اگر خاموش باشد، کاربر نمی‌تواند خرید یا شارژ کند و پیام «ربات موقتا از دسترس خارج شده…» می‌بیند.
+              </div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={!selected.purchasesDisabled}
+                disabled={negCreditBusy || selected.role === "admin"}
+                onChange={(e) => void setUserPurchasesDisabled(selected.id, !e.target.checked)}
               />
               <span className="track" />
             </label>
@@ -2962,7 +3011,7 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
 
   return (
     <>
-      <div className="panel configs-search-panel">
+      <div className="panel configs-search-panel configs-search-panel--compact">
         <div className="field configs-search-field">
           <label htmlFor="admin-configs-search">جستجوی سریع اکانت</label>
           <input
@@ -2971,13 +3020,13 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
             dir="auto"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="ایمیل، نام، کد، نوت، لینک، مالک، وضعیت…"
+            placeholder="ایمیل، نام، کد، نوت…"
             autoComplete="off"
             spellCheck={false}
           />
           {searchInput.trim() && (
             <p className="muted configs-search-hint">
-              {loading ? "در حال جستجو…" : `${total.toLocaleString("fa-IR")} نتیجه`}
+              {loading ? "…" : `${total.toLocaleString("fa-IR")} نتیجه`}
               {" · "}
               <button type="button" className="linkish" onClick={() => setSearchInput("")}>
                 پاک کردن
@@ -3206,92 +3255,94 @@ function ConfigsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfir
 
       {editing && (
         <Modal open title={`ویرایش اکانت — ${editing.email}`} onClose={() => setEditing(null)} wide>
-          <div className="field">
-            <label>نام اکانت (ایمیل پنل)</label>
-            <input
-              dir="ltr"
-              value={editForm.accountName}
-              onChange={(e) => setEditForm((s) => ({ ...s, accountName: filterAccountNameInput(e.target.value) }))}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
-              {ACCOUNT_NAME_HINT}
-            </p>
-          </div>
-          <div className="field">
-            <label>عنوان نمایشی (اختیاری)</label>
-            <input
-              value={editForm.title}
-              onChange={(e) => setEditForm((s) => ({ ...s, title: e.target.value }))}
-              placeholder="مثلاً نام مشتری"
-            />
-          </div>
-          <div className="field">
-            <label>حجم GB (خالی = نامحدود)</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              value={editForm.trafficGb}
-              onChange={(e) => setEditForm((s) => ({ ...s, trafficGb: e.target.value }))}
-            />
-          </div>
-          <div className="field">
-            <label>انقضا</label>
-            <div className="expiry-quick-row">
+          <div className="edit-form-grid">
+            <div className="field">
+              <label>نام اکانت (ایمیل پنل)</label>
               <input
-                type="datetime-local"
                 dir="ltr"
-                value={editForm.expiresAt}
-                onChange={(e) => setEditForm((s) => ({ ...s, expiresAt: e.target.value }))}
+                value={editForm.accountName}
+                onChange={(e) => setEditForm((s) => ({ ...s, accountName: filterAccountNameInput(e.target.value) }))}
+                autoComplete="off"
+                spellCheck={false}
               />
-              <div className="chip-row expiry-quick-chips">
-                <button
-                  type="button"
-                  className="chip chip-sm"
-                  onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ weeks: 1 }) }))}
-                >
-                  ۱ هفته
-                </button>
-                <button
-                  type="button"
-                  className="chip chip-sm"
-                  onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 1 }) }))}
-                >
-                  ۱ ماه
-                </button>
-                <button
-                  type="button"
-                  className="chip chip-sm"
-                  onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 2 }) }))}
-                >
-                  ۲ ماه
-                </button>
-                <button
-                  type="button"
-                  className="chip chip-sm"
-                  onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 3 }) }))}
-                >
-                  ۳ ماه
-                </button>
-              </div>
+              <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+                {ACCOUNT_NAME_HINT}
+              </p>
             </div>
-            <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.78rem" }}>
-              انتخاب سریع از تاریخ امروز
-            </p>
-          </div>
-          <div className="field">
-            <label>لیمیت IP (۰ = نامحدود)</label>
-            <input
-              className="num"
-              inputMode="numeric"
-              value={editForm.limitIp}
-              onChange={(e) => setEditForm((s) => ({ ...s, limitIp: e.target.value }))}
-            />
-          </div>
-          <div className="field">
-            <label>نوت</label>
-            <input value={editForm.note} onChange={(e) => setEditForm((s) => ({ ...s, note: e.target.value }))} />
+            <div className="field">
+              <label>عنوان نمایشی (اختیاری)</label>
+              <input
+                value={editForm.title}
+                onChange={(e) => setEditForm((s) => ({ ...s, title: e.target.value }))}
+                placeholder="مثلاً نام مشتری"
+              />
+            </div>
+            <div className="field">
+              <label>حجم GB (خالی = نامحدود)</label>
+              <input
+                className="num"
+                inputMode="numeric"
+                value={editForm.trafficGb}
+                onChange={(e) => setEditForm((s) => ({ ...s, trafficGb: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label>انقضا</label>
+              <div className="expiry-quick-row">
+                <input
+                  type="datetime-local"
+                  dir="ltr"
+                  value={editForm.expiresAt}
+                  onChange={(e) => setEditForm((s) => ({ ...s, expiresAt: e.target.value }))}
+                />
+                <div className="chip-row expiry-quick-chips">
+                  <button
+                    type="button"
+                    className="chip chip-sm"
+                    onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ weeks: 1 }) }))}
+                  >
+                    ۱ هفته
+                  </button>
+                  <button
+                    type="button"
+                    className="chip chip-sm"
+                    onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 1 }) }))}
+                  >
+                    ۱ ماه
+                  </button>
+                  <button
+                    type="button"
+                    className="chip chip-sm"
+                    onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 2 }) }))}
+                  >
+                    ۲ ماه
+                  </button>
+                  <button
+                    type="button"
+                    className="chip chip-sm"
+                    onClick={() => setEditForm((s) => ({ ...s, expiresAt: expiryFromNow({ months: 3 }) }))}
+                  >
+                    ۳ ماه
+                  </button>
+                </div>
+              </div>
+              <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.78rem" }}>
+                انتخاب سریع از تاریخ امروز
+              </p>
+            </div>
+            <div className="field">
+              <label>لیمیت IP (۰ = نامحدود)</label>
+              <input
+                className="num"
+                inputMode="numeric"
+                value={editForm.limitIp}
+                onChange={(e) => setEditForm((s) => ({ ...s, limitIp: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label>نوت</label>
+              <input value={editForm.note} onChange={(e) => setEditForm((s) => ({ ...s, note: e.target.value }))} />
+            </div>
           </div>
           <div className="setting-row" style={{ marginBottom: 12 }}>
             <div className="t">فعال</div>

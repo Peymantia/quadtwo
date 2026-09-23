@@ -33,9 +33,31 @@ export type ClaimTestOptions = {
 /** Ensure panel email ends with `_Test` (max 32 chars). */
 export function withTestAccountSuffix(name: string): string {
   const cleaned = stripAccountName(name) || `t${randomBytes(3).toString("hex")}`;
-  const without = cleaned.replace(/_Test$/i, "");
+  const without = cleaned.replace(/_Test$/i, "").replace(/_test$/i, "");
   const maxBase = Math.max(1, 32 - TEST_SUFFIX.length);
   return `${without.slice(0, maxBase)}${TEST_SUFFIX}`;
+}
+
+/**
+ * Unique test email: first try `name_Test`; on collision `name_<rand>_Test`
+ * (fits 32-char panel email limit).
+ */
+export async function allocateUniqueTestEmail(baseName: string): Promise<string> {
+  const base = stripAccountName(baseName) || `t${randomBytes(3).toString("hex")}`;
+  const first = withTestAccountSuffix(base);
+  const taken = await prisma.subscription.findFirst({ where: { email: first }, select: { id: true } });
+  if (!taken) return first;
+
+  for (let i = 0; i < 12; i++) {
+    const rand = String(Math.floor(100 + Math.random() * 900)); // 3-digit
+    const room = Math.max(1, 32 - TEST_SUFFIX.length - 1 - rand.length);
+    const stem = `${base.slice(0, room)}_${rand}`;
+    const email = withTestAccountSuffix(stem);
+    const hit = await prisma.subscription.findFirst({ where: { email }, select: { id: true } });
+    if (!hit) return email;
+  }
+  const stamp = randomBytes(2).toString("hex");
+  return withTestAccountSuffix(`${base.slice(0, 20)}_${stamp}`);
 }
 
 function userTestTotalBytes() {
@@ -64,6 +86,8 @@ export async function claimTestService(
   const isAdmin = user.role === UserRole.admin;
 
   if (!isAdmin) {
+    const { assertPurchasesAllowed } = await import("./purchase-gate.js");
+    await assertPurchasesAllowed(userId);
     if (user.testClaimedAt) {
       throw new Error("شما قبلاً سرویس تست را دریافت کرده‌اید. هر کاربر فقط یک‌بار می‌تواند بگیرد.");
     }
@@ -91,16 +115,9 @@ export async function claimTestService(
   } else {
     emailBase = `t${tgTail}${codeTail}`;
   }
-  let email = withTestAccountSuffix(emailBase);
-
-  // Avoid collisions for repeated admin claims
-  if (isAdmin) {
-    const taken = await prisma.subscription.findFirst({ where: { email }, select: { id: true } });
-    if (taken) {
-      const stamp = randomBytes(2).toString("hex");
-      email = withTestAccountSuffix(`${stripAccountName(emailBase).slice(0, 20)}${stamp}`);
-    }
-  }
+  const email = isAdmin
+    ? await allocateUniqueTestEmail(emailBase)
+    : withTestAccountSuffix(emailBase);
 
   const subId = randomSubId();
   const expiresAt = new Date(Date.now() + TEST_MS);

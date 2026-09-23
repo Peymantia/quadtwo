@@ -1941,14 +1941,23 @@ html[data-theme="light"] .quick-action-btn {
 }
 
 .users-mrow-actions {
-  display: grid;
-  grid-template-columns: minmax(96px, 0.85fr) minmax(150px, 1.45fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: stretch;
+  align-items: center;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
-  direction: ltr;
+  direction: rtl;
+}
+
+.users-mrow-actions .users-mrole {
+  flex: 1 1 110px;
+  max-width: 160px;
+}
+
+.users-mrow-actions .users-mdetail-btn {
+  flex: 1 1 140px;
 }
 
 .users-mrole {
@@ -1965,6 +1974,42 @@ html[data-theme="light"] .quick-action-btn {
   outline: none;
   font: inherit;
   font-size: 0.86rem;
+  color-scheme: inherit;
+}
+
+.users-mrole option {
+  background: var(--card-solid, var(--elev));
+  color: var(--text);
+}
+
+html[data-theme="dark"] .users-mrole,
+html[data-theme="dark"] .users-mrole option {
+  background: var(--elev);
+  color: var(--text);
+  color-scheme: dark;
+}
+
+.users-mneg-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--mute);
+  white-space: nowrap;
+  margin-inline-end: 4px;
+}
+
+.users-mneg-label .switch {
+  flex-shrink: 0;
+}
+
+.users-mdisable-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--mute);
+  white-space: nowrap;
 }
 
 .users-mrow-actions .btn,
@@ -2194,8 +2239,22 @@ button.stat.stat-link:active {
   margin-bottom: 12px;
 }
 
+.configs-search-panel--compact {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+}
+
 .configs-search-field {
   margin-bottom: 12px;
+}
+
+.configs-search-panel--compact .configs-search-field {
+  margin-bottom: 0;
+}
+
+.configs-search-panel--compact .configs-search-field label {
+  font-size: 0.75rem;
+  margin-bottom: 4px;
 }
 
 .configs-search-field input[type="search"] {
@@ -2203,9 +2262,35 @@ button.stat.stat-link:active {
   padding: 14px 16px;
 }
 
+.configs-search-panel--compact .configs-search-field input[type="search"] {
+  font-size: 0.92rem;
+  padding: 9px 12px;
+}
+
 .configs-search-hint {
   margin: 8px 0 0;
   font-size: 0.82rem;
+}
+
+.configs-search-panel--compact .configs-search-hint {
+  margin-top: 4px;
+  font-size: 0.75rem;
+}
+
+.edit-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px 14px;
+}
+
+@media (min-width: 720px) {
+  .edit-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.edit-form-grid .field {
+  margin: 0;
 }
 
 .configs-search-hint .linkish {

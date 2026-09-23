@@ -674,7 +674,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
       {tab === "configs" && (
         <div className="panel">
           <h2>کانفیگ‌های گروه شما</h2>
-          <div className="field configs-search-field">
+          <div className="field configs-search-field configs-search-panel--compact" style={{ marginBottom: 10 }}>
             <label htmlFor="partner-configs-search">جستجوی سریع اکانت</label>
             <input
               id="partner-configs-search"
@@ -682,7 +682,7 @@ export function AgentPanel(props: { title: string; allowed: Role[] }) {
               dir="auto"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="ایمیل، نام، کد، نوت، لینک…"
+              placeholder="ایمیل، کد، نوت…"
               autoComplete="off"
               spellCheck={false}
             />

@@ -818,6 +818,9 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     const canReserve =
       !eligibility.ok && typeof eligibility.hoursLeft === "number" && eligibility.hoursLeft > 0;
     const canEdit = !(sub.startsOnConnect && !sub.activatedAt);
+    const { monthsToMs } = await import("../utils/format.js");
+    const remainingMs = sub.expiresAt.getTime() - Date.now();
+    const remainingMonths = Math.max(1, Math.ceil(remainingMs / monthsToMs(1)));
     return c.json({
       ok: true,
       message: canRenewNow
@@ -829,6 +832,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       canRenewNow,
       canReserve,
       canEdit,
+      remainingMonths,
       subscription: {
         id: sub.id,
         code: sub.code,
@@ -1068,9 +1072,55 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       quantity?: number;
       discountCode?: string | null;
       priceCellId?: string | null;
+      kind?: string;
+      targetSubId?: string;
     }>();
     const user = await prisma.user.findUniqueOrThrow({ where: { id: c.get("userId") } });
     const pricedUser = withEffectiveRole(user, c.get("telegramId"));
+
+    /** Edit delta quote: only the increase vs current package. */
+    if (body.kind === "edit" && body.targetSubId) {
+      const sub = await prisma.subscription.findFirst({
+        where: { id: body.targetSubId, userId: c.get("userId") },
+      });
+      if (!sub) return c.json({ error: "سرویس پیدا نشد" }, 404);
+      if (sub.isTest) return c.json({ error: "سرویس تست قابل ویرایش نیست" }, 400);
+      const category = body.category || (await inferRenewCategory(sub));
+      const trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
+      const months = Math.max(1, Number(body.months) || 1);
+      const curGb = sub.trafficGb;
+      if (curGb == null && trafficGb != null) {
+        return c.json({ error: "نمی‌توانید از نامحدود به حجم محدود کاهش دهید" }, 400);
+      }
+      if (curGb != null && trafficGb != null && trafficGb + 1e-9 < curGb) {
+        return c.json({ error: "حجم جدید نمی‌تواند کمتر از حجم فعلی باشد" }, 400);
+      }
+      const { monthsToMs } = await import("../utils/format.js");
+      const remainingMs = sub.expiresAt.getTime() - Date.now();
+      const remainingMonths = Math.max(1, Math.ceil(remainingMs / monthsToMs(1)));
+      if (months < remainingMonths) {
+        return c.json({
+          error: `مدت جدید نمی‌تواند کوتاه‌تر از باقی‌مانده باشد (حداقل ${remainingMonths} ماه)`,
+        }, 400);
+      }
+      const cat = category as PlanCategory;
+      const oldPriced = await resolvePrice(pricedUser, curGb, remainingMonths, cat);
+      const newPriced = await resolvePrice(pricedUser, trafficGb, months, cat);
+      if (!oldPriced || !newPriced) return c.json({ error: "این ترکیب قیمت‌گذاری نشده است" }, 400);
+      const price = Math.max(0, newPriced.price - oldPriced.price);
+      return c.json({
+        trafficGb,
+        months,
+        category,
+        quantity: 1,
+        priceBefore: price,
+        discountAmount: 0,
+        price,
+        remainingMonths,
+        minTrafficGb: curGb,
+        kind: "edit",
+      });
+    }
 
     if (await isServerlessEnabled()) {
       const {
@@ -2997,6 +3047,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         discountMaxPercent: u.discountMaxPercent,
         useCustomPricing: u.useCustomPricing,
         negativeCreditAllowed: u.negativeCreditAllowed,
+        purchasesDisabled: u.purchasesDisabled,
         priceOverrides: u.priceOverrides.map(mapPriceOverride),
       })),
     });
@@ -3029,6 +3080,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         discountMaxPercent: user.discountMaxPercent,
         useCustomPricing: user.useCustomPricing,
         negativeCreditAllowed: user.negativeCreditAllowed,
+        purchasesDisabled: user.purchasesDisabled,
         createdAt: user.createdAt.toISOString(),
         priceOverrides: user.priceOverrides.map(mapPriceOverride),
       },
@@ -3162,6 +3214,35 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     return c.json({
       ok: true,
       user: { id: updated.id, negativeCreditAllowed: updated.negativeCreditAllowed },
+    });
+  });
+
+  /** Disable / enable purchases & wallet charge for a user. */
+  api.patch("/admin/users/:id/purchases", async (c) => {
+    const body = await c.req.json<{ disabled?: boolean }>();
+    if (typeof body.disabled !== "boolean") {
+      return c.json({ error: "disabled باید boolean باشد" }, 400);
+    }
+    const { resolveTenantIdOrPlatform } = await import("../services/tenants.js");
+    const tenantId = await resolveTenantIdOrPlatform();
+    const target = await prisma.user.findFirst({ where: { id: c.req.param("id"), tenantId } });
+    if (!target) return c.json({ error: "کاربر پیدا نشد" }, 404);
+    if (target.role === UserRole.admin && body.disabled) {
+      return c.json({ error: "نمی‌توان خرید ادمین را غیرفعال کرد" }, 400);
+    }
+    const updated = await prisma.user.update({
+      where: { id: target.id },
+      data: { purchasesDisabled: body.disabled },
+    });
+    await auditLog({
+      action: "web_user_purchases",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: target.id,
+      detail: body.disabled ? "disabled" : "enabled",
+    });
+    return c.json({
+      ok: true,
+      user: { id: updated.id, purchasesDisabled: updated.purchasesDisabled },
     });
   });
 

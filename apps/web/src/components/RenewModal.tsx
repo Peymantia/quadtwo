@@ -17,6 +17,8 @@ export type RenewInfo = {
   canRenewNow?: boolean;
   canReserve?: boolean;
   canEdit?: boolean;
+  /** Min months for edit mode (remaining rounded up) */
+  remainingMonths?: number;
   subscription: {
     id: string;
     code: string;
@@ -82,9 +84,11 @@ function modeTitle(mode: RenewMode) {
   return "تمدید سرویس";
 }
 
-function modeHint(mode: RenewMode) {
+function modeHint(mode: RenewMode, variant: "user" | "admin") {
   if (mode === "edit") {
-    return "حجم و مدت جدید همین الان روی اشتراک فعلی اعمال می‌شود (حجم مصرف‌شده حفظ می‌شود).";
+    return variant === "admin"
+      ? "حجم و مدت جدید همین الان اعمال می‌شود (رایگان)."
+      : "فقط افزایش حجم یا مدت؛ مبلغ بر اساس مابه‌التفاوت نرخ محاسبه و از کیف پول کسر می‌شود.";
   }
   if (mode === "reserve") {
     return "مبلغ الان کسر می‌شود و به‌محض اتمام حجم یا تاریخ، تمدید خودکار اعمال می‌شود.";
@@ -108,11 +112,24 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
   const [checkingDiscount, setCheckingDiscount] = useState(false);
   const [payMethods, setPayMethods] = useState<PublicPaymentMethods | null>(null);
 
-  const rules = useMemo(() => (info ? rulesFor(info.category, info) : null), [info]);
+  const rules = useMemo(() => {
+    if (!info) return null;
+    const base = rulesFor(info.category, info);
+    if (base.kind === "unlimited") return base;
+    if (mode === "edit" && variant === "user" && info.subscription.trafficGb != null) {
+      const minGb = Math.max(base.min, info.subscription.trafficGb);
+      return { ...base, min: snap(minGb, base.min, base.max, base.step) };
+    }
+    return base;
+  }, [info, mode, variant]);
   const monthOptions = useMemo(() => {
     const max = Math.max(1, Math.min(3, info?.maxMonths || 1));
-    return Array.from({ length: max }, (_, i) => i + 1);
-  }, [info?.maxMonths]);
+    const minM =
+      mode === "edit" && variant === "user"
+        ? Math.min(max, Math.max(1, info?.remainingMonths || 1))
+        : 1;
+    return Array.from({ length: Math.max(0, max - minM + 1) }, (_, i) => minM + i);
+  }, [info?.maxMonths, info?.remainingMonths, mode, variant]);
   const discountsAllowed = variant === "user" && Boolean(info?.discountsEnabled) && mode !== "edit";
 
   const canRenewNow = variant === "admin" || Boolean(info?.canRenewNow);
@@ -134,7 +151,11 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
   useEffect(() => {
     if (!open || !info || !rules) return;
     setMode(defaultMode(info, variant));
-    setMonths(1);
+    const minM =
+      variant === "user" && (info.canEdit || info.remainingMonths)
+        ? Math.max(1, info.remainingMonths || 1)
+        : 1;
+    setMonths(Math.min(Math.max(1, info.maxMonths || 1), minM));
     setDiscountCode("");
     setVerifiedDiscount(null);
     setDiscountErr(null);
@@ -149,6 +170,20 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
       setGbInput(String(start));
     }
   }, [open, info?.subscription.id, info?.category, variant]);
+
+  // When switching to edit mode, clamp months/gb to mins
+  useEffect(() => {
+    if (!info || !rules || mode !== "edit" || variant !== "user") return;
+    const minM = Math.max(1, info.remainingMonths || 1);
+    setMonths((m) => Math.max(m, minM));
+    if (rules.kind === "stepped" && info.subscription.trafficGb != null) {
+      const minGb = snap(Math.max(rules.min, info.subscription.trafficGb), rules.min, rules.max, rules.step);
+      setGbInput((cur) => {
+        const n = Number(cur) || 0;
+        return n < minGb ? String(minGb) : cur;
+      });
+    }
+  }, [mode, info, rules, variant]);
 
   // Keep selected mode valid when capabilities change
   useEffect(() => {
@@ -196,6 +231,8 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
           category: info.category,
           trafficGb: rules.kind === "unlimited" ? null : trafficGb,
           months: info.category === "national" ? 1 : months,
+          kind: mode === "edit" ? "edit" : undefined,
+          targetSubId: mode === "edit" ? info.subscription.id : undefined,
           discountCode:
             discountsAllowed && verifiedDiscount && verifiedDiscount === discountCode.trim().toUpperCase()
               ? verifiedDiscount
@@ -374,10 +411,10 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
                   </button>
                 )}
               </div>
-              <p className="muted rate-shop-hint">{modeHint(mode)}</p>
+              <p className="muted rate-shop-hint">{modeHint(mode, variant)}</p>
             </div>
           )}
-          {modeCount <= 1 && <p className="muted rate-shop-hint">{modeHint(mode)}</p>}
+          {modeCount <= 1 && <p className="muted rate-shop-hint">{modeHint(mode, variant)}</p>}
 
           {rules.kind === "unlimited" ? (
             <div className="rate-shop-card">

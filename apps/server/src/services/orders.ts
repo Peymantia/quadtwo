@@ -21,6 +21,9 @@ import { isDemoMode } from "./license.js";
 import { assertAndApplyDiscount, recordDiscountUse, cancelOpenPendingForDiscount } from "./discount-codes.js";
 import { isWholesaleFixedRole } from "./roles.js";
 import { assertValidAccountName } from "../utils/account-name.js";
+import { assertPurchasesAllowed } from "./purchase-gate.js";
+import { monthsToMs } from "../utils/format.js";
+import type { Subscription } from "@prisma/client";
 import {
   assertServerlessPlanAllowed,
   fulfillAfterPaid,
@@ -55,7 +58,12 @@ export async function createMatrixOrder(input: {
   const pricedUser = withEffectiveRole(user, user.telegramId);
   const kind = input.kind ?? OrderKind.new;
 
+  if (!input.forceRenew) {
+    await assertPurchasesAllowed(input.userId);
+  }
+
   let category = (input.category as PlanCategory) || "data";
+  let editTarget: Subscription | null = null;
   // عمده‌فروش (wholesale): فقط پلن‌های ثابت
   if (isWholesaleFixedRole(pricedUser.role) && kind === OrderKind.new) {
     category = WHOLESALE_FIXED_CATEGORY;
@@ -100,6 +108,7 @@ export async function createMatrixOrder(input: {
       if (target.startsOnConnect && !target.activatedAt && !input.forceRenew) {
         throw new Error("این سرویس هنوز فعال نشده؛ بعد از اولین اتصال می‌توانید ویرایش کنید.");
       }
+      editTarget = target;
     }
 
     if (kind === OrderKind.renew_reserve) {
@@ -287,6 +296,36 @@ export async function createMatrixOrder(input: {
           })()
       : await resolvePrice(pricedUser, trafficGb, months, category);
   if (!priced) throw new Error("این ترکیب حجم/مدت قیمت‌گذاری نشده است");
+
+  /** Non-admin edit: only increases; charge delta vs current package. */
+  let editDeltaPrice: number | null = null;
+  if (kind === OrderKind.edit && editTarget && !input.forceRenew && pricedUser.role !== "admin") {
+    const curGb = editTarget.trafficGb;
+    if (curGb == null && trafficGb != null) {
+      throw new Error("نمی‌توانید از نامحدود به حجم محدود کاهش دهید");
+    }
+    if (curGb != null && trafficGb != null && trafficGb + 1e-9 < curGb) {
+      throw new Error("حجم جدید نمی‌تواند کمتر از حجم فعلی باشد");
+    }
+    const remainingMs = editTarget.expiresAt.getTime() - Date.now();
+    const remainingMonths = Math.max(1, Math.ceil(remainingMs / monthsToMs(1)));
+    if (months < remainingMonths) {
+      throw new Error(
+        `مدت جدید نمی‌تواند کوتاه‌تر از باقی‌مانده باشد (حداقل ${remainingMonths} ماه)`,
+      );
+    }
+    const sameTraffic =
+      (curGb == null && trafficGb == null) ||
+      (curGb != null && trafficGb != null && Math.abs(curGb - trafficGb) < 1e-9);
+    if (sameTraffic && months === remainingMonths) {
+      throw new Error("برای ویرایش باید حجم یا مدت را افزایش دهید");
+    }
+    const oldPriced = await resolvePrice(pricedUser, curGb, remainingMonths, category);
+    const newPriced = await resolvePrice(pricedUser, trafficGb, months, category);
+    if (!oldPriced || !newPriced) throw new Error("این ترکیب قیمت‌گذاری نشده است");
+    editDeltaPrice = Math.max(0, newPriced.price - oldPriced.price);
+  }
+
   const quantity =
     kind === OrderKind.renew ||
     kind === OrderKind.edit ||
@@ -310,7 +349,8 @@ export async function createMatrixOrder(input: {
   const limitIp = category === "unlimited" ? UNLIMITED_LIMIT_IP : baseLimitIp;
   const note = input.note?.trim() ? input.note.trim().slice(0, 500) : null;
 
-  const priceBefore = priced.price * (fixedSingle ? 1 : quantity);
+  const priceBefore =
+    editDeltaPrice != null ? editDeltaPrice : priced.price * (fixedSingle ? 1 : quantity);
   const applied =
     offerLocked ||
     isWholesaleFixedRole(pricedUser.role) ||
@@ -355,6 +395,8 @@ export async function createMatrixOrder(input: {
 }
 
 export async function createWalletChargeOrder(userId: string, amount: number) {
+  const { assertPurchasesAllowed } = await import("./purchase-gate.js");
+  await assertPurchasesAllowed(userId);
   const { assertWalletChargeMin } = await import("./negative-credit.js");
   await assertWalletChargeMin(userId, amount);
   const { resolveTenantIdOrPlatform } = await import("./tenants.js");

@@ -135,6 +135,8 @@ model User {
   useCustomPricing Boolean @default(false)
   /// May spend wallet into negative (up to tenant negative_credit_limit)
   negativeCreditAllowed Boolean @default(false)
+  /// When true, user cannot buy / renew / charge (admin toggle)
+  purchasesDisabled Boolean @default(false)
   /// Platform superadmin (only on platform tenant)
   isSuperAdmin  Boolean   @default(false)
   createdAt     DateTime  @default(now())
