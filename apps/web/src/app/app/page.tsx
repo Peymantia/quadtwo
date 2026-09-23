@@ -69,6 +69,7 @@ type PayModalState =
   | null;
 
 const TABS: ShellTab[] = [
+  { key: "home", label: "داشبورد", icon: "home" },
   { key: "shop", label: "خرید", icon: "shop" },
   { key: "subs", label: "اشتراک‌ها", icon: "wifi" },
   { key: "wallet", label: "کیف پول", icon: "wallet" },
@@ -88,7 +89,7 @@ const ORDER_STATUS: Record<string, { label: string; cls: string }> = {
 
 export default function UserAppPage() {
   const { home, loading, reload } = useDashAuth(["user", "partner", "wholesale", "admin"]);
-  const [tab, setTab] = useState("shop");
+  const [tab, setTab] = useState("home");
   const [subs, setSubs] = useState<Sub[]>([]);
   const [rateCatalog, setRateCatalog] = useState<RateShopCatalog | null>(null);
   const [serverlessCatalog, setServerlessCatalog] = useState<ServerlessCatalog | null>(null);
@@ -427,9 +428,27 @@ export default function UserAppPage() {
     setErr(null);
     setBusy(true);
     try {
-      const r = await api<{ subscription: { code: string } }>("/me/test");
-      setMsg(`اکانت تست فعال شد: ${r.subscription.code}`);
+      const r = await api<{
+        subscription: {
+          code: string;
+          email?: string;
+          subUrl?: string | null;
+          expiresHint?: string;
+          trafficGb?: number | null;
+          isTest?: boolean;
+        };
+      }>("/me/test");
+      setCreated({
+        code: r.subscription.code,
+        email: r.subscription.email,
+        subUrl: r.subscription.subUrl,
+        trafficGb: r.subscription.trafficGb,
+        isTest: true,
+        categoryLabel: "تست",
+        months: null,
+      });
       await reload();
+      await loadSubs();
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
@@ -484,15 +503,17 @@ export default function UserAppPage() {
     <DashShell
       brand={home.brand}
       title={
-        tab === "shop"
-          ? "خرید"
-          : tab === "subs"
-            ? "اشتراک‌های من"
-            : tab === "wallet"
-              ? "کیف پول"
-              : tab === "support"
-                ? "پشتیبانی و آموزش"
-                : "تنظیمات"
+        tab === "home"
+          ? "داشبورد"
+          : tab === "shop"
+            ? "خرید"
+            : tab === "subs"
+              ? "اشتراک‌های من"
+              : tab === "wallet"
+                ? "کیف پول"
+                : tab === "support"
+                  ? "پشتیبانی و آموزش"
+                  : "تنظیمات"
       }
       role={home.user.role}
       userLabel={userLabel}
@@ -538,6 +559,80 @@ export default function UserAppPage() {
           }}
           onNo={() => setConfirmToggle(null)}
         />
+      )}
+
+      {tab === "home" && (
+        <>
+          <div className="grid">
+            <div className="stat accent">
+              <div className="label">موجودی کیف پول</div>
+              <div className="value num">{formatToman(home.wallet.balance)}</div>
+              {(home.wallet.debt ?? 0) > 0 && (
+                <div className="muted" style={{ marginTop: 6 }}>
+                  بدهی: {formatToman(home.wallet.debt!)} — حداقل شارژ به همین اندازه
+                </div>
+              )}
+              {(home.wallet.creditLimit ?? 0) > 0 && (home.wallet.debt ?? 0) <= 0 && (
+                <div className="muted" style={{ marginTop: 6 }}>
+                  اعتبار منفی تا {formatToman(home.wallet.creditLimit!)} · قابل‌خرج{" "}
+                  {formatToman(home.wallet.spendable ?? home.wallet.balance)}
+                </div>
+              )}
+            </div>
+            <div className="stat">
+              <div className="label">سرویس فعال</div>
+              <div className="value num">{home.stats.active}</div>
+            </div>
+            <div className="stat">
+              <div className="label">کل اشتراک‌ها</div>
+              <div className="value num">{home.stats.subscriptions}</div>
+            </div>
+          </div>
+
+          <div className="panel">
+            <h2>دسترسی سریع</h2>
+            <div className="quick-actions">
+              <div className="qa-row qa-row--1">
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("wallet")}>
+                  <Icon name="wallet" size={18} />
+                  شارژ حساب
+                </button>
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("shop")}>
+                  <Icon name="shop" size={18} />
+                  خرید
+                </button>
+              </div>
+              <div className="qa-row qa-row--2">
+                <button
+                  type="button"
+                  className="btn quick-action-btn"
+                  disabled={busy || Boolean(home.user.testClaimed)}
+                  onClick={() => {
+                    if (home.user.testClaimed) return;
+                    void claimTest();
+                  }}
+                >
+                  <Icon name="plus" size={18} />
+                  {home.user.testClaimed ? "اکانت تست دریافت شد" : "اکانت تست"}
+                </button>
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("subs")}>
+                  <Icon name="wifi" size={18} />
+                  اکانت‌ها
+                </button>
+              </div>
+              <div className="qa-row qa-row--3">
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("support")}>
+                  <Icon name="chat" size={15} />
+                  پشتیبانی
+                </button>
+                <button type="button" className="btn quick-action-btn" onClick={() => setTab("settings")}>
+                  <Icon name="gear" size={15} />
+                  تنظیمات
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {tab === "shop" && (
