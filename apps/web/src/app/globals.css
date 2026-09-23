@@ -5999,7 +5999,9 @@ html[data-theme="dark"] .sub-qr-img {
   gap: 10px;
 }
 
+.acct-created-url,
 .acct-created-link .url-break {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.78rem;
   padding: 10px 12px;
   border-radius: 12px;
@@ -6012,6 +6014,14 @@ html[data-theme="dark"] .sub-qr-img {
   text-align: left;
   unicode-bidi: isolate;
   word-break: break-all;
+  text-decoration: none;
+  display: block;
+  box-sizing: border-box;
+}
+
+.acct-created-url:hover {
+  border-color: color-mix(in srgb, var(--cyan, #38bdf8) 45%, var(--line));
+  color: var(--cyan, #38bdf8);
 }
 
 .acct-created-btns {

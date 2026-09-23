@@ -7,6 +7,7 @@ import { Icon } from "./DashShell";
 import { SubAddonsBar } from "./SubAddonsBar";
 import { SubQrModal } from "./SubQrModal";
 import type { CryptoPayInfo } from "./CryptoPayModal";
+import { api } from "../lib/api";
 import { formatExpiryDate, formatTrafficGbFa } from "../lib/format-ui";
 
 export type CreatedAccount = {
@@ -92,6 +93,10 @@ export function AccountCreatedModal({
   const [err, setErr] = useState<string | null>(null);
   const [qrSrc, setQrSrc] = useState<string | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [b64Open, setB64Open] = useState(false);
+  const [b64, setB64] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -100,6 +105,9 @@ export function AccountCreatedModal({
       setBusy(false);
       setQrSrc(null);
       setQrOpen(false);
+      setNoteOpen(false);
+      setB64Open(false);
+      setB64(null);
     }
   }, [open]);
 
@@ -130,6 +138,7 @@ export function AccountCreatedModal({
 
   const acct = account;
   const subId = acct.subscriptionId;
+  const simpleTest = Boolean(acct.isTest);
   const expiryValue =
     acct.expiresHint?.trim() ||
     (acct.expiresAt ? fmtExpiry(acct.expiresAt) : "—");
@@ -158,11 +167,41 @@ export function AccountCreatedModal({
     }
   }
 
+  function openBase64() {
+    if (!subId) return;
+    setB64(null);
+    setB64Open(true);
+    setBusy(true);
+    void api<{ base64: string }>(`/me/subscriptions/${subId}/secure-base64`)
+      .then((r) => setB64(r.base64))
+      .catch((e) => setErr(String(e instanceof Error ? e.message : e)))
+      .finally(() => setBusy(false));
+  }
+
+  async function saveNote() {
+    if (!subId) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/me/subscriptions/${subId}/note`, {
+        method: "PATCH",
+        body: { note: noteDraft },
+      });
+      setFlash("یادداشت ذخیره شد");
+      setNoteOpen(false);
+      onRefresh?.();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Modal open={open} title={acct.isTest ? "اکانت تست ساخته شد" : "اکانت ساخته شد"} onClose={onClose} wide>
       <div className="acct-created">
         <p className="acct-created-lead">
-          اشتراک آماده است — لینک را کپی کنید، QR را اسکن کنید یا از دکمه‌های زیر سرویس را مدیریت کنید.
+          اشتراک آماده است — لینک را کپی کنید یا QR را اسکن کنید.
         </p>
 
         <div className="acct-created-body">
@@ -204,53 +243,24 @@ export function AccountCreatedModal({
 
         {acct.subUrl ? (
           <div className="acct-created-link">
-            <div className="muted num url-break" dir="ltr">
+            <a
+              className="acct-created-url num url-break"
+              href={acct.subUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              dir="ltr"
+            >
               {acct.subUrl}
-            </div>
-            <div className="acct-created-btns">
-              <button
-                type="button"
-                className="btn primary sm"
-                disabled={busy || !acct.subUrl}
-                onClick={() => void copy(acct.subUrl!, "لینک اشتراک کپی شد")}
-              >
-                <Icon name="copy" size={15} />
-                کپی لینک اشتراک
-              </button>
-              <button
-                type="button"
-                className="btn ghost sm"
-                disabled={busy || !acct.subUrl}
-                onClick={() => setQrOpen(true)}
-              >
-                <Icon name="wifi" size={15} />
-                QR بزرگ
-              </button>
-            </div>
-            {(acct.email || acct.code) && (
-              <div className="acct-created-btns acct-created-btns--secondary">
-                {acct.email ? (
-                  <button
-                    type="button"
-                    className="btn ghost sm"
-                    disabled={busy}
-                    onClick={() => void copy(acct.email!, "ایمیل کپی شد")}
-                  >
-                    <Icon name="copy" size={15} />
-                    کپی ایمیل
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  disabled={busy}
-                  onClick={() => void copy(acct.code, "کد کپی شد")}
-                >
-                  <Icon name="copy" size={15} />
-                  کپی کد
-                </button>
-              </div>
-            )}
+            </a>
+            <button
+              type="button"
+              className="btn primary sm wide"
+              disabled={busy || !acct.subUrl}
+              onClick={() => void copy(acct.subUrl!, "لینک اشتراک کپی شد")}
+            >
+              <Icon name="copy" size={15} />
+              کپی لینک اشتراک
+            </button>
           </div>
         ) : (
           <p className="muted">لینک اشتراک هنوز آماده نیست.</p>
@@ -267,7 +277,50 @@ export function AccountCreatedModal({
           </p>
         )}
 
-        {subId ? (
+        {simpleTest ? (
+          <div className="svc-actions-grid">
+            <div className="qa-row qa-row--1">
+              <button
+                type="button"
+                className="btn sm"
+                disabled={busy || !acct.subUrl}
+                onClick={() => {
+                  if (acct.subUrl) void copy(acct.subUrl, "لینک اشتراک کپی شد");
+                }}
+              >
+                <Icon name="copy" size={15} />
+                لینک اشتراک
+              </button>
+              <button
+                type="button"
+                className="btn sm"
+                disabled={busy || !subId}
+                onClick={openBase64}
+              >
+                <Icon name="link" size={15} />
+                لینک Base64 کانفیگ
+              </button>
+            </div>
+            <div className="qa-row qa-row--2">
+              <button
+                type="button"
+                className="btn sm"
+                disabled={busy || !subId}
+                onClick={() => {
+                  setNoteDraft(acct.note ?? "");
+                  setNoteOpen(true);
+                }}
+              >
+                <Icon name="file" size={15} />
+                یادداشت
+              </button>
+              <button type="button" className="btn sm" disabled={busy} onClick={onClose}>
+                <Icon name="arrowRight" size={15} />
+                بازگشت
+              </button>
+            </div>
+          </div>
+        ) : subId ? (
           <SubAddonsBar
             subId={subId}
             email={acct.email || acct.code}
@@ -306,6 +359,44 @@ export function AccountCreatedModal({
         subUrl={acct.subUrl}
         onClose={() => setQrOpen(false)}
       />
+
+      <Modal open={noteOpen} title="یادداشت" onClose={() => setNoteOpen(false)}>
+        <div className="field">
+          <label>یادداشت</label>
+          <input
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="یادداشت…"
+          />
+        </div>
+        <div className="qa-row qa-row--1" dir="ltr" style={{ marginTop: 12 }}>
+          <button type="button" className="btn sm primary" disabled={busy} onClick={() => void saveNote()}>
+            <Icon name="check" size={15} />
+            ذخیره
+          </button>
+          <button type="button" className="btn sm" disabled={busy} onClick={() => setNoteOpen(false)}>
+            <Icon name="close" size={15} />
+            انصراف
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={b64Open} title="لینک Base64 کانفیگ" onClose={() => setB64Open(false)}>
+        <p className="muted" style={{ marginTop: 0 }}>
+          برای کپی، روی متن بزنید.
+        </p>
+        {b64 ? (
+          <button
+            type="button"
+            className="tap-copy"
+            onClick={() => void copy(b64, "لینک Base64 کپی شد")}
+          >
+            {b64}
+          </button>
+        ) : (
+          <p className="muted">در حال آماده‌سازی…</p>
+        )}
+      </Modal>
     </Modal>
   );
 }
