@@ -33,7 +33,7 @@ import {
   rejectOrder,
   setOrderPaymentMethod,
 } from "../services/orders.js";
-import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, priceForMatrixCell, type PlanCategory } from "../services/pricing.js";
+import { listPriceMatrix, normalizePurchaseTraffic, resolvePrice, upsertPriceCell, isOfferCategory, isFixedSingleServiceCategory, priceForMatrixCell, catalogVolumeRules, type PlanCategory } from "../services/pricing.js";
 import { provisionOrder, rotateSubId, serializeProvisionForApi, type ProvisionResult } from "../services/provision.js";
 import { fulfillAfterPaid, isServerlessEnabled, isServerlessPending } from "../services/serverless.js";
 import {
@@ -845,11 +845,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       categoryLabel: labels[category] || category,
       maxMonths,
       discountsEnabled: await isDiscountCodesEnabled(),
-      volumeRules: {
-        data: { min: 10, max: 50, step: 5 },
-        national: { min: 1, max: 20, step: 1 },
-        unlimited: null,
-      },
+      volumeRules: catalogVolumeRules(c.get("role")),
     });
   });
 
@@ -1054,11 +1050,7 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       canEditLimitIp: canEditLimitIp(pricedUser.role),
       discountsEnabled:
         pricedUser.role !== "wholesale" && (await isDiscountCodesEnabled()),
-      volumeRules: {
-        data: { min: 10, max: 50, step: 5 },
-        national: { min: 1, max: 20, step: 1 },
-        unlimited: null,
-      },
+      volumeRules: catalogVolumeRules(pricedUser.role),
       cells: priced.filter((cell) => cell.price != null),
       adminComplimentary: pricedUser.role === "admin",
     });
@@ -1086,7 +1078,9 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
       if (!sub) return c.json({ error: "سرویس پیدا نشد" }, 404);
       if (sub.isTest) return c.json({ error: "سرویس تست قابل ویرایش نیست" }, 400);
       const category = body.category || (await inferRenewCategory(sub));
-      const trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
+      const trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null, {
+        role: pricedUser.role,
+      });
       const months = Math.max(1, Number(body.months) || 1);
       const curGb = sub.trafficGb;
       if (curGb == null && trafficGb != null) {
@@ -1173,7 +1167,9 @@ export function registerDashMeRoutes(api: Hono<{ Variables: Vars }>) {
     }
 
     let category = body.category || "data";
-    let trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null);
+    let trafficGb = normalizePurchaseTraffic(category, body.trafficGb ?? null, {
+      role: pricedUser.role,
+    });
     let months = Math.max(1, Number(body.months) || 1);
     const qty = Math.max(1, Math.min(50, Number(body.quantity) || 1));
     const priceCellId = body.priceCellId?.trim() || "";
@@ -2758,11 +2754,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       category,
       categoryLabel: labels[category] || category,
       maxMonths,
-      volumeRules: {
-        data: { min: 10, max: 50, step: 5 },
-        national: { min: 1, max: 20, step: 1 },
-        unlimited: null,
-      },
+      volumeRules: catalogVolumeRules("admin"),
     });
   });
 

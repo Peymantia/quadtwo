@@ -1,6 +1,7 @@
 import { prisma } from "../db.js";
 import {
   clampQty,
+  dataMaxGbForRole,
   nextNationalVolume,
   nextVolume,
   resolvePrice,
@@ -87,7 +88,11 @@ export async function adjustDraftVolume(telegramId: bigint, dir: 1 | -1) {
       data: { trafficGb: gb, unlimited: false, months: 1 },
     });
   }
-  const next = nextVolume(draft.trafficGb, draft.unlimited, dir);
+  const user = await prisma.user.findFirst({
+    where: { telegramId },
+    select: { role: true },
+  });
+  const next = nextVolume(draft.trafficGb, draft.unlimited, dir, dataMaxGbForRole(user?.role));
   if (next.unlimited && !(await isSalesCategoryEnabled("unlimited"))) {
     return draft;
   }

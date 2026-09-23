@@ -50,7 +50,7 @@ import {
   upsertUserFromTelegram,
 } from "../services/users.js";
 import { assertAgentReadyForPurchase, sanitizePanelGroupSlug } from "../services/panel-groups.js";
-import { clampMonths, nextNationalVolume, nextVolume } from "../services/pricing.js";
+import { clampMonths, nextNationalVolume, nextVolume, dataMaxGbForRole } from "../services/pricing.js";
 import { lookupConfigByLinkOrUuid } from "../services/config-lookup.js";
 import {
   checkRenewEligibility,
@@ -3375,7 +3375,8 @@ export function createBot(
       await showRenewWizard(ctx, subId, { months: cur.months, trafficGb: gb, unlimited: false, mode: cur.mode }, true);
       return;
     }
-    const next = nextVolume(cur.trafficGb, cur.unlimited, dir);
+    const user = await upsertUserFromTelegram(ctx.from!);
+    const next = nextVolume(cur.trafficGb, cur.unlimited, dir, dataMaxGbForRole(user.role));
     await showRenewWizard(
       ctx,
       subId,

@@ -277,9 +277,11 @@ export function RateShop({ catalog, busy, variant, onSubmit }: Props) {
       ].sort((a, b) => a - b);
       if (gbs.length) return gbs.map((g) => ({ value: g, label: String(g) }));
     }
-    const r = catalog.volumeRules?.data ?? { min: 10, max: 50, step: 5 };
+    const r =
+      catalog.volumeRules?.data ??
+      { min: 10, max: variant === "admin" ? 100 : 50, step: 5 };
     return steppedValues(r.min, r.max, r.step).map((g) => ({ value: g, label: String(g) }));
-  }, [category, catalog, volumeFixed, isFixedSingle, selectedFixed]);
+  }, [category, catalog, volumeFixed, isFixedSingle, selectedFixed, variant]);
 
   const monthSteps = useMemo((): SeekStep[] => {
     if (isFixedSingle && selectedFixed) return [{ value: selectedFixed.months, label: String(selectedFixed.months) }];

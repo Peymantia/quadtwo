@@ -60,13 +60,14 @@ function snap(value: number, min: number, max: number, step: number) {
 function rulesFor(
   category: string,
   info: RenewInfo,
+  variant: "user" | "admin" = "user",
 ): { kind: "unlimited" } | { kind: "stepped"; min: number; max: number; step: number } {
   if (category === "unlimited") return { kind: "unlimited" };
   if (category === "national") {
     const r = info.volumeRules?.national ?? { min: 1, max: 20, step: 1 };
     return { kind: "stepped", ...r };
   }
-  const r = info.volumeRules?.data ?? { min: 10, max: 50, step: 5 };
+  const r = info.volumeRules?.data ?? { min: 10, max: variant === "admin" ? 100 : 50, step: 5 };
   return { kind: "stepped", ...r };
 }
 
@@ -114,7 +115,7 @@ export function RenewModal({ open, info, busy, variant = "user", onClose, onSubm
 
   const rules = useMemo(() => {
     if (!info) return null;
-    const base = rulesFor(info.category, info);
+    const base = rulesFor(info.category, info, variant);
     if (base.kind === "unlimited") return base;
     if (mode === "edit" && variant === "user" && info.subscription.trafficGb != null) {
       const minGb = Math.max(base.min, info.subscription.trafficGb);

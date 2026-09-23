@@ -222,7 +222,9 @@ export async function createMatrixOrder(input: {
     });
   }
 
-  let trafficGb = normalizePurchaseTraffic(category, input.trafficGb);
+  let trafficGb = normalizePurchaseTraffic(category, input.trafficGb, {
+    role: pricedUser.role,
+  });
   let months = clampMonths(input.months);
   let offerLocked = isOfferCategory(category);
   let fixedSingle = isFixedSingleServiceCategory(category);

@@ -18,22 +18,32 @@ import {
 export { isWholesaleFixedCategory, isResellerCategory, WHOLESALE_FIXED_CATEGORY, RESELLER_CATEGORY } from "./roles.js";
 export const DATA_MIN_GB = 10;
 export const DATA_MAX_GB = 50;
+/** Admins may create/edit data plans up to this (still stepped by DATA_STEP_GB). */
+export const ADMIN_DATA_MAX_GB = 100;
 export const DATA_STEP_GB = 5;
 export const NATIONAL_MIN_GB = 1;
 export const NATIONAL_MAX_GB = 20;
 
-/** VIP / custom categories: 10…50 GB in steps of 5 */
-export const DATA_VOLUME_PRESETS: readonly number[] = Array.from(
-  { length: Math.floor((DATA_MAX_GB - DATA_MIN_GB) / DATA_STEP_GB) + 1 },
-  (_, i) => DATA_MIN_GB + i * DATA_STEP_GB,
-);
+export function dataMaxGbForRole(role?: string | null): number {
+  return role === "admin" ? ADMIN_DATA_MAX_GB : DATA_MAX_GB;
+}
 
-const VOLUME_STEPS = DATA_VOLUME_PRESETS;
+/** Volume steps from DATA_MIN_GB … maxGb (inclusive), step DATA_STEP_GB. */
+export function dataVolumePresets(maxGb: number = DATA_MAX_GB): readonly number[] {
+  const max = Math.max(DATA_MIN_GB, Math.floor(maxGb));
+  return Array.from(
+    { length: Math.floor((max - DATA_MIN_GB) / DATA_STEP_GB) + 1 },
+    (_, i) => DATA_MIN_GB + i * DATA_STEP_GB,
+  );
+}
 
-export function snapDataGb(raw: number): number {
+/** Default (non-admin) presets: 10…50 GB in steps of 5 */
+export const DATA_VOLUME_PRESETS: readonly number[] = dataVolumePresets(DATA_MAX_GB);
+
+export function snapDataGb(raw: number, maxGb: number = DATA_MAX_GB): number {
   const n = Math.round(Number(raw) / DATA_STEP_GB) * DATA_STEP_GB;
   if (!Number.isFinite(n)) return DATA_MIN_GB;
-  return Math.max(DATA_MIN_GB, Math.min(DATA_MAX_GB, n));
+  return Math.max(DATA_MIN_GB, Math.min(maxGb, n));
 }
 
 export function snapNationalGb(raw: number): number {
@@ -59,25 +69,34 @@ export function isFixedSingleServiceCategory(category: string | null | undefined
   return c === "offer" || c === "unlimited" || c === "national" || c === "wholesale" || c === "reseller";
 }
 
-/** Normalize traffic for purchase (unlimited → null; national 1–20; else 10–50 ×5). */
-export function normalizePurchaseTraffic(category: string, trafficGb: number | null): number | null {
+/** Normalize traffic for purchase (unlimited → null; national 1–20; else 10–max ×5). */
+export function normalizePurchaseTraffic(
+  category: string,
+  trafficGb: number | null,
+  opts?: { maxGb?: number; role?: string | null },
+): number | null {
+  const maxGb = opts?.maxGb ?? dataMaxGbForRole(opts?.role);
   if (category === "unlimited") return null;
   if (isOfferCategory(category) || isWholesaleFixedCategory(category)) {
     if (trafficGb == null) return null;
     const n = Math.floor(Number(trafficGb));
     return Number.isFinite(n) && n > 0 ? n : null;
   }
-  if (trafficGb === null) return category === "unlimited" ? null : snapDataGb(10);
+  if (trafficGb === null) return category === "unlimited" ? null : snapDataGb(10, maxGb);
   if (category === "national") return snapNationalGb(trafficGb);
-  return snapDataGb(trafficGb);
+  return snapDataGb(trafficGb, maxGb);
 }
 
-export function volumeRulesForCategory(category: string): {
+export function volumeRulesForCategory(
+  category: string,
+  opts?: { maxGb?: number; role?: string | null },
+): {
   kind: "unlimited" | "national" | "data" | "offer" | "wholesale" | "reseller";
   min?: number;
   max?: number;
   step?: number;
 } {
+  const maxGb = opts?.maxGb ?? dataMaxGbForRole(opts?.role);
   if (isOfferCategory(category) || isWholesaleFixedCategory(category)) {
     return { kind: isWholesaleFixedCategory(category) ? "wholesale" : "offer" };
   }
@@ -85,23 +104,39 @@ export function volumeRulesForCategory(category: string): {
   if (category === "national") {
     return { kind: "national", min: NATIONAL_MIN_GB, max: NATIONAL_MAX_GB, step: 1 };
   }
-  return { kind: "data", min: DATA_MIN_GB, max: DATA_MAX_GB, step: DATA_STEP_GB };
+  return { kind: "data", min: DATA_MIN_GB, max: maxGb, step: DATA_STEP_GB };
 }
 
-export function nextVolume(current: number | null, unlimited: boolean, dir: 1 | -1): {
+/** Catalog/API volumeRules payload for rate shop & renew UIs. */
+export function catalogVolumeRules(role?: string | null) {
+  const dataMax = dataMaxGbForRole(role);
+  return {
+    data: { min: DATA_MIN_GB, max: dataMax, step: DATA_STEP_GB },
+    national: { min: NATIONAL_MIN_GB, max: NATIONAL_MAX_GB, step: 1 },
+    unlimited: null as null,
+  };
+}
+
+export function nextVolume(
+  current: number | null,
+  unlimited: boolean,
+  dir: 1 | -1,
+  maxGb: number = DATA_MAX_GB,
+): {
   trafficGb: number | null;
   unlimited: boolean;
 } {
+  const steps = dataVolumePresets(maxGb);
   if (unlimited) {
-    if (dir === -1) return { trafficGb: DATA_MAX_GB, unlimited: false };
+    if (dir === -1) return { trafficGb: maxGb, unlimited: false };
     return { trafficGb: null, unlimited: true };
   }
-  const idx = VOLUME_STEPS.indexOf(current as number);
+  const idx = steps.indexOf(current as number);
   const i = idx >= 0 ? idx : 0;
   const next = i + dir;
   if (next < 0) return { trafficGb: DATA_MIN_GB, unlimited: false };
-  if (next >= VOLUME_STEPS.length) return { trafficGb: null, unlimited: true };
-  return { trafficGb: VOLUME_STEPS[next]!, unlimited: false };
+  if (next >= steps.length) return { trafficGb: null, unlimited: true };
+  return { trafficGb: steps[next]!, unlimited: false };
 }
 
 /** National: 1 GB steps, never unlimited */
