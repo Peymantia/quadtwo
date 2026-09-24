@@ -1,6 +1,6 @@
 import { isDemoMode } from "./license.js";
 import { createXuiFromPanel, envPanelSnapshot, listPanelServers } from "./panel-servers.js";
-import type { XuiServerStatus } from "../panel/xui-client.js";
+import type { XuiClient, XuiServerStatus } from "../panel/xui-client.js";
 import { getSetting } from "./settings.js";
 
 export type PanelStatusSnapshot = {
@@ -30,8 +30,12 @@ export type PanelStatusSnapshot = {
   panelVersion: string | null;
   netUp: number | null;
   netDown: number | null;
+  /** Xray inbound totals (same as 3x-ui «Total Sent / Received / Usage»). */
   netSent: number | null;
   netRecv: number | null;
+  /** Host NIC counters since boot (optional / secondary). */
+  nicSent: number | null;
+  nicRecv: number | null;
   publicIpv4: string | null;
   history: Array<{ t: number; cpu: number; ramPct: number }>;
 };
@@ -43,6 +47,28 @@ const historyByPanel = new Map<string, HistPoint[]>();
 /** Cooldown key → last alert ms */
 const alertCooldown = new Map<string, number>();
 const ALERT_COOLDOWN_MS = 45 * 60 * 1000;
+
+function numOrNull(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Match 3x-ui SizeFormatter.sizeFormat (binary units, 2 decimals). */
+export function formatTrafficBytes(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return "0 B";
+  const KB = 1024;
+  const MB = KB * 1024;
+  const GB = MB * 1024;
+  const TB = GB * 1024;
+  const PB = TB * 1024;
+  if (n < KB) return `${n.toFixed(0)} B`;
+  if (n < MB) return `${(n / KB).toFixed(2)} KB`;
+  if (n < GB) return `${(n / MB).toFixed(2)} MB`;
+  if (n < TB) return `${(n / GB).toFixed(2)} GB`;
+  if (n < PB) return `${(n / TB).toFixed(2)} TB`;
+  return `${(n / PB).toFixed(2)} PB`;
+}
 
 function pct(used: number | null | undefined, total: number | null | undefined): number | null {
   if (used == null || total == null || total <= 0) return null;
@@ -66,25 +92,36 @@ function normalizeStatus(
   name: string,
   baseUrl: string,
   raw: XuiServerStatus | null,
-  error?: string,
+  opts?: {
+    error?: string;
+    /** Sum of inbound.up (Total Sent) */
+    trafficSent?: number | null;
+    /** Sum of inbound.down (Total Received) */
+    trafficRecv?: number | null;
+  },
 ): PanelStatusSnapshot {
   const cpu = raw?.cpu != null && Number.isFinite(raw.cpu) ? Number(raw.cpu) : null;
-  const ramUsed = raw?.mem?.current != null ? Number(raw.mem.current) : null;
-  const ramTotal = raw?.mem?.total != null ? Number(raw.mem.total) : null;
+  const ramUsed = numOrNull(raw?.mem?.current);
+  const ramTotal = numOrNull(raw?.mem?.total);
   const ramPct = pct(ramUsed, ramTotal);
-  const swapUsed = raw?.swap?.current != null ? Number(raw.swap.current) : null;
-  const swapTotal = raw?.swap?.total != null ? Number(raw.swap.total) : null;
-  const diskUsed = raw?.disk?.current != null ? Number(raw.disk.current) : null;
-  const diskTotal = raw?.disk?.total != null ? Number(raw.disk.total) : null;
+  const swapUsed = numOrNull(raw?.swap?.current);
+  const swapTotal = numOrNull(raw?.swap?.total);
+  const diskUsed = numOrNull(raw?.disk?.current);
+  const diskTotal = numOrNull(raw?.disk?.total);
 
-  if (!error) pushHistory(panelId, cpu, ramPct);
+  if (!opts?.error) pushHistory(panelId, cpu, ramPct);
+
+  const nicSent = numOrNull(raw?.netTraffic?.sent);
+  const nicRecv = numOrNull(raw?.netTraffic?.recv);
+  const trafficSent = opts?.trafficSent != null ? opts.trafficSent : null;
+  const trafficRecv = opts?.trafficRecv != null ? opts.trafficRecv : null;
 
   return {
     panelId,
     name,
     baseUrl,
-    ok: !error && raw != null,
-    error,
+    ok: !opts?.error && raw != null,
+    error: opts?.error,
     fetchedAt: new Date().toISOString(),
     cpu,
     cpuCores: raw?.cpuCores ?? raw?.logicalPro ?? null,
@@ -104,10 +141,12 @@ function normalizeStatus(
     xrayState: raw?.xray?.state ?? null,
     xrayVersion: raw?.xray?.version ?? null,
     panelVersion: raw?.panelVersion ?? null,
-    netUp: raw?.netIO?.up ?? null,
-    netDown: raw?.netIO?.down ?? null,
-    netSent: raw?.netTraffic?.sent ?? null,
-    netRecv: raw?.netTraffic?.recv ?? null,
+    netUp: numOrNull(raw?.netIO?.up),
+    netDown: numOrNull(raw?.netIO?.down),
+    netSent: trafficSent,
+    netRecv: trafficRecv,
+    nicSent,
+    nicRecv,
     publicIpv4: raw?.publicIP?.ipv4 ?? null,
     history: [...(historyByPanel.get(panelId) ?? [])],
   };
@@ -138,7 +177,26 @@ function demoStatus(panelId: string, name: string, baseUrl: string): PanelStatus
     netTraffic: { sent: 120e9, recv: 340e9 },
     publicIP: { ipv4: "203.0.113.10" },
   };
-  return normalizeStatus(panelId, name, baseUrl, raw);
+  // Demo Xray traffic ≈ slightly below NIC totals (same idea as real panels)
+  return normalizeStatus(panelId, name, baseUrl, raw, {
+    trafficSent: 95e9,
+    trafficRecv: 280e9,
+  });
+}
+
+async function sumInboundTraffic(xui: XuiClient): Promise<{
+  sent: number;
+  recv: number;
+}> {
+  const res = await xui.listInbounds();
+  const list = Array.isArray(res.obj) ? res.obj : [];
+  let sent = 0;
+  let recv = 0;
+  for (const ib of list) {
+    sent += numOrNull(ib.up) ?? 0;
+    recv += numOrNull(ib.down) ?? 0;
+  }
+  return { sent, recv };
 }
 
 async function fetchOnePanel(opts: {
@@ -153,15 +211,23 @@ async function fetchOnePanel(opts: {
   try {
     const xui = createXuiFromPanel(opts);
     const res = await xui.getServerStatus();
-    return normalizeStatus(opts.id, opts.name, opts.baseUrl, res.obj ?? null);
+    let trafficSent: number | null = null;
+    let trafficRecv: number | null = null;
+    try {
+      const t = await sumInboundTraffic(xui);
+      trafficSent = t.sent;
+      trafficRecv = t.recv;
+    } catch {
+      /* status still useful without inbound totals */
+    }
+    return normalizeStatus(opts.id, opts.name, opts.baseUrl, res.obj ?? null, {
+      trafficSent,
+      trafficRecv,
+    });
   } catch (err) {
-    return normalizeStatus(
-      opts.id,
-      opts.name,
-      opts.baseUrl,
-      null,
-      String(err instanceof Error ? err.message : err),
-    );
+    return normalizeStatus(opts.id, opts.name, opts.baseUrl, null, {
+      error: String(err instanceof Error ? err.message : err),
+    });
   }
 }
 
@@ -218,15 +284,7 @@ async function alertThresholds() {
 }
 
 function formatBytes(n: number | null) {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const u = ["B", "KB", "MB", "GB", "TB"];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < u.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${u[i]}`;
+  return formatTrafficBytes(n);
 }
 
 function formatUptime(sec: number | null) {

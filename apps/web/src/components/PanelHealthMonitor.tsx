@@ -31,6 +31,8 @@ export type PanelStatus = {
   netDown: number | null;
   netSent: number | null;
   netRecv: number | null;
+  nicSent?: number | null;
+  nicRecv?: number | null;
   publicIpv4: string | null;
   history: Array<{ t: number; cpu: number; ramPct: number }>;
 };
@@ -38,15 +40,19 @@ export type PanelStatus = {
 type HistPt = { t: number; cpu: number; ramPct: number };
 
 function formatBytes(n: number | null) {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const u = ["B", "KB", "MB", "GB", "TB"];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < u.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${u[i]}`;
+  if (n == null || !Number.isFinite(n) || n < 0) return "—";
+  if (n <= 0) return "0 B";
+  const KB = 1024;
+  const MB = KB * 1024;
+  const GB = MB * 1024;
+  const TB = GB * 1024;
+  const PB = TB * 1024;
+  if (n < KB) return `${n.toFixed(0)} B`;
+  if (n < MB) return `${(n / KB).toFixed(2)} KB`;
+  if (n < GB) return `${(n / MB).toFixed(2)} MB`;
+  if (n < TB) return `${(n / GB).toFixed(2)} GB`;
+  if (n < PB) return `${(n / TB).toFixed(2)} TB`;
+  return `${(n / PB).toFixed(2)} PB`;
 }
 
 function formatUptime(sec: number | null) {
@@ -397,6 +403,14 @@ export function PanelHealthMonitor() {
                   ↑ {formatRate(active.netUp)} · ↓ {formatRate(active.netDown)}
                 </span>
               </div>
+              {(active.nicSent != null || active.nicRecv != null) && (
+                <div className="panel-health-chip">
+                  <span className="k">NIC (از بوت)</span>
+                  <span className="v num" dir="ltr">
+                    ↑ {formatBytes(active.nicSent ?? null)} · ↓ {formatBytes(active.nicRecv ?? null)}
+                  </span>
+                </div>
+              )}
               <div className="panel-health-chip">
                 <span className="k">Load</span>
                 <span className="v num" dir="ltr">

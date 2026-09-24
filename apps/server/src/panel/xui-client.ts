@@ -20,6 +20,11 @@ export type XuiInbound = {
   id: number;
   enable?: boolean;
   remark?: string;
+  /** Cumulative upload bytes (client → server). */
+  up?: number;
+  /** Cumulative download bytes (server → client). */
+  down?: number;
+  allTime?: number;
 };
 
 /** Live system status from `GET /panel/api/server/status`. */
