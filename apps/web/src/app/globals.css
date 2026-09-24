@@ -2127,6 +2127,46 @@ html[data-theme="light"] .users-filters .field select option {
   }
 }
 
+/* User home: wallet + subscriptions dual card */
+.grid.stats-row-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 520px) {
+  .grid.stats-row-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stat-dual {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-top: 6px;
+}
+
+.stat-dual-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-dual-item .value {
+  font-size: 1.35rem;
+}
+
+.stat-dual-item .muted {
+  margin-top: 2px;
+  font-size: 0.75rem;
+}
+
+.stat-dual-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 12px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
 .stat {
   background: var(--card);
   border: 1px solid var(--line);
