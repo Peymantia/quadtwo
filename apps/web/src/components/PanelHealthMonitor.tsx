@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { Icon } from "./DashShell";
 
@@ -35,6 +35,8 @@ export type PanelStatus = {
   history: Array<{ t: number; cpu: number; ramPct: number }>;
 };
 
+type HistPt = { t: number; cpu: number; ramPct: number };
+
 function formatBytes(n: number | null) {
   if (n == null || !Number.isFinite(n)) return "—";
   const u = ["B", "KB", "MB", "GB", "TB"];
@@ -61,65 +63,106 @@ function formatRate(bps: number | null) {
   return `${formatBytes(bps)}/s`;
 }
 
-function tone(pct: number | null, warn = 70, danger = 85): "ok" | "warn" | "bad" | "mute" {
-  if (pct == null) return "mute";
-  if (pct >= danger) return "bad";
-  if (pct >= warn) return "warn";
-  return "ok";
+/** green → yellow → orange → red */
+function heat(pct: number | null): "green" | "yellow" | "orange" | "red" | "mute" {
+  if (pct == null || !Number.isFinite(pct)) return "mute";
+  if (pct >= 85) return "red";
+  if (pct >= 70) return "orange";
+  if (pct >= 50) return "yellow";
+  return "green";
 }
+
+const HEAT_HEX: Record<string, string> = {
+  green: "#22c55e",
+  yellow: "#eab308",
+  orange: "#f97316",
+  red: "#ef4444",
+  mute: "#8e96c9",
+};
 
 function LineChartCard({
   title,
+  value,
   valueLabel,
   sub,
-  points,
-  pick,
-  toneClass,
+  series,
 }: {
   title: string;
+  value: number | null;
   valueLabel: string;
   sub?: string;
-  points: Array<{ t: number; cpu: number; ramPct: number }>;
-  pick: "cpu" | "ramPct";
-  toneClass: string;
+  series: number[];
 }) {
   const w = 320;
-  const h = 72;
-  const padX = 6;
-  const padY = 8;
-  const vals = points.map((p) => (pick === "cpu" ? p.cpu : p.ramPct));
-  const hasSeries = vals.length >= 2;
-  const coords = hasSeries
-    ? vals
-        .map((v, i) => {
-          const x = padX + (i / (vals.length - 1)) * (w - padX * 2);
-          const y = padY + (1 - Math.min(100, Math.max(0, v)) / 100) * (h - padY * 2);
-          return `${x},${y}`;
-        })
-        .join(" ")
-    : "";
-  const area = hasSeries ? `${padX},${h - padY} ${coords} ${w - padX},${h - padY}` : "";
+  const h = 78;
+  const padX = 4;
+  const padY = 10;
+  const heatClass = heat(value);
+  const color = HEAT_HEX[heatClass];
+  const gid = useId().replace(/:/g, "");
+
+  const pts = useMemo(() => {
+    const raw = series.length ? series : value != null ? [value] : [];
+    if (!raw.length) return [] as Array<{ x: number; y: number }>;
+    const vals = raw.length === 1 ? [raw[0]!, raw[0]!] : raw;
+    return vals.map((v, i) => {
+      const x = padX + (i / (vals.length - 1)) * (w - padX * 2);
+      const y = padY + (1 - Math.min(100, Math.max(0, v)) / 100) * (h - padY * 2);
+      return { x, y };
+    });
+  }, [series, value]);
+
+  const line = pts.map((p) => `${p.x},${p.y}`).join(" ");
+  const area =
+    pts.length >= 2
+      ? `${pts[0]!.x},${h - padY} ${line} ${pts[pts.length - 1]!.x},${h - padY}`
+      : "";
 
   return (
-    <div className={`panel-health-line-card ${toneClass}`}>
+    <div className={`panel-health-line-card heat-${heatClass}`}>
       <div className="panel-health-line-head">
         <div>
           <div className="panel-health-line-title">{title}</div>
           {sub ? <div className="muted panel-health-line-sub">{sub}</div> : null}
         </div>
-        <div className="panel-health-line-value num">{valueLabel}</div>
+        <div className="panel-health-line-value num" style={{ color }}>
+          {valueLabel}
+        </div>
       </div>
-      {hasSeries ? (
-        <svg className="panel-spark" viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none">
-          <polygon className="panel-spark-fill" points={area} />
-          <polyline className="panel-spark-line" points={coords} fill="none" />
+      {pts.length >= 2 ? (
+        <svg
+          className="panel-spark"
+          viewBox={`0 0 ${w} ${h}`}
+          width="100%"
+          height={h}
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <defs>
+            <linearGradient id={`spark-fill-${gid}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          <polygon points={area} fill={`url(#spark-fill-${gid})`} />
+          <polyline
+            points={line}
+            fill="none"
+            stroke={color}
+            strokeWidth="2.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
         </svg>
       ) : (
-        <div className="panel-spark muted">نمودار بعد از چند نمونه</div>
+        <div className="panel-spark muted">در حال نمونه‌برداری…</div>
       )}
     </div>
   );
 }
+
+const LOCAL_HIST_MAX = 40;
 
 export function PanelHealthMonitor() {
   const [panels, setPanels] = useState<PanelStatus[]>([]);
@@ -130,6 +173,7 @@ export function PanelHealthMonitor() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [restartBusy, setRestartBusy] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [localHist, setLocalHist] = useState<Record<string, HistPt[]>>({});
 
   const load = useCallback(async () => {
     try {
@@ -141,6 +185,27 @@ export function PanelHealthMonitor() {
         if (prev && r.panels.some((p) => p.panelId === prev)) return prev;
         return r.panels[0]?.panelId ?? null;
       });
+      setLocalHist((prev) => {
+        const next = { ...prev };
+        for (const p of r.panels) {
+          if (!p.ok) continue;
+          const cpu = p.cpu ?? 0;
+          const ramPct = p.ramPct ?? 0;
+          const merged = [...(next[p.panelId] ?? [])];
+          // Prefer server history if longer, else append latest sample
+          if (p.history.length > merged.length) {
+            next[p.panelId] = p.history.slice(-LOCAL_HIST_MAX);
+            continue;
+          }
+          const last = merged[merged.length - 1];
+          if (!last || last.cpu !== cpu || last.ramPct !== ramPct || Date.now() - last.t > 5_000) {
+            merged.push({ t: Date.now(), cpu, ramPct });
+            while (merged.length > LOCAL_HIST_MAX) merged.shift();
+            next[p.panelId] = merged;
+          }
+        }
+        return next;
+      });
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
@@ -150,11 +215,12 @@ export function PanelHealthMonitor() {
 
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), 20_000);
+    const id = setInterval(() => void load(), 15_000);
     return () => clearInterval(id);
   }, [load]);
 
   const active = panels.find((p) => p.panelId === activeId) ?? panels[0] ?? null;
+  const hist = active ? localHist[active.panelId] ?? active.history ?? [] : [];
 
   async function restartXray() {
     if (!active) return;
@@ -196,6 +262,11 @@ export function PanelHealthMonitor() {
       </div>
     );
   }
+
+  const totalUsage =
+    active?.netSent != null || active?.netRecv != null
+      ? (active.netSent ?? 0) + (active.netRecv ?? 0)
+      : null;
 
   return (
     <div className="panel panel-health panel-health--compact">
@@ -248,26 +319,24 @@ export function PanelHealthMonitor() {
           <div className="panel-health-gauges panel-health-gauges--lines">
             <LineChartCard
               title="CPU"
+              value={active.cpu}
               valueLabel={active.cpu == null ? "—" : `${active.cpu.toFixed(0)}%`}
               sub={active.cpuCores != null ? `${active.cpuCores.toLocaleString("fa-IR")} هسته` : undefined}
-              points={active.history}
-              pick="cpu"
-              toneClass={`tone-${tone(active.cpu)}`}
+              series={hist.map((h) => h.cpu)}
             />
             <LineChartCard
               title="RAM"
+              value={active.ramPct}
               valueLabel={active.ramPct == null ? "—" : `${active.ramPct.toFixed(0)}%`}
               sub={`${formatBytes(active.ramUsed)} / ${formatBytes(active.ramTotal)}`}
-              points={active.history}
-              pick="ramPct"
-              toneClass={`tone-${tone(active.ramPct)}`}
+              series={hist.map((h) => h.ramPct)}
             />
           </div>
 
           <div className="panel-health-xray-row">
             <div className="panel-health-xray-info">
               <span className="k">Xray</span>
-              <span className={`v ${active.xrayState === "running" ? "tone-ok" : "tone-bad"}`}>
+              <span className={`v ${active.xrayState === "running" ? "heat-green-text" : "heat-red-text"}`}>
                 {active.xrayState || "—"}
               </span>
               {active.xrayVersion ? (
@@ -275,7 +344,7 @@ export function PanelHealthMonitor() {
                   {active.xrayVersion}
                 </span>
               ) : null}
-              <span className="d muted">آپ‌تایم سرور: {formatUptime(active.uptimeSec)}</span>
+              <span className="d muted">آپ‌تایم: {formatUptime(active.uptimeSec)}</span>
             </div>
             <button
               type="button"
@@ -297,7 +366,7 @@ export function PanelHealthMonitor() {
             <div className="panel-health-meta">
               <div className="panel-health-chip">
                 <span className="k">دیسک</span>
-                <span className={`v num tone-${tone(active.diskPct, 75, 90)}`}>
+                <span className={`v num heat-${heat(active.diskPct)}-text`}>
                   {active.diskPct != null ? `${active.diskPct.toFixed(0)}%` : "—"}
                 </span>
                 <span className="d muted">
@@ -305,15 +374,33 @@ export function PanelHealthMonitor() {
                 </span>
               </div>
               <div className="panel-health-chip">
-                <span className="k">Load</span>
+                <span className="k">Total Sent</span>
                 <span className="v num" dir="ltr">
-                  {active.loads.length ? active.loads.map((n) => n.toFixed(2)).join(" · ") : "—"}
+                  {formatBytes(active.netSent)}
                 </span>
               </div>
               <div className="panel-health-chip">
-                <span className="k">شبکه</span>
+                <span className="k">Total Received</span>
+                <span className="v num" dir="ltr">
+                  {formatBytes(active.netRecv)}
+                </span>
+              </div>
+              <div className="panel-health-chip">
+                <span className="k">Total Usage</span>
+                <span className="v num" dir="ltr">
+                  {formatBytes(totalUsage)}
+                </span>
+              </div>
+              <div className="panel-health-chip">
+                <span className="k">شبکه لحظه‌ای</span>
                 <span className="v num" dir="ltr">
                   ↑ {formatRate(active.netUp)} · ↓ {formatRate(active.netDown)}
+                </span>
+              </div>
+              <div className="panel-health-chip">
+                <span className="k">Load</span>
+                <span className="v num" dir="ltr">
+                  {active.loads.length ? active.loads.map((n) => n.toFixed(2)).join(" · ") : "—"}
                 </span>
               </div>
               <div className="panel-health-chip">
@@ -334,7 +421,9 @@ export function PanelHealthMonitor() {
               {active.swapPct != null && active.swapPct > 0 ? (
                 <div className="panel-health-chip">
                   <span className="k">Swap</span>
-                  <span className={`v num tone-${tone(active.swapPct)}`}>{active.swapPct.toFixed(0)}%</span>
+                  <span className={`v num heat-${heat(active.swapPct)}-text`}>
+                    {active.swapPct.toFixed(0)}%
+                  </span>
                 </div>
               ) : null}
               {active.panelVersion ? (

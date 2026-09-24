@@ -303,7 +303,6 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
     activeSubs: number;
     salesToday: { label: string; count: number; total?: number };
   } | null>(null);
-  const [quickOpen, setQuickOpen] = useState(false);
 
   useEffect(() => {
     void api<NonNullable<typeof stats>>("/admin/home").then(setStats);
@@ -316,8 +315,9 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
 
   const quickItems: Array<{ key: string; label: string; icon: Parameters<typeof Icon>[0]["name"]; show?: boolean }> = [
     { key: "create", label: "ساخت اکانت", icon: "shop" },
-    { key: "orders", label: "بررسی سفارش‌ها", icon: "orders" },
-    { key: "users", label: "مدیریت کاربران", icon: "users" },
+    { key: "configs", label: "اکانت‌ها", icon: "wifi" },
+    { key: "orders", label: "سفارش‌ها", icon: "orders" },
+    { key: "users", label: "کاربران", icon: "users" },
     { key: "prices", label: "قیمت‌گذاری", icon: "tag" },
     { key: "categories", label: "دسته‌ها", icon: "layers" },
     { key: "panels", label: "سرورها", icon: "server" },
@@ -325,13 +325,11 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
     { key: "reports", label: "گزارشات", icon: "chart" },
     { key: "sync", label: "همگام‌سازی", icon: "sync" },
     { key: "super", label: "مستأجرها", icon: "layers", show: Boolean(showTenants) },
+    { key: "import", label: "اکسل", icon: "file", show: !showTenants },
     { key: "settings", label: "تنظیمات", icon: "gear" },
   ];
 
-  function goQuick(key: string) {
-    setQuickOpen(false);
-    onGo(key);
-  }
+  const visibleQuick = quickItems.filter((i) => i.show !== false);
 
   return (
     <>
@@ -340,33 +338,17 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
           <div className="home-quick-bar-title">داشبورد</div>
           <div className="muted home-quick-bar-sub">خلاصه فروش و وضعیت سرور</div>
         </div>
-        <div className="home-quick-menu">
-          <button
-            type="button"
-            className={`btn ghost sm home-quick-burger${quickOpen ? " on" : ""}`}
-            aria-expanded={quickOpen}
-            aria-haspopup="menu"
-            onClick={() => setQuickOpen((v) => !v)}
-          >
-            <Icon name={quickOpen ? "close" : "menu"} size={18} />
-            دسترسی سریع
+      </div>
+
+      <div className="home-quick-grid" role="navigation" aria-label="دسترسی سریع">
+        {visibleQuick.map((i) => (
+          <button key={i.key} type="button" className="home-quick-tile" onClick={() => onGo(i.key)}>
+            <span className="home-quick-tile-icon" aria-hidden>
+              <Icon name={i.icon} size={20} />
+            </span>
+            <span className="home-quick-tile-label">{i.label}</span>
           </button>
-          {quickOpen && (
-            <>
-              <button type="button" className="home-quick-backdrop" aria-label="بستن" onClick={() => setQuickOpen(false)} />
-              <div className="home-quick-sheet" role="menu">
-                {quickItems
-                  .filter((i) => i.show !== false)
-                  .map((i) => (
-                    <button key={i.key} type="button" className="home-quick-item" role="menuitem" onClick={() => goQuick(i.key)}>
-                      <Icon name={i.icon} size={16} />
-                      {i.label}
-                    </button>
-                  ))}
-              </div>
-            </>
-          )}
-        </div>
+        ))}
       </div>
 
       <div className="grid stats-row-4">
