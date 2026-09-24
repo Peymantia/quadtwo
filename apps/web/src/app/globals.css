@@ -7160,7 +7160,8 @@ html[data-skin="studio"][data-theme="light"] .tenants-card {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 14px;
+  margin-top: 12px;
+  margin-bottom: 4px;
 }
 
 .home-quick-tile {
@@ -7169,8 +7170,8 @@ html[data-skin="studio"][data-theme="light"] .tenants-card {
   background: var(--elev);
   color: var(--text);
   font: inherit;
-  border-radius: 14px;
-  padding: 10px 8px;
+  border-radius: 12px;
+  padding: 8px 8px;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -7188,13 +7189,18 @@ html[data-skin="studio"][data-theme="light"] .tenants-card {
 
 .home-quick-tile-icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: color-mix(in srgb, var(--cyan, #38bdf8) 12%, transparent);
   color: var(--cyan, #38bdf8);
+}
+
+.home-quick-tile-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
 .home-quick-tile-label {
@@ -7208,30 +7214,41 @@ html[data-skin="studio"][data-theme="light"] .tenants-card {
   -webkit-box-orient: vertical;
 }
 
-/* Mobile: square icon tiles with title below */
+/* Mobile: compact icon tiles with title below */
 @media (max-width: 640px) {
   .home-quick-grid {
-    gap: 10px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 10px;
   }
 
   .home-quick-tile {
     flex-direction: column;
-    justify-content: center;
-    gap: 6px;
-    padding: 12px 6px 10px;
-    aspect-ratio: 1;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px 6px;
+    border-radius: 10px;
     text-align: center;
+    min-height: 0;
   }
 
   .home-quick-tile-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--cyan, #38bdf8) 10%, transparent);
+  }
+
+  .home-quick-tile-icon svg {
+    width: 14px;
+    height: 14px;
   }
 
   .home-quick-tile-label {
-    font-size: 0.7rem;
-    font-weight: 700;
+    font-size: 0.62rem;
+    font-weight: 650;
+    line-height: 1.2;
     -webkit-line-clamp: 2;
   }
 }

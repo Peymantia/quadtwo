@@ -340,17 +340,6 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
         </div>
       </div>
 
-      <div className="home-quick-grid" role="navigation" aria-label="دسترسی سریع">
-        {visibleQuick.map((i) => (
-          <button key={i.key} type="button" className="home-quick-tile" onClick={() => onGo(i.key)}>
-            <span className="home-quick-tile-icon" aria-hidden>
-              <Icon name={i.icon} size={20} />
-            </span>
-            <span className="home-quick-tile-label">{i.label}</span>
-          </button>
-        ))}
-      </div>
-
       <div className="grid stats-row-4">
         <div className="stat accent">
           <div className="label">فروش امروز (تومان)</div>
@@ -371,6 +360,17 @@ function HomeTab({ onGo, showTenants }: { onGo: (t: string) => void; showTenants
       </div>
 
       <PanelHealthMonitor />
+
+      <div className="home-quick-grid" role="navigation" aria-label="دسترسی سریع">
+        {visibleQuick.map((i) => (
+          <button key={i.key} type="button" className="home-quick-tile" onClick={() => onGo(i.key)}>
+            <span className="home-quick-tile-icon" aria-hidden>
+              <Icon name={i.icon} size={18} />
+            </span>
+            <span className="home-quick-tile-label">{i.label}</span>
+          </button>
+        ))}
+      </div>
     </>
   );
 }
