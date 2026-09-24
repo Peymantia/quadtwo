@@ -370,6 +370,11 @@ export class XuiClient {
     return this.request<string>("panel/api/server/getNewUUID");
   }
 
+  /** Restart Xray core on the panel host. */
+  restartXrayService() {
+    return this.request("panel/api/server/restartXrayService", { method: "POST" });
+  }
+
   /**
    * Live host metrics from 3x-ui (CPU, RAM, disk, Xray, net, …).
    * @see GET /panel/api/server/status

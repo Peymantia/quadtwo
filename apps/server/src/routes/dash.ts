@@ -3026,6 +3026,31 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     }
   });
 
+  api.post("/admin/panels/:id/restart-xray", async (c) => {
+    try {
+      const { listPanelStatusTargets } = await import("../services/panel-status.js");
+      const { createXuiFromPanel } = await import("../services/panel-servers.js");
+      const { isDemoMode } = await import("../services/license.js");
+      const targets = await listPanelStatusTargets();
+      const t = targets.find((x) => x.id === c.req.param("id"));
+      if (!t) return c.json({ error: "سرور پیدا نشد" }, 404);
+      if (isDemoMode()) {
+        return c.json({ ok: true, message: "در حالت دمو ری‌استارت شبیه‌سازی شد" });
+      }
+      const xui = createXuiFromPanel(t);
+      await xui.restartXrayService();
+      await auditLog({
+        action: "panel_restart_xray",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: t.id,
+        detail: t.name,
+      });
+      return c.json({ ok: true, message: "هسته Xray ری‌استارت شد" });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
   api.post("/admin/import", async (c) => {
     const buf = Buffer.from(await c.req.arrayBuffer());
     const result = await importWorkbook(readWorkbookFromBuffer(buf));

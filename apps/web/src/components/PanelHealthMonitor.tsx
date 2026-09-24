@@ -68,81 +68,56 @@ function tone(pct: number | null, warn = 70, danger = 85): "ok" | "warn" | "bad"
   return "ok";
 }
 
-function GaugeRing({
-  value,
-  label,
+function LineChartCard({
+  title,
+  valueLabel,
   sub,
-  toneClass,
-}: {
-  value: number | null;
-  label: string;
-  sub?: string;
-  toneClass: string;
-}) {
-  const size = 168;
-  const stroke = 12;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const pct = value == null ? 0 : Math.min(100, Math.max(0, value));
-  const dash = (pct / 100) * c;
-
-  return (
-    <div className={`panel-gauge ${toneClass}`}>
-      <svg className="panel-gauge-svg" viewBox={`0 0 ${size} ${size}`} width={size} height={size} aria-hidden>
-        <circle className="panel-gauge-track" cx={size / 2} cy={size / 2} r={r} strokeWidth={stroke} />
-        <circle
-          className="panel-gauge-arc"
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          strokeWidth={stroke}
-          strokeDasharray={`${dash} ${c}`}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </svg>
-      <div className="panel-gauge-center">
-        <div className="panel-gauge-value num">
-          {value == null ? "—" : `${value.toFixed(0)}%`}
-        </div>
-        <div className="panel-gauge-label">{label}</div>
-        {sub ? <div className="panel-gauge-sub muted">{sub}</div> : null}
-      </div>
-    </div>
-  );
-}
-
-function Sparkline({
   points,
   pick,
   toneClass,
 }: {
+  title: string;
+  valueLabel: string;
+  sub?: string;
   points: Array<{ t: number; cpu: number; ramPct: number }>;
   pick: "cpu" | "ramPct";
   toneClass: string;
 }) {
-  const w = 280;
-  const h = 56;
-  const pad = 4;
+  const w = 320;
+  const h = 72;
+  const padX = 6;
+  const padY = 8;
   const vals = points.map((p) => (pick === "cpu" ? p.cpu : p.ramPct));
-  if (vals.length < 2) {
-    return <div className={`panel-spark muted ${toneClass}`}>نمودار بعد از چند نمونه ظاهر می‌شود</div>;
-  }
-  const min = 0;
-  const max = 100;
-  const coords = vals
-    .map((v, i) => {
-      const x = pad + (i / (vals.length - 1)) * (w - pad * 2);
-      const y = pad + (1 - (Math.min(max, Math.max(min, v)) - min) / (max - min)) * (h - pad * 2);
-      return `${x},${y}`;
-    })
-    .join(" ");
-  const area = `${pad},${h - pad} ${coords} ${w - pad},${h - pad}`;
+  const hasSeries = vals.length >= 2;
+  const coords = hasSeries
+    ? vals
+        .map((v, i) => {
+          const x = padX + (i / (vals.length - 1)) * (w - padX * 2);
+          const y = padY + (1 - Math.min(100, Math.max(0, v)) / 100) * (h - padY * 2);
+          return `${x},${y}`;
+        })
+        .join(" ")
+    : "";
+  const area = hasSeries ? `${padX},${h - padY} ${coords} ${w - padX},${h - padY}` : "";
 
   return (
-    <svg className={`panel-spark ${toneClass}`} viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none">
-      <polygon className="panel-spark-fill" points={area} />
-      <polyline className="panel-spark-line" points={coords} fill="none" />
-    </svg>
+    <div className={`panel-health-line-card ${toneClass}`}>
+      <div className="panel-health-line-head">
+        <div>
+          <div className="panel-health-line-title">{title}</div>
+          {sub ? <div className="muted panel-health-line-sub">{sub}</div> : null}
+        </div>
+        <div className="panel-health-line-value num">{valueLabel}</div>
+      </div>
+      {hasSeries ? (
+        <svg className="panel-spark" viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none">
+          <polygon className="panel-spark-fill" points={area} />
+          <polyline className="panel-spark-line" points={coords} fill="none" />
+        </svg>
+      ) : (
+        <div className="panel-spark muted">نمودار بعد از چند نمونه</div>
+      )}
+    </div>
   );
 }
 
@@ -150,7 +125,10 @@ export function PanelHealthMonitor() {
   const [panels, setPanels] = useState<PanelStatus[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [restartBusy, setRestartBusy] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -178,9 +156,28 @@ export function PanelHealthMonitor() {
 
   const active = panels.find((p) => p.panelId === activeId) ?? panels[0] ?? null;
 
+  async function restartXray() {
+    if (!active) return;
+    setRestartBusy(true);
+    setFlash(null);
+    setErr(null);
+    try {
+      const r = await api<{ ok?: boolean; message?: string }>(
+        `/admin/panels/${encodeURIComponent(active.panelId)}/restart-xray`,
+        { method: "POST" },
+      );
+      setFlash(r.message || "هسته Xray ری‌استارت شد");
+      await load();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setRestartBusy(false);
+    }
+  }
+
   if (loading && !panels.length) {
     return (
-      <div className="panel panel-health">
+      <div className="panel panel-health panel-health--compact">
         <h2>وضعیت سرور</h2>
         <p className="muted" style={{ margin: 0 }}>
           در حال دریافت…
@@ -191,7 +188,7 @@ export function PanelHealthMonitor() {
 
   if (!panels.length) {
     return (
-      <div className="panel panel-health">
+      <div className="panel panel-health panel-health--compact">
         <h2>وضعیت سرور</h2>
         <p className="muted" style={{ margin: 0 }}>
           سرور پنلی ثبت نشده — از بخش «سرورها» یک پنل اضافه کنید.
@@ -201,18 +198,17 @@ export function PanelHealthMonitor() {
   }
 
   return (
-    <div className="panel panel-health">
+    <div className="panel panel-health panel-health--compact">
       <div className="panel-health-head">
         <div>
           <h2>وضعیت سرور</h2>
           <p className="muted panel-health-sub">
-            مصرف لحظه‌ای از پنل سنایی
-            {updatedAt ? ` · به‌روز ${updatedAt}` : ""}
+            مصرف لحظه‌ای
+            {updatedAt ? ` · ${updatedAt}` : ""}
           </p>
         </div>
         <button type="button" className="btn ghost sm" onClick={() => void load()} aria-label="بروزرسانی">
           <Icon name="sync" size={15} />
-          بروزرسانی
         </button>
       </div>
 
@@ -235,6 +231,11 @@ export function PanelHealthMonitor() {
       )}
 
       {err && <p className="err">{err}</p>}
+      {flash && (
+        <p className="muted" style={{ marginTop: 0, color: "var(--teal)" }}>
+          {flash}
+        </p>
+      )}
 
       {active && (
         <>
@@ -244,84 +245,108 @@ export function PanelHealthMonitor() {
             </p>
           )}
 
-          <div className="panel-health-gauges">
-            <div className="panel-health-gauge-card">
-              <GaugeRing
-                value={active.cpu}
-                label="CPU"
-                sub={active.cpuCores != null ? `${active.cpuCores.toLocaleString("fa-IR")} هسته` : undefined}
-                toneClass={`tone-${tone(active.cpu)}`}
-              />
-              <Sparkline points={active.history} pick="cpu" toneClass={`tone-${tone(active.cpu)}`} />
-            </div>
-            <div className="panel-health-gauge-card">
-              <GaugeRing
-                value={active.ramPct}
-                label="RAM"
-                sub={`${formatBytes(active.ramUsed)} / ${formatBytes(active.ramTotal)}`}
-                toneClass={`tone-${tone(active.ramPct)}`}
-              />
-              <Sparkline points={active.history} pick="ramPct" toneClass={`tone-${tone(active.ramPct)}`} />
-            </div>
+          <div className="panel-health-gauges panel-health-gauges--lines">
+            <LineChartCard
+              title="CPU"
+              valueLabel={active.cpu == null ? "—" : `${active.cpu.toFixed(0)}%`}
+              sub={active.cpuCores != null ? `${active.cpuCores.toLocaleString("fa-IR")} هسته` : undefined}
+              points={active.history}
+              pick="cpu"
+              toneClass={`tone-${tone(active.cpu)}`}
+            />
+            <LineChartCard
+              title="RAM"
+              valueLabel={active.ramPct == null ? "—" : `${active.ramPct.toFixed(0)}%`}
+              sub={`${formatBytes(active.ramUsed)} / ${formatBytes(active.ramTotal)}`}
+              points={active.history}
+              pick="ramPct"
+              toneClass={`tone-${tone(active.ramPct)}`}
+            />
           </div>
 
-          <div className="panel-health-meta">
-            <div className="panel-health-chip">
-              <span className="k">دیسک</span>
-              <span className={`v num tone-${tone(active.diskPct, 75, 90)}`}>
-                {active.diskPct != null ? `${active.diskPct.toFixed(0)}%` : "—"}
-              </span>
-              <span className="d muted">
-                {formatBytes(active.diskUsed)} / {formatBytes(active.diskTotal)}
-              </span>
-            </div>
-            <div className="panel-health-chip">
+          <div className="panel-health-xray-row">
+            <div className="panel-health-xray-info">
               <span className="k">Xray</span>
               <span className={`v ${active.xrayState === "running" ? "tone-ok" : "tone-bad"}`}>
                 {active.xrayState || "—"}
               </span>
-              <span className="d muted num" dir="ltr">
-                {active.xrayVersion || ""}
-              </span>
+              {active.xrayVersion ? (
+                <span className="d muted num" dir="ltr">
+                  {active.xrayVersion}
+                </span>
+              ) : null}
+              <span className="d muted">آپ‌تایم سرور: {formatUptime(active.uptimeSec)}</span>
             </div>
-            <div className="panel-health-chip">
-              <span className="k">آپ‌تایم</span>
-              <span className="v">{formatUptime(active.uptimeSec)}</span>
-            </div>
-            <div className="panel-health-chip">
-              <span className="k">Load</span>
-              <span className="v num" dir="ltr">
-                {active.loads.length ? active.loads.map((n) => n.toFixed(2)).join(" · ") : "—"}
-              </span>
-            </div>
-            <div className="panel-health-chip">
-              <span className="k">شبکه</span>
-              <span className="v num" dir="ltr">
-                ↑ {formatRate(active.netUp)} · ↓ {formatRate(active.netDown)}
-              </span>
-            </div>
-            <div className="panel-health-chip">
-              <span className="k">اتصالات</span>
-              <span className="v num">
-                TCP {active.tcpCount?.toLocaleString("fa-IR") ?? "—"} · UDP{" "}
-                {active.udpCount?.toLocaleString("fa-IR") ?? "—"}
-              </span>
-            </div>
-            {active.publicIpv4 ? (
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={restartBusy || !active.ok}
+              onClick={() => void restartXray()}
+            >
+              <Icon name="sync" size={14} />
+              {restartBusy ? "…" : "ری‌استارت Xray"}
+            </button>
+          </div>
+
+          <details
+            className="panel-health-accordion"
+            open={detailsOpen}
+            onToggle={(e) => setDetailsOpen((e.target as HTMLDetailsElement).open)}
+          >
+            <summary>جزئیات بیشتر</summary>
+            <div className="panel-health-meta">
               <div className="panel-health-chip">
-                <span className="k">IP</span>
-                <span className="v num" dir="ltr">
-                  {active.publicIpv4}
+                <span className="k">دیسک</span>
+                <span className={`v num tone-${tone(active.diskPct, 75, 90)}`}>
+                  {active.diskPct != null ? `${active.diskPct.toFixed(0)}%` : "—"}
+                </span>
+                <span className="d muted">
+                  {formatBytes(active.diskUsed)} / {formatBytes(active.diskTotal)}
                 </span>
               </div>
-            ) : null}
-            {active.swapPct != null && active.swapPct > 0 ? (
               <div className="panel-health-chip">
-                <span className="k">Swap</span>
-                <span className={`v num tone-${tone(active.swapPct)}`}>{active.swapPct.toFixed(0)}%</span>
+                <span className="k">Load</span>
+                <span className="v num" dir="ltr">
+                  {active.loads.length ? active.loads.map((n) => n.toFixed(2)).join(" · ") : "—"}
+                </span>
               </div>
-            ) : null}
-          </div>
+              <div className="panel-health-chip">
+                <span className="k">شبکه</span>
+                <span className="v num" dir="ltr">
+                  ↑ {formatRate(active.netUp)} · ↓ {formatRate(active.netDown)}
+                </span>
+              </div>
+              <div className="panel-health-chip">
+                <span className="k">اتصالات</span>
+                <span className="v num">
+                  TCP {active.tcpCount?.toLocaleString("fa-IR") ?? "—"} · UDP{" "}
+                  {active.udpCount?.toLocaleString("fa-IR") ?? "—"}
+                </span>
+              </div>
+              {active.publicIpv4 ? (
+                <div className="panel-health-chip">
+                  <span className="k">IP</span>
+                  <span className="v num" dir="ltr">
+                    {active.publicIpv4}
+                  </span>
+                </div>
+              ) : null}
+              {active.swapPct != null && active.swapPct > 0 ? (
+                <div className="panel-health-chip">
+                  <span className="k">Swap</span>
+                  <span className={`v num tone-${tone(active.swapPct)}`}>{active.swapPct.toFixed(0)}%</span>
+                </div>
+              ) : null}
+              {active.panelVersion ? (
+                <div className="panel-health-chip">
+                  <span className="k">نسخه پنل</span>
+                  <span className="v num" dir="ltr">
+                    {active.panelVersion}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </details>
         </>
       )}
     </div>

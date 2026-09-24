@@ -7135,3 +7135,215 @@ html[data-skin="studio"][data-theme="light"] .tenants-card {
 .tone-bad {
   color: var(--pink, #fb7185) !important;
 }
+
+/* Home quick hamburger */
+.home-quick-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.home-quick-bar-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.home-quick-bar-sub {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+}
+
+.home-quick-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.home-quick-burger.on {
+  border-color: color-mix(in srgb, var(--cyan, #38bdf8) 50%, var(--line));
+}
+
+.home-quick-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  background: rgba(4, 6, 20, 0.35);
+  cursor: default;
+}
+
+.home-quick-sheet {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-end: 0;
+  z-index: 41;
+  min-width: min(280px, 86vw);
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--card-solid, var(--elev));
+  box-shadow: 0 18px 48px rgba(4, 6, 20, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.home-quick-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 11px 12px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: right;
+  width: 100%;
+}
+
+.home-quick-item:hover {
+  background: color-mix(in srgb, var(--cyan, #38bdf8) 10%, transparent);
+}
+
+/* Compact panel health */
+.panel-health--compact {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.panel-health--compact .panel-health-head h2 {
+  font-size: 1rem;
+}
+
+.panel-health--compact .panel-health-sub {
+  font-size: 0.75rem;
+}
+
+.panel-health--compact .panel-health-tabs {
+  margin: 8px 0 10px;
+}
+
+.panel-health--compact .panel-health-tab {
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
+.panel-health-gauges--lines {
+  gap: 8px;
+}
+
+.panel-health-line-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--elev) 88%, transparent);
+  padding: 10px 10px 6px;
+  min-width: 0;
+}
+
+.panel-health-line-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.panel-health-line-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+}
+
+.panel-health-line-sub {
+  margin-top: 2px;
+  font-size: 0.7rem;
+}
+
+.panel-health-line-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+}
+
+.panel-health--compact .panel-spark {
+  height: 56px;
+  border-radius: 8px;
+}
+
+.panel-health-xray-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--elev);
+}
+
+.panel-health-xray-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.panel-health-xray-info .k {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--mute);
+}
+
+.panel-health-xray-info .v {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.panel-health-xray-info .d {
+  font-size: 0.72rem;
+}
+
+.panel-health-accordion {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--elev) 70%, transparent);
+  overflow: hidden;
+}
+
+.panel-health-accordion > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 0.84rem;
+  font-weight: 750;
+  color: var(--mute);
+  user-select: none;
+}
+
+.panel-health-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-health-accordion[open] > summary {
+  color: var(--text);
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-health-accordion .panel-health-meta {
+  margin: 0;
+  padding: 10px;
+}
