@@ -69,10 +69,10 @@ type PayModalState =
   | null;
 
 const TABS: ShellTab[] = [
-  { key: "home", label: "داشبورد", icon: "home" },
   { key: "shop", label: "خرید", icon: "shop" },
-  { key: "subs", label: "اشتراک‌ها", icon: "wifi" },
   { key: "wallet", label: "کیف پول", icon: "wallet" },
+  { key: "home", label: "داشبورد", icon: "home", bubble: true },
+  { key: "subs", label: "اشتراک‌ها", icon: "wifi" },
   { key: "support", label: "پشتیبانی", icon: "chat" },
   { key: "settings", label: "تنظیمات", icon: "gear" },
 ];
@@ -566,7 +566,7 @@ export default function UserAppPage() {
 
       {tab === "home" && (
         <>
-          <div className="grid">
+          <div className="grid stats-row-2">
             <div className="stat accent">
               <div className="label">موجودی کیف پول</div>
               <div className="value num">{formatToman(home.wallet.balance)}</div>
@@ -583,12 +583,18 @@ export default function UserAppPage() {
               )}
             </div>
             <div className="stat">
-              <div className="label">سرویس فعال</div>
-              <div className="value num">{home.stats.active}</div>
-            </div>
-            <div className="stat">
-              <div className="label">کل اشتراک‌ها</div>
-              <div className="value num">{home.stats.subscriptions}</div>
+              <div className="label">اشتراک‌ها</div>
+              <div className="stat-dual">
+                <div className="stat-dual-item">
+                  <div className="value num">{home.stats.active}</div>
+                  <div className="muted">سرویس فعال</div>
+                </div>
+                <div className="stat-dual-sep" aria-hidden />
+                <div className="stat-dual-item">
+                  <div className="value num">{home.stats.subscriptions}</div>
+                  <div className="muted">کل اشتراک‌ها</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -644,8 +650,7 @@ export default function UserAppPage() {
             <div className="panel">
               <h2>اکانت تست رایگان</h2>
               <p className="muted" style={{ marginTop: 0 }}>
-                قبل از خرید، سرویس را امتحان کنید (۱ روز · ۲۵۰ مگ). نام اکانت با پسوند{" "}
-                <code dir="ltr">_Test</code> ساخته می‌شود.
+                قبل از خرید، سرویس را امتحان کنید (۱ روز · ۲۵۰ مگ).
               </p>
               <button type="button" className="btn light wide" disabled={busy} onClick={claimTest}>
                 <Icon name="wifi" size={16} />

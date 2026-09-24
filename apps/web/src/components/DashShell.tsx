@@ -454,7 +454,8 @@ export function DashShell(props: {
   const showTerms = Boolean(props.showTerms && props.onTerms && !isAdminPanel);
 
   const { left, bubble, right, more } = useMemo(() => {
-    const bubbleTab = navTabs.find((t) => t.bubble || t.key === "wallet") ?? null;
+    const bubbleTab =
+      navTabs.find((t) => t.bubble) ?? navTabs.find((t) => t.key === "wallet") ?? null;
     const rest = navTabs.filter((t) => t.key !== bubbleTab?.key);
     const byPinOrder = (a: ShellTab, b: ShellTab) => (a.pinOrder ?? 50) - (b.pinOrder ?? 50);
     const pinned = rest.filter((t) => t.pin).sort(byPinOrder);
