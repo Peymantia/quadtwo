@@ -274,6 +274,10 @@ build_app_smart() {
     npm install --include=dev
   else
     log "Skip npm install (lockfile unchanged)."
+    # Re-include pruned devDeps if a prior production install removed them.
+    if [[ "${need_server}" -eq 1 || "${need_web}" -eq 1 ]]; then
+      npm install --include=dev --no-audit --no-fund >/dev/null
+    fi
   fi
 
   if [[ "${need_shared}" -eq 1 ]]; then
