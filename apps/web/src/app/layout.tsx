@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./skins/studio.css";
+import "./skins/deur.css";
 import { ThemeBoot } from "../components/ThemeBoot";
 import { THEME_BOOT_SCRIPT } from "../lib/theme";
 

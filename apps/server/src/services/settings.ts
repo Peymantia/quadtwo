@@ -1,6 +1,13 @@
 import { prisma } from "../db.js";
 import { isDemoMode } from "./license.js";
 
+export type UiSkinSetting = "classic" | "studio" | "deur";
+
+export function normalizeUiSkin(raw: unknown): UiSkinSetting {
+  if (raw === "studio" || raw === "deur") return raw;
+  return "classic";
+}
+
 const DEFAULT_WELCOME = `سلام به ربات پینگ خوش اومدی 🌸
 ما اینجاییم تا شما را بدون هیچ محدویتی به شبکه جهانی متصل کنیم ❤️
 
@@ -87,9 +94,9 @@ const defaults: Record<string, string> = {
   discount_codes_enabled: "false",
   /** Max % for partner/wholesale when creating codes (admin always up to 100) */
   discount_max_percent: "30",
-  /** UI skin: classic (current) | studio (modern light/dark) */
+  /** UI skin: classic | studio | deur */
   ui_skin: "classic",
-  /** Studio color mode: dark | light | system | telegram */
+  /** Color mode for studio/deur: dark | light | system | telegram */
   ui_color_mode: "system",
   /** Sell without 3x-ui — admin pastes sub URL after payment */
   serverless_enabled: "false",

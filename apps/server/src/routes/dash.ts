@@ -86,6 +86,7 @@ import {
   sanitizeCategoryKey,
   BUILTIN_CATEGORY_KEYS,
   setSetting,
+  normalizeUiSkin,
   type ChannelConfig,
   type NotifConfig,
   type PriceRates,
@@ -242,7 +243,7 @@ export function registerDashAuthRoutes(api: Hono<{ Variables: Vars }>) {
       authModes: ["password", "otp", "passkey"],
       passkeyHint: "ورود با Face ID / اثرانگشت (Passkey)",
       demoMode: isDemoMode(),
-      uiSkin: uiSkin === "studio" ? "studio" : "classic",
+      uiSkin: normalizeUiSkin(uiSkin),
       uiColorMode:
         uiColorMode === "light" ||
         uiColorMode === "dark" ||
@@ -3640,7 +3641,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         available: true,
         self: true,
         emoji_style: s.emoji_style === "premium" ? "premium" : "universal",
-        ui_skin: s.ui_skin === "studio" ? "studio" : "classic",
+        ui_skin: normalizeUiSkin(s.ui_skin),
         ui_color_mode:
           s.ui_color_mode === "light" ||
           s.ui_color_mode === "dark" ||
@@ -3662,7 +3663,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     }>();
     const patch: {
       emoji_style?: "premium" | "universal";
-      ui_skin?: "studio" | "classic";
+      ui_skin?: "studio" | "classic" | "deur";
       ui_color_mode?: "light" | "dark" | "system" | "telegram";
     } = {
       emoji_style:
@@ -3672,7 +3673,9 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
             ? "universal"
             : undefined,
       ui_skin:
-        body.ui_skin === "studio" ? "studio" : body.ui_skin === "classic" ? "classic" : undefined,
+        body.ui_skin === "studio" || body.ui_skin === "classic" || body.ui_skin === "deur"
+          ? body.ui_skin
+          : undefined,
       ui_color_mode:
         body.ui_color_mode === "light" ||
         body.ui_color_mode === "dark" ||
@@ -3695,7 +3698,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         available: true,
         self: true,
         emoji_style: s.emoji_style === "premium" ? "premium" : "universal",
-        ui_skin: s.ui_skin === "studio" ? "studio" : "classic",
+        ui_skin: normalizeUiSkin(s.ui_skin),
         ui_color_mode:
           s.ui_color_mode === "light" ||
           s.ui_color_mode === "dark" ||
@@ -4079,7 +4082,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         continue;
       }
       if (k === "ui_skin") {
-        await setSetting("ui_skin", v === "studio" ? "studio" : "classic");
+        await setSetting("ui_skin", normalizeUiSkin(v));
         if (isDemoMode()) await setSetting("demo_appearance_seeded", "1");
         continue;
       }

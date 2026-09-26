@@ -14,7 +14,8 @@ import {
   parseUiSkin,
   readCachedAppearance,
   resolveTheme,
-  toggleStudioTheme,
+  skinHasColorModes,
+  toggleSkinTheme,
   type UiSkin,
 } from "../../lib/theme";
 
@@ -35,7 +36,7 @@ function LoginThemeToggle({ skin }: { skin: UiSkin }) {
   const [resolved, setResolved] = useState<"light" | "dark">("dark");
 
   useEffect(() => {
-    if (skin !== "studio") return;
+    if (!skinHasColorModes(skin)) return;
     const sync = () => {
       const cached = readCachedAppearance();
       setResolved(resolveTheme(cached.colorMode));
@@ -47,7 +48,7 @@ function LoginThemeToggle({ skin }: { skin: UiSkin }) {
     return () => window.removeEventListener("piing:appearance", sync);
   }, [skin]);
 
-  if (skin !== "studio") return null;
+  if (!skinHasColorModes(skin)) return null;
 
   return (
     <button
@@ -57,11 +58,10 @@ function LoginThemeToggle({ skin }: { skin: UiSkin }) {
       title={resolved === "light" ? "حالت تاریک" : "حالت روشن"}
       onClick={() => {
         const cached = readCachedAppearance();
-        applyAppearance("studio", cached.colorMode);
-        const next = toggleStudioTheme(cached.colorMode);
+        const next = toggleSkinTheme(skin, cached.colorMode);
         setResolved(next);
         window.dispatchEvent(
-          new CustomEvent("piing:appearance", { detail: { skin: "studio", colorMode: cached.colorMode } }),
+          new CustomEvent("piing:appearance", { detail: { skin, colorMode: cached.colorMode } }),
         );
       }}
     >
@@ -176,7 +176,7 @@ export default function LoginPage() {
     // Prefer cached tenant skin; /auth/meta may refine it below.
     const cached = readCachedAppearance();
     const loginTheme = getUserColorOverride() ?? resolveTheme(cached.colorMode);
-    applyAppearance(cached.skin, cached.skin === "studio" ? loginTheme : cached.colorMode);
+    applyAppearance(cached.skin, skinHasColorModes(cached.skin) ? loginTheme : cached.colorMode);
     setUiSkin(cached.skin);
 
     api<{ brand: string; logoUrl?: string | null; uiSkin?: string; uiColorMode?: string }>("/auth/meta", {
@@ -189,7 +189,7 @@ export default function LoginPage() {
           const skin = parseUiSkin(r.uiSkin ?? cached.skin);
           const colorMode = parseColorMode(r.uiColorMode ?? cached.colorMode);
           const theme = getUserColorOverride() ?? resolveTheme(colorMode);
-          applyAppearance(skin, skin === "studio" ? theme : colorMode);
+          applyAppearance(skin, skinHasColorModes(skin) ? theme : colorMode);
           setUiSkin(skin);
         }
       })

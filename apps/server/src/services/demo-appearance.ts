@@ -5,10 +5,11 @@ import { env } from "../config/env.js";
 import { isDemoMode } from "./license.js";
 import { PLATFORM_TENANT_SLUG } from "./tenant-context.js";
 import { isEmojiStyle, type EmojiStyle } from "./emoji-pack.js";
+import { normalizeUiSkin } from "./settings.js";
 
 export type DemoAppearance = {
   emoji_style: EmojiStyle;
-  ui_skin: "classic" | "studio";
+  ui_skin: "classic" | "studio" | "deur";
   ui_color_mode: "system" | "dark" | "light" | "telegram";
 };
 
@@ -70,7 +71,7 @@ function parseAppearance(map: Record<string, string>): DemoAppearance {
   const mode = map.ui_color_mode;
   return {
     emoji_style: isEmojiStyle(style) ? style : DEFAULTS.emoji_style,
-    ui_skin: skin === "studio" ? "studio" : "classic",
+    ui_skin: normalizeUiSkin(skin),
     ui_color_mode:
       mode === "light" || mode === "dark" || mode === "system" || mode === "telegram"
         ? mode

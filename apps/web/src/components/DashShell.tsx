@@ -9,8 +9,10 @@ import {
   parseColorMode,
   readCachedAppearance,
   resolveTheme,
-  toggleStudioTheme,
+  skinHasColorModes,
+  toggleSkinTheme,
   type ColorMode,
+  type UiSkin,
 } from "../lib/theme";
 import { DemoModeBar } from "./DemoModeBar";
 
@@ -23,7 +25,7 @@ const PREVIEW_PANELS = [
 ] as const;
 
 function ThemeToggleBtn() {
-  const [skin, setSkin] = useState<"classic" | "studio">("classic");
+  const [skin, setSkin] = useState<UiSkin>("classic");
   const [colorMode, setColorMode] = useState<ColorMode>("system");
   const [resolved, setResolved] = useState<"light" | "dark">("dark");
 
@@ -34,7 +36,7 @@ function ThemeToggleBtn() {
       setColorMode(cached.colorMode);
       setResolved(resolveTheme(cached.colorMode));
       const ds = document.documentElement.dataset.skin;
-      if (ds === "studio" || ds === "classic") setSkin(ds);
+      if (ds === "studio" || ds === "deur" || ds === "classic") setSkin(ds);
       const dt = document.documentElement.dataset.theme;
       if (dt === "light" || dt === "dark") setResolved(dt);
     };
@@ -43,7 +45,7 @@ function ThemeToggleBtn() {
     return () => window.removeEventListener("piing:appearance", sync);
   }, []);
 
-  if (skin !== "studio") return null;
+  if (!skinHasColorModes(skin)) return null;
 
   return (
     <button
@@ -52,7 +54,10 @@ function ThemeToggleBtn() {
       aria-label={resolved === "light" ? "حالت تاریک" : "حالت روشن"}
       title={resolved === "light" ? "حالت تاریک" : "حالت روشن"}
       onClick={() => {
-        const next = toggleStudioTheme(colorMode || parseColorMode(localStorage.getItem("piing_ui_color_mode")));
+        const next = toggleSkinTheme(
+          skin,
+          colorMode || parseColorMode(localStorage.getItem("piing_ui_color_mode")),
+        );
         setResolved(next);
       }}
     >

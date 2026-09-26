@@ -21,7 +21,7 @@ import { SettingsAccordion } from "../../components/SettingsAccordion";
 import { SuperadminTenantsPanel } from "../../components/SuperadminTenantsPanel";
 import { QrCodeIcon } from "../../components/QrCodeIcon";
 import { broadcastAppearance } from "../../components/ThemeBoot";
-import { parseColorMode, parseUiSkin, setUserColorOverride, type ColorMode } from "../../lib/theme";
+import { parseColorMode, parseUiSkin, setUserColorOverride, skinHasColorModes, type ColorMode } from "../../lib/theme";
 import { PricesTab } from "../../components/prices/PricesTab";
 import { UserCustomPricingPanel } from "../../components/UserCustomPricingPanel";
 import { PanelHealthMonitor } from "../../components/PanelHealthMonitor";
@@ -4329,7 +4329,7 @@ function SettingsTab({
           available: true,
           self: Boolean(r.self),
           emoji_style: r.emoji_style === "premium" ? "premium" : "universal",
-          ui_skin: r.ui_skin === "studio" ? "studio" : "classic",
+          ui_skin: parseUiSkin(r.ui_skin),
           ui_color_mode:
             r.ui_color_mode === "light" ||
             r.ui_color_mode === "dark" ||
@@ -4698,7 +4698,7 @@ function SettingsTab({
   if (!loaded) return <p className="muted">در حال دریافت تنظیمات…</p>;
 
   const multiMonth = Number(settings.max_purchase_months || "1") > 1;
-  const skinIsClassic = parseUiSkin(settings.ui_skin) === "classic";
+  const skinIsClassic = !skinHasColorModes(parseUiSkin(settings.ui_skin));
 
   function onSettingNumberChange(key: string, raw: string, fallback: number) {
     const cleaned = raw.replace(/,/g, "");
@@ -5877,6 +5877,7 @@ function SettingsTab({
             >
               <option value="classic">Classic</option>
               <option value="studio">Studio</option>
+              <option value="deur">Deur</option>
             </select>
           </div>
           <div className="field settings-appearance-row__field">
@@ -5919,7 +5920,7 @@ function SettingsTab({
           </p>
         )}
         <p className="muted" style={{ fontSize: "0.82rem", marginBottom: 0 }}>
-          در Studio کاربران می‌توانند با دکمه خورشید/ماه در هدر بین روشن و تیره جابه‌جا شوند. مود فقط برای Studio فعال است.
+          در Studio و Deur کاربران می‌توانند با دکمه خورشید/ماه در هدر بین روشن و تیره جابه‌جا شوند. مود فقط برای این دو قالب فعال است.
         </p>
       </SettingsAccordion>
 
@@ -5948,13 +5949,14 @@ function SettingsTab({
               >
                 <option value="classic">Classic</option>
                 <option value="studio">Studio</option>
+                <option value="deur">Deur</option>
               </select>
             </div>
             <div className="field settings-appearance-row__field">
               <label>مود</label>
               <select
                 value={parseColorMode(demoAppearance.ui_color_mode)}
-                disabled={demoAppearanceBusy || parseUiSkin(demoAppearance.ui_skin) === "classic"}
+                disabled={demoAppearanceBusy || !skinHasColorModes(parseUiSkin(demoAppearance.ui_skin))}
                 onChange={(e) => {
                   const ui_color_mode = e.target.value as ColorMode;
                   setDemoAppearance((d) => (d ? { ...d, ui_color_mode } : d));
@@ -6018,7 +6020,7 @@ function SettingsTab({
                       available: true,
                       self: false,
                       emoji_style: r.emoji_style === "premium" ? "premium" : "universal",
-                      ui_skin: r.ui_skin === "studio" ? "studio" : "classic",
+                      ui_skin: parseUiSkin(r.ui_skin),
                       ui_color_mode: parseColorMode(r.ui_color_mode),
                     });
                     flash("ظاهر ربات دمو ذخیره شد");

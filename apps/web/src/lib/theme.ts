@@ -1,4 +1,4 @@
-export type UiSkin = "classic" | "studio";
+export type UiSkin = "classic" | "studio" | "deur";
 export type ColorMode = "dark" | "light" | "system" | "telegram";
 export type ResolvedTheme = "dark" | "light";
 
@@ -7,7 +7,13 @@ const CACHE_COLOR = "piing_ui_color_mode";
 const USER_COLOR_OVERRIDE = "piing_ui_color_override";
 
 export function parseUiSkin(raw: unknown): UiSkin {
-  return raw === "studio" ? "studio" : "classic";
+  if (raw === "studio" || raw === "deur") return raw;
+  return "classic";
+}
+
+/** Skins that support light/dark (and system/telegram) color modes. */
+export function skinHasColorModes(skin: UiSkin): boolean {
+  return skin === "studio" || skin === "deur";
 }
 
 export function parseColorMode(raw: unknown): ColorMode {
@@ -66,7 +72,7 @@ export function applyAppearance(skin: UiSkin, colorMode: ColorMode) {
   root.dataset.skin = skin;
   cacheAppearance(skin, colorMode);
 
-  if (skin === "classic") {
+  if (!skinHasColorModes(skin)) {
     delete root.dataset.theme;
     root.style.colorScheme = "dark";
     syncTelegramChrome("dark");
@@ -79,13 +85,19 @@ export function applyAppearance(skin: UiSkin, colorMode: ColorMode) {
   syncTelegramChrome(resolved);
 }
 
-/** Cycle light/dark override while Studio is active. */
-export function toggleStudioTheme(colorMode: ColorMode) {
+/** Cycle light/dark override for theme-capable skins (Studio / Deur). */
+export function toggleSkinTheme(skin: UiSkin, colorMode: ColorMode) {
+  if (!skinHasColorModes(skin)) return resolveTheme(colorMode);
   const current = resolveTheme(colorMode);
   const next: ResolvedTheme = current === "light" ? "dark" : "light";
   setUserColorOverride(next);
-  applyAppearance("studio", colorMode);
+  applyAppearance(skin, colorMode);
   return next;
+}
+
+/** @deprecated use toggleSkinTheme — kept for older imports */
+export function toggleStudioTheme(colorMode: ColorMode) {
+  return toggleSkinTheme("studio", colorMode);
 }
 
 function cssVar(name: string, fallback: string): string {
@@ -107,4 +119,4 @@ export function syncTelegramChrome(resolved: ResolvedTheme) {
 }
 
 /** Tiny FOUC script — keep in sync with applyAppearance defaults. */
-export const THEME_BOOT_SCRIPT = `(function(){try{var s=localStorage.getItem("piing_ui_skin")||"classic";var m=localStorage.getItem("piing_ui_color_mode")||"system";var o=localStorage.getItem("piing_ui_color_override");var r=document.documentElement;r.setAttribute("data-skin",s==="studio"?"studio":"classic");if(s!=="studio"){r.removeAttribute("data-theme");r.style.colorScheme="dark";return;}var t=o==="light"||o==="dark"?o:(m==="light"||m==="dark"?m:(m==="telegram"&&window.Telegram&&window.Telegram.WebApp&&window.Telegram.WebApp.colorScheme)||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"));r.setAttribute("data-theme",t);r.style.colorScheme=t;}catch(e){}})();`;
+export const THEME_BOOT_SCRIPT = `(function(){try{var s=localStorage.getItem("piing_ui_skin")||"classic";var m=localStorage.getItem("piing_ui_color_mode")||"system";var o=localStorage.getItem("piing_ui_color_override");var r=document.documentElement;var skin=s==="studio"||s==="deur"?s:"classic";r.setAttribute("data-skin",skin);if(skin==="classic"){r.removeAttribute("data-theme");r.style.colorScheme="dark";return;}var t=o==="light"||o==="dark"?o:(m==="light"||m==="dark"?m:(m==="telegram"&&window.Telegram&&window.Telegram.WebApp&&window.Telegram.WebApp.colorScheme)||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"));r.setAttribute("data-theme",t);r.style.colorScheme=t;}catch(e){}})();`;

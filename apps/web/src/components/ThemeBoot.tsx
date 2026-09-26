@@ -7,6 +7,7 @@ import {
   parseColorMode,
   parseUiSkin,
   readCachedAppearance,
+  skinHasColorModes,
   type ColorMode,
   type UiSkin,
 } from "../lib/theme";
@@ -39,7 +40,7 @@ export function ThemeBoot() {
       .catch(() => undefined);
 
     const onSystem = () => {
-      if (skin === "studio" && (colorMode === "system" || colorMode === "telegram")) {
+      if (skinHasColorModes(skin) && (colorMode === "system" || colorMode === "telegram")) {
         applyAppearance(skin, colorMode);
       }
     };
@@ -47,7 +48,7 @@ export function ThemeBoot() {
     mq.addEventListener("change", onSystem);
 
     const onTgTheme = () => {
-      if (skin === "studio" && colorMode === "telegram") {
+      if (skinHasColorModes(skin) && colorMode === "telegram") {
         applyAppearance(skin, colorMode);
       }
     };
