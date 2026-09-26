@@ -2121,19 +2121,19 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
             <Icon name="check" size={15} />
             اعمال تغییرات
           </button>
+          <button type="button" className="btn ghost" disabled={busy || !undoAvailable} onClick={() => void runUndo()}>
+            <Icon name="arrowRight" size={15} />
+            آندو
+          </button>
           <button
             type="button"
-            className="btn"
+            className="btn sync-btn-import"
             disabled={busy}
             title="پنل → ربات · فقط اکانت‌های جدید (+ حجم و انقضا)"
             onClick={openImportAllPanelAccounts}
           >
             <Icon name="download" size={15} />
             بارگذاری همه اکانت‌های پنل
-          </button>
-          <button type="button" className="btn ghost" disabled={busy || !undoAvailable} onClick={() => void runUndo()}>
-            <Icon name="arrowRight" size={15} />
-            Undo
           </button>
         </div>
 

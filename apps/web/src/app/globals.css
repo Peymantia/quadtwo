@@ -4213,8 +4213,8 @@ html[data-theme="dark"] .sub-qr-img {
 
 .sync-actions {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   margin-bottom: 12px;
 }
 
@@ -4222,19 +4222,27 @@ html[data-theme="dark"] .sub-qr-img {
   width: 100%;
   justify-content: center;
   min-height: 44px;
-  padding-inline: 14px;
+  padding-inline: 10px;
   white-space: nowrap;
+}
+
+.sync-actions .sync-btn-import {
+  grid-column: 1 / -1;
 }
 
 @media (min-width: 720px) {
   .sync-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
   }
 
   .sync-actions .btn {
     min-height: 0;
     padding-inline: 10px;
+  }
+
+  .sync-actions .sync-btn-import {
+    grid-column: auto;
   }
 }
 
