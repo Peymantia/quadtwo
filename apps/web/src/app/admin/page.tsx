@@ -129,6 +129,7 @@ type PanelRow = {
   subBase?: string | null;
   weight?: number;
   categories?: string;
+  subscriptionCount?: number;
 };
 
 const FALLBACK_CATEGORIES = [
@@ -3588,14 +3589,79 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
       flash(null, "حداقل یک سرور باید باقی بماند");
       return;
     }
-    const ok = await askConfirm(
-      `حذف سرور «${p.name}»؟\nاین کار فقط وقتی ممکن است که هیچ اشتراکی روی این سرور نباشد.`,
-    );
-    if (!ok) return;
+    const others = panels.filter((x) => x.id !== p.id);
+    const subCount = p.subscriptionCount ?? 0;
+    let reassignTo: string | undefined;
+    if (subCount > 0) {
+      if (others.length === 1) {
+        const ok = await askConfirm(
+          `سرور «${p.name}» دارای ${subCount.toLocaleString("fa-IR")} اشتراک است.\n` +
+            `همه به سرور «${others[0]!.name}» منتقل و سپس این سرور حذف شود؟`,
+        );
+        if (!ok) return;
+        reassignTo = others[0]!.id;
+      } else {
+        const names = others.map((o, i) => `${i + 1}) ${o.name}`).join("\n");
+        const pick = window.prompt(
+          `سرور «${p.name}» دارای ${subCount} اشتراک است.\n` +
+            `شماره سرور مقصد را وارد کنید (یا Cancel):\n${names}`,
+        );
+        if (!pick) return;
+        const idx = Number(pick.trim()) - 1;
+        if (!Number.isFinite(idx) || idx < 0 || idx >= others.length) {
+          flash(null, "شماره سرور مقصد نامعتبر است");
+          return;
+        }
+        reassignTo = others[idx]!.id;
+        const ok = await askConfirm(
+          `انتقال ${subCount} اشتراک به «${others[idx]!.name}» و حذف «${p.name}»؟`,
+        );
+        if (!ok) return;
+      }
+    } else {
+      const ok = await askConfirm(`حذف سرور «${p.name}»؟`);
+      if (!ok) return;
+    }
     try {
-      await api(`/admin/panels/${p.id}`, { method: "DELETE" });
-      flash("سرور حذف شد");
+      const q = reassignTo ? `?reassignTo=${encodeURIComponent(reassignTo)}` : "";
+      await api(`/admin/panels/${p.id}${q}`, { method: "DELETE" });
+      flash(reassignTo ? "اشتراک‌ها منتقل و سرور حذف شد" : "سرور حذف شد");
       if (editing?.id === p.id) setEditing(null);
+      await load();
+    } catch (e) {
+      flash(null, errText(e));
+    }
+  }
+
+  async function reassignSubs(from: PanelRow) {
+    const others = panels.filter((x) => x.id !== from.id);
+    if (!others.length) {
+      flash(null, "سرور مقصد دیگری وجود ندارد");
+      return;
+    }
+    let toId: string;
+    if (others.length === 1) {
+      const ok = await askConfirm(
+        `همه اشتراک‌های «${from.name}» به «${others[0]!.name}» منتقل شود؟`,
+      );
+      if (!ok) return;
+      toId = others[0]!.id;
+    } else {
+      const names = others.map((o, i) => `${i + 1}) ${o.name}`).join("\n");
+      const pick = window.prompt(`شماره سرور مقصد:\n${names}`);
+      if (!pick) return;
+      const idx = Number(pick.trim()) - 1;
+      if (!Number.isFinite(idx) || idx < 0 || idx >= others.length) {
+        flash(null, "شماره نامعتبر");
+        return;
+      }
+      toId = others[idx]!.id;
+    }
+    try {
+      const r = await api<{ subscriptions: number; toName: string }>(`/admin/panels/${from.id}/reassign`, {
+        body: { toPanelId: toId },
+      });
+      flash(`${r.subscriptions.toLocaleString("fa-IR")} اشتراک به «${r.toName}» منتقل شد`);
       await load();
     } catch (e) {
       flash(null, errText(e));
@@ -3705,6 +3771,12 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
                   <div className="muted num url-break server-card__url">{p.baseUrl}</div>
                   <div className="muted server-card__meta">
                     اینباند: <span className="num">{p.inboundIds}</span> · توکن {p.hasToken ? "✓" : "✗"}
+                    {p.subscriptionCount != null && (
+                      <>
+                        {" "}
+                        · اشتراک <span className="num">{p.subscriptionCount.toLocaleString("fa-IR")}</span>
+                      </>
+                    )}
                     {p.weight != null && (
                       <>
                         {" "}
@@ -3910,6 +3982,12 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
               <Icon name="sync" size={15} />
               تست اتصال
             </button>
+            {panels.length > 1 ? (
+              <button type="button" className="btn ghost" onClick={() => void reassignSubs(editing)}>
+                <Icon name="layers" size={15} />
+                انتقال اشتراک‌ها
+              </button>
+            ) : null}
             {canDelete ? (
               <button type="button" className="btn danger" onClick={() => void removePanel(editing)}>
                 <Icon name="trash" size={15} />

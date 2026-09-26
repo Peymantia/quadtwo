@@ -256,16 +256,68 @@ export async function updatePanelServer(
   return prisma.panelServer.update({ where: { id }, data });
 }
 
-export async function deletePanelServer(id: string) {
-  const total = await prisma.panelServer.count();
+export async function deletePanelServer(id: string, opts?: { reassignToId?: string }) {
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const existing = await prisma.panelServer.findFirst({ where: { id, tenantId } });
+  if (!existing) throw new Error("سرور پنل یافت نشد");
+
+  const total = await prisma.panelServer.count({ where: { tenantId } });
   if (total <= 1) {
     throw new Error("حداقل یک سرور باید در سیستم باقی بماند");
   }
+
   const used = await prisma.subscription.count({ where: { panelServerId: id } });
   if (used > 0) {
-    throw new Error(`این سرور ${used} اشتراک دارد. ابتدا اشتراک‌ها را منتقل یا غیرفعال کنید.`);
+    if (!opts?.reassignToId) {
+      throw new Error(
+        `این سرور ${used} اشتراک دارد. ابتدا اشتراک‌ها را به سرور جدید منتقل کنید، یا هنگام حذف «انتقال به سرور دیگر» را بزنید.`,
+      );
+    }
+    await reassignPanelSubscriptions(id, opts.reassignToId);
   }
+
+  // Orders may still reference this panel (FK Restrict)
+  await prisma.order.updateMany({
+    where: { panelServerId: id },
+    data: { panelServerId: opts?.reassignToId ?? null },
+  });
+
   return prisma.panelServer.delete({ where: { id } });
+}
+
+/**
+ * Move all subscriptions (and orders) from one PanelServer to another.
+ * Use after VPS / 3x-ui migration when clients already live on the new panel.
+ */
+export async function reassignPanelSubscriptions(fromId: string, toId: string) {
+  if (fromId === toId) throw new Error("سرور مبدأ و مقصد یکی هستند");
+  const { resolveTenantIdOrPlatform } = await import("./tenants.js");
+  const tenantId = await resolveTenantIdOrPlatform();
+  const [from, to] = await Promise.all([
+    prisma.panelServer.findFirst({ where: { id: fromId, tenantId } }),
+    prisma.panelServer.findFirst({ where: { id: toId, tenantId } }),
+  ]);
+  if (!from) throw new Error("سرور مبدأ یافت نشد");
+  if (!to) throw new Error("سرور مقصد یافت نشد");
+
+  const [subs, orders] = await prisma.$transaction([
+    prisma.subscription.updateMany({
+      where: { panelServerId: fromId },
+      data: { panelServerId: toId },
+    }),
+    prisma.order.updateMany({
+      where: { panelServerId: fromId },
+      data: { panelServerId: toId },
+    }),
+  ]);
+
+  return {
+    subscriptions: subs.count,
+    orders: orders.count,
+    fromName: from.name,
+    toName: to.name,
+  };
 }
 
 export async function testPanelConnection(panel: Pick<PanelServer, "baseUrl" | "apiToken">) {

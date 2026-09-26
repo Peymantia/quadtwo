@@ -115,6 +115,7 @@ import {
   importPanelFromEnv,
   listPanelServers,
   parsePanelCategories,
+  reassignPanelSubscriptions,
   testPanelConnection,
   updatePanelServer,
 } from "../services/panel-servers.js";
@@ -2912,6 +2913,13 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
     const repaired = await repairPanelSubBases();
     const panels = await listPanelServers();
     const envSnap = envPanelSnapshot();
+    const { prisma } = await import("../db.js");
+    const counts = await prisma.subscription.groupBy({
+      by: ["panelServerId"],
+      _count: { _all: true },
+      where: { panelServerId: { not: null } },
+    });
+    const countMap = new Map(counts.map((r) => [r.panelServerId!, r._count._all]));
     return c.json({
       panels: panels.map((p) => ({
         id: p.id,
@@ -2924,6 +2932,7 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
         weight: p.weight,
         active: p.active,
         sellEnabled: p.sellEnabled,
+        subscriptionCount: countMap.get(p.id) ?? 0,
       })),
       envPanel: envSnap
         ? {
@@ -2979,8 +2988,22 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
 
   api.delete("/admin/panels/:id", async (c) => {
     try {
-      await deletePanelServer(c.req.param("id"));
+      const reassignTo = c.req.query("reassignTo")?.trim() || undefined;
+      await deletePanelServer(c.req.param("id"), { reassignToId: reassignTo });
       return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  /** Move all subscriptions (+ orders) from this panel to another (VPS / 3x-ui migration). */
+  api.post("/admin/panels/:id/reassign", async (c) => {
+    try {
+      const body = await c.req.json<{ toPanelId?: string }>();
+      const toPanelId = body.toPanelId?.trim();
+      if (!toPanelId) return c.json({ error: "toPanelId لازم است" }, 400);
+      const r = await reassignPanelSubscriptions(c.req.param("id"), toPanelId);
+      return c.json({ ok: true, ...r });
     } catch (err) {
       return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
     }
