@@ -153,7 +153,10 @@ export async function requestLoginOtp(login: string): Promise<{ ok: true; hint: 
     },
   });
 
-  const dash = env.DASH_DOMAIN?.trim() || "dash.anthropics.ir";
+  const dash = env.DASH_DOMAIN?.trim() || env.PUBLIC_DOMAIN?.trim() || "";
+  if (!dash) {
+    return { ok: false, error: "DASH_DOMAIN در تنظیمات سرور خالی است" };
+  }
   const host = dash.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const loginUrl = `https://${host}/login`;
   const loginId = user.username ? `@${user.username}` : String(user.telegramId);

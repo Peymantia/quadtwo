@@ -346,7 +346,7 @@ npm run db:push -w @quadtwo/server
 راهنمای کامل: [`deploy/README.md`](deploy/README.md)
 
 1. Cloudflare: رکورد **A** برای `dash` → IP سرور  
-2. Nginx: [`deploy/nginx-dash.anthropics.ir.conf`](deploy/nginx-dash.anthropics.ir.conf)  
+2. Nginx: [`deploy/nginx-dash.conf`](deploy/nginx-dash.conf) (auto-installed by `install.sh`)  
 3. `.env`: `DASH_DOMAIN` و `NEXT_PUBLIC_API_URL`  
 4. سرویس‌ها: `quadtwo` (API) و `quadtwo-web` (Next)  
 5. ورود با رمز · OTP · Passkey · Mini App  

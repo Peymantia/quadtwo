@@ -40,7 +40,7 @@ Without `TENANT_TOKEN_SECRET`, bot tokens are encrypted with a key derived from 
 ## DNS / Nginx
 
 - Cloudflare: `A dash` + `A *.dash` → VPS.
-- Nginx `server_name` must include `*.dash.example.com` (see `deploy/nginx-dash.anthropics.ir.conf`).
+- Nginx `server_name` must include `*.dash.example.com` (see `deploy/nginx-dash.conf`; install.sh writes it from `DASH_DOMAIN`).
 - API resolves tenant from Host first label, or `X-Tenant-Slug` / `?tenant=`.
 
 ## Runtime

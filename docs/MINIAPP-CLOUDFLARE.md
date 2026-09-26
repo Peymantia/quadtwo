@@ -1,63 +1,34 @@
-# Mini App on app.anthropics.ir (port 443 busy)
+# Mini App behind Cloudflare (port 443 busy on origin)
 
-Your VPN inbound already uses **443** on the VPS. Do **not** bind Caddy/Nginx to 443 on the same IP without moving that inbound.
+When the VPS already uses `:443` for something else, terminate TLS at Cloudflare and proxy HTTP to the origin.
 
-## Recommended setup (Cloudflare)
+1. Cloudflare DNS for your zone:
+   - `A` / `CNAME` for the Mini App host → origin IP (Proxied / orange cloud)
+2. SSL/TLS mode: **Flexible** (origin speaks plain HTTP on :80) or **Full** if you have an origin cert
+3. Optional: [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/) tunnel if you do not expose :80 publicly
 
-1. In Cloudflare DNS for `anthropics.ir`:
-   - Type **A**, name `app`, value = VPS IP
-   - Proxy status: **Proxied** (orange cloud)
-
-2. On the VPS, run Mini App + API on high ports (example **8443** for HTTPS origin, or plain **3000/4000** behind Cloudflare Flexible — prefer Full/Strict):
-
-### Option A — Cloudflare Tunnel (best when 443 is taken)
+Example tunnel route:
 
 ```bash
-# install cloudflared, then:
-cloudflared tunnel create quadtwo-app
-cloudflared tunnel route dns <TUNNEL_ID> app.anthropics.ir
+cloudflared tunnel route dns <TUNNEL_ID> app.example.com
 ```
 
-Tunnel config maps `app.anthropics.ir` → `http://127.0.0.1:3000` and `/api` → `http://127.0.0.1:4000`.
+Tunnel config maps `app.example.com` → `http://127.0.0.1:3000` and `/api` → `http://127.0.0.1:4000`.
 
-No need to open 443 for the Mini App.
-
-### Option B — Origin on custom HTTPS port (e.g. 8443)
-
-- Caddy/Nginx listen on **8443** only
-- Cloudflare SSL/TLS → Full
-- Cloudflare → origin port 8443 (Origin Rules / Cloudflare Spectrum not always needed; for HTTP use Tunnel or Workers)
-
-Simplest path if Tunnel feels heavy: **Cloudflare Tunnel**.
-
-3. Env on server:
+## `.env`
 
 ```env
-PUBLIC_DOMAIN=app.anthropics.ir
-NEXT_PUBLIC_API_URL=https://app.anthropics.ir
-XUI_INBOUND_IDS=1,2,3,4,5,6,7,8,9,10
+PUBLIC_DOMAIN=app.example.com
+DASH_DOMAIN=dash.example.com
+NEXT_PUBLIC_API_URL=https://dash.example.com
+NEXT_PUBLIC_APP_URL=https://dash.example.com
+CORS_ORIGINS=https://dash.example.com,https://app.example.com
 ```
 
-4. Bot:
+## Bot / BotFather
 
 ```text
-/setminiapp https://app.anthropics.ir
-/setinbounds 1-10
+/setminiapp https://app.example.com
 ```
 
-5. BotFather Mini App URL = `https://app.anthropics.ir`
-
-   - BotFather → your bot → **Bot Settings → Menu Button → Configure menu button**
-   - Set **Web App URL** to the same HTTPS origin
-   - Optional: **/newapp** to register a named Mini App pointing at the same URL
-
-6. After deploy, in the bot (admin):
-
-```text
-/setminiapp https://app.anthropics.ir
-/update
-```
-
-This stores the URL, sets Telegram’s chat menu button to open the Mini App, and adds a keyboard Web App button. Opening the dashboard inside Telegram logs in via `initData` (no OTP). Browser login (OTP / password / passkey) still works.
-
-Keep `piing.ir` hosting untouched.
+BotFather Mini App URL = `https://app.example.com`

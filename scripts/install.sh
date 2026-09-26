@@ -91,6 +91,57 @@ prompt() {
   printf -v "${var}" '%s' "${value}"
 }
 
+# Strip scheme / trailing slash / whitespace from a hostname
+normalize_host() {
+  local h="$1"
+  h="$(echo "${h}" | sed -e 's|^[Hh][Tt][Tt][Pp][Ss]\?://||' -e 's|/$||' -e 's|^[[:space:]]*||' -e 's|[[:space:]]*$||')"
+  printf '%s' "${h}"
+}
+
+setup_nginx() {
+  local domain
+  domain="$(normalize_host "${DASH_DOMAIN:-}")"
+  if [[ -z "${domain}" ]]; then
+    warn "DASH_DOMAIN empty — skip nginx setup. Set it in .env and re-run install or: q2 env"
+    return 0
+  fi
+
+  if ! command -v nginx >/dev/null 2>&1; then
+    log "Installing nginx…"
+    if command -v apt-get >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y nginx
+    else
+      warn "Could not auto-install nginx — install it manually and copy deploy/nginx-dash.conf"
+      return 0
+    fi
+  fi
+
+  local site_avail="/etc/nginx/sites-available/quadtwo-dash"
+  local site_en="/etc/nginx/sites-enabled/quadtwo-dash"
+  local tpl="${INSTALL_DIR}/deploy/nginx-dash.conf"
+  if [[ ! -f "${tpl}" ]]; then
+    warn "Missing ${tpl} — skip nginx write"
+    return 0
+  fi
+
+  sed "s/__DASH_DOMAIN__/${domain}/g" "${tpl}" > "${site_avail}"
+  mkdir -p /etc/nginx/sites-enabled
+  ln -sfn "${site_avail}" "${site_en}"
+  # Drop stock default so Host / Cloudflare don't hit empty 404
+  rm -f /etc/nginx/sites-enabled/default
+
+  if nginx -t; then
+    systemctl enable nginx >/dev/null 2>&1 || true
+    systemctl restart nginx
+    log "Nginx ready for https://${domain} (origin HTTP :80 — Cloudflare SSL: Flexible)"
+  else
+    err "nginx -t failed — fix ${site_avail} then: systemctl restart nginx"
+    return 1
+  fi
+}
+
 write_env() {
   local env_file="${INSTALL_DIR}/.env"
   # Allow "1,2,3" in the inbound prompt — store list + primary id
@@ -170,7 +221,12 @@ build_app_full() {
   npm run build -w @quadtwo/server
   log "Building web dashboard..."
   rm -rf "${INSTALL_DIR}/apps/web/.next"
-  NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN:-dash.anthropics.ir}" npm run build -w @quadtwo/web
+  if [[ -z "${DASH_DOMAIN:-}" ]]; then
+    err "DASH_DOMAIN is empty — set it in ${INSTALL_DIR}/.env before building the web app"
+    exit 1
+  fi
+  NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN}" NEXT_PUBLIC_APP_URL="https://${DASH_DOMAIN}" \
+    npm run build -w @quadtwo/web
 }
 
 # Fresh install always uses full build
@@ -306,7 +362,8 @@ build_app_smart() {
   if [[ "${need_web}" -eq 1 ]]; then
     log "Building web dashboard (incremental Next.js)…"
     # Keep .next cache for speed; use --full to wipe if chunks go stale
-    NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN:-dash.anthropics.ir}" npm run build -w @quadtwo/web
+    NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN}" NEXT_PUBLIC_APP_URL="https://${DASH_DOMAIN}" \
+      npm run build -w @quadtwo/web
   fi
 
   log "Smart build done."
@@ -331,6 +388,8 @@ do_update() {
     systemctl restart quadtwo-demo quadtwo-demo-web 2>/dev/null || true
     log "Restarted demo showcase services (quadtwo-demo)."
   fi
+  load_dotenv
+  setup_nginx || true
   log "Update complete."
 }
 
@@ -405,22 +464,30 @@ do_install() {
   install_node
 
   echo
-  log "Enter configuration (press Enter to keep the default)"
+  log "Enter configuration (required fields cannot be empty)"
   prompt BOT_TOKEN "BOT_TOKEN (from BotFather)"
   prompt ADMIN_TELEGRAM_IDS "Admin Telegram numeric ID"
   prompt XUI_BASE_URL "3x-ui base URL (trailing slash required)" "http://127.0.0.1:2053/"
   prompt XUI_API_TOKEN "3x-ui API token"
   prompt XUI_INBOUND_ID "Inbound ID(s), comma-separated" "1"
   prompt XUI_SUB_BASE "Subscription base URL (optional)" ""
-  prompt PUBLIC_DOMAIN "Public domain for Mini App / API" "app.anthropics.ir"
-  prompt DASH_DOMAIN "Web dashboard domain" "dash.anthropics.ir"
+  prompt DASH_DOMAIN "Web dashboard domain (e.g. dash.example.com)"
+  DASH_DOMAIN="$(normalize_host "${DASH_DOMAIN}")"
+  prompt PUBLIC_DOMAIN "Public / Mini App domain (often same as dashboard)" "${DASH_DOMAIN}"
+  PUBLIC_DOMAIN="$(normalize_host "${PUBLIC_DOMAIN}")"
   prompt PORT "API service port" "4000"
+
+  if [[ -z "${DASH_DOMAIN}" ]]; then
+    err "DASH_DOMAIN is required"
+    exit 1
+  fi
 
   clone_or_update
   write_env
   build_app
   write_systemd
   write_helper
+  setup_nginx
 
   echo
   log "Install complete."
@@ -432,8 +499,8 @@ do_install() {
   echo "  Demo:     q2 demo        # DEMO_MODE on/off / status (showcase bot)"
   echo "  License:  q2 activate | q2 license"
   echo "  Update:   q2 update      # smart |  q2 update --full"
-  echo "  Dashboard: https://${DASH_DOMAIN:-dash.anthropics.ir}"
-  echo "  Nginx sample: deploy/nginx-dash.anthropics.ir.conf"
+  echo "  Dashboard: https://${DASH_DOMAIN}"
+  echo "  Cloudflare: orange proxy + SSL mode Flexible (HTTP origin :80)"
   echo "  In bot:  /setcard CARD_NUMBER|CARD_HOLDER_NAME"
   echo "  Then open Telegram and send /start to the bot."
   systemctl --no-pager --full status "${SERVICE_NAME}" || true

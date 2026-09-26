@@ -38,7 +38,7 @@ const schema = z.object({
   XUI_INBOUND_IDS: z.string().default("1,2,3,4,5,6,7,8,9,10"),
   XUI_SUB_BASE: z.string().optional(),
   PUBLIC_DOMAIN: z.string().optional(),
-  /** Web dashboard origin, e.g. https://dash.anthropics.ir */
+  /** Web dashboard origin host, e.g. dash.example.com (no https://) */
   DASH_DOMAIN: z.string().optional(),
   /** Comma-separated CORS origins; defaults to DASH_DOMAIN + PUBLIC_DOMAIN */
   CORS_ORIGINS: z.string().optional(),
