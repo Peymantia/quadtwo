@@ -4200,11 +4200,17 @@ function SettingsTab({
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreInspect, setRestoreInspect] = useState<{
     sizeLabel: string;
+    kind?: string;
     users?: number;
     orders?: number;
     subscriptions?: number;
     discountCodes?: number;
     note?: string;
+    createdAt?: string;
+    panelsOk?: number;
+    panelsTotal?: number;
+    panels?: Array<{ name: string; ok: boolean; error?: string }>;
+    notes?: string[];
   } | null>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [notif, setNotif] = useState<{
@@ -4457,13 +4463,78 @@ function SettingsTab({
     }
   }
 
+  async function sendFullMigrationNow() {
+    setBackupBusy(true);
+    try {
+      const r = await api<{
+        ok: boolean;
+        name: string;
+        sent: number;
+        panelsOk: number;
+        panelsTotal: number;
+        size: number;
+        error?: string;
+      }>("/admin/backup/full/send", { method: "POST", body: {} });
+      if (r.ok) {
+        flash(
+          `بکاپ کامل ارسال شد (${r.panelsOk}/${r.panelsTotal} پنل) · ${r.sent} ادمین`,
+        );
+      } else {
+        flash(null, r.error || "ارسال بکاپ کامل ناموفق بود — از «دانلود zip» استفاده کنید");
+      }
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function downloadFullMigration() {
+    setBackupBusy(true);
+    try {
+      const { apiBase, getToken } = await import("../../lib/api");
+      const token = getToken();
+      const res = await fetch(`${apiBase()}/api/admin/backup/full`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        let msg = `خطا ${res.status}`;
+        try {
+          const j = (await res.json()) as { error?: string };
+          if (j.error) msg = j.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename="?([^";]+)"?/i.exec(cd);
+      const name = m?.[1] || `quadtwo-full-${Date.now()}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+      flash(`دانلود شد: ${name}`);
+    } catch (e) {
+      flash(null, errText(e));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
   async function pickRestoreFile(file: File | null) {
     setRestoreFile(file);
     setRestoreInspect(null);
     if (!file) return;
     const name = file.name.toLowerCase();
-    if (!name.endsWith(".db") && !name.endsWith(".sqlite") && !name.endsWith(".sqlite3")) {
-      flash(null, "فرمت باید .db باشد");
+    const isZip = name.endsWith(".zip");
+    const isDb = name.endsWith(".db") || name.endsWith(".sqlite") || name.endsWith(".sqlite3");
+    if (!isZip && !isDb) {
+      flash(null, "فرمت باید .db (ربات) یا .zip (مهاجرت کامل) باشد");
       setRestoreFile(null);
       return;
     }
@@ -4471,15 +4542,22 @@ function SettingsTab({
     try {
       const fd = new FormData();
       fd.append("file", file);
+      const path = isZip ? "/admin/backup/full/inspect" : "/admin/backup/inspect";
       const r = await api<{
-        ok: boolean;
+        ok?: boolean;
         sizeLabel: string;
+        kind?: string;
         users?: number;
         orders?: number;
         subscriptions?: number;
         discountCodes?: number;
         note?: string;
-      }>("/admin/backup/inspect", { method: "POST", rawBody: fd });
+        createdAt?: string;
+        panelsOk?: number;
+        panelsTotal?: number;
+        panels?: Array<{ name: string; ok: boolean; error?: string }>;
+        notes?: string[];
+      }>(path, { method: "POST", rawBody: fd });
       setRestoreInspect(r);
     } catch (e) {
       setRestoreFile(null);
@@ -4499,30 +4577,58 @@ function SettingsTab({
       flash(null, "ابتدا فایل را بررسی کنید");
       return;
     }
-    const summary = [
-      `فایل «${file.name}» (${restoreInspect.sizeLabel})`,
-      restoreInspect.users != null ? `کاربر: ${restoreInspect.users.toLocaleString("fa-IR")}` : "",
-      restoreInspect.orders != null ? `سفارش: ${restoreInspect.orders.toLocaleString("fa-IR")}` : "",
-      restoreInspect.subscriptions != null
-        ? `سرویس: ${restoreInspect.subscriptions.toLocaleString("fa-IR")}`
-        : "",
-      "",
-      "دیتابیس فعلی جایگزین شود؟ قبل از بازیابی نسخهٔ ایمنی ساخته می‌شود و سرور ری‌استارت خواهد شد.",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const isFull = file.name.toLowerCase().endsWith(".zip") || restoreInspect.kind === "full-migration";
+    const summary = isFull
+      ? [
+          `بکاپ کامل مهاجرت «${file.name}» (${restoreInspect.sizeLabel})`,
+          restoreInspect.panelsOk != null
+            ? `پنل‌های داخل فایل: ${restoreInspect.panelsOk}/${restoreInspect.panelsTotal ?? "—"}`
+            : "",
+          "",
+          "۱) دیتابیس هر پنل 3x-ui از طریق API وارد می‌شود (مخرب)",
+          "۲) دیتابیس ربات جایگزین می‌شود و سرویس ری‌استارت می‌شود",
+          "",
+          "اگر دامنه پنل عوض شده، قبل از بازیابی در «سرورها» آدرس را درست کنید.",
+          "ادامه؟",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : [
+          `فایل «${file.name}» (${restoreInspect.sizeLabel})`,
+          restoreInspect.users != null ? `کاربر: ${restoreInspect.users.toLocaleString("fa-IR")}` : "",
+          restoreInspect.orders != null ? `سفارش: ${restoreInspect.orders.toLocaleString("fa-IR")}` : "",
+          restoreInspect.subscriptions != null
+            ? `سرویس: ${restoreInspect.subscriptions.toLocaleString("fa-IR")}`
+            : "",
+          "",
+          "دیتابیس فعلی جایگزین شود؟ قبل از بازیابی نسخهٔ ایمنی ساخته می‌شود و سرور ری‌استارت خواهد شد.",
+        ]
+          .filter(Boolean)
+          .join("\n");
     if (!(await askConfirm(summary))) return;
     setBackupBusy(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const r = await api<{ ok: boolean; safetyName?: string; message?: string }>("/admin/backup/restore", {
-        method: "POST",
-        rawBody: fd,
-      });
+      if (isFull) {
+        fd.append("importPanels", "1");
+        fd.append("restoreBot", "1");
+      }
+      const path = isFull ? "/admin/backup/full/restore" : "/admin/backup/restore";
+      const r = await api<{
+        ok: boolean;
+        safetyName?: string;
+        message?: string;
+        panelsImported?: number;
+        panelErrors?: Array<{ name: string; error: string }>;
+      }>(path, { method: "POST", rawBody: fd });
       setRestoreFile(null);
       setRestoreInspect(null);
-      flash(r.message || `بازیابی شد · ایمنی: ${r.safetyName || "—"}`);
+      const extra =
+        r.panelErrors && r.panelErrors.length
+          ? ` · خطا پنل: ${r.panelErrors.map((e) => e.name).join("، ")}`
+          : "";
+      flash(r.message || `بازیابی شد · ایمنی: ${r.safetyName || "—"}${extra}`);
     } catch (e) {
       flash(null, errText(e));
     } finally {
@@ -4969,13 +5075,13 @@ function SettingsTab({
 
       <SettingsAccordion
         id="backup"
-        title="پشتیبان دیتابیس"
+        title="پشتیبان و مهاجرت"
         icon="file"
         openId={openSection}
         onToggle={toggleSection}
       >
         <p className="muted" style={{ marginTop: 0 }}>
-          فایل SQLite برای همه ادمین‌های تلگرام ارسال می‌شود. زمان‌بندی بر اساس ساعت محلی سرور است.
+          پشتیبان روزانه فقط دیتابیس ربات است. برای تعویض سرور از بکاپ کامل (ربات + پنل 3x-ui) استفاده کنید.
         </p>
         {backup && (
           <>
@@ -5033,11 +5139,27 @@ function SettingsTab({
               <strong className="num">
                 {String(backup.hour).padStart(2, "0")}:{String(backup.minute).padStart(2, "0")}
               </strong>{" "}
-              (زمان سرور)
+              (زمان سرور) — فقط ربات
             </p>
             <button type="button" className="btn primary wide" disabled={backupBusy} onClick={() => void sendBackupNow()}>
-              {backupBusy ? "در حال ارسال…" : "ارسال الان به تلگرام"}
+              {backupBusy ? "در حال ارسال…" : "ارسال پشتیبان ربات به تلگرام"}
             </button>
+            <div className="panel" style={{ marginTop: 14, padding: 12 }}>
+              <div className="t" style={{ fontWeight: 800, marginBottom: 6 }}>
+                بکاپ کامل مهاجرت (ربات + سنایی)
+              </div>
+              <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
+                inbounds، clients، groups، nodes، hosts، outbounds، routings و تنظیمات پنل + دیتابیس ربات در یک zip.
+              </p>
+              <div className="actions" style={{ flexWrap: "wrap", gap: 8 }}>
+                <button type="button" className="btn success" disabled={backupBusy} onClick={() => void downloadFullMigration()}>
+                  دانلود zip کامل
+                </button>
+                <button type="button" className="btn ghost" disabled={backupBusy} onClick={() => void sendFullMigrationNow()}>
+                  ارسال zip به تلگرام
+                </button>
+              </div>
+            </div>
             {backupFiles.length > 0 && (
               <button
                 type="button"
@@ -5079,7 +5201,7 @@ function SettingsTab({
               <input
                 ref={restoreInputRef}
                 type="file"
-                accept=".db,.sqlite,.sqlite3,application/octet-stream"
+                accept=".db,.sqlite,.sqlite3,.zip,application/zip,application/octet-stream"
                 className="backup-restore__input"
                 disabled={backupBusy}
                 onChange={(e) => {
@@ -5097,7 +5219,7 @@ function SettingsTab({
                 <Icon name="file" size={20} />
                 <span className="backup-restore__pick-text">
                   <strong>{restoreFile ? "تغییر فایل" : "انتخاب فایل پشتیبان"}</strong>
-                  <small>{restoreFile ? restoreFile.name : "فرمت .db · خروجی پشتیبان ربات"}</small>
+                  <small>{restoreFile ? restoreFile.name : "فرمت .db یا .zip مهاجرت کامل"}</small>
                 </span>
               </button>
               {restoreFile && (
@@ -5121,7 +5243,9 @@ function SettingsTab({
               )}
               {restoreInspect && (
                 <p className="hint" style={{ margin: 0 }}>
-                  {restoreInspect.note || "فایل معتبر است."}
+                  {restoreInspect.kind === "full-migration"
+                    ? `مهاجرت کامل · پنل ${restoreInspect.panelsOk ?? 0}/${restoreInspect.panelsTotal ?? "—"}`
+                    : restoreInspect.note || "فایل معتبر است."}
                   {restoreInspect.users != null
                     ? ` · کاربر ${restoreInspect.users.toLocaleString("fa-IR")}`
                     : ""}

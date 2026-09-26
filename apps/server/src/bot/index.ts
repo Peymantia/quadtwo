@@ -3679,6 +3679,22 @@ export function createBot(
     else await ctx.reply(`❌ ${r.error ?? "خطا"}`);
   });
 
+  bot.command("backupfull", async (ctx) => {
+    if (!(await isControlAdmin(ctx.from?.id))) return;
+    await ctx.reply("⏳ بکاپ کامل مهاجرت (ربات + پنل 3x-ui)… ممکن است چند دقیقه طول بکشد.");
+    const { sendFullMigrationToAdmins } = await import("../services/migration-backup.js");
+    const r = await sendFullMigrationToAdmins(ctx.api, { reason: "دستور /backupfull" });
+    if (r.ok) {
+      await ctx.reply(
+        `✅ zip ارسال شد برای ${r.sent} ادمین\n${r.name}\nپنل‌ها: ${r.panelsOk}/${r.panelsTotal}\nحجم: ${(r.size / (1024 * 1024)).toFixed(1)} MB`,
+      );
+    } else {
+      await ctx.reply(
+        `❌ ${r.error ?? "خطا"}\nاز داشبورد → تنظیمات → پشتیبان → «دانلود zip کامل» استفاده کنید.`,
+      );
+    }
+  });
+
   bot.command("miniapp", async (ctx) => {
     await handleDashOtp(ctx);
   });

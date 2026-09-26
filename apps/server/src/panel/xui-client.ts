@@ -388,6 +388,86 @@ export class XuiClient {
     return this.request<XuiServerStatus>("panel/api/server/status");
   }
 
+  /**
+   * Download panel database (inbounds, clients, groups, nodes, hosts, outbounds, routings, settings).
+   * Same payload as 3x-ui UI «Export database» (`GET panel/api/server/getDb`).
+   */
+  async downloadDatabase(): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: دانلود دیتابیس پنل غیرفعال است");
+    }
+    let res: Response;
+    try {
+      res = await fetch(this.url("panel/api/server/getDb"), {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.opts.apiToken}`,
+          Accept: "*/*",
+        },
+      });
+    } catch (err) {
+      throw new Error(formatXuiError(err));
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(formatXuiError(`3x-ui getDb ${res.status}: ${text.slice(0, 400)}`));
+    }
+    const ab = await res.arrayBuffer();
+    const buffer = Buffer.from(ab);
+    if (buffer.length < 16) {
+      throw new Error("پاسخ getDb خالی یا نامعتبر است");
+    }
+    const cd = res.headers.get("content-disposition") || "";
+    const match = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(cd);
+    let filename = match?.[1] ? decodeURIComponent(match[1].replace(/"/g, "")) : "x-ui.db";
+    if (!/\.(db|dump|sql|sqlite3?)$/i.test(filename)) {
+      // SQLite magic → .db, else keep generic
+      filename = buffer.subarray(0, 15).equals(Buffer.from("SQLite format 3\0")) ? "x-ui.db" : "x-ui.dump";
+    }
+    return {
+      buffer,
+      filename,
+      contentType: res.headers.get("content-type") || "application/octet-stream",
+    };
+  }
+
+  /**
+   * Import panel database (destructive — replaces panel DB and typically restarts Xray).
+   * Same as 3x-ui UI «Import database» (`POST panel/api/server/importDB`, field `db`).
+   */
+  async importDatabase(buf: Buffer, filename = "x-ui.db"): Promise<ApiResult> {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: وارد کردن دیتابیس پنل غیرفعال است");
+    }
+    const form = new FormData();
+    form.append("db", new Blob([new Uint8Array(buf)]), filename);
+    let res: Response;
+    try {
+      res = await fetch(this.url("panel/api/server/importDB"), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.opts.apiToken}`,
+          Accept: "application/json",
+          // Do NOT set Content-Type — boundary is set by fetch for FormData
+        },
+        body: form,
+      });
+    } catch (err) {
+      throw new Error(formatXuiError(err));
+    }
+    const text = await res.text();
+    let json: ApiResult;
+    try {
+      json = JSON.parse(text) as ApiResult;
+    } catch {
+      throw new Error(formatXuiError(`3x-ui importDB ${res.status}: ${text.slice(0, 400)}`));
+    }
+    if (!res.ok || json.success === false) {
+      throw new Error(formatXuiError(`3x-ui importDB ${res.status}: ${json.msg ?? text.slice(0, 400)}`));
+    }
+    return json;
+  }
+
   listClients() {
     return this.request<
       Array<{

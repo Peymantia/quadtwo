@@ -13,6 +13,7 @@ export type AuditAction =
   | "admin_config_delete"
   | "test_claimed"
   | "backup_sent"
+  | "backup_restored"
   | "admin_search"
   | "setting_changed";
 

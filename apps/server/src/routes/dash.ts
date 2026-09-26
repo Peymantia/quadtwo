@@ -92,6 +92,12 @@ import {
   type RolePricingModes,
 } from "../services/settings.js";
 import { getBackupConfig, saveBackupConfig, sendBackupToAdmins, restoreDatabaseFromBackupBuffer, inspectBackupBuffer, listBackupFiles, type BackupConfig } from "../services/backup.js";
+import {
+  createFullMigrationArchive,
+  inspectMigrationOrBotBackup,
+  restoreFullMigrationArchive,
+  sendFullMigrationToAdmins,
+} from "../services/migration-backup.js";
 import { adjustWallet, getWallet } from "../services/wallet.js";
 import { claimTestService } from "../services/test-service.js";
 import { mapPriceOverride } from "../services/user-price-overrides.js";
@@ -3841,6 +3847,105 @@ export function registerDashAdminRoutes(api: Hono<{ Variables: Vars }>) {
       });
     }
     return c.json(r);
+  });
+
+  /** Full migration zip: bot DB + each panel's 3x-ui database. */
+  api.post("/admin/backup/full", async (c) => {
+    try {
+      const file = await createFullMigrationArchive();
+      await auditLog({
+        action: "backup_sent",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: file.name,
+        detail: `full-migration panels=${file.manifest.panels.filter((p) => p.ok).length}/${file.manifest.panels.length}`,
+      });
+      const { readFile } = await import("node:fs/promises");
+      const data = await readFile(file.path);
+      return c.body(data, 200, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${file.name}"`,
+      });
+    } catch (err) {
+      return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+    }
+  });
+
+  api.post("/admin/backup/full/send", async (c) => {
+    const bot = createTelegramBot(env.BOT_TOKEN);
+    const r = await sendFullMigrationToAdmins(bot.api, { reason: "بکاپ کامل از پنل وب" });
+    if (r.ok) {
+      await auditLog({
+        action: "backup_sent",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: r.name,
+        detail: `full sent=${r.sent} panels=${r.panelsOk}/${r.panelsTotal}`,
+      });
+    }
+    return c.json(r);
+  });
+
+  api.post("/admin/backup/full/inspect", async (c) => {
+    const body = await c.req.parseBody();
+    const file = body["file"];
+    if (!(file instanceof File)) {
+      return c.json({ error: "فایل پشتیبان را انتخاب کنید" }, 400);
+    }
+    if (file.size > 200 * 1024 * 1024) {
+      return c.json({ error: "حجم فایل بیش از ۲۰۰ مگ است" }, 400);
+    }
+    const buf = Buffer.from(await file.arrayBuffer());
+    const result = await inspectMigrationOrBotBackup(buf);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json(result);
+  });
+
+  api.post("/admin/backup/full/restore", async (c) => {
+    const body = await c.req.parseBody();
+    const file = body["file"];
+    if (!(file instanceof File)) {
+      return c.json({ error: "فایل پشتیبان را انتخاب کنید" }, 400);
+    }
+    if (file.size > 200 * 1024 * 1024) {
+      return c.json({ error: "حجم فایل بیش از ۲۰۰ مگ است" }, 400);
+    }
+    const importPanels = String(body["importPanels"] ?? "1") !== "0";
+    const restoreBot = String(body["restoreBot"] ?? "1") !== "0";
+    const buf = Buffer.from(await file.arrayBuffer());
+
+    // Plain .db → legacy bot-only restore
+    const name = (file.name || "").toLowerCase();
+    if (name.endsWith(".db") || name.endsWith(".sqlite") || name.endsWith(".sqlite3")) {
+      const result = await restoreDatabaseFromBackupBuffer(buf);
+      if (!result.ok) return c.json({ error: result.error }, 400);
+      await auditLog({
+        action: "backup_restored",
+        actorTelegramId: BigInt(c.get("telegramId")),
+        target: file.name || "backup.db",
+        detail: `bot-only safety=${result.safetyName}`,
+      });
+      setTimeout(() => process.exit(0), 1200);
+      return c.json({
+        ok: true,
+        botRestored: true,
+        safetyName: result.safetyName,
+        panelsImported: 0,
+        panelErrors: [],
+        message: "ربات بازیابی شد؛ سرویس ری‌استارت می‌شود.",
+      });
+    }
+
+    const result = await restoreFullMigrationArchive(buf, { importPanels, restoreBot });
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    await auditLog({
+      action: "backup_restored",
+      actorTelegramId: BigInt(c.get("telegramId")),
+      target: file.name || "full.zip",
+      detail: `full bot=${result.botRestored} panels=${result.panelsImported} err=${result.panelErrors.length}`,
+    });
+    if (result.botRestored) {
+      setTimeout(() => process.exit(0), 1500);
+    }
+    return c.json(result);
   });
 
   api.post("/admin/backup/inspect", async (c) => {
