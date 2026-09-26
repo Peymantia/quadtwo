@@ -156,7 +156,8 @@ build_app_full() {
   cd "${INSTALL_DIR}"
   load_dotenv
   log "Full build: npm install + all packages + clean Next.js build"
-  npm install
+  # NODE_ENV=production is in .env for runtime; force-install build/dev deps for tsc.
+  npm install --include=dev
   log "Building packages..."
   npm run build -w @quadtwo/shared
   npm run db:generate -w @quadtwo/server
@@ -269,7 +270,8 @@ build_app_smart() {
 
   if [[ "${need_npm}" -eq 1 ]]; then
     log "Installing npm dependencies…"
-    npm install
+    # See build_app_full — keep @types/node & typescript available under NODE_ENV=production.
+    npm install --include=dev
   else
     log "Skip npm install (lockfile unchanged)."
   fi
