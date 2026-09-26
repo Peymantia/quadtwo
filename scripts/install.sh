@@ -132,6 +132,17 @@ setup_nginx() {
   # Drop stock default so Host / Cloudflare don't hit empty 404
   rm -f /etc/nginx/sites-enabled/default
 
+  # Older installs put named upstreams in conf.d — remove to avoid duplicate upstream
+  if [[ -d /etc/nginx/conf.d ]]; then
+    for f in /etc/nginx/conf.d/quadtwo*.conf /etc/nginx/conf.d/*quadtwo*.conf; do
+      [[ -f "$f" ]] || continue
+      if grep -qE 'upstream[[:space:]]+quadtwo_(api|web)' "$f" 2>/dev/null; then
+        warn "Removing duplicate nginx upstream file: $f"
+        rm -f "$f"
+      fi
+    done
+  fi
+
   if nginx -t; then
     systemctl enable nginx >/dev/null 2>&1 || true
     systemctl restart nginx

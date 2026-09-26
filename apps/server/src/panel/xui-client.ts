@@ -186,8 +186,24 @@ export class XuiClient {
     return json;
   }
 
+  /**
+   * Read endpoints in MHSanaei 3x-ui are mostly GET; older forks accept POST.
+   * Try GET first, then POST with `{}`.
+   */
+  private async requestGetOrPost<T>(path: string): Promise<ApiResult<T>> {
+    try {
+      return await this.request<T>(path, { method: "GET" });
+    } catch (getErr) {
+      try {
+        return await this.request<T>(path, { method: "POST", body: "{}" });
+      } catch {
+        throw getErr instanceof Error ? getErr : new Error(String(getErr));
+      }
+    }
+  }
+
   listInbounds() {
-    return this.request<XuiInbound[]>("panel/api/inbounds/list");
+    return this.requestGetOrPost<XuiInbound[]>("panel/api/inbounds/list");
   }
 
   async listEnabledInboundIds(): Promise<number[]> {
@@ -279,7 +295,7 @@ export class XuiClient {
   }
 
   getClient(email: string) {
-    return this.request<{
+    return this.requestGetOrPost<{
       client: {
         email: string;
         subId?: string;
@@ -426,21 +442,10 @@ export class XuiClient {
   }
 
   /**
-   * Live host metrics. Try POST then GET (panel forks differ).
+   * Live host metrics. Prefer GET (current API); fall back to POST.
    */
   async getServerStatus() {
-    let lastErr: unknown;
-    for (const method of ["POST", "GET"] as const) {
-      try {
-        return await this.request<XuiServerStatus>("panel/api/server/status", {
-          method,
-          body: method === "POST" ? "{}" : undefined,
-        });
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "status failed"));
+    return this.requestGetOrPost<XuiServerStatus>("panel/api/server/status");
   }
 
   /**
@@ -524,7 +529,7 @@ export class XuiClient {
   }
 
   listClients() {
-    return this.request<
+    return this.requestGetOrPost<
       Array<{
         email?: string;
         subId?: string;

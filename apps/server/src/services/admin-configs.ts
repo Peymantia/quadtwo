@@ -91,37 +91,40 @@ type RawPanelClient = {
 async function clientsFromOnePanel(xui: XuiClient): Promise<RawPanelClient[]> {
   const byEmail = new Map<string, RawPanelClient>();
 
-  const add = (c: RawPanelClient) => {
+  const add = (c: RawPanelClient, prefer = false) => {
     const e = c.email?.trim();
     if (!e) return;
     const k = e.toLowerCase();
-    if (!byEmail.has(k)) byEmail.set(k, { ...c, email: e });
+    const prev = byEmail.get(k);
+    if (!prev) {
+      byEmail.set(k, { ...c, email: e });
+      return;
+    }
+    // Merge: fill missing fields; prefer=true overwrites known richer source
+    byEmail.set(k, {
+      email: e,
+      uuid: (prefer ? c.uuid : prev.uuid) || c.uuid || prev.uuid || null,
+      id: (prefer ? c.id : prev.id) || c.id || prev.id || null,
+      subId: (prefer ? c.subId : prev.subId) || c.subId || prev.subId || null,
+      totalGB: prefer
+        ? (c.totalGB ?? prev.totalGB)
+        : (prev.totalGB ?? c.totalGB),
+      expiryTime: prefer
+        ? (c.expiryTime ?? prev.expiryTime)
+        : (prev.expiryTime ?? c.expiryTime),
+      enable: prefer
+        ? (c.enable ?? prev.enable)
+        : (prev.enable ?? c.enable),
+      limitIp: prefer
+        ? (c.limitIp ?? prev.limitIp)
+        : (prev.limitIp ?? c.limitIp),
+      comment: prefer
+        ? (c.comment ?? prev.comment)
+        : (prev.comment ?? c.comment),
+    });
   };
 
-  try {
-    const res = await xui.listClients();
-    const list = Array.isArray(res.obj) ? res.obj : [];
-    for (const c of list) {
-      if (typeof c?.email === "string" && c.email.trim()) {
-        add({
-          email: c.email,
-          uuid: c.uuid ?? null,
-          id: c.id != null ? String(c.id) : null,
-          subId: c.subId ?? null,
-          totalGB: c.totalGB,
-          expiryTime: c.expiryTime,
-          enable: c.enable,
-          limitIp: c.limitIp,
-          comment: typeof c.comment === "string" ? c.comment : undefined,
-        });
-      }
-    }
-  } catch {
-    /* try inbounds below */
-  }
-
-  if (byEmail.size > 0) return [...byEmail.values()];
-
+  // Always scrape inbounds (settings.clients) — works even when /clients/list is empty/paged.
   try {
     const res = await xui.listInbounds();
     const inbounds = Array.isArray(res.obj) ? res.obj : [];
@@ -171,7 +174,33 @@ async function clientsFromOnePanel(xui: XuiClient): Promise<RawPanelClient[]> {
       }
     }
   } catch {
-    /* panel unreachable */
+    /* panel unreachable or inbounds failed */
+  }
+
+  // Overlay full clients/list (richer uuid/subId/traffic) when available.
+  try {
+    const res = await xui.listClients();
+    const list = Array.isArray(res.obj) ? res.obj : [];
+    for (const c of list) {
+      if (typeof c?.email === "string" && c.email.trim()) {
+        add(
+          {
+            email: c.email,
+            uuid: c.uuid ?? null,
+            id: c.id != null ? String(c.id) : null,
+            subId: c.subId ?? null,
+            totalGB: c.totalGB,
+            expiryTime: c.expiryTime,
+            enable: c.enable,
+            limitIp: c.limitIp,
+            comment: typeof c.comment === "string" ? c.comment : undefined,
+          },
+          true,
+        );
+      }
+    }
+  } catch {
+    /* GET/POST list unavailable — inbound scrape is enough */
   }
 
   return [...byEmail.values()];

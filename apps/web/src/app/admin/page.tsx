@@ -1964,6 +1964,17 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
     }
   }
 
+  function openImportAllPanelAccounts() {
+    setDirection("panel_to_bot");
+    setOpts((m) => ({
+      ...Object.fromEntries(SYNC_OPTION_DEFS.map((o) => [o.key, false])),
+      newAccounts: true,
+      expiry: true,
+      traffic: true,
+    }));
+    setApplyOpen(true);
+  }
+
   function openApplyModal() {
     if (!selectedOpts.length) {
       flash(null, "حداقل یک گزینه را انتخاب کنید");
@@ -2030,7 +2041,8 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
       <div className="panel">
         <h2>همگام‌سازی</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          مشخص کنید داده از کجا به کجا برود. فقط گزینه‌های تیک‌خورده اعمال می‌شوند. اگر اشتباه شد، Undo آخرین اعمال را برمی‌گرداند.
+          برای آوردن همه اکانت‌های سرور جدید به ربات (بدون دست‌زدن به قیمت/پلن/کاربران): منبع را «پنل 3x-ui» بگذارید،
+          تیک «اکانت‌های جدید» را بزنید، اول «مقایسه» کنید، بعد «اعمال».
         </p>
 
         <div className="grid" style={{ marginBottom: 14, gap: 12 }}>
@@ -2053,6 +2065,12 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
           </div>
         </div>
 
+        {diff && direction === "panel_to_bot" && diff.panelTotal === 0 ? (
+          <p className="muted" style={{ color: "var(--danger, #f43f5e)", marginBottom: 12 }}>
+            هیچ اکانتی از پنل خوانده نشد. اتصال سرور و اینباندها را در «سرورها» تست کنید، بعد دوباره مقایسه بزنید.
+          </p>
+        ) : null}
+
         <div
           className="row-card"
           style={{
@@ -2070,7 +2088,8 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
             </p>
           ) : (
             <p className="muted" style={{ margin: "8px 0 0" }}>
-              مقادیر انتخاب‌شده از پنل روی دیتابیس ربات اعمال می‌شود. پنل دست نخورده می‌ماند.
+              مقادیر انتخاب‌شده از پنل روی دیتابیس ربات اعمال می‌شود. پنل، قیمت‌ها و کاربران دست نخورده می‌مانند.
+              {diff ? ` · پنل: ${diff.panelTotal} اکانت · ربات: ${diff.botTotal}` : ""}
             </p>
           )}
         </div>
@@ -2101,6 +2120,16 @@ function SyncTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm }
           <button type="button" className="btn success" disabled={busy} onClick={openApplyModal}>
             <Icon name="check" size={15} />
             اعمال تغییرات
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            title="پنل → ربات · فقط اکانت‌های جدید (+ حجم و انقضا)"
+            onClick={openImportAllPanelAccounts}
+          >
+            <Icon name="download" size={15} />
+            بارگذاری همه اکانت‌های پنل
           </button>
           <button type="button" className="btn ghost" disabled={busy || !undoAvailable} onClick={() => void runUndo()}>
             <Icon name="arrowRight" size={15} />
