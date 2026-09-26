@@ -143,6 +143,14 @@ setup_nginx() {
     done
   fi
 
+  # If nginx -t fails on duplicate default_server, strip default_server from our site and retry
+  if ! nginx -t 2>/dev/null; then
+    if grep -q 'default_server' "${site_avail}" 2>/dev/null; then
+      warn "Stripping default_server from ${site_avail} (another site already owns :80)"
+      sed -i 's/ default_server//g' "${site_avail}"
+    fi
+  fi
+
   if nginx -t; then
     systemctl enable nginx >/dev/null 2>&1 || true
     systemctl restart nginx
