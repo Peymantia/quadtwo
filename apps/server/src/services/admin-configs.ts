@@ -1164,13 +1164,20 @@ export async function listDetailedPanelClients(): Promise<DetailedPanelClient[]>
   const panels = await listPanelServers();
   if (panels.length) {
     for (const p of panels.filter((x) => x.active)) {
-      const xui = createXuiFromPanel(p);
-      pushMany(await clientsFromOnePanel(xui), {
-        panelServerId: p.id,
-        panelName: p.name,
-        xui,
-        subBase: sanitizeSubBase(p.subBase),
-      });
+      try {
+        const xui = createXuiFromPanel(p);
+        pushMany(await clientsFromOnePanel(xui), {
+          panelServerId: p.id,
+          panelName: p.name,
+          xui,
+          subBase: sanitizeSubBase(p.subBase),
+        });
+      } catch (err) {
+        console.warn(
+          `listDetailedPanelClients: panel ${p.name} unreachable:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
   } else if (env.XUI_BASE_URL && env.XUI_API_TOKEN) {
     const xui = createXuiFromEnv(env);

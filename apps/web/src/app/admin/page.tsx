@@ -3499,8 +3499,25 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
 
   async function test(id: string) {
     try {
-      const r = await api<{ ok: boolean; inboundCount?: number; error?: string }>(`/admin/panels/${id}/test`, { body: {} });
-      flash(r.ok ? `اتصال برقرار است — ${r.inboundCount} اینباند` : null, r.ok ? null : r.error || "خطا در اتصال");
+      const r = await api<{
+        ok: boolean;
+        inboundCount?: number;
+        probedUrl?: string;
+        statusOk?: boolean;
+        statusError?: string;
+        error?: string;
+      }>(`/admin/panels/${id}/test`, { body: {} });
+      if (r.ok) {
+        const extra =
+          r.statusOk === false
+            ? ` · وضعیت سرور: ناموفق${r.statusError ? ` (${r.statusError.slice(0, 80)})` : ""}`
+            : " · وضعیت سرور: OK";
+        flash(
+          `اتصال برقرار است — ${r.inboundCount} اینباند${extra}${r.probedUrl ? `\n${r.probedUrl}` : ""}`,
+        );
+      } else {
+        flash(null, r.error || "خطا در اتصال");
+      }
     } catch (e) {
       flash(null, errText(e));
     }
@@ -3901,8 +3918,16 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             <input value={editForm.name} onChange={(e) => setEditForm((s) => ({ ...s, name: e.target.value }))} />
           </div>
           <div className="field">
-            <label>آدرس</label>
-            <input dir="ltr" value={editForm.baseUrl} onChange={(e) => setEditForm((s) => ({ ...s, baseUrl: e.target.value }))} />
+            <label>آدرس پنل (با WebBasePath)</label>
+            <input
+              dir="ltr"
+              placeholder="https://IP:PORT/SECRET/"
+              value={editForm.baseUrl}
+              onChange={(e) => setEditForm((s) => ({ ...s, baseUrl: e.target.value }))}
+            />
+            <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.78rem" }}>
+              از 3x-ui → Panel Settings آدرس کامل را با مسیر مخفی کپی کنید. بعد از ذخیره، «تست اتصال» بزنید.
+            </p>
           </div>
           <div className="field">
             <label>توکن API</label>
@@ -4009,8 +4034,13 @@ function PanelsTab({ flash, askConfirm }: { flash: Flash; askConfirm: AskConfirm
             <input value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
           </div>
           <div className="field">
-            <label>آدرس (https://panel.example.com:2053)</label>
-            <input dir="ltr" value={form.baseUrl} onChange={(e) => setForm((s) => ({ ...s, baseUrl: e.target.value }))} />
+            <label>آدرس پنل (با WebBasePath)</label>
+            <input
+              dir="ltr"
+              placeholder="https://IP:PORT/SECRET/"
+              value={form.baseUrl}
+              onChange={(e) => setForm((s) => ({ ...s, baseUrl: e.target.value }))}
+            />
           </div>
           <div className="field">
             <label>توکن API</label>

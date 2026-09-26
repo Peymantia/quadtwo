@@ -88,6 +88,29 @@ export function sanitizeClientPayload(client: Record<string, unknown>): Record<s
   return out;
 }
 
+/**
+ * Normalize panel root URL: trailing slash, strip accidental /login or /panel/api tails.
+ * Keeps secret WebBasePath (e.g. https://host:port/Ab12Cd/).
+ */
+export function normalizePanelBaseUrl(raw: string): string {
+  let u = raw.trim();
+  if (!u) return u;
+  if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+  try {
+    const parsed = new URL(u);
+    let path = parsed.pathname || "/";
+    path = path
+      .replace(/\/+$/, "")
+      .replace(/\/(panel\/api|panel|xui|API|login|inbounds)(\/.*)?$/i, "");
+    parsed.pathname = path ? `${path}/` : "/";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return u.replace(/\/?$/, "/");
+  }
+}
+
 export class XuiClient {
   private readonly baseUrl: string;
 
@@ -109,16 +132,32 @@ export class XuiClient {
     if (isDemoMode()) {
       throw new Error("DEMO_MODE: ارتباط با پنل 3x-ui کاملاً قطع است");
     }
+    // 3x-ui panel/api routes are almost all POST (Gin). Default GET → often bare 404.
+    const method = (init?.method ?? "POST").toUpperCase();
+    let body = init?.body;
+    if (method !== "GET" && method !== "HEAD" && body === undefined) {
+      body = "{}";
+    }
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.opts.apiToken}`,
+      Accept: "application/json",
+      ...(init?.headers as Record<string, string> | undefined),
+    };
+    const isForm =
+      typeof FormData !== "undefined" && typeof body === "object" && body instanceof FormData;
+    if (body != null && !isForm && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const url = this.url(path);
     let res: Response;
     try {
-      res = await fetch(this.url(path), {
+      res = await fetch(url, {
         ...init,
-        headers: {
-          Authorization: `Bearer ${this.opts.apiToken}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          ...(init?.headers ?? {}),
-        },
+        method,
+        headers,
+        body: method === "GET" || method === "HEAD" ? undefined : body,
       });
     } catch (err) {
       throw new Error(formatXuiError(err));
@@ -129,12 +168,18 @@ export class XuiClient {
     try {
       json = JSON.parse(text) as ApiResult<T>;
     } catch {
-      throw new Error(formatXuiError(`3x-ui ${res.status}: ${text.slice(0, 400)}`));
+      throw new Error(
+        formatXuiError(
+          `3x-ui ${res.status} ${method} ${url}: ${text.slice(0, 400) || "(empty body)"}`,
+        ),
+      );
     }
 
     if (!res.ok || json.success === false) {
       throw new Error(
-        formatXuiError(`3x-ui ${res.status}: ${json.msg ?? text.slice(0, 400)}`),
+        formatXuiError(
+          `3x-ui ${res.status} ${method} ${url}: ${json.msg ?? (text.slice(0, 400) || "(empty)")}`,
+        ),
       );
     }
 
@@ -381,11 +426,21 @@ export class XuiClient {
   }
 
   /**
-   * Live host metrics from 3x-ui (CPU, RAM, disk, Xray, net, …).
-   * @see GET /panel/api/server/status
+   * Live host metrics. Try POST then GET (panel forks differ).
    */
-  getServerStatus() {
-    return this.request<XuiServerStatus>("panel/api/server/status");
+  async getServerStatus() {
+    let lastErr: unknown;
+    for (const method of ["POST", "GET"] as const) {
+      try {
+        return await this.request<XuiServerStatus>("panel/api/server/status", {
+          method,
+          body: method === "POST" ? "{}" : undefined,
+        });
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "status failed"));
   }
 
   /**
@@ -513,7 +568,7 @@ export function createXuiFromEnv(env: {
     );
   }
   return new XuiClient({
-    baseUrl: env.XUI_BASE_URL,
+    baseUrl: normalizePanelBaseUrl(env.XUI_BASE_URL),
     apiToken: env.XUI_API_TOKEN,
   });
 }

@@ -47,6 +47,15 @@ export function formatXuiError(err: unknown): string {
     return raw;
   }
 
+  if (lower.includes("404")) {
+    return (
+      "آدرس پنل یا مسیر وب (WebBasePath) اشتباه است، یا API در این نسخه در دسترس نیست. " +
+      "در 3x-ui به Panel Settings بروید و آدرس کامل را با مسیر مخفی کپی کنید " +
+      "(مثال: https://ip:port/SECRET/) و توکن API را تازه کنید، بعد در ربات «سرورها» همان را ذخیره و تست اتصال بزنید. " +
+      `جزئیات: ${raw.replace(/^Error:\s*/i, "").slice(0, 160)}`
+    );
+  }
+
   // Keep short technical hint for admins
   const short = raw.replace(/^Error:\s*/i, "").slice(0, 180);
   return `خطای پنل 3x-ui: ${short}`;

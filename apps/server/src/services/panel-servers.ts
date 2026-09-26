@@ -1,7 +1,7 @@
 import type { PanelServer } from "@prisma/client";
 import { env } from "../config/env.js";
 import { prisma } from "../db.js";
-import { XuiClient, createXuiFromEnv } from "../panel/xui-client.js";
+import { XuiClient, createXuiFromEnv, normalizePanelBaseUrl } from "../panel/xui-client.js";
 import { formatXuiError } from "../panel/xui-errors.js";
 import { parseInboundIds } from "./inbounds.js";
 import type { PlanCategory } from "./pricing.js";
@@ -38,15 +38,32 @@ export function panelInboundIds(panel: Pick<PanelServer, "inboundIds">): number[
   return parseInboundIds(panel.inboundIds || "1");
 }
 
+export { normalizePanelBaseUrl } from "../panel/xui-client.js";
+
 export function createXuiFromPanel(panel: Pick<PanelServer, "baseUrl" | "apiToken">) {
   assertNotDemoPanel();
   if (!panel.baseUrl?.trim() || !panel.apiToken?.trim()) {
     throw new Error(formatXuiError("آدرس یا توکن پنل ناقص است"));
   }
   return new XuiClient({
-    baseUrl: panel.baseUrl.trim(),
+    baseUrl: normalizePanelBaseUrl(panel.baseUrl),
     apiToken: panel.apiToken.trim(),
   });
+}
+
+/**
+ * Keep process.env / parsed env in sync with an active panel so legacy
+ * createXuiFromEnv paths use the same host after a VPS move (no restart required).
+ */
+function syncRuntimePanelEnv(panel: Pick<PanelServer, "baseUrl" | "apiToken" | "active">) {
+  if (!panel.active) return;
+  const base = normalizePanelBaseUrl(panel.baseUrl);
+  const token = panel.apiToken?.trim();
+  if (!base || !token) return;
+  process.env.XUI_BASE_URL = base;
+  process.env.XUI_API_TOKEN = token;
+  (env as { XUI_BASE_URL?: string }).XUI_BASE_URL = base;
+  (env as { XUI_API_TOKEN?: string }).XUI_API_TOKEN = token;
 }
 
 /** Env-based fallback when no PanelServer rows exist (legacy install). */
@@ -132,11 +149,16 @@ export async function importPanelFromEnv() {
   // Always heal any contaminated sub bases first
   await repairPanelSubBases();
 
-  const normalizedBase = snap.baseUrl.replace(/\/+$/, "");
+  const normalizedBase = normalizePanelBaseUrl(snap.baseUrl).replace(/\/+$/, "");
   const existing = await prisma.panelServer.findFirst({
     where: {
       tenantId,
-      OR: [{ baseUrl: snap.baseUrl }, { baseUrl: `${normalizedBase}/` }, { baseUrl: normalizedBase }],
+      OR: [
+        { baseUrl: snap.baseUrl },
+        { baseUrl: `${normalizedBase}/` },
+        { baseUrl: normalizedBase },
+        { baseUrl: normalizePanelBaseUrl(snap.baseUrl) },
+      ],
     },
   });
   if (existing) {
@@ -145,26 +167,30 @@ export async function importPanelFromEnv() {
       inboundIds: string;
       active: boolean;
       sellEnabled: boolean;
+      baseUrl?: string;
       subBase?: string | null;
     } = {
       apiToken: snap.apiToken,
       inboundIds: snap.inboundIds,
       active: true,
       sellEnabled: true,
+      baseUrl: normalizePanelBaseUrl(snap.baseUrl),
     };
     if (snap.subBase != null) data.subBase = snap.subBase;
     else if (snap.subBaseWasContaminated) data.subBase = null;
-    return prisma.panelServer.update({
+    const updated = await prisma.panelServer.update({
       where: { id: existing.id },
       data,
     });
+    syncRuntimePanelEnv(updated);
+    return updated;
   }
 
-  return prisma.panelServer.create({
+  const created = await prisma.panelServer.create({
     data: {
       tenantId,
       name: snap.name,
-      baseUrl: snap.baseUrl.replace(/\/?$/, "/"),
+      baseUrl: normalizePanelBaseUrl(snap.baseUrl),
       apiToken: snap.apiToken,
       inboundIds: snap.inboundIds,
       subBase: snap.subBase,
@@ -174,6 +200,8 @@ export async function importPanelFromEnv() {
       weight: 100,
     },
   });
+  syncRuntimePanelEnv(created);
+  return created;
 }
 
 export async function createPanelServer(input: {
@@ -190,12 +218,12 @@ export async function createPanelServer(input: {
   const { resolveTenantIdOrPlatform } = await import("./tenants.js");
   const tenantId = await resolveTenantIdOrPlatform();
   const name = input.name.trim();
-  const baseUrl = input.baseUrl.trim().replace(/\/?$/, "/");
+  const baseUrl = normalizePanelBaseUrl(input.baseUrl);
   if (!name) throw new Error("نام سرور الزامی است");
   if (!baseUrl) throw new Error("آدرس پنل الزامی است");
   if (!input.apiToken.trim()) throw new Error("API Token الزامی است");
 
-  return prisma.panelServer.create({
+  const created = await prisma.panelServer.create({
     data: {
       tenantId,
       name,
@@ -209,6 +237,8 @@ export async function createPanelServer(input: {
       sellEnabled: input.sellEnabled ?? true,
     },
   });
+  syncRuntimePanelEnv(created);
+  return created;
 }
 
 export async function updatePanelServer(
@@ -227,7 +257,7 @@ export async function updatePanelServer(
 ) {
   const data: Record<string, unknown> = {};
   if (input.name !== undefined) data.name = input.name.trim();
-  if (input.baseUrl !== undefined) data.baseUrl = input.baseUrl.trim().replace(/\/?$/, "/");
+  if (input.baseUrl !== undefined) data.baseUrl = normalizePanelBaseUrl(input.baseUrl);
   if (input.apiToken !== undefined && input.apiToken.trim()) data.apiToken = input.apiToken.trim();
   if (input.inboundIds !== undefined) data.inboundIds = input.inboundIds.trim() || "1";
   if (input.subBase !== undefined) {
@@ -253,7 +283,9 @@ export async function updatePanelServer(
   const tenantId = await resolveTenantIdOrPlatform();
   const existing = await prisma.panelServer.findFirst({ where: { id, tenantId } });
   if (!existing) throw new Error("سرور پنل یافت نشد");
-  return prisma.panelServer.update({ where: { id }, data });
+  const updated = await prisma.panelServer.update({ where: { id }, data });
+  syncRuntimePanelEnv(updated);
+  return updated;
 }
 
 export async function deletePanelServer(id: string, opts?: { reassignToId?: string }) {
@@ -324,7 +356,21 @@ export async function testPanelConnection(panel: Pick<PanelServer, "baseUrl" | "
   const xui = createXuiFromPanel(panel);
   const list = await xui.listInbounds();
   const count = Array.isArray(list.obj) ? list.obj.length : 0;
-  return { ok: true as const, inboundCount: count };
+  let statusOk = false;
+  let statusError: string | undefined;
+  try {
+    const st = await xui.getServerStatus();
+    statusOk = Boolean(st.obj || st.success !== false);
+  } catch (err) {
+    statusError = String(err instanceof Error ? err.message : err);
+  }
+  return {
+    ok: true as const,
+    inboundCount: count,
+    probedUrl: xui.panelBaseUrl,
+    statusOk,
+    statusError,
+  };
 }
 
 function pickWeighted(panels: PanelServer[]): PanelServer {

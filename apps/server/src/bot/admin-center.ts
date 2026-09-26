@@ -2460,8 +2460,9 @@ export function registerControlCenter(bot: Bot) {
     }
     try {
       const r = await testPanelConnection(p);
+      const statusBit = r.statusOk ? " · status OK" : r.statusError ? ` · status: ${r.statusError.slice(0, 60)}` : "";
       await ctx.answerCallbackQuery({
-        text: `اتصال OK · ${r.inboundCount} inbound`,
+        text: `اتصال OK · ${r.inboundCount} inbound${statusBit}\n${r.probedUrl}`.slice(0, 200),
         show_alert: true,
       });
     } catch (err) {
