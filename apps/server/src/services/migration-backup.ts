@@ -17,7 +17,21 @@ import type { Api } from "grammy";
 import { InputFile } from "grammy";
 
 export const MIGRATION_MANIFEST = "manifest.json";
-export const MIGRATION_VERSION = 1;
+export const MIGRATION_VERSION = 2;
+
+export type ClientTrafficSnap = {
+  email: string;
+  up: number;
+  down: number;
+  /** total quota bytes (0 = unlimited) */
+  total: number;
+  used: number;
+  /** remaining bytes; null if unlimited */
+  remaining: number | null;
+  totalGb: number | null;
+  usedGb: number;
+  remainingGb: number | null;
+};
 
 export type MigrationPanelEntry = {
   id: string;
@@ -33,6 +47,9 @@ export type MigrationPanelEntry = {
   dbFilename: string;
   dbBytes: number;
   dbSha256: string;
+  /** Relative path to client-traffic.json inside the zip */
+  trafficPath?: string;
+  trafficClients?: number;
   ok: boolean;
   error?: string;
 };
@@ -67,6 +84,144 @@ function sha256(buf: Buffer) {
   return createHash("sha256").update(buf).digest("hex");
 }
 
+async function snapshotPanelClientTraffic(
+  xui: ReturnType<typeof createXuiFromPanel>,
+): Promise<ClientTrafficSnap[]> {
+  const { bytesToGb } = await import("../utils/format.js");
+  const byEmail = new Map<string, ClientTrafficSnap>();
+
+  // Prefer clients/list (may include traffic nested); always enrich with traffic API.
+  let emails: string[] = [];
+  try {
+    const listed = await xui.listClients();
+    const rows = Array.isArray(listed.obj) ? listed.obj : [];
+    for (const c of rows) {
+      const email = typeof c.email === "string" ? c.email.trim() : "";
+      if (!email) continue;
+      emails.push(email);
+      const traf = (c as { traffic?: { up?: number; down?: number } }).traffic;
+      const up = Number(traf?.up ?? 0);
+      const down = Number(traf?.down ?? 0);
+      const total = Number(c.totalGB ?? 0);
+      const used = up + down;
+      byEmail.set(email.toLowerCase(), {
+        email,
+        up,
+        down,
+        total,
+        used,
+        remaining: total > 0 ? Math.max(0, total - used) : null,
+        totalGb: bytesToGb(total),
+        usedGb: bytesToGb(used) ?? used / 1024 ** 3,
+        remainingGb: total > 0 ? bytesToGb(Math.max(0, total - used)) : null,
+      });
+    }
+  } catch {
+    /* fall through — try inbounds */
+  }
+
+  if (!emails.length) {
+    try {
+      const res = await xui.listInbounds();
+      const inbounds = Array.isArray(res.obj) ? res.obj : [];
+      for (const ib of inbounds as Array<{
+        clientStats?: Array<{ email?: string; up?: number; down?: number; total?: number }>;
+        settings?: string | { clients?: Array<{ email?: string; totalGB?: number }> };
+      }>) {
+        if (Array.isArray(ib.clientStats)) {
+          for (const s of ib.clientStats) {
+            const email = s.email?.trim();
+            if (!email) continue;
+            emails.push(email);
+            const up = Number(s.up ?? 0);
+            const down = Number(s.down ?? 0);
+            const total = Number(s.total ?? 0);
+            const used = up + down;
+            byEmail.set(email.toLowerCase(), {
+              email,
+              up,
+              down,
+              total,
+              used,
+              remaining: total > 0 ? Math.max(0, total - used) : null,
+              totalGb: bytesToGb(total),
+              usedGb: bytesToGb(used) ?? used / 1024 ** 3,
+              remainingGb: total > 0 ? bytesToGb(Math.max(0, total - used)) : null,
+            });
+          }
+        }
+        let clients: Array<{ email?: string; totalGB?: number }> | undefined;
+        if (typeof ib.settings === "string") {
+          try {
+            clients = (JSON.parse(ib.settings) as { clients?: Array<{ email?: string; totalGB?: number }> })
+              .clients;
+          } catch {
+            clients = undefined;
+          }
+        } else if (ib.settings && typeof ib.settings === "object") {
+          clients = ib.settings.clients;
+        }
+        if (Array.isArray(clients)) {
+          for (const c of clients) {
+            const email = c.email?.trim();
+            if (!email) continue;
+            if (!byEmail.has(email.toLowerCase())) {
+              emails.push(email);
+              const total = Number(c.totalGB ?? 0);
+              byEmail.set(email.toLowerCase(), {
+                email,
+                up: 0,
+                down: 0,
+                total,
+                used: 0,
+                remaining: total > 0 ? total : null,
+                totalGb: bytesToGb(total),
+                usedGb: 0,
+                remainingGb: bytesToGb(total),
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      /* empty */
+    }
+  }
+
+  // Enrich / correct with dedicated traffic endpoint (up to 80 concurrent batches)
+  const unique = [...new Set(emails.map((e) => e.trim()).filter(Boolean))];
+  const chunk = 25;
+  for (let i = 0; i < unique.length; i += chunk) {
+    const slice = unique.slice(i, i + chunk);
+    await Promise.all(
+      slice.map(async (email) => {
+        try {
+          const t = await xui.getClientTraffic(email);
+          if (!t) return;
+          const prev = byEmail.get(email.toLowerCase());
+          const total = t.total > 0 ? t.total : (prev?.total ?? 0);
+          const used = t.used;
+          byEmail.set(email.toLowerCase(), {
+            email,
+            up: t.up,
+            down: t.down,
+            total,
+            used,
+            remaining: total > 0 ? Math.max(0, total - used) : null,
+            totalGb: bytesToGb(total),
+            usedGb: bytesToGb(used) ?? used / 1024 ** 3,
+            remainingGb: total > 0 ? bytesToGb(Math.max(0, total - used)) : null,
+          });
+        } catch {
+          /* keep list snapshot */
+        }
+      }),
+    );
+  }
+
+  return [...byEmail.values()].sort((a, b) => a.email.localeCompare(b.email));
+}
+
 async function migrationDir(): Promise<string> {
   const db = resolveDatabaseFilePath();
   const dir = join(dirname(db), "backups", "migration");
@@ -93,8 +248,9 @@ export async function createFullMigrationArchive(): Promise<{
 
   const zip = new JSZip();
   const notes: string[] = [
-    "بکاپ کامل مهاجرت Quadtwo = دیتابیس ربات + دیتابیس پنل(های) 3x-ui.",
-    "ترتیب بازیابی پیشنهادی: ۱) نصب 3x-ui تازه ۲) Import دیتابیس پنل ۳) بازیابی ربات ۴) اصلاح baseUrl در سرورها اگر دامنه عوض شده.",
+    "بکاپ کامل مهاجرت Quadtwo = دیتابیس ربات + دیتابیس پنل(های) 3x-ui + اسنپ‌شات مصرف ترافیک کلاینت‌ها.",
+    "ترتیب بازیابی پیشنهادی: ۱) نصب 3x-ui تازه ۲) Import دیتابیس پنل ۳) بازیابی ربات ۴) اعمال اسنپ‌شات ترافیک (خودکار در بازیابی کامل) ۵) اصلاح baseUrl در سرورها اگر دامنه عوض شده.",
+    "فایل client-traffic.json برای هر پنل: up/down/used/total/remaining — اگر پنل حجم را ریست کرد، از همین فایل دوباره اعمال می‌شود.",
     "فایل .env (BOT_TOKEN و دامنه) داخل این آرشیو نیست — جداگانه نگه دارید.",
   ];
 
@@ -150,6 +306,32 @@ export async function createFullMigrationArchive(): Promise<{
       const db = await xui.downloadDatabase();
       const dbPath = `${folder}/${db.filename}`;
       zip.file(dbPath, db.buffer);
+
+      let trafficPath = "";
+      let trafficClients = 0;
+      try {
+        const snaps = await snapshotPanelClientTraffic(xui);
+        trafficPath = `${folder}/client-traffic.json`;
+        zip.file(
+          trafficPath,
+          JSON.stringify(
+            {
+              panelId: p.id,
+              panelName: p.name,
+              capturedAt: new Date().toISOString(),
+              clients: snaps,
+            },
+            null,
+            2,
+          ),
+        );
+        trafficClients = snaps.length;
+      } catch (trafErr) {
+        notes.push(
+          `اسنپ‌شات ترافیک «${p.name}» گرفته نشد: ${String(trafErr instanceof Error ? trafErr.message : trafErr)}`,
+        );
+      }
+
       panelEntries.push({
         id: p.id,
         name: p.name,
@@ -164,6 +346,8 @@ export async function createFullMigrationArchive(): Promise<{
         dbFilename: db.filename,
         dbBytes: db.buffer.length,
         dbSha256: sha256(db.buffer),
+        trafficPath: trafficPath || undefined,
+        trafficClients,
         ok: true,
       });
     } catch (err) {
@@ -220,11 +404,13 @@ export async function createFullMigrationArchive(): Promise<{
       "",
       `ربات: ${manifest.bot.path} (${formatBytes(manifest.bot.bytes)})`,
       `پنل‌های موفق: ${okPanels} از ${panels.length}`,
+      `اسنپ‌شات ترافیک: ${panelEntries.reduce((s, p) => s + (p.trafficClients ?? 0), 0)} کلاینت`,
       "",
       "بازیابی پنل دستی (اگر API import کار نکرد):",
       "  1) سرویس x-ui را stop کنید",
       "  2) فایل panels/<id>/x-ui.db را جای دیتابیس پنل بگذارید",
       "  3) سرویس را start کنید",
+      "  4) از داشبورد بازیابی کامل بزنید یا client-traffic.json را با API اعمال کنید",
       "",
     ].join("\n"),
   );
@@ -251,7 +437,13 @@ export type MigrationInspectResult =
       botBytes?: number;
       panelsOk?: number;
       panelsTotal?: number;
-      panels?: Array<{ name: string; ok: boolean; error?: string; dbBytes?: number }>;
+      panels?: Array<{
+        name: string;
+        ok: boolean;
+        error?: string;
+        dbBytes?: number;
+        trafficClients?: number;
+      }>;
       notes?: string[];
       sizeLabel: string;
     }
@@ -304,6 +496,7 @@ export async function inspectMigrationOrBotBackup(buf: Buffer): Promise<Migratio
       ok: p.ok,
       error: p.error,
       dbBytes: p.dbBytes,
+      trafficClients: p.trafficClients ?? 0,
     })),
     notes: manifest.notes,
     sizeLabel: formatBytes(buf.length),
@@ -315,7 +508,52 @@ export type FullRestoreOptions = {
   importPanels?: boolean;
   /** Restore bot SQLite and schedule process exit. Default true. */
   restoreBot?: boolean;
+  /** Re-apply used traffic from client-traffic.json after panel import. Default true. */
+  restoreTraffic?: boolean;
 };
+
+async function applyTrafficSnapshotFromZip(
+  zip: JSZip,
+  entry: MigrationPanelEntry,
+  panel: { baseUrl: string; apiToken: string; name: string },
+): Promise<{ applied: number; failed: number; errors: string[] }> {
+  const path =
+    entry.trafficPath ||
+    (entry.dbPath ? entry.dbPath.replace(/[^/]+$/, "client-traffic.json") : "");
+  if (!path) return { applied: 0, failed: 0, errors: ["اسنپ‌شات ترافیک در zip نیست"] };
+  const f = zip.file(path);
+  if (!f) return { applied: 0, failed: 0, errors: [`فایل ${path} پیدا نشد`] };
+
+  let clients: ClientTrafficSnap[] = [];
+  try {
+    const raw = JSON.parse(await f.async("string")) as { clients?: ClientTrafficSnap[] };
+    clients = Array.isArray(raw.clients) ? raw.clients : [];
+  } catch {
+    return { applied: 0, failed: 0, errors: ["client-traffic.json نامعتبر است"] };
+  }
+
+  const xui = createXuiFromPanel(panel);
+  let applied = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  for (const c of clients) {
+    if (!c.email?.trim()) continue;
+    if (!(c.up > 0 || c.down > 0)) {
+      applied++; // nothing to write
+      continue;
+    }
+    try {
+      await xui.updateClientTraffic(c.email, { upload: c.up, download: c.down });
+      applied++;
+    } catch (err) {
+      failed++;
+      if (errors.length < 8) {
+        errors.push(`${c.email}: ${String(err instanceof Error ? err.message : err).slice(0, 120)}`);
+      }
+    }
+  }
+  return { applied, failed, errors };
+}
 
 /**
  * Restore from full migration zip.
@@ -330,6 +568,8 @@ export async function restoreFullMigrationArchive(
       botRestored: boolean;
       safetyName?: string;
       panelsImported: number;
+      trafficApplied: number;
+      trafficFailed: number;
       panelErrors: Array<{ name: string; error: string }>;
       message: string;
     }
@@ -341,6 +581,7 @@ export async function restoreFullMigrationArchive(
 
   const importPanels = opts?.importPanels !== false;
   const restoreBot = opts?.restoreBot !== false;
+  const restoreTraffic = opts?.restoreTraffic !== false;
 
   let zip: JSZip;
   try {
@@ -360,6 +601,8 @@ export async function restoreFullMigrationArchive(
 
   const panelErrors: Array<{ name: string; error: string }> = [];
   let panelsImported = 0;
+  let trafficApplied = 0;
+  let trafficFailed = 0;
 
   if (importPanels) {
     for (const entry of manifest.panels) {
@@ -388,11 +631,42 @@ export async function restoreFullMigrationArchive(
         const xui = createXuiFromPanel(target);
         await xui.importDatabase(panelBuf, entry.dbFilename || "x-ui.db");
         panelsImported++;
+        if (restoreTraffic) {
+          // Give panel a moment after importDB restart
+          await new Promise((r) => setTimeout(r, 1500));
+          const traf = await applyTrafficSnapshotFromZip(zip, entry, target);
+          trafficApplied += traf.applied;
+          trafficFailed += traf.failed;
+          if (traf.failed && traf.errors.length) {
+            panelErrors.push({
+              name: `${entry.name} (ترافیک)`,
+              error: traf.errors.join(" · "),
+            });
+          }
+        }
       } catch (err) {
         panelErrors.push({
           name: entry.name,
           error: String(err instanceof Error ? err.message : err),
         });
+      }
+    }
+  } else if (restoreTraffic) {
+    // Traffic-only pass (panel DB already live)
+    for (const entry of manifest.panels) {
+      if (!entry.ok) continue;
+      const live =
+        (await prisma.panelServer.findUnique({ where: { id: entry.id } })) ??
+        (await prisma.panelServer.findFirst({ where: { name: entry.name } }));
+      if (!live?.apiToken) {
+        panelErrors.push({ name: entry.name, error: "پنل برای اعمال ترافیک پیدا نشد" });
+        continue;
+      }
+      const traf = await applyTrafficSnapshotFromZip(zip, entry, live);
+      trafficApplied += traf.applied;
+      trafficFailed += traf.failed;
+      if (traf.failed && traf.errors.length) {
+        panelErrors.push({ name: `${entry.name} (ترافیک)`, error: traf.errors.join(" · ") });
       }
     }
   }
@@ -416,8 +690,12 @@ export async function restoreFullMigrationArchive(
     botRestored ? "دیتابیس ربات بازیابی شد (سرویس به‌زودی ری‌استارت می‌شود)." : "ربات بازیابی نشد.",
     importPanels
       ? `پنل‌ها: ${panelsImported} موفق` +
-        (panelErrors.length ? ` · ${panelErrors.length} ناموفق` : "")
+        (panelErrors.length ? ` · ${panelErrors.length} هشدار/خطا` : "")
       : "وارد کردن پنل‌ها رد شد.",
+    restoreTraffic
+      ? `ترافیک مصرفی: ${trafficApplied} اعمال` +
+        (trafficFailed ? ` · ${trafficFailed} ناموفق` : "")
+      : "",
     panelErrors.length
       ? "اگر import API شکست خورد، فایل x-ui.db را دستی جای دیتابیس پنل بگذارید (راهنمای README داخل zip)."
       : "",
@@ -430,6 +708,8 @@ export async function restoreFullMigrationArchive(
     botRestored,
     safetyName,
     panelsImported,
+    trafficApplied,
+    trafficFailed,
     panelErrors,
     message,
   };

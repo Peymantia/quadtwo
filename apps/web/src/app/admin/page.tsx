@@ -1881,7 +1881,7 @@ const SYNC_OPTION_DEFS: Array<{ key: string; label: string; hint?: string }> = [
   { key: "newAccounts", label: "اکانت‌های جدید" },
   { key: "deletedAccounts", label: "اکانت‌های حذف‌شده" },
   { key: "name", label: "نام (Email)" },
-  { key: "traffic", label: "حجم و مقدار مصرف", hint: "فقط حجم کل؛ مصرف از پنل بازنویسی نمی‌شود" },
+  { key: "traffic", label: "حجم کل (سهمیه)", hint: "فقط سقف حجم؛ مصرف up/down در همگام‌سازی بازنویسی نمی‌شود — از بکاپ کامل مهاجرت استفاده کنید" },
   { key: "expiry", label: "تاریخ انقضا" },
   { key: "inbounds", label: "اینباندها", hint: "فقط هنگام ساخت اکانت جدید در پنل" },
   { key: "limitIp", label: "محدودیت کاربر" },
@@ -5140,7 +5140,7 @@ function SettingsTab({
         onToggle={toggleSection}
       >
         <p className="muted" style={{ marginTop: 0 }}>
-          پشتیبان روزانه فقط دیتابیس ربات است. برای تعویض سرور از بکاپ کامل (ربات + پنل 3x-ui) استفاده کنید.
+          پشتیبان روزانه فقط دیتابیس ربات است. برای تعویض سرور از بکاپ کامل (ربات + پنل 3x-ui + مصرف حجم کاربران) استفاده کنید.
         </p>
         {backup && (
           <>
@@ -5205,7 +5205,7 @@ function SettingsTab({
             </button>
             <div className="panel" style={{ marginTop: 14, padding: 12 }}>
               <div className="t" style={{ fontWeight: 800, marginBottom: 6 }}>
-                بکاپ کامل مهاجرت (ربات + سنایی)
+                بکاپ کامل مهاجرت (ربات + سنایی + مصرف حجم)
               </div>
               <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
                 inbounds، clients، groups، nodes، hosts، outbounds، routings و تنظیمات پنل + دیتابیس ربات در یک zip.

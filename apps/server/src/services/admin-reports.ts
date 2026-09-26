@@ -1,17 +1,14 @@
 import { OrderKind, OrderStatus, UserRole } from "@prisma/client";
 import { prisma } from "../db.js";
-import { formatToman, persianMonthName, startOfPersianMonth } from "../utils/format.js";
+import { formatToman, persianMonthName, startOfDayTehran, startOfPersianMonth } from "../utils/format.js";
 
 function startOfDay(d = new Date()) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+  return startOfDayTehran(d);
 }
 
 function daysAgo(n: number) {
   const x = startOfDay();
-  x.setDate(x.getDate() - n);
-  return x;
+  return new Date(x.getTime() - n * 24 * 60 * 60 * 1000);
 }
 
 export type SalesPeriod = "today" | "week" | "month" | "jalali_month" | "all";
@@ -122,13 +119,22 @@ export async function buildSalesStats(opts: {
   const { resolveTenantIdOrPlatform } = await import("./tenants.js");
   const tenantId = await resolveTenantIdOrPlatform();
 
+  const sinceFilter = since
+    ? {
+        OR: [
+          { completedAt: { gte: since } },
+          { completedAt: null, createdAt: { gte: since } },
+        ],
+      }
+    : {};
+
   const orderWhere = {
     tenantId,
     status: OrderStatus.completed,
     excludedFromSales: false,
     kind: { in: [OrderKind.new, OrderKind.renew] as OrderKind[] },
     ...(opts.userId ? { userId: opts.userId } : {}),
-    ...(since ? { updatedAt: { gte: since } } : {}),
+    ...sinceFilter,
   };
 
   const [orders, activeSubs, walletAgg] = await Promise.all([
@@ -140,7 +146,7 @@ export async function buildSalesStats(opts: {
         subscription: { select: { id: true, email: true, title: true, trafficGb: true } },
         discountCode: { select: { code: true } },
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: [{ completedAt: "desc" }, { createdAt: "desc" }],
     }),
     prisma.subscription.count({
       where: {
@@ -155,7 +161,7 @@ export async function buildSalesStats(opts: {
             tenantId,
             status: OrderStatus.completed,
             kind: OrderKind.wallet_charge,
-            ...(since ? { updatedAt: { gte: since } } : {}),
+            ...sinceFilter,
           },
           _sum: { price: true },
           _count: true,
@@ -192,7 +198,7 @@ export async function buildSalesStats(opts: {
       id: o.id,
       kind: o.kind,
       price: o.price,
-      at: o.updatedAt.toISOString(),
+      at: (o.completedAt ?? o.createdAt).toISOString(),
       who: opts.userId ? null : whoLabel(o.user),
       accountName: linked?.title || o.accountName || email,
       email,
@@ -285,7 +291,14 @@ export async function agentsSalesLeaderboard(opts: {
           status: OrderStatus.completed,
           excludedFromSales: false,
           kind: { in: [OrderKind.new, OrderKind.renew] },
-          ...(since ? { updatedAt: { gte: since } } : {}),
+          ...(since
+            ? {
+                OR: [
+                  { completedAt: { gte: since } },
+                  { completedAt: null, createdAt: { gte: since } },
+                ],
+              }
+            : {}),
         },
         select: { price: true, kind: true },
       },

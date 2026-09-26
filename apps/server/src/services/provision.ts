@@ -333,10 +333,8 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
     try {
       const { creditWallet } = await import("./wallet.js");
       const balance = await creditWallet(order.userId, order.price, `charge:${order.id}`);
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { status: OrderStatus.completed },
-      });
+      const { markOrderCompleted } = await import("./order-complete.js");
+      await markOrderCompleted(orderId);
       return { kind: "wallet_credit", balance };
     } catch (err) {
       await prisma.order.update({
@@ -412,10 +410,8 @@ export async function provisionOrder(orderId: string): Promise<ProvisionResult |
       result = await createPanelClientsBulk(order.user, order);
     }
 
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.completed },
-    });
+    const { markOrderCompleted } = await import("./order-complete.js");
+    await markOrderCompleted(orderId);
     return result;
   } catch (err) {
     // Card/crypto review queue: keep visible until approve/reject succeeds.

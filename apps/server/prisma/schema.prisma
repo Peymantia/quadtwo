@@ -339,6 +339,8 @@ model Order {
   priceBeforeDiscount Int?
   /// When true, order is omitted from sales totals (e.g. admin deleted the account)
   excludedFromSales Boolean @default(false)
+  /// When the order became completed (sales reports use this — not updatedAt).
+  completedAt     DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -351,6 +353,7 @@ model Order {
 
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, completedAt])
 }
 
 model Subscription {

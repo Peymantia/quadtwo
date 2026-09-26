@@ -36,21 +36,40 @@ export function formatToman(amount: number): string {
   return `${amount.toLocaleString("fa-IR")} تومان`;
 }
 
-/** Start of the current Jalali (Persian) month in local time. */
+/** Start of calendar day in Asia/Tehran (Iran business day for «امروز»). */
+export function startOfDayTehran(d = new Date()): Date {
+  const dateStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+  const [y, m, day] = dateStr.split("-").map((x) => Number(x));
+  // Iran has no DST; offset is fixed UTC+03:30 → Tehran midnight = UTC 20:30 previous day.
+  return new Date(Date.UTC(y!, m! - 1, day!, 0, 0, 0, 0) - (3 * 60 + 30) * 60 * 1000);
+}
+
+/** Start of the current Jalali (Persian) month at Tehran midnight. */
 export function startOfPersianMonth(d = new Date()): Date {
-  const dayPart = new Intl.DateTimeFormat("en-u-ca-persian", { day: "numeric" })
+  const dayPart = new Intl.DateTimeFormat("en-u-ca-persian", {
+    timeZone: "Asia/Tehran",
+    day: "numeric",
+  })
     .formatToParts(d)
     .find((p) => p.type === "day");
   const day = Math.max(1, Number(dayPart?.value || "1") || 1);
-  const start = new Date(d);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - (day - 1));
-  return start;
+  const tehranNow = startOfDayTehran(d);
+  // Walk back (day-1) Tehran midnights
+  const start = new Date(tehranNow.getTime() - (day - 1) * 24 * 60 * 60 * 1000);
+  return startOfDayTehran(start);
 }
 
 /** Persian month name, e.g. «مرداد». */
 export function persianMonthName(d = new Date()): string {
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", { month: "long" }).format(d);
+  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+    timeZone: "Asia/Tehran",
+    month: "long",
+  }).format(d);
 }
 
 /** Isolate LTR runs (card numbers, codes) so RTL Persian UI does not reverse digits on screen. */

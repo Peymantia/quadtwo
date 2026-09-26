@@ -315,6 +315,38 @@ export class XuiClient {
     }>(`panel/api/clients/get/${encodeURIComponent(email)}`);
   }
 
+  /**
+   * Set used traffic counters (bytes). Replaces up/down — not incremental.
+   * POST panel/api/clients/updateTraffic/:email and/or inbounds/updateClientTraffic/:email
+   */
+  async updateClientTraffic(
+    email: string,
+    opts: { upload: number; download: number },
+  ): Promise<void> {
+    if (isDemoMode()) {
+      throw new Error("DEMO_MODE: به‌روزرسانی ترافیک پنل غیرفعال است");
+    }
+    const enc = encodeURIComponent(email);
+    const body = JSON.stringify({
+      upload: Math.max(0, Math.trunc(opts.upload)),
+      download: Math.max(0, Math.trunc(opts.download)),
+    });
+    const attempts = [
+      `panel/api/clients/updateTraffic/${enc}`,
+      `panel/api/inbounds/updateClientTraffic/${enc}`,
+    ];
+    let lastErr: unknown;
+    for (const path of attempts) {
+      try {
+        await this.request(path, { method: "POST", body });
+        return;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "update traffic failed"));
+  }
+
   /** Bytes used (up+down). Tries traffic endpoints, falls back to getClient.usedTraffic. */
   async getClientTraffic(email: string): Promise<{
     up: number;
@@ -330,7 +362,7 @@ export class XuiClient {
     ];
     for (const path of paths) {
       try {
-        const res = await this.request<{
+        const res = await this.requestGetOrPost<{
           up?: number;
           down?: number;
           total?: number;

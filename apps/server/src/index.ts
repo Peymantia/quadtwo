@@ -22,6 +22,14 @@ await ensurePlatformTenant();
 await seedIfNeeded();
 
 try {
+  const { backfillOrderCompletedAt } = await import("./services/order-complete.js");
+  const n = await backfillOrderCompletedAt();
+  if (n > 0) console.log(`backfilled completedAt on ${n} order(s)`);
+} catch (err) {
+  console.warn("order completedAt backfill skipped", err);
+}
+
+try {
   const { repairPanelSubBases } = await import("./services/panel-servers.js");
   const repaired = await repairPanelSubBases();
   if (repaired.fixed > 0) {

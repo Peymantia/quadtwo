@@ -487,10 +487,8 @@ export async function completeServerlessDelivery(
           : target.note,
       },
     });
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.completed },
-    });
+    const { markOrderCompleted } = await import("./order-complete.js");
+    await markOrderCompleted(orderId);
     await finalizeAdminReviewMessages(
       "order",
       orderId,
@@ -543,10 +541,8 @@ export async function completeServerlessDelivery(
     },
   });
 
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { status: OrderStatus.completed },
-  });
+  const { markOrderCompleted } = await import("./order-complete.js");
+  await markOrderCompleted(orderId);
   await finalizeAdminReviewMessages("order", orderId, `✅ لینک ارسال شد — ${code}`);
 
   return {

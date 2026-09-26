@@ -109,10 +109,8 @@ export async function applyDueRenewalReservations(): Promise<number> {
         data: { status: OrderStatus.provisioning },
       });
       await renewSubscription(order, order.targetSub.id);
-      await prisma.order.update({
-        where: { id: order.id },
-        data: { status: OrderStatus.completed },
-      });
+      const { markOrderCompleted } = await import("./order-complete.js");
+      await markOrderCompleted(order.id);
       applied += 1;
 
       try {
