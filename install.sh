@@ -225,6 +225,7 @@ load_dotenv() {
 build_app_full() {
   cd "${INSTALL_DIR}"
   load_dotenv
+  mark_build_start
   log "Full build: npm install + all packages + clean Next.js build"
   # NODE_ENV=production is in .env for runtime; force-install build/dev deps for tsc.
   npm install --include=dev
@@ -246,11 +247,56 @@ build_app_full() {
   fi
   NEXT_PUBLIC_API_URL="https://${DASH_DOMAIN}" NEXT_PUBLIC_APP_URL="https://${DASH_DOMAIN}" \
     npm run build -w @quadtwo/web
+  mark_build_done
 }
 
 # Fresh install always uses full build
 build_app() {
   build_app_full
+}
+
+BUILD_LOCK="${INSTALL_DIR}/data/.build-incomplete"
+
+mark_build_start() {
+  mkdir -p "${INSTALL_DIR}/data"
+  touch "${BUILD_LOCK}"
+}
+
+mark_build_done() {
+  rm -f "${BUILD_LOCK}"
+}
+
+artifacts_ok() {
+  [[ -f "${INSTALL_DIR}/apps/server/dist/index.js" ]] \
+    && [[ -f "${INSTALL_DIR}/apps/web/.next/BUILD_ID" || -d "${INSTALL_DIR}/apps/web/.next/server" ]]
+}
+
+# After restart: confirm API (:PORT) and web (:3000) answer locally.
+verify_local_services() {
+  load_dotenv
+  local api_port="${PORT:-4000}"
+  local ok=1
+  local i web_code
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    web_code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "http://127.0.0.1:3000/" 2>/dev/null || echo 000)"
+    if systemctl is-active --quiet "${SERVICE_NAME}" \
+      && systemctl is-active --quiet "${SERVICE_NAME}-web" \
+      && curl -fsS --max-time 2 "http://127.0.0.1:${api_port}/health" >/dev/null 2>&1 \
+      && [[ "${web_code}" =~ ^(200|301|302|307|308)$ ]]; then
+      ok=0
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${ok}" -ne 0 ]]; then
+    warn "Local health check failed (API :${api_port} / web :3000) — often means interrupted build → 502"
+    systemctl --no-pager -l status "${SERVICE_NAME}" 2>/dev/null | tail -n 20 || true
+    systemctl --no-pager -l status "${SERVICE_NAME}-web" 2>/dev/null | tail -n 20 || true
+    journalctl -u "${SERVICE_NAME}" -u "${SERVICE_NAME}-web" -n 40 --no-pager 2>/dev/null || true
+    return 1
+  fi
+  log "Local health OK (API :${api_port} + web :3000)"
+  return 0
 }
 
 changed_match() {
@@ -261,6 +307,19 @@ changed_match() {
 build_app_smart() {
   cd "${INSTALL_DIR}"
   load_dotenv
+
+  # Interrupted previous update leaves corrupt dist/.next while git SHA is current.
+  if [[ -f "${BUILD_LOCK}" ]]; then
+    warn "Previous build was interrupted — forcing full rebuild."
+    build_app_full
+    return
+  fi
+
+  if ! artifacts_ok; then
+    warn "Build artifacts missing/incomplete — forcing full rebuild."
+    build_app_full
+    return
+  fi
 
   local old="${QUADTWO_PREV_SHA:-}"
   local new="${QUADTWO_NEW_SHA:-}"
@@ -274,12 +333,7 @@ build_app_smart() {
 
   if [[ "${old}" == "${new}" ]]; then
     log "Already up to date (${new:0:7})."
-    if [[ ! -f "${INSTALL_DIR}/apps/server/dist/index.js" || ! -d "${INSTALL_DIR}/apps/web/.next" ]]; then
-      warn "Build artifacts missing — running full build."
-      build_app_full
-    else
-      log "Skipping rebuild (use: q2 update --full to force)."
-    fi
+    log "Skipping rebuild (use: q2 update --full to force)."
     return
   fi
 
@@ -295,6 +349,8 @@ build_app_smart() {
     build_app_full
     return
   fi
+
+  mark_build_start
 
   log "Smart update ${old:0:7} → ${new:0:7}"
   local count
@@ -340,6 +396,7 @@ build_app_smart() {
 
   if [[ "${need_npm}" -eq 0 && "${need_prisma}" -eq 0 && "${need_shared}" -eq 0 && "${need_server}" -eq 0 && "${need_web}" -eq 0 ]]; then
     log "No app code/deps changed — skip compile (CLI/docs only)."
+    mark_build_done
     return
   fi
 
@@ -385,6 +442,7 @@ build_app_smart() {
       npm run build -w @quadtwo/web
   fi
 
+  mark_build_done
   log "Smart build done."
 }
 
@@ -409,6 +467,19 @@ do_update() {
   fi
   load_dotenv
   setup_nginx || true
+
+  if ! verify_local_services; then
+    warn "Services unhealthy after update — running one automatic full rebuild…"
+    build_app_full
+    write_systemd
+    if verify_local_services; then
+      log "Recovered after full rebuild."
+    else
+      err "Still unhealthy. Run: journalctl -u quadtwo -u quadtwo-web -n 80 --no-pager"
+      err "Or: q2 update --full"
+    fi
+  fi
+
   log "Update complete."
 }
 
